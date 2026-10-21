@@ -11,6 +11,7 @@ import { EventTimeZonePreference, IanaTimeZoneSelect } from '@/components/prefer
 import { readStayEditorCatalogHotel, readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';
 import { orderStayDisplay } from '@/lib/stayDisplayOrder';
 import { stayLocalInstant, type StayAlarmChoice, type StayBreakfastPlan } from '@shared/stay-edit-plan.mjs';
+import { inferStayApzDate } from '@shared/stay-apz-date.mjs';
 import StayHotelAlarmPreview from './StayHotelAlarmPreview';
 import { Building2, Clock, Home, Hotel, MapPin, Save, Search, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -117,10 +118,11 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   const [defaultInput, setDefaultInput] = useState(() => String(loadStayEditor().defaultLeadMinutes));
   const [withoutBreakfastInput, setWithoutBreakfastInput] = useState(() => String(loadStayEditor().defaultWithoutBreakfastMinutes));
   const [apzDate, setApzDate] = useState('');
+  const apzDateExplicit = useRef(false);
   const dirty = useRef(false);
   const owner = useRef(getToken());
   const editSession = useRef(0);
-  const drafts = useRef(new Map<string, { draft: StayDraft; manual: boolean; timeZone: string; choice: StayAlarmChoice | undefined; breakfastPlan: StayBreakfastPlan; apzDate: string; signature: string; apzConfirmed: boolean; apzSource: string; alarmCancelled: boolean }>());
+  const drafts = useRef(new Map<string, { draft: StayDraft; manual: boolean; timeZone: string; choice: StayAlarmChoice | undefined; breakfastPlan: StayBreakfastPlan; apzDate: string; dateExplicit: boolean; signature: string; apzConfirmed: boolean; apzSource: string; alarmCancelled: boolean }>());
   const previousId = useRef('');
   const [removed, setRemoved] = useState(false);
   const [needsReview, setNeedsReview] = useState(false);
@@ -178,7 +180,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   }
 
   useEffect(() => {
-    const reset = () => { editSession.current++; owner.current = getToken(); drafts.current.clear(); dirty.current = false; previousId.current = ''; setStays([]); setHomeAddress(''); setPostalCode(''); setBusy(false); setQuery(''); setSelectedId(''); setHotelTimeZone(''); setApzDate(''); setAlarmChoice(undefined); setBreakfastPlan('unknown'); const settings = loadStayEditor(); setDisplayPreference(settings.timeZonePreference); setDefaultLead(settings.defaultLeadMinutes); setDefaultInput(String(settings.defaultLeadMinutes)); setDefaultWithoutBreakfast(settings.defaultWithoutBreakfastMinutes); setWithoutBreakfastInput(String(settings.defaultWithoutBreakfastMinutes)); setApzConfirmed(false); setApzSource('absent'); setAlarmCancelled(false); setDraft({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '', shareSameHotel: false }); };
+    const reset = () => { apzDateExplicit.current = false; editSession.current++; owner.current = getToken(); drafts.current.clear(); dirty.current = false; previousId.current = ''; setStays([]); setHomeAddress(''); setPostalCode(''); setBusy(false); setQuery(''); setSelectedId(''); setHotelTimeZone(''); setApzDate(''); setAlarmChoice(undefined); setBreakfastPlan('unknown'); const settings = loadStayEditor(); setDisplayPreference(settings.timeZonePreference); setDefaultLead(settings.defaultLeadMinutes); setDefaultInput(String(settings.defaultLeadMinutes)); setDefaultWithoutBreakfast(settings.defaultWithoutBreakfastMinutes); setWithoutBreakfastInput(String(settings.defaultWithoutBreakfastMinutes)); setApzConfirmed(false); setApzSource('absent'); setAlarmCancelled(false); setDraft({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '', shareSameHotel: false }); };
     window.addEventListener('crewcheck:auth-changed', reset); window.addEventListener('crewcheck:auth-expired', reset);
     const onStorage = (event: StorageEvent) => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) reset(); };
     window.addEventListener('storage', onStorage);
@@ -196,10 +198,11 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     if (previousId.current === selected.id && dirty.current) return;
     previousId.current = selected.id;
     const cached = drafts.current.get(selected.id);
-    if (cached) { setDraft(cached.draft); setManual(cached.manual); setHotelTimeZone(cached.timeZone); setAlarmChoice(cached.choice); setBreakfastPlan(cached.breakfastPlan); setApzDate(cached.apzDate); setNeedsReview(cached.signature !== signature); setApzConfirmed(cached.apzConfirmed && cached.signature === signature); setApzSource(cached.apzSource); setAlarmCancelled(cached.alarmCancelled); dirty.current = true; return; }
+    if (cached) { apzDateExplicit.current = cached.dateExplicit; setDraft(cached.draft); setManual(cached.manual); setHotelTimeZone(cached.timeZone); setAlarmChoice(cached.choice); setBreakfastPlan(cached.breakfastPlan); setApzDate(cached.apzDate); setNeedsReview(cached.signature !== signature); setApzConfirmed(cached.apzConfirmed && cached.signature === signature); setApzSource(cached.apzSource); setAlarmCancelled(cached.alarmCancelled); dirty.current = true; return; }
     const catalogue=readStayEditorCatalogHotel(selected.id);
     const persisted = loadStayEditor().stays[selected.id];
     if (persisted) {
+      apzDateExplicit.current = true;
       const changed = persisted.signature !== signature;
       setDraft(catalogue?{...persisted.draft,hotelName:catalogue.name,airport:catalogue.airport||persisted.draft.airport}:persisted.draft); setManual(!catalogue); setHotelTimeZone(persisted.timeZone); setApzDate(persisted.apzDate);
       setAlarmChoice(persisted.choice); setBreakfastPlan(persisted.breakfastPlan); setApzConfirmed(persisted.apzConfirmed && !changed && !catalogue); setApzSource(persisted.apzSource);
@@ -218,6 +221,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
       leadMinutes: saved?.leadMinutes == null ? '' : String(saved.leadMinutes), shareSameHotel: Boolean(saved?.shareSameHotel) };
     setDraft(initialDraft);
     const migrated = migrateLegacyStay(saved, { accountId: stayEditorAccount(), eventId: selected.id, signature, draft: initialDraft });
+    apzDateExplicit.current = false;
     setApzDate(date); setHotelTimeZone(airportTimeZone(airport)); setApzConfirmed(false); setApzSource(saved?.presentationTime ? 'legacy-unconfirmed' : 'absent'); setAlarmCancelled(false);
     setAlarmChoice(migrated?.choice);
     setBreakfastPlan('unknown');
@@ -225,10 +229,15 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   }, [selectedId, selected, stays, operational]);
 
   function selectProgram(id: string) {
-    if (selected && dirty.current) drafts.current.set(selected.id, { draft, manual, timeZone: hotelTimeZone, choice: alarmChoice, breakfastPlan, apzDate, signature: eventSignature.current, apzConfirmed, apzSource, alarmCancelled });
+    if (selected && dirty.current) drafts.current.set(selected.id, { draft, manual, timeZone: hotelTimeZone, choice: alarmChoice, breakfastPlan, apzDate, dateExplicit: apzDateExplicit.current, signature: eventSignature.current, apzConfirmed, apzSource, alarmCancelled });
     dirty.current = false; setNeedsReview(false); setSelectedId(id);
   }
   function discardEdits() { if (!selected) return; drafts.current.delete(selected.id); dirty.current = false; previousId.current = ''; setStays(items => [...items]); }
+  function inferDate(clock: string, zone = hotelTimeZone) {
+    if (selected?.kind !== 'stay' || apzDateExplicit.current) return;
+    const date = inferStayApzDate({ event: selected, events, clock, timeZone: zone, now: Date.now() });
+    if (date) setApzDate(date);
+  }
   const apzEpoch = selected?.kind === 'stay' && apzConfirmed ? stayLocalInstant(apzDate, draft.presentationTime, hotelTimeZone) : null;
   const displayZone = resolveStayDisplayZone(displayPreference, { localZone: hotelTimeZone, baseZone: baseTimeZone(getStoredUser()?.base) });
   const zoneReferenceInstant = apzEpoch === null ? selected?.canonical?.startDateTime || null : new Date(apzEpoch).toISOString();
@@ -362,9 +371,9 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
         <label>Hotel<input value={draft.hotelName} onChange={(event) => { setDraft({ ...draft, hotelName: event.target.value }); setManual(true); setApzConfirmed(false); }} placeholder="Hotel de pernoite ou contingência"/></label>
         <label>Número do quarto<input value={draft.room} onChange={(event) => setDraft({ ...draft, room: event.target.value })} placeholder="Opcional e protegido"/></label>
         <label>Aeroporto/local<input value={draft.airport} onChange={(event) => setDraft({ ...draft, airport: event.target.value.toUpperCase() })} placeholder="Ex.: FOR"/></label>
-        <label>{selected?.kind === 'stay' ? 'APZ no hotel (manual ou salva)' : 'Apresentação'}<input type="time" value={draft.presentationTime} onChange={(event) => { setDraft({ ...draft, presentationTime: event.target.value }); setApzConfirmed(false); setApzSource('manual'); }}/></label>
-        {selected?.kind === 'stay' && <><label>Data da APZ no hotel<input type="date" value={apzDate} onChange={event => { setApzDate(event.target.value); setApzConfirmed(false); }}/></label>
-        <IanaTimeZoneSelect label="Fuso do hotel" value={hotelTimeZone} instant={zoneReferenceInstant} onChange={zone => { setHotelTimeZone(zone); setApzConfirmed(false); }}/><p id="cc-stay-hall-reference">Para o despertador, informe a apresentação no hall do hotel. Decolagem, check-in e pickup não são essa referência.</p><label className="wide"><input type="checkbox" aria-describedby="cc-stay-hall-reference" checked={apzConfirmed} onChange={event => { setApzConfirmed(event.target.checked); if(event.target.checked) { setApzSource('manual'); setNeedsReview(false); } }}/> Confirmo esta data, horário e fuso como APZ no hotel</label><p>Origem da APZ: {apzSource === 'legacy-unconfirmed' ? 'horário salvo antigo; origem não confirmada' : apzSource === 'manual' ? 'informada/confirmada por você' : 'não informada'}. {apzConfirmed ? 'Confirmada.' : 'Confirmação necessária; não usamos escala ou pickup.'}</p></>}
+        <label>{selected?.kind === 'stay' ? 'APZ no hotel (manual ou salva)' : 'Apresentação'}<input type="time" value={draft.presentationTime} onChange={(event) => { setDraft({ ...draft, presentationTime: event.target.value }); inferDate(event.target.value); setApzConfirmed(false); setApzSource('manual'); }}/></label>
+        {selected?.kind === 'stay' && <><label>Data da APZ no hotel<input type="date" value={apzDate} onChange={event => { apzDateExplicit.current = true; setApzDate(event.target.value); setApzConfirmed(false); }}/></label>
+        <IanaTimeZoneSelect label="Fuso do hotel" value={hotelTimeZone} instant={zoneReferenceInstant} onChange={zone => { setHotelTimeZone(zone); inferDate(draft.presentationTime, zone); setApzConfirmed(false); }}/><p id="cc-stay-hall-reference">Para o despertador, informe a apresentação no hall do hotel. Decolagem, check-in e pickup não são essa referência.</p><label className="wide"><input type="checkbox" aria-describedby="cc-stay-hall-reference" checked={apzConfirmed} onChange={event => { setApzConfirmed(event.target.checked); if(event.target.checked) { setApzSource('manual'); setNeedsReview(false); } }}/> Confirmo esta data, horário e fuso como APZ no hotel</label><p>Origem da APZ: {apzSource === 'legacy-unconfirmed' ? 'horário salvo antigo; origem não confirmada' : apzSource === 'manual' ? 'informada/confirmada por você' : 'não informada'}. {apzConfirmed ? 'Confirmada.' : 'Confirmação necessária; não usamos escala ou pickup.'}</p></>}
 
         <label id="cc-stay-emergency-sharing"><input type="checkbox" checked={draft.shareSameHotel} onChange={(event) => setDraft({ ...draft, shareSameHotel: event.target.checked })}/> Autorizar colegas no mesmo hotel a me localizar em emergência</label><p>Esta autorização não muda ao escolher fuso. Para revogar a preferência, desmarque e salve o pernoite.</p>
       </div>
