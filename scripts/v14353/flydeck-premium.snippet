@@ -110,7 +110,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   return <><Brand onMenu={openMenu}/><main className="cc-flydeck-premium-v14353" data-flydeck-v14353="premium-briefing">
     <header className="cc-flydeck-topline">
       <div><small>FLYDECK</small><h1>Briefing operacional</h1></div>
-      <span className="cc-flydeck-live" aria-label="Hora local do aparelho; não indica atualização da fonte operacional"><i/> HORA LOCAL {flyDeckLiveClockV14353(nowMs)}</span>
+      <span className="cc-flydeck-live" aria-label={`Hora local do aparelho ${flyDeckLiveClockV14353(nowMs)}; não indica atualização da fonte operacional`}><i/> HORA LOCAL {flyDeckLiveClockV14353(nowMs)}</span>
     </header>
 
     <article className="cc-flydeck-briefing">
