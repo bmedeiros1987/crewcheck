@@ -3,7 +3,11 @@ on:
   pull_request:
     paths:
       - 'shared/financialReadModel.mjs'
+      - 'shared/financialSalaryDsr.mjs'
+      - 'shared/financialVacationTiming.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/payrollDsrEvidence.ts'
+      - 'scripts/fixtures/synthetic-dsr-payroll.mjs'
       - 'client/src/lib/privatePayrollExtraction.ts'
       - 'client/src/lib/financialPdfText.ts'
       - 'scripts/regression-private-payroll-*.mjs'
@@ -83,7 +87,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Verify sourced salary DSR and vacation deadlines (synthetic)
+        timeout-minutes: 2
+        run: |
+          node scripts/regression-financial-salary-dsr.mjs
+          node scripts/regression-financial-vacation-timing.mjs
       - run: npm ci
+      - run: node scripts/regression-financial-payroll-dsr-source.mjs
       - name: Private payroll counterproofs before preparation
         run: |
           node scripts/regression-private-payroll-extraction.mjs
@@ -175,6 +185,11 @@ jobs:
         run: |
           node scripts/regression-financial-privacy-preference.mjs
           node scripts/regression-financial-privacy-mask-browser.mjs
+      - name: Verify confirmed payroll importer produces DSR evidence (synthetic)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-payroll-dsr-importer-browser.mjs
       - name: Verify physical PDF and compiled free-day alerts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
