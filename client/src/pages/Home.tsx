@@ -1,3 +1,5 @@
+import { openStayProgramEditor as editOperationalStay } from '@/lib/stayEditorNavigation';
+import { readStayOperationalProjection, selectCurrentStayOperationalProjection } from '@/lib/stayOperationalProjection';
 import {resolveRegulationProgram,regulationProgramDay} from '@shared/regulationScenarioPrefill.mjs';
 import {cabinSalaryRateReference} from '@/lib/cabinSalaryRateReference';
 import ConciergeFinancialPreview from '@/components/finance/ConciergeFinancialPreview';
@@ -166,6 +168,7 @@ type ZeroView =
   | 'currency' | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
+  stayWakeup?: { plannedAt: string | null; hotelName: string; apzAt: string | null; timeZone: string };
   id: string;
   salaryClockKnown?: boolean;
   day: RosterDay;
@@ -4358,6 +4361,27 @@ async function postCrewCheckJson(url: string, payload: Record<string, unknown>):
   return authFetch<any>(url, { method: 'POST', body: JSON.stringify(payload), cache: 'no-store' });
 }
 
+function StayAwareWakeupView({event,events,roster}:{event:ZeroLeg;events:ZeroLeg[];roster:CrewRoster}) {
+  const [,refresh]=useState(0);
+  useEffect(()=>{
+    const update=()=>refresh(value=>value+1);
+    const names=['crewcheck:stay-editor-saved','crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired','storage'];
+    names.forEach(name=>window.addEventListener(name,update));
+    const clock=window.setInterval(update,30000);
+    return()=>{names.forEach(name=>window.removeEventListener(name,update));window.clearInterval(clock);};
+  },[]);
+  const selected=alertRosterOwned(roster)?selectCurrentStayOperationalProjection(events):null;
+  const projection=selected?.projection;
+  const reference=selected&&selected.state!=='missing'?{
+    plannedAt:projection?.isCurrent()&&projection.state==='calculated'?projection.calculation?.scheduledAt||null:null,
+    hotelName:projection?.isCurrent()?projection.hotelName:'',
+    apzAt:projection?.isCurrent()?projection.apzAt:null,
+    timeZone:projection?.isCurrent()?projection.record?.timeZone||'UTC':'UTC',
+  }:undefined;
+  // Preserve the flight/job identity. A changed reference never mutates a saved job.
+  return <><WakeupView event={reference?{...event,stayWakeup:reference}:event}/>{selected?.event&&<section className="cz-toolbox"><button onClick={()=>{if(alertRosterOwned(roster)&&projection?.isCurrent())editOperationalStay(selected.event);}}>Editar pernoite</button>{projection?.isCurrent()&&<details><summary>Detalhes do pernoite</summary><p>{projection.hotelName || 'Hotel a confirmar'}</p>{projection.room&&<p>Quarto {projection.room}</p>}</details>}</section>}</>;
+}
+
 function WakeupView({ event }: { event: ZeroLeg }) {
   const [lead, setLead] = useState(() => String(wakeupLeadMinutes()));
   const [channel, setChannel] = useState(() => wakeupChannel());
@@ -5410,7 +5434,10 @@ export default function Home() {
         const stay=events.find(item=>item.kind==='stay'&&(item.canonical?.id||item.id)===selected.contextId);
         const hotelReport=stay&&alertRosterOwned(bundle.roster)?savedStayEditorEvent(stay.id,stay):null;
         if(!watchSession.isCurrent()) { invalidateWatchSnapshot();return; }
-        const base = buildCrewCheckWatchSnapshot(events, event, null, now, hotelReport);
+        const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now):null;
+        const projectedEvents=localStay?.isCurrent()&&localStay.hotelName?events.map(item=>item===stay?{...item,hotel:localStay.hotelName}:item):events;
+        const projectedEvent=projectedEvents.find(item=>item.id===event.id)||event;
+        const base = buildCrewCheckWatchSnapshot(projectedEvents, projectedEvent, null, now, hotelReport);
         // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
         const nextFlightEvent = selectNextFlight(events);
         const gateInfo = nextFlightEvent ? resolveNextFlightGate({
@@ -5647,7 +5674,7 @@ export default function Home() {
     {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}
     {view === 'exports' && <ExportToolsView actions={actions}/>}
     {view === 'routine' && <RoutineView bundle={bundle}/>}
-    {view === 'wakeup' && <WakeupView event={event}/>}
+    {view === 'wakeup' && <StayAwareWakeupView event={event} events={events} roster={bundle.roster}/>}
     {view === 'hotels' && <HotelsView events={events}/>}
     {view === 'gyms' && <GymsView events={events}/>}
     {view === 'presentation' && <PresentationManagerView events={events}/>}

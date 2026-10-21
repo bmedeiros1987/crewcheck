@@ -8,7 +8,7 @@ import { baseTimeZone, validTimeZone } from '@shared/timezone-choice.mjs';
 import { airportTimeZone } from '@shared/airport-timezones.mjs';
 import { resolveStayDisplayZone, stayTimeZonePreference, type StayTimeZonePreference } from '@shared/stay-time-presentation.mjs';
 import { EventTimeZonePreference, IanaTimeZoneSelect } from '@/components/preferences/TimezoneChoice';
-import { readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';
+import { readStayEditorCatalogHotel, readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';
 import { orderStayDisplay } from '@/lib/stayDisplayOrder';
 import { stayLocalInstant, type StayAlarmChoice, type StayBreakfastPlan } from '@shared/stay-edit-plan.mjs';
 import StayHotelAlarmPreview from './StayHotelAlarmPreview';
@@ -197,12 +197,13 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     previousId.current = selected.id;
     const cached = drafts.current.get(selected.id);
     if (cached) { setDraft(cached.draft); setManual(cached.manual); setHotelTimeZone(cached.timeZone); setAlarmChoice(cached.choice); setBreakfastPlan(cached.breakfastPlan); setApzDate(cached.apzDate); setNeedsReview(cached.signature !== signature); setApzConfirmed(cached.apzConfirmed && cached.signature === signature); setApzSource(cached.apzSource); setAlarmCancelled(cached.alarmCancelled); dirty.current = true; return; }
+    const catalogue=readStayEditorCatalogHotel(selected.id);
     const persisted = loadStayEditor().stays[selected.id];
     if (persisted) {
       const changed = persisted.signature !== signature;
-      setDraft(persisted.draft); setManual(true); setHotelTimeZone(persisted.timeZone); setApzDate(persisted.apzDate);
-      setAlarmChoice(persisted.choice); setBreakfastPlan(persisted.breakfastPlan); setApzConfirmed(persisted.apzConfirmed && !changed); setApzSource(persisted.apzSource);
-      setAlarmCancelled(persisted.alarmState === 'cancelled'); setNeedsReview(changed); return;
+      setDraft(catalogue?{...persisted.draft,hotelName:catalogue.name,airport:catalogue.airport||persisted.draft.airport}:persisted.draft); setManual(!catalogue); setHotelTimeZone(persisted.timeZone); setApzDate(persisted.apzDate);
+      setAlarmChoice(persisted.choice); setBreakfastPlan(persisted.breakfastPlan); setApzConfirmed(persisted.apzConfirmed && !changed && !catalogue); setApzSource(persisted.apzSource);
+      setAlarmCancelled(persisted.alarmState === 'cancelled'); setNeedsReview(changed); if(catalogue)dirty.current=true; return;
     }
     const date = isoDay(selected.date || selected.canonical?.startDateTime);
     const direct = stays.filter(item => item.rosterEventId === selected.id);
@@ -210,7 +211,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     const legacy = stays.filter(item => !item.rosterEventId && String(item.stayDate || '').slice(0, 10) === date && item.airport === airport);
     const sameDay = operational.filter(item => item.kind === 'stay' && isoDay(item.date || item.canonical?.startDateTime) === date && (item.destination || item.origin) === airport);
     const saved = direct.length === 1 ? direct[0] : direct.length === 0 && legacy.length === 1 && sameDay.length <= 1 ? legacy[0] : null;
-    const initialDraft: StayDraft = { hotelName: saved?.hotelName || selected.hotel || '', airport: saved?.airport || airport, stayDate: date,
+    const initialDraft: StayDraft = { hotelName: catalogue?.name || saved?.hotelName || selected.hotel || '', airport: catalogue?.airport || saved?.airport || airport, stayDate: date,
       room: saved?.room || '',
       // PR991 guard: never promote roster stay/check-in/pickup to hotel APZ.
       presentationTime: saved?.presentationTime || (selected.kind !== 'stay' && selected.presentation && selected.presentation !== 'Conexão/Solo' ? selected.presentation : ''),
@@ -220,7 +221,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     setApzDate(date); setHotelTimeZone(airportTimeZone(airport)); setApzConfirmed(false); setApzSource(saved?.presentationTime ? 'legacy-unconfirmed' : 'absent'); setAlarmCancelled(false);
     setAlarmChoice(migrated?.choice);
     setBreakfastPlan('unknown');
-    setManual(false); dirty.current = false;
+    setManual(false); dirty.current = Boolean(catalogue);
   }, [selectedId, selected, stays, operational]);
 
   function selectProgram(id: string) {
