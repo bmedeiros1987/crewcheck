@@ -225,7 +225,7 @@ unverified accounts all fail closed. #1150 issuance/logout/schema activation
 retains its own review and explicit production gates.
 
 Consent uses the existing encrypted installation and state tables under the
-owner/profile mutex, current account and session locks. It has its own CAS topic
+owner/profile mutex, current account and session locks. It requires the confirmed expected installation revision as well as its own CAS topic
 revision and copies the epoch from that locked server session. The response
 omits email/session identifier and never confirms a device revocation ACK.
 A server tombstone alone cannot dismiss an in-transit native/web notification.
@@ -253,3 +253,5 @@ issuance/logout/schema composition; actual trusted operational cache/history
 reader; phone host/FCM registration and correlated local revocation ACK; provider
 configuration presence audit, then explicit activation and physical validation.
 None is replaced by a JS epoch or by these fixtures.
+
+Review counterproof: a captured installation-v1 confirmation is rejected after the actual existing registry rotates to v2; only a fresh v2 confirmation can write topic consent. The disposable SQL test executes mutateInstallation itself, not a fake registry callback.

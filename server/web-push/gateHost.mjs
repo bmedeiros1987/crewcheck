@@ -54,12 +54,12 @@ export async function changeGateConsent(db, identity, input, { enabled = false, 
   if (enabled !== true) return { status: 'disabled', received: null };
   const p = principal(identity, clock());
   if (!p || !id(input?.installationId) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.expectedRevision >= Number.MAX_SAFE_INTEGER
-    || typeof input.enabled !== 'boolean' || input.enabled && input.confirmed !== true
+    || !Number.isSafeInteger(input.expectedInstallationRevision) || input.expectedInstallationRevision < 1 || typeof input.enabled !== 'boolean' || input.enabled && input.confirmed !== true
     || ['authorityEpoch', 'ownerId', 'sessionId'].some(key => Object.hasOwn(input, key))) throw denied();
   const scope = { ...p, installationId: input.installationId };
   return transaction(db, async c => {
     const installed = await installation(c, scope), authority = await currentAuthority(c, scope, clock);
-    if (!installed || !authority || authority.expiresAt > p.expiresAt) throw denied();
+    if (!installed || installed.binding.revision !== input.expectedInstallationRevision || !authority || authority.expiresAt > p.expiresAt) throw denied();
     const key = gateConsentKey(scope.ownerId, scope.installationId), previous = await state(c, key);
     if (previous && (previous.email !== scope.email || previous.ownerId !== scope.ownerId || previous.installationId !== scope.installationId)) throw denied();
     if ((previous?.revision || 0) !== input.expectedRevision) throw denied();
