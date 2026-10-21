@@ -1,3 +1,4 @@
+import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 // Actual prepared functions + real canonical constructor. Synthetic storage/notices only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 const root=process.env.NEXT_FLIGHT_GATE_ROOT||process.cwd();
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'next-gate-prepared-'));
 try {
+  const radarAdmission=await loadRadarReadAdmission(root);
   const entry=path.join(temp,'entry.ts');
   fs.writeFileSync(entry,`export * from '${root}/client/src/lib/nextFlightGate.ts';export * from '${root}/client/src/lib/navigationContext.ts';export {buildCanonicalRosterEvents} from '${root}/client/src/lib/canonicalRoster.ts';`);
   await build({entryPoints:[entry],outfile:path.join(temp,'bundle.mjs'),bundle:true,format:'esm',platform:'node',alias:{'@':root+'/client/src'},logLevel:'silent'});
@@ -50,7 +52,7 @@ try {
   const positive={ok:true,flight:event.flightNumber,gate:'7',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:canonical.startDateTime,departure:canonical.startDateTime,updatedAt:now-60_000,operationalEvidence:{gate:{version:1,value:'7',sourceObservedAt:new Date(now-60000).toISOString(),provenance:'synthetic-prepared-field-proof'}}};
   function savedNotice(payload,manual=null,previous=positive){
     const notices=[],writes=[];
-    const context=vm.createContext({Date:FixedDate,storage:{set:(...args)=>writes.push(args)},readRadarSnapshot:()=>previous,radarSnapshotKey:m.radarSnapshotStorageKey,flightOperationalDate:m.flightOperationalDate,window:{dispatchEvent(){}},CustomEvent:class{},localStorage:{},readManualGate:()=>manual,manualGateAccountKey:()=> 'synthetic',getStoredUser:()=>({id:'SYNTHETIC'}),normalizeBoardingGate:m.normalizeBoardingGate,publishCrewCheckNotice:n=>notices.push(n),reconcileCrewCheckPulse(){},manualGateNoticeScope:()=>"synthetic-scope",retainLatestGateEvidence:m.retainLatestGateEvidence,nextGateUpdateWatermark:m.nextGateUpdateWatermark,gateChangeAlertAllowed:epoch=>m.gateChangeAlertAllowed(epoch,now),resolveNextFlightGate:input=>m.resolveNextFlightGate({...input,now}),eventStartDateTime:e=>new Date(e.canonical.startDateTime)});
+    const context=vm.createContext({...radarAdmission,Date:FixedDate,storage:{set:(...args)=>writes.push(args)},readRadarSnapshot:()=>previous,radarSnapshotKey:m.radarSnapshotStorageKey,flightOperationalDate:m.flightOperationalDate,window:{dispatchEvent(){}},CustomEvent:class{},localStorage:{},readManualGate:()=>manual,manualGateAccountKey:()=> 'synthetic',getStoredUser:()=>({id:'SYNTHETIC'}),normalizeBoardingGate:m.normalizeBoardingGate,publishCrewCheckNotice:n=>notices.push(n),reconcileCrewCheckPulse(){},manualGateNoticeScope:()=>"synthetic-scope",retainLatestGateEvidence:m.retainLatestGateEvidence,nextGateUpdateWatermark:m.nextGateUpdateWatermark,gateChangeAlertAllowed:epoch=>m.gateChangeAlertAllowed(epoch,now),resolveNextFlightGate:input=>m.resolveNextFlightGate({...input,now}),eventStartDateTime:e=>new Date(e.canonical.startDateTime)});
     vm.runInContext(fn(home,'radarEventOperationalDate')+'\n'+fn(home,'confirmedRadarGate')+'\n'+fn(home,'saveRadarSnapshot'),context);
     const snapshot=context.saveRadarSnapshot(event,payload);return {notices,writes,snapshot,decision:m.resolveNextFlightGate({event,radar:snapshot,now})};
   }

@@ -3,7 +3,8 @@ const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
 const marker = '// stay-editor-context-v2';
 if (!source.includes(marker)) {
-  source = `${marker}\nimport { openStayProgramEditor, consumeStayEditorReturn, readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin, clearStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';\nimport { savedStayEditorEvent } from '@/lib/stayEditorStore';\n` + source;
+  const storeImport = /import\s*\{[^}]*\bsavedStayEditorEvent\b[^}]*\}\s*from\s*['"]@\/lib\/stayEditorStore['"]/.test(source) ? '' : "import { savedStayEditorEvent } from '@/lib/stayEditorStore';\n";
+  source = `${marker}\n${storeImport}import { openStayProgramEditor, consumeStayEditorReturn, readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin, clearStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';\n` + source;
   const start = source.indexOf('function HotelsView('), end = source.indexOf('\nfunction ', start + 10);
   if (start < 0 || end < 0) throw new Error('Stay editor: HotelsView boundary unavailable');
   let block = source.slice(start, end);
@@ -25,11 +26,15 @@ if (!source.includes(marker)) {
     card?.scrollIntoView({ block: 'center' }); card?.focus({ preventScroll: true });
   }, [selectedEventId]);
   function savedFor(event: ZeroLeg) {
-    const local = savedStayEditorEvent(event.id, event);
+    const operational = readStayOperationalProjection(event);
+    const local = operational.isCurrent() && operational.record ? {...operational.record,apzConfirmed:Boolean(operational.apzAt)} : null;
     if (local) return { ...local.draft, localEditorOnly: true, presentationTime: local.apzConfirmed ? local.draft.presentationTime : '', leadMinutes: local.choice?.mode === 'relative' ? local.choice.leadMinutes : undefined };`);
   block = block.replace("if (selectedEventId) setSelectedEventId('');", '// Retain removed explicit identity.');
   block = block.replace("return saved.find((item) =>", "const legacy = saved.find((item) =>").replace("|| saved.find((item) => String(item.stayDate || '').slice(0, 10) === date);", "|| saved.find((item) => String(item.stayDate || '').slice(0, 10) === date);\n    return legacy ? { ...legacy, presentationTime: '' } : null;");
+  block=block.replace("|| saved.find((item) => String(item.stayDate || '').slice(0, 10) === date);", ";");
   block = block.replace("current?.presentationTime || safe(event?.presentation, '')", "current?.presentationTime || ''");
+  replace('  function openEditor(event = selectedEvent, hotel?: CrewHotelCatalogEntry) {', `  function openEditor(event = selectedEvent, hotel?: CrewHotelCatalogEntry) {
+    if(event?.kind==='stay') { openStayProgramEditor(event,hotel); return; }`);
   block = block.replace("onClick={() => openStaySurface(event, 'wakeup')}", "onClick={() => openStayProgramEditor(event)}");
   replace('onClick={() => openEditor(event)}><Save/> Editar pernoite', 'onClick={() => openStayProgramEditor(event)}><Save/> Editar pernoite e despertador');
   replace('key={`hotel-${event.id}`}><div className="cz-roster-main">', `key={\`hotel-\${event.id}\`} tabIndex={-1} data-stay-editor-selected={event.id === selectedEventId}><div className="cz-roster-main" role="button" tabIndex={0} aria-label={\`Editar pernoite \${event.id}\`} onClick={() => openStayProgramEditor(event)} onKeyDown={key => { if (key.key === 'Enter' || key.key === ' ') { key.preventDefault(); openStayProgramEditor(event); } }}>`);

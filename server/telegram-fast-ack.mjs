@@ -10,7 +10,7 @@ import { sendTelegram, callTelegram } from './v139/delivery.mjs';
 import { handleFreeDayHeld } from './free-day-held.mjs';
 import { handleVoluntarySources } from './free-day-sources.mjs';
 import { handleSourceQueue } from './free-day-source-queue.mjs';
-import { safeScheduleJob, safeCancelJob, dispatchClaimedJob } from './notification-job-safety.mjs';
+import { safeScheduleJob, safeCancelJob, dispatchClaimedJob, phoneScheduleCapability } from './notification-job-safety.mjs';
 import { buildInfobipTtsRequest, infobipPublicStatus } from './v1396/infobip.mjs';
 
 const originalCreateServer = http.createServer.bind(http);
@@ -434,7 +434,7 @@ async function listJobs(req, res) {
     scheduledAt: scheduledEpoch == null ? null : new Date(Number(scheduledEpoch)).toISOString(),
     sentAt: sentEpoch == null ? null : new Date(Number(sentEpoch)).toISOString(),
   }));
-  return sendJson(res, 200, { ok: true, jobs, readiness: { telegramConfigured, telegramLinked, remoteAndroidPush: false, webPush: false } });
+  return sendJson(res, 200, { ok: true, jobs, readiness: { telegramConfigured, telegramLinked, phoneCall: phoneScheduleCapability(), remoteAndroidPush: false, webPush: false } });
 }
 
 async function cancelJob(req, res) {

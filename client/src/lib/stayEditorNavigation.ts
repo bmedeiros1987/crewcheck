@@ -2,7 +2,7 @@ import { getStoredUser, getToken } from '@/lib/authClient';
 import { peekPendingNavigationContext, setPendingNavigationContext } from '@/lib/navigationContext';
 import { toast } from 'sonner';
 
-let binding: { token: string; accountId: string; eventId: string } | null = null;
+let binding: { token: string; accountId: string; eventId: string; catalogHotel?: {name:string;airport:string} } | null = null;
 function account() { return getToken() ? getStoredUser()?.id || null : null; }
 function originKey() { const id = account(); return id ? `crewcheck_stay_editor_origin_v1:${encodeURIComponent(id)}` : null; }
 
@@ -19,12 +19,12 @@ export function clearStoredStayEditorOrigin() {
 }
 
 /** Called only by an explicit stay tap. No hotel/room/APZ values travel in navigation. */
-export function openStayProgramEditor(event: { id: string; kind?: string; date?: Date; destination?: string; origin?: string }) {
+export function openStayProgramEditor(event: { id: string; kind?: string; date?: Date; destination?: string; origin?: string }, catalogHotel?: {name:string;airport?:string}) {
   const token = getToken(), accountId = account(), key = originKey();
   if (!token || !accountId || !key || event.kind !== 'stay' || !event.id) return false;
   try { sessionStorage.setItem(key, 'hotels'); }
   catch { toast.error('Não foi possível manter o contexto deste editor. Reabra pela lista de pernoites.'); return false; }
-  binding = { token, accountId, eventId: event.id };
+  binding = { token, accountId, eventId: event.id, ...(catalogHotel?.name?.trim()?{catalogHotel:{name:catalogHotel.name.trim(),airport:catalogHotel.airport||''}}:{}) };
   setPendingNavigationContext({ sourceView: 'hotels', targetView: 'presentation', stayId: event.id,
     programId: event.id, dateEpochMs: event.date?.getTime(), airportCode: event.destination || event.origin,
     returnView: 'hotels', returnLabel: 'Voltar ao pernoite', policy: 'persistent-until-return' });
@@ -55,4 +55,10 @@ export function consumeStayEditorReturn(): string | null {
   const id = binding.eventId;
   setPendingNavigationContext(null); binding = null;
   return id;
+}
+
+/** Ephemeral catalogue choice, bound to the explicit editor session; no APZ proof. */
+export function readStayEditorCatalogHotel(eventId:string) {
+  if(readStayEditorIntent()!==eventId || !binding?.catalogHotel)return null;
+  return {...binding.catalogHotel};
 }

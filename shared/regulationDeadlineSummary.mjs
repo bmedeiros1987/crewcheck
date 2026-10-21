@@ -1,4 +1,5 @@
 import {explicitInstant} from './regulationTemporalScenario.mjs';
+import {regulationOperationalInstant} from './regulationOperationalArrival.mjs';
 const integer=(value,max)=>typeof value==='string'&&/^\d+$/.test(value)&&Number(value)<=max?Number(value):null;
 // Presentation-only projection of a reviewed reference, never a new legal engine.
 // Cut deadline derives from DUTY END, never from a scheduled arrival or flight cap.
@@ -28,7 +29,7 @@ export function regulationDeadlineSummary(form,result,{lastActivity='unknown',ha
  if(lastActivity!=='operating')cutMissing.push('Última etapa operada e deslocamentos posteriores');
  if(limit!==null&&presentation!==null&&post!==null&&tasks!==null&&limit-(post+tasks)*60000<presentation)cutMissing.push('Pós-voo e tarefas incompatíveis com a janela');
  const engineStopLimit=normalDutyEnd&&!cutMissing.length?new Date(limit-(post+tasks)*60000).toISOString():null;
- const projected=explicitInstant(result?.scenario?.dutyEnd?.replace(/\.000Z$/,'Z'));
+ const projected=regulationOperationalInstant(result?.scenario?.dutyEnd);
  const projectionValid=projected!==null&&presentation!==null&&projected>=presentation&&tasks!==null;
  const marginMinutes=normalDutyEnd&&projectionValid?(limit-projected)/60000:null;
  return {normalDutyEnd,engineStopLimit,marginMinutes,marginMissing:!projectionValid?[...new Set([...(result?.missing||[]),...(projected===null?['Encerramento previsto']:[]),...(tasks===null?['Tarefas posteriores, inclusive zero']:[]),...(projected!==null&&presentation!==null&&projected<presentation?['Encerramento posterior à apresentação']:[])])]:[],projectedDutyEnd:projected===null?null:new Date(projected).toISOString(),missing:[...new Set(missing)],cutMissing,authorization:'not_assessed'};

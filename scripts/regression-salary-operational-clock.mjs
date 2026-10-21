@@ -1,5 +1,10 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
+import os from 'node:os';import path from 'node:path';import {createRequire} from 'node:module';import {build} from 'esbuild';
+const depDir=fs.mkdtempSync(path.join(os.tmpdir(),'salary-clock-deps-')),depFile=path.join(depDir,'deps.cjs');
+await build({stdin:{contents:`export * from './client/src/lib/salaryDsrConsumer';export {salaryDisplaySummary} from './client/src/lib/salaryDisplayBasis';export {captureAuthSession} from './client/src/lib/authClient';export {financialRateOwner,confirmedPayrollDsrContext,confirmedRateAt} from './client/src/lib/financialStatementLearning';export {readMonthlyFinancialSettings} from './client/src/lib/financialMonthlySettings';export {rosterFingerprint} from './client/src/lib/rosterComparison';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:depFile});
+const syntheticStorage=new Map([['crewcheck_auth_token','synthetic-clock-token'],['crewcheck_auth_user',JSON.stringify({id:'synthetic-clock-owner'})]]);globalThis.localStorage={getItem:key=>syntheticStorage.get(key)??null,setItem:(key,value)=>syntheticStorage.set(key,value),removeItem:key=>syntheticStorage.delete(key)};
+const dependencies=createRequire(import.meta.url)(depFile);
 import assert from 'node:assert/strict';
 import ts from 'typescript';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
@@ -7,10 +12,10 @@ import { loadClientModules } from './lib/ts-module-harness.mjs';
 const modules=loadClientModules({files:['client/src/lib/salaryActivityEvidence.ts','client/src/lib/aimsParser.ts','client/src/lib/canonicalRoster.ts','client/src/lib/rosterDisplayDate.ts','client/src/lib/financialIntervalEvidence.ts','client/src/lib/compensationPolicy.ts','client/src/lib/financialJourneyGrouping.ts','client/src/lib/financialForecastPeriods.ts','client/src/lib/financialAmounts.ts'],prefix:'independent-extra-financial-'});
 try {
  const parser=modules.load('aimsParser'),canonical=modules.load('canonicalRoster');
- const names=['buildLegs','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','flightWorkType','financialEventCode','financialFlightRule','durationHours','nightHoursInsideWindow','isSundayOrConfiguredHoliday','calculateSalary','calculatePerDiem','moneyBRL'];
+ const names=['buildLegs','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','flightWorkType','financialEventCode','financialFlightRule','durationHours','nightHoursInsideWindow','isSundayOrConfiguredHoliday','calculateSalary','calculatePerDiem','moneyBRL','rosterFinancialDate'];
  const home=ts.createSourceFile('Home.tsx',fs.readFileSync('client/src/pages/Home.tsx','utf8'),99,true,4);
  const functions=home.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));assert.equal(functions.length,names.length);
- const context=vm.createContext({...modules.load('salaryActivityEvidence'),console,Date,Intl,...canonical,...modules.load('rosterDisplayDate'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialJourneyGrouping'),...modules.load('financialForecastPeriods'),...modules.load('financialAmounts'),
+ const context=vm.createContext({...dependencies,...modules.load('salaryActivityEvidence'),console,Date,Intl,...canonical,...modules.load('rosterDisplayDate'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialJourneyGrouping'),...modules.load('financialForecastPeriods'),...modules.load('financialAmounts'),
    storage:{get:(_k,f)=>f},pad2:n=>String(n).padStart(2,'0'),safe:(v,f='—')=>String(v??'').trim()||f,city:v=>v,normalizedAirlineCode:()=> 'LA',airlineNameFor:()=> 'SYNTHETIC',addMinutesToTime:()=>'',applyPresentationManagement:x=>x,
    dateChip:d=>d.toISOString().slice(0,10),moneyCurrency:(v,c)=>`${c} ${v}`,
    loadActCompensationConfig:()=>({basePay:1000,fixedAdditions:0,dayKmMetric:1,nightKmMetric:2,chiefPerSector:0,instructorPerSector:0,reserveHourMetric:1,standbyHourMetric:1,inssDeduction:0,irrfDeduction:0,otherDeductions:0,fgtsRate:0,configured:true,source:'SYNTHETIC NOT A TARIFF'}),
@@ -43,7 +48,7 @@ try {
      assert.equal(row.dayKm,expectedDay,name);assert.equal(row.nightKm,expectedPremium,name);
      assert.equal(row.production,expectedProduction,name);assert.equal(row.total,expectedProduction,name);
      assert.equal(row.dayKm+row.nightKm,row.km,'tariff buckets partition distance once');
-     assert.equal(result.gross,1000+expectedProduction,'metadata adds no earnings');
+     assert.ok(Number.isNaN(result.gross),'observed flight never proves complete variable inventory');assert.equal(result.production,expectedProduction,'metadata preserves observed earnings');
      assert.equal(row.distanceBasis,origin==='ZZZ'?'unavailable':'geographic_estimate');
      assert.equal(row.confirmedRemunerableKm,null,'neither coordinates nor tariff prove remunerable KM');
      assert.equal(row.kmGrouping,'base_and_premium_tariff');
@@ -91,12 +96,12 @@ try {
    const clockFlight=(iso,start,end,zone='America/Sao_Paulo')=>({id:'CAL-SYN',kind:'flight',flightNumber:'CAL9000',origin:'BSB',destination:'GRU',date:new Date(iso+'T12:00:00-03:00'),day:{date:iso.split('-').reverse().join('/')},leg:{workType:'OP'},operationalTimeZone:zone,canonical:{id:'CAL-SYN',date:iso,startDateTime:start,endDateTime:end}});
    const payrollRoster={year:2032,month:2,days:[{date:'02/02/2032'}]};
    const payroll=(event,r=payrollRoster)=>context.subject.calculateSalary([event],r);
-   assert.equal(payroll(clockFlight('2032-02-02','2032-02-02T12:30:00-03:00','2032-02-02T13:30:00-03:00')).gross,1200,'holiday premium preserves original rate');
+   assert.equal(payroll(clockFlight('2032-02-02','2032-02-02T12:30:00-03:00','2032-02-02T13:30:00-03:00')).production,200,'holiday premium preserves original rate');
    context.storage=savedStorage;
-   assert.equal(payroll(clockFlight('2032-02-01','2032-02-01T12:30:00-03:00','2032-02-01T13:30:00-03:00')).gross,1200,'Sunday premium preserves original rate');
-   assert.equal(payroll(clockFlight('2032-02-02','2032-02-02T12:30:00-03:00','2032-02-02T13:30:00-03:00')).gross,1100,'regular day remains regular rate');
+   assert.equal(payroll(clockFlight('2032-02-01','2032-02-01T12:30:00-03:00','2032-02-01T13:30:00-03:00')).production,200,'Sunday premium preserves original rate');
+   assert.equal(payroll(clockFlight('2032-02-02','2032-02-02T12:30:00-03:00','2032-02-02T13:30:00-03:00')).production,100,'regular day remains regular rate');
    const crossing=clockFlight('2032-01-31','2032-01-31T23:30:00-03:00','2032-02-01T01:30:00-03:00');
-   const january=payroll(crossing,{...payrollRoster,month:1});assert.equal(january.gross,1200);assert.equal(january.rows[0].iso,'2032-01-31');assert.equal(payroll(crossing).rows.length,0,'night interpretation does not move nominal competence');
+   const january=payroll(crossing,{...payrollRoster,month:1});assert.equal(january.production,200);assert.equal(january.rows[0].iso,'2032-01-31');assert.equal(payroll(crossing).rows.length,0,'night interpretation does not move nominal competence');
    for(const [start,end,zone] of [['2032-02-02T12:30:00','2032-02-02T13:30:00','America/Sao_Paulo'],['','2032-02-02T13:30:00Z','America/Sao_Paulo'],['2032-02-02T12:30:00Z','2032-02-02T13:30:00Z',null],['2032-02-02T12:30:00Z','2032-02-02T13:30:00Z','Invalid/Zone']]){
      const invalid=payroll(clockFlight('2032-02-02',start,end,zone));assert.equal(invalid.rows[0].timeKnown,false);assert.ok(Number.isNaN(invalid.gross),'unproven timing cannot become regular/day production');
    }
@@ -149,13 +154,13 @@ try {
    assert.match(compareContext.labels[0],/Não calculável/);assert.equal(compareContext.labels[1],'Comparação financeira pendente');assert.equal(compareContext.labels[2],'—');assert.doesNotMatch(compareContext.labels.join(' '),/Sem redução|R\$ 0/);
    const validCompareContext=vm.createContext({useMemo:f=>f(),planned:{roster:'before'},bundle:{roster:'after'},comparison:{summary:{periodMatches:true}},financeSnapshot:()=>({salary:validSalary,perdiem:{nativeSummary:{}}}),nativeForecastDelta:()=>null,moneyBRL:context.subject.moneyBRL});
    vm.runInContext(ts.transpileModule(compareStatements.join('\n')+'\nglobalThis.financial=financial;globalThis.labels=['+compareExpressions.join(',')+'];',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,validCompareContext);
-   assert.equal(validCompareContext.financial.salaryReady,true);assert.equal(validCompareContext.financial.variableDelta,0);assert.equal(validCompareContext.labels[1],'Sem redução detectada','complete unchanged amounts retain the existing valid claim');
+   assert.equal(validCompareContext.financial.salaryReady,false);assert.equal(validCompareContext.financial.variableDelta,null);assert.equal(validCompareContext.labels[1],'Comparação financeira pendente','complete observed clocks still do not prove exhaustive category inventory');
    assert.equal(context.subject.moneyBRL(NaN),'Não calculável');assert.equal(context.subject.moneyBRL(null),'Não calculável');assert.match(context.subject.moneyBRL(0),/^R\$ 0/,'known zero remains valid');
    const previousRoles=events.map(e=>e.kind==='flight'?{...e,leg:{...e.leg,workType:['LA9001','LA9012'].includes(e.flightNumber)?'PS':'OP'}}:e);
    const beforeRoleCorrection=context.subject.calculateSalary(previousRoles,roster);
    const withoutRaw={...roster,days:roster.days.map(d=>({...d,rawText:''}))};
    const control=context.subject.calculateSalary(context.subject.buildLegs(withoutRaw),withoutRaw);
-   assert.equal(salary.gross,fixture.expectedCorrectedGross);
+   assert.ok(Number.isNaN(salary.gross),'known rows do not imply complete inventory');assert.equal(salary.production,fixture.expectedCorrectedGross-1000);
    assert.deepEqual(Array.from(salary.rows,r=>r.production),fixture.expectedCorrectedProduction);
    assert.equal(salary.nightHours,0);
    assert.ok(salary.rows.every(r=>r.timeKnown));
@@ -171,4 +176,4 @@ try {
  }
  fs.mkdirSync('artifacts/salary-operational-clock',{recursive:true});fs.writeFileSync('artifacts/salary-operational-clock/report.json',JSON.stringify({synthetic:true,outputs,nightBoundaryCasesPerTimezone:10,invalidCasesPerTimezone:7,calendarCasesPerTimezone:5,rawClockCounterproofsPerTimezone:3,mixedConsumersPerTimezone:4},null,2));
  console.log('PASS exact3900 salary/parser fixture, OP/PS/dedup/per-diem invariants, night/calendar boundaries and ambiguous/missing inputs across3device timezones');
-} finally {modules.cleanup();}
+} finally {modules.cleanup();fs.rmSync(depDir,{recursive:true,force:true});}

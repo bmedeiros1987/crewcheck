@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ownerPerDiemReview } from '@/lib/ownerPerDiemReview';
 import { financialRateOwner, financialRateSession, mergeConfirmedRates, readConfirmedFinancialRates, saveConfirmedFinancialRates, type LearnedRate } from '@/lib/financialStatementLearning';
-import { useFinancialPrivacy } from './FinancialPrivacy';
+import { useFinancialPrivacy, hiddenValue } from './FinancialPrivacy';
 import { readFinancialSetting } from '@/lib/financialSettingStore';
 
 export default function OwnerPerDiemConfirmation({ onSaved }: { onSaved?: () => void }) {
@@ -29,7 +29,7 @@ export default function OwnerPerDiemConfirmation({ onSaved }: { onSaved?: () => 
     <p>Aplicação somente nesta conta e no mês escolhido. A tarifa de táxi não comprova elegibilidade, corrida ou pagamento.</p>
     <fieldset disabled={!!review}>
       <label>Mês de vigência <input type="month" value={month} onChange={e => setMonth(e.target.value)}/></label>
-      <label>Refeição integral (BRL) <input inputMode="decimal" value={meal} onChange={e => setMeal(e.target.value)}/></label>
+      <label>Refeição integral (BRL) <input inputMode="decimal" disabled={privacy.hidden} placeholder={privacy.hidden ? hiddenValue : undefined} value={privacy.hidden ? '' : meal} onChange={e => setMeal(e.target.value)}/></label>
       <label>Referência da confirmação <input value={reference} onChange={e => setReference(e.target.value)}/></label>
       <label><input type="checkbox" checked={breakfastQuarter} onChange={e => setBreakfast(e.target.checked)}/>Confirmo café a 25% da refeição integral.</label>
       <label><input type="checkbox" checked={taxiQuarter} onChange={e => setTaxi(e.target.checked)}/>Confirmo tarifa de táxi a 25%, com elegibilidade calculada separadamente.</label>

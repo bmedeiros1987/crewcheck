@@ -3,7 +3,13 @@ on:
   pull_request:
     paths:
       - 'shared/financialReadModel.mjs'
+      - 'shared/financialSalaryDsr.mjs'
+      - 'shared/financialVacationTiming.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/salaryDsrConsumer.ts'
+      - 'scripts/regression-salary-dsr-*'
+      - 'client/src/lib/payrollDsrEvidence.ts'
+      - 'scripts/fixtures/synthetic-dsr-payroll.mjs'
       - 'client/src/lib/privatePayrollExtraction.ts'
       - 'client/src/lib/financialPdfText.ts'
       - 'scripts/regression-private-payroll-*.mjs'
@@ -22,7 +28,9 @@ on:
       - 'scripts/p0-623-regulatory-history-carry-in-final/**'
       - 'client/src/lib/financialPayrollPeriods.ts'
       - 'client/src/lib/financialSettingStore.ts'
+      - 'client/src/lib/financialPrivacyPreference.ts'
       - 'client/src/lib/freeDay*.ts'
+      - 'client/src/lib/useFreeDayPostponementReview.ts'
       - 'client/src/components/FreeDayPostponementAlerts.tsx'
       - 'client/src/components/FreeDayReviewPending.tsx'
       - 'scripts/regression-free-day-pending-browser.cjs'
@@ -49,6 +57,10 @@ on:
       - 'server.mjs'
       - 'client/src/styles/per-diem-content.css'
       - 'client/src/components/finance/**'
+      - 'client/src/components/v1391/PublicationChangeDetail.tsx'
+      - 'client/src/lib/rosterPublication*.ts'
+      - 'scripts/regression-financial-changes-browser.mjs'
+      - 'scripts/regression-financial-changes-home-compiled.mjs'
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/payrollPaymentComposition.ts'
@@ -82,7 +94,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Verify sourced salary DSR and vacation deadlines (synthetic)
+        timeout-minutes: 2
+        run: |
+          node scripts/regression-financial-salary-dsr.mjs
+          node scripts/regression-financial-vacation-timing.mjs
       - run: npm ci
+      - run: node scripts/regression-financial-payroll-dsr-source.mjs
       - name: Private payroll counterproofs before preparation
         run: |
           node scripts/regression-private-payroll-extraction.mjs
@@ -167,6 +185,25 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/financial-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify fixed financial mask and account preference (synthetic)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-financial-privacy-preference.mjs
+          node scripts/regression-financial-privacy-mask-browser.mjs
+      - name: Verify local salary DSR consumer and known subtotals (synthetic)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-salary-dsr-consumer.mjs
+          node scripts/regression-salary-dsr-home-browser.cjs
+      - name: Verify confirmed payroll importer produces DSR evidence (synthetic)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-payroll-dsr-importer-browser.mjs
       - name: Verify physical PDF and compiled free-day alerts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
@@ -178,6 +215,7 @@ jobs:
           node scripts/regression-free-day-simulated-worker-browser.mjs
           node scripts/regression-free-day-observational-get-browser.mjs
           node scripts/regression-free-day-browser.cjs
+          node scripts/regression-free-day-shared-review-browser.mjs
       - name: Save synthetic free-day alert evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -204,6 +242,13 @@ jobs:
           node scripts/regression-aims-duty-source-browser.mjs
           node scripts/regression-aims-activity-financial-chain.mjs
           AIMS_DUTY_SOURCE_REPORT=artifacts/aims-duty-source/report.json node scripts/regression-canonical-duty-home-browser.cjs
+      - name: Verify compact changes with isolated synthetic browser fixtures
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-financial-changes-browser.mjs
+          node scripts/regression-financial-changes-home-compiled.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
         timeout-minutes: 10
         env:

@@ -9,6 +9,20 @@ on:
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
       - 'shared/regulationDeadlineSummary.mjs'
+      - 'shared/regulationOperationalArrival.mjs'
+      - 'client/src/lib/authClient.ts'
+      - 'client/src/lib/operationalRadarAdmission.ts'
+      - 'client/src/lib/watchContext.ts'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'scripts/stay-editor/apply.mjs'
+      - 'server/cirium-flight-adapter.mjs'
+      - 'server/cirium-radar-provider.mjs'
+      - 'server/cirium-radar-injection.mjs'
+      - 'scripts/regression-home-operational-admission-browser.mjs'
+      - 'scripts/regression-regulation-operational-arrival*.mjs'
+      - 'scripts/regression-regulation-arrival-provider-projection.mjs'
+      - 'scripts/regression-cirium-arrival-milestones.mjs'
+      - 'scripts/regression-watch-overnight.mjs'
       - 'scripts/regression-regulation-deadline-*.mjs'
       - 'scripts/regression-regulation-review-gates*.mjs'
       - 'shared/regulationScenarioPrefill.mjs'
@@ -18,6 +32,14 @@ on:
       - 'scripts/regression-canonical-journey-label.mjs'
       - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationAircraftEvidence.ts'
+      - 'client/src/lib/useRegulationOperationalArrival.ts'
+      - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-native-composition-browser.mjs'
+      - 'scripts/regression-regulation-selected-source-browser.mjs'
+      - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-window-selection.mjs'
@@ -44,6 +66,20 @@ on:
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
       - 'shared/regulationDeadlineSummary.mjs'
+      - 'shared/regulationOperationalArrival.mjs'
+      - 'client/src/lib/authClient.ts'
+      - 'client/src/lib/operationalRadarAdmission.ts'
+      - 'client/src/lib/watchContext.ts'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'scripts/stay-editor/apply.mjs'
+      - 'server/cirium-flight-adapter.mjs'
+      - 'server/cirium-radar-provider.mjs'
+      - 'server/cirium-radar-injection.mjs'
+      - 'scripts/regression-home-operational-admission-browser.mjs'
+      - 'scripts/regression-regulation-operational-arrival*.mjs'
+      - 'scripts/regression-regulation-arrival-provider-projection.mjs'
+      - 'scripts/regression-cirium-arrival-milestones.mjs'
+      - 'scripts/regression-watch-overnight.mjs'
       - 'scripts/regression-regulation-deadline-*.mjs'
       - 'scripts/regression-regulation-review-gates*.mjs'
       - 'shared/regulationScenarioPrefill.mjs'
@@ -53,6 +89,14 @@ on:
       - 'scripts/regression-canonical-journey-label.mjs'
       - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationAircraftEvidence.ts'
+      - 'client/src/lib/useRegulationOperationalArrival.ts'
+      - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-native-composition-browser.mjs'
+      - 'scripts/regression-regulation-selected-source-browser.mjs'
+      - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-window-selection.mjs'
@@ -115,6 +159,7 @@ jobs:
         run: node scripts/regression-rbac-sector-input.cjs
       - name: Current conditional temporal scenario regression
         run: |
+          node scripts/regression-regulation-automatic-scenario.mjs
           node scripts/regression-regulation-window-selection.mjs
           node scripts/regression-regulation-prefill.mjs
           node scripts/regression-regulation-source-hydration.mjs
@@ -123,13 +168,25 @@ jobs:
           node scripts/regression-regulation-temporal-scenario.mjs
           node scripts/regression-regulation-deadline-summary.mjs
           node scripts/regression-regulation-review-gates.mjs
+          node scripts/regression-regulation-operational-arrival.mjs
+          node scripts/regression-cirium-arrival-milestones.mjs
+          node scripts/regression-regulation-arrival-provider-projection.mjs
+          node scripts/regression-watch-overnight.mjs
+          node scripts/regression-watch-source-pipeline.mjs
           npx vite build
       - name: Current compiled scenario UI and Home shortcut
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: |
+          node scripts/regression-regulation-native-composition-browser.mjs
+          node scripts/regression-regulation-review-arrival-composition-browser.mjs
+          node scripts/regression-regulation-selected-source-browser.mjs
+          node scripts/regression-regulation-automatic-browser.mjs
+          node scripts/regression-regulation-no-roster-home-browser.mjs
           node scripts/regression-regulation-deadline-browser.mjs
           node scripts/regression-regulation-review-gates-browser.mjs
+          node scripts/regression-regulation-operational-arrival-browser.mjs
+          node scripts/regression-home-operational-admission-browser.mjs
           node scripts/regression-regulation-prefill-browser.mjs
           node scripts/regression-regulation-context-explanation-browser.mjs
           node scripts/regression-regulation-scenario-ui.cjs

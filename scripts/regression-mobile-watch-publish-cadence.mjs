@@ -1,5 +1,7 @@
 import * as airportTimeZones from '../shared/airport-timezones.mjs';
 import * as gateQueryDay from '../shared/gate-query-day.mjs';
+import {stayEditorKey} from '../shared/stay-editor-store.mjs';
+import * as stayEditPlan from '../shared/stay-edit-plan.mjs';
 // Exercise the actual Home effect offline: no duplicate publisher implementation.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -44,7 +46,7 @@ function actualModule(name, imports = {}) {
   return vm.runInNewContext(executable.replace(/^export /gm, '') + `\n({${exported.join(',')}})`,
     { Date: FixtureDate, localStorage, dependencies: imports }, { filename });
 }
-const snapshotModule = actualModule('watchContext', { '../../../shared/airport-timezones.mjs': airportTimeZones });
+const snapshotModule = actualModule('watchContext', { '../../../shared/airport-timezones.mjs': airportTimeZones, '../../../shared/stay-edit-plan.mjs':stayEditPlan });
 const gateBindings = {};
 if (source.includes("from '@/lib/nextFlightGate'")) {
   const display = actualModule('rosterDisplayDate');
@@ -62,15 +64,15 @@ const otherDate = flight('same-flight-2032-10-14', 'LA100', '2032-10-14', '88');
 const events = [otherFlight, event, otherDate];
 let calls = 0;
 const window = {
-  dispatchEvent(e) { published.push(e); },
+  dispatchEvent(e) { published.push(e); if(e.detail?.contextId!=='session-invalidated')calls++; },
   addEventListener(name, handler) { assert(!listeners.has(name)); listeners.set(name, handler); },
   removeEventListener(name, handler) { assert.equal(listeners.get(name), handler); listeners.delete(name); },
   setInterval(handler, delay) { assert.equal(delay, 60_000); timers.set(1, handler); return 1; },
   clearInterval(id) { assert(timers.delete(id)); },
 };
-const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings,
+const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings, stayEditorKey, bundle:{roster:{days:[]}},
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
-  buildCrewCheckWatchSnapshot(actualEvents, actualEvent) { if (!actualEvent.placeholder) { assert.equal(actualEvents, events); calls++; } return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, null, now); },
+  buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at, report) { if (!actualEvent.placeholder) assert.equal(actualEvents, events); return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at ?? now, report); },
 });
 const effect = stripTypeScriptTypes(`(() => {\n${source.slice(start, end)}\n})()`);
 const cleanup = vm.runInContext(effect, context);

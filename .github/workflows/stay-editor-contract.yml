@@ -22,6 +22,11 @@ on:
       - 'client/src/components/preferences/TimezoneChoice.tsx'
       - 'scripts/stay-editor/**'
       - 'scripts/v139/apply.mjs'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/bids-default/wakeup-layout.mjs'
+      - 'client/src/lib/stayOperationalProjection.ts'
+      - 'scripts/regression-stay-operational-projection.mjs'
+      - 'scripts/regression-stay-wakeup-propagation-browser.mjs'
       - 'client/src/lib/stayEditorStore.ts'
       - 'client/src/lib/stayEditorNavigation.ts'
       - 'client/src/components/v1391/PresentationStayManagerView.tsx'
@@ -57,6 +62,7 @@ jobs:
           TZ=America/Sao_Paulo node --test scripts/regression-stay-edit-plan.mjs
           TZ=Pacific/Auckland node --test scripts/regression-stay-edit-plan.mjs
       - run: node --test scripts/regression-stay-editor-persistence.mjs
+      - run: node scripts/regression-stay-operational-projection.mjs
       - name: Raw composed host, lease, editor and timezone contracts
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
@@ -94,6 +100,10 @@ jobs:
         env:
           STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
         run: node scripts/regression-stay-editor-browser.mjs
+      - name: Saved stay to wakeup reference, preserve existing job
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-wakeup-propagation-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

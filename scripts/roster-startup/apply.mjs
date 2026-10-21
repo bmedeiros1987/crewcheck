@@ -1,4 +1,12 @@
 import fs from 'node:fs';
+// Preserve the live JSX (including the shared review prop) inside the existing
+// startup/currency boundary. Only the two supported canonical spellings match.
+function guardFinancialRoute(source, view, mode, component) {
+  const route = new RegExp(`\\{view === '${view}' && (<${component} bundle=\\{bundle\\}(?: freeDayEvaluation=\\{freeDayEvaluation\\})?\\s*\\/>)\\}`, 'g');
+  const guarded = source.replace(route, (_, live) => `{(view === '${view}' || (view === 'currency' && currencyReturnView.current === '${view}')) && <div className="cc-financial-route" hidden={view !== '${view}'}>{!bundle.roster.days?.length ? (startupStatus === 'loading' ? <article className="cz-empty-real" role="status"><FileText/><h2>Carregando última escala</h2></article> : <FinancialHistoryWithoutRoster mode="${mode}" onImport={actions.upload} rosterUnavailable={startupStatus === 'error'}/>) : ${live}}</div>}`);
+  if (guarded.includes(`{view === '${view}' && <${component}`)) throw new Error(`Unsupported startup financial route: ${view}`);
+  return guarded;
+}
 const marker = '// roster-startup-account-choice-v1';
 let home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 if (!home.includes(marker)) {
@@ -23,9 +31,9 @@ if (!home.includes(marker)) {
   if (!home.includes("{view === 'alerts' && ")) throw new Error('Startup Home anchor missing');
   home = home.replaceAll("{view === 'alerts' && ", "{view === 'alerts' && !bundle.roster.days?.length && <article className=\"cz-empty-real\" role=\"status\"><FileText/><h2>{startupStatus === 'loading' ? 'Carregando \u00faltima escala' : startupStatus === 'error' ? 'N\u00e3o foi poss\u00edvel carregar o hist\u00f3rico' : 'Nenhuma escala carregada'}</h2><p>{startupStatus === 'error' ? 'Tente novamente. Seus dados n\u00e3o foram considerados vazios.' : 'Importe sua escala para ativar esta an\u00e1lise.'}</p><button onClick={actions.upload}>Importar escala</button>{startupStatus === 'error' && <button onClick={() => window.location.reload()}>Tentar novamente</button>}</article>}\n    {view === 'alerts' && Boolean(bundle.roster.days?.length) && ");
   if (!home.includes("{view === 'perdiem' && ")) throw new Error('Startup Home anchor missing');
-  home = home.replaceAll("{view === 'perdiem' && <PerDiemView bundle={bundle}/>}", "{(view === 'perdiem' || (view === 'currency' && currencyReturnView.current === 'perdiem')) && <div className=\"cc-financial-route\" hidden={view !== 'perdiem'}>{!bundle.roster.days?.length ? (startupStatus === 'loading' ? <article className=\"cz-empty-real\" role=\"status\"><FileText/><h2>Carregando última escala</h2></article> : <FinancialHistoryWithoutRoster mode=\"allowance\" onImport={actions.upload} rosterUnavailable={startupStatus === 'error'}/>) : <PerDiemView bundle={bundle}/>}</div>}");
+  home = guardFinancialRoute(home, 'perdiem', 'allowance', 'PerDiemView');
   if (!home.includes("{view === 'salary' && ")) throw new Error('Startup Home anchor missing');
-  home = home.replaceAll("{view === 'salary' && <SalaryReliableView bundle={bundle}/>}", "{(view === 'salary' || (view === 'currency' && currencyReturnView.current === 'salary')) && <div className=\"cc-financial-route\" hidden={view !== 'salary'}>{!bundle.roster.days?.length ? (startupStatus === 'loading' ? <article className=\"cz-empty-real\" role=\"status\"><FileText/><h2>Carregando última escala</h2></article> : <FinancialHistoryWithoutRoster mode=\"salary\" onImport={actions.upload} rosterUnavailable={startupStatus === 'error'}/>) : <SalaryReliableView bundle={bundle}/>}</div>}");
+  home = guardFinancialRoute(home, 'salary', 'salary', 'SalaryReliableView');
   if (!home.includes("{view === 'reports' && ")) throw new Error('Startup Home anchor missing');
   home = home.replaceAll("{view === 'reports' && ", "{view === 'reports' && !bundle.roster.days?.length && <article className=\"cz-empty-real\" role=\"status\"><FileText/><h2>{startupStatus === 'loading' ? 'Carregando \u00faltima escala' : startupStatus === 'error' ? 'N\u00e3o foi poss\u00edvel carregar o hist\u00f3rico' : 'Nenhuma escala carregada'}</h2><p>{startupStatus === 'error' ? 'Tente novamente. Seus dados n\u00e3o foram considerados vazios.' : 'Importe sua escala para ativar esta an\u00e1lise.'}</p><button onClick={actions.upload}>Importar escala</button>{startupStatus === 'error' && <button onClick={() => window.location.reload()}>Tentar novamente</button>}</article>}\n    {view === 'reports' && Boolean(bundle.roster.days?.length) && ");
   if (!home.includes("{view === 'load' && ")) throw new Error('Startup Home anchor missing');
@@ -132,6 +140,11 @@ if (!home.includes(marker)) {
   home = home.replaceAll("cleared: startupCleared() });", "cleared: startupCleared() }) && start.intentRevision === startupIntentRevision();");
   fs.writeFileSync('client/src/pages/Home.tsx', marker + '\n' + home);
 }
+// Repair a prior preparation that carried the startup marker but missed a
+// newly extended live route; a second application is byte-for-byte stable.
+const currentHome = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+const financialHome = guardFinancialRoute(guardFinancialRoute(currentHome, 'perdiem', 'allowance', 'PerDiemView'), 'salary', 'salary', 'SalaryReliableView');
+if (financialHome !== currentHome) fs.writeFileSync('client/src/pages/Home.tsx', financialHome);
 
 let database = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
 if (!database.includes('strictHistory = false')) {
