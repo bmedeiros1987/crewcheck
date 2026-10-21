@@ -1,9 +1,10 @@
+import {CREWCHECK_GATE_HOST_ENABLED,changeGateConsent} from './gateHost.mjs';
 import { requireExistingIdentity, readBody, sendJson, parseJsonColumn } from '../v139/common.mjs';
 import { mutateInstallation, revokeAccountInstallations, installationBindingKey } from './installationRegistry.mjs';
 import { reconcilePushReceipts } from './outbox.mjs';
 import { pushConfiguration } from './config.mjs';
 const validId = value => typeof value==='string' && /^[a-zA-Z0-9_-]{8,160}$/.test(value);
-export async function handleCrewCheckPush(req,res,url,{identify=requireExistingIdentity,read=readBody,configuration=pushConfiguration,clock=()=>Date.now()}={}) {
+export async function handleCrewCheckPush(req,res,url,{identify=requireExistingIdentity,read=readBody,configuration=pushConfiguration,clock=()=>Date.now(),gateHostEnabled=()=>CREWCHECK_GATE_HOST_ENABLED}={}) {
  if(url.pathname!=='/api/platform/notifications/crewcheck-installation')return false;
  res.setHeader('Cache-Control','no-store');const identity=await identify(req,res);if(!identity)return true;
  const ownerId=String(identity.payload?.sub||'');if(!ownerId||identity.profile?.public_id!==ownerId){sendJson(res,401,{ok:false,message:'Sessão inválida.'});return true;}
@@ -21,6 +22,10 @@ export async function handleCrewCheckPush(req,res,url,{identify=requireExistingI
  const expectedOrigin=config.origin||'https://crewcheck.onrender.com';
  if(req.headers.origin!==expectedOrigin||['cross-site','same-site'].includes(req.headers['sec-fetch-site'])){sendJson(res,403,{ok:false,message:'Confirmação deve ocorrer no CrewCheck.'});return true;}
  const body=await read(req,20000);if(!validId(body?.installationId)){sendJson(res,400,{ok:false,message:'Aparelho não identificado.'});return true;}
+ if(body.action==='gate-consent'){
+  if(gateHostEnabled()!==true){sendJson(res,503,{ok:false,code:'GATE_HOST_DISABLED'});return true;}
+  const result=await changeGateConsent(identity.db,identity,body,{enabled:true,clock});sendJson(res,200,{ok:true,...result});return true;
+ }
  const own={email:identity.email,ownerId};
  if(body.action==='revoke'){sendJson(res,200,{ok:true,...await revokeAccountInstallations(identity.db,own,body.installationId,clock())});return true;}
  if(body.action==='receipts'){

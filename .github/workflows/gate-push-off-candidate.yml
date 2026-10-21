@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'server/web-push/**'
+      - 'server/watch-authority/mysql-authority-producer.mjs'
+      - 'scripts/regression-gate-host-off.mjs'
       - 'server/gate-source-update.mjs'
       - 'shared/gate-query-day.mjs'
       - 'shared/crewcheckPushContract.mjs'
@@ -29,6 +31,7 @@ jobs:
       - name: Source, producer, existing dispatcher and PWA receiver offline
         run: |
           node --check server/web-push/gateCandidate.mjs
+          node scripts/regression-gate-host-off.mjs
           node scripts/regression-gate-push-candidate.mjs
           node scripts/regression-gate-receiver-fence.mjs
           node scripts/regression-web-push-offline.mjs
@@ -36,6 +39,7 @@ jobs:
       - name: Canonical preparation and repeat receiver/lifecycle checks
         run: |
           npm run prepare:v139
+          node scripts/regression-gate-host-off.mjs
           node scripts/regression-gate-push-candidate.mjs
           node scripts/regression-gate-receiver-fence.mjs
           node scripts/regression-web-push-offline.mjs

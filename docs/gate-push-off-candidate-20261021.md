@@ -206,3 +206,50 @@ mocked. Existing SQL tests retain epoch revocation under owner locks and durable
 claim/restart coverage. Server mutation alone is still insufficient: production
 requires the separately reviewed host authority, revocation barrier and ACK.
 Native clock review and source/authority/transport activation remain separate HOLDs.
+
+
+## Existing host / consent / outbox connection — code only, disabled
+
+`gateHost.mjs` now connects the actual authenticated installation API and the
+existing persistent outbox. `CREWCHECK_GATE_HOST_ENABLED` is a constant false;
+there is no environment switch, registration, provider activation or startup
+producer. The existing API's new `gate-consent` action returns503 while OFF.
+
+The canonical authority reader is the **unchanged**
+`server/watch-authority/mysql-authority-producer.mjs` from #1150 exact HEAD
+5fd0843bb7cc1006ff485362699b0daafa71fa97 (SHA256 348dc72e6af6fd851428a0b34e6a6542f9228540061998b5a489987875874733).
+Only `lockCurrentSession` is used. No new epoch issuer/session writer, JWT/getMe/
+logout change, Watch grant route or schema migration is imported. Missing tables,
+legacy tokens without the canonical JTI, absent/revoked/expired sessions and
+unverified accounts all fail closed. #1150 issuance/logout/schema activation
+retains its own review and explicit production gates.
+
+Consent uses the existing encrypted installation and state tables under the
+owner/profile mutex, current account and session locks. It has its own CAS topic
+revision and copies the epoch from that locked server session. The response
+omits email/session identifier and never confirms a device revocation ACK.
+A server tombstone alone cannot dismiss an in-transit native/web notification.
+Installation invalidation and canonical session revocation independently block
+the outbox even when a topic row still says active.
+
+The connection calls the existing `enqueueCrewCheckPush` and
+`dispatchPersistentPush`, revalidating authority, installation and gate-topic
+consent in their transactions. It never creates a parallel outbox. Operational
+source defaults to null: a persisted job/request cannot prove its own source.
+A future trusted cache/history reader must provide owner/roster-scoped current
+AND previous source-produced gate observations for the same occurrence. Missing
+field timestamps, a first gate, equal-time/same-gate data, stale/wrong-source or
+wrong-flight evidence block. No paid query or source writer is added.
+
+The guarded disposable MySQL workflow executes this real connection: canonical
+session table, existing registry and CAS consent, encrypted endpoint and existing
+outbox dispatch with a mock sender, duplicate holding, scope/epoch/revision/source
+counterproofs and revocation before provider access. Only fixture setup creates
+tables; runtime modules do not. These tests do not establish a production session,
+register a real device, or prove physical delivery.
+
+Remaining real dependencies: separately approved/reviewed #1150 canonical session
+issuance/logout/schema composition; actual trusted operational cache/history
+reader; phone host/FCM registration and correlated local revocation ACK; provider
+configuration presence audit, then explicit activation and physical validation.
+None is replaced by a JS epoch or by these fixtures.
