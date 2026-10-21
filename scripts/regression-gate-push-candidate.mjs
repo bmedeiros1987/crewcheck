@@ -16,10 +16,24 @@ const test = async (name, run) => { await run(); passed++; console.log('PASS ' +
 function fixture() {
   let current = state(), now = NOW, reads = 0, sends = 0, displays = 0, hook = () => {}, throwSend = false;
   const records = new Map(), tails = new Map(), displayed = new Set(), envelopes = [];
-  const worker = { URL, Date }; vm.createContext(worker);
+  const worker = { URL, Date, structuredClone }; vm.createContext(worker);
   vm.runInContext(fs.readFileSync('client/public/crewcheck-push-offline.js', 'utf8'), worker);
+  vm.runInContext(fs.readFileSync('client/public/crewcheck-gate-receiver-offline.js', 'utf8'), worker);
+  let topicBinding = { ownerId: current.ownerId, installationId: current.installation.installationId, consentRevision: 1, topicRevision: 1, active: true };
+  const notifications = []; let lockTail = Promise.resolve();
+  const locks = { request: (_name, _options, run) => { const result = lockTail.then(run); lockTail = result.catch(() => {}); return result; } };
   const store = { binding: async () => ({ ownerId: current.ownerId, installationId: current.installation.installationId, consentRevision: current.installation.revision }),
-    claim: async key => { if (displayed.has(key)) return false; displayed.add(key); return true; }, record: async () => {} };
+    claim: async key => { if (displayed.has(key)) return false; displayed.add(key); return true; }, record: async () => {},
+    gateBinding: async () => structuredClone(topicBinding),
+    invalidateGate: async expected => {
+      if (!['ownerId', 'installationId', 'consentRevision', 'topicRevision'].every(key => topicBinding[key] === expected[key])) return false;
+      topicBinding = { ...topicBinding, active: false }; return true;
+    } };
+  const registration = { getNotifications: async () => notifications,
+    showNotification: async (title, options) => { displays++; assert.equal(title, 'CrewCheck'); assert.equal(options.body, 'Há uma atualização para conferir no CrewCheck.');
+      notifications.push({ ...options, closed: false, close() { this.closed = true; } }); } };
+  const receiver = worker.CrewCheckGateReceiverOffline.create({ enabled: true, locks, store, registration,
+    processPush: worker.CrewCheckPushOffline.processPush, clock: () => now });
   const repository = {
     isCurrent: async installation => current.installation.active && installation.ownerId === current.ownerId && installation.revision === current.installation.revision,
     async transaction(key, run) {
@@ -34,12 +48,11 @@ function fixture() {
   const host = { kind: 'isolated-gate-authority', read: async () => { reads++; hook(reads); return structuredClone(current); } };
   const mockProvider = { kind: 'isolated-web-push-mock', send: async envelope => {
     sends++; envelopes.push(structuredClone(envelope)); if (throwSend) throw Error('synthetic unknown outcome');
-    await worker.CrewCheckPushOffline.processPush({ enabled: true, envelope, store, now, clock: () => now,
-      registration: { showNotification: async (title, options) => { displays++; assert.equal(title, 'CrewCheck'); assert.equal(options.body, 'Há uma atualização para conferir no CrewCheck.'); } } });
+    await receiver.receive(envelope);
     return { accepted: true };
   } };
   const create = () => createOfflineGatePushCandidate({ enabled: true, host, repository, mockProvider, clock: () => now });
-  return { create, records, envelopes, store, worker, get current() { return current; }, set current(v) { current = v; },
+  return { create, records, envelopes, store, worker, receiver, notifications, get current() { return current; }, set current(v) { current = v; },
     get sends() { return sends; }, get displays() { return displays; }, set hook(v) { hook = v; }, set now(v) { now = v; }, set throwSend(v) { throwSend = v; } };
 }
 await test('default OFF touches no host/repository/provider/configuration', async () => {
@@ -137,5 +150,15 @@ await test('LIVE HOLD counterexample: topic-only revocation cannot invalidate an
   // Expected COUNTEREXAMPLE, not a passing implementation of topic revocation.
   // Live consent mutation must invalidate/rotate the installed receiver binding.
   assert.equal(result.status, 'display_api_resolved'); assert.equal(shown, 1);
+});
+await test('new gate fence closes the counterexample after correlated local revocation ACK', async () => {
+  const f = fixture(); await f.create().process(); f.current.observation = observation('25', -30_000); await f.create().process();
+  const envelope = { ...f.envelopes[0], eventKey: 'gate-change-v1:inflight_fixture' };
+  const request = { ownerId: envelope.ownerId, installationId: envelope.installationId, consentRevision: envelope.consentRevision,
+    topicRevision: envelope.topicRevision, requestId: 'revocation_fixture_01' };
+  const revoked = await f.receiver.revoke(request);
+  assert.equal(revoked.status, 'local_fence_confirmed'); assert.equal(revoked.ack.requestId, request.requestId);
+  assert(f.notifications.every(n => n.closed));
+  assert.equal((await f.receiver.receive(envelope)).status, 'revoked'); assert.equal(f.displays, 1);
 });
 console.log(JSON.stringify({ passed, networkCalls: 0, realMessages: 0, physicalDelivery: false, productionEnabled: false, repository: 'synthetic transactional adapter; not SQL durability certification' }));
