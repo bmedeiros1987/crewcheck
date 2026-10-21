@@ -6,6 +6,8 @@ on:
       - 'shared/financialSalaryDsr.mjs'
       - 'shared/financialVacationTiming.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/salaryDsrConsumer.ts'
+      - 'scripts/regression-salary-dsr-*'
       - 'client/src/lib/payrollDsrEvidence.ts'
       - 'scripts/fixtures/synthetic-dsr-payroll.mjs'
       - 'client/src/lib/privatePayrollExtraction.ts'
@@ -185,6 +187,13 @@ jobs:
         run: |
           node scripts/regression-financial-privacy-preference.mjs
           node scripts/regression-financial-privacy-mask-browser.mjs
+      - name: Verify local salary DSR consumer and known subtotals (synthetic)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-salary-dsr-consumer.mjs
+          node scripts/regression-salary-dsr-home-browser.cjs
       - name: Verify confirmed payroll importer produces DSR evidence (synthetic)
         timeout-minutes: 3
         env:
