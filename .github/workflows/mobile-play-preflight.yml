@@ -122,6 +122,8 @@ jobs:
       - run: python3 scripts/android-play/test_legacy_writer_off.py
       - run: python3 scripts/android-play/test_independent_package_scope.py
       - run: python3 scripts/android-play/test_consumed_validation.py
+      - run: python3 scripts/android-play/test_consumed_artifact_verifier.py
+      - run: node scripts/android-play/test_production_readiness_off.mjs
       - run: node scripts/android-play/test_reconcile_journal.mjs
       - run: node scripts/android-play/test_recovery_fence.mjs
       - run: node scripts/android-play/test_platform_journal.mjs
