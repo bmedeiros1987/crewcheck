@@ -45,6 +45,9 @@ function followCandidate(event: ZeroLeg): FollowedFlight | null {
  const panel=`</section><FollowFlightPanel key={manualGateAccountKey(getStoredUser())} candidate={positioningFollowCandidate(positioningRecord)}/></>;`;
  departure=departure.slice(0,last)+panel+departure.slice(last+end.length);
  source=source.slice(0,departureStart)+departure+source.slice(departureEnd);
+ const unavailable='<FlightDeckContextUnavailable targetView="radar"/></>';
+ if(!source.includes(unavailable)) throw Error('Missing unavailable Radar view');
+ source=source.replace(unavailable, '<FlightDeckContextUnavailable targetView="radar"/><FollowFlightPanel key={manualGateAccountKey(getStoredUser())} candidate={null}/></>');
  // Existing positioning selection is already occurrence-scoped; reuse it without a new search.
  const position='<section className="cz-radar-screen">';
  // No additional query effects or changes to the original roster.
