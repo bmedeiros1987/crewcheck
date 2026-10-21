@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { calculateStayWakeup, stayLocalInstant, type StayAlarmChoice, type StayBreakfastPlan } from '@shared/stay-edit-plan.mjs';
 import { presentStayInstant } from '@shared/stay-time-presentation.mjs';
 
@@ -16,13 +17,20 @@ type Props = {
   displayTimeZone?: string | null;
 };
 
-/** Calculator only: native scheduling cannot currently replace/cancel by stable identity. */
+/** Calculator only; native host admission and scheduling remain separately gated. */
 export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, choice, defaultLeadMinutes, defaultWithoutBreakfastMinutes, breakfastPlan, onBreakfastPlan, onChoice, displayTimeZone, nativeTestReady, onProgram }: Props) {
+  const [, refreshPreview] = useState(0);
   const scope = { accountId: 'calculation-only', rosterId: 'current-view', rosterRevision: 'preview' };
   const stay = { ...scope, id: eventId, eventId, timeZone };
   const hotelApz = hotelApzIso ? { ...scope, source: 'manual', stayId: eventId, rosterEventId: eventId,
     hotelReportAt: hotelApzIso, timeZone, confirmed: true } : null;
-  const calculated = calculateStayWakeup({ scope, stay, hotelApz, now: Date.now(), choice, defaultLeadMinutes, defaultWithoutBreakfastMinutes, breakfastPlan });
+  const calculate = () => calculateStayWakeup({ scope, stay, hotelApz, now: Date.now(), choice, defaultLeadMinutes, defaultWithoutBreakfastMinutes, breakfastPlan });
+  const calculated = calculate();
+  function program() {
+    const current = calculate();
+    if (current.action !== 'calculated' || current.eligible !== true) { refreshPreview(value => value + 1); return; }
+    onProgram?.(current.scheduledAt, current.hotelReportAt);
+  }
   const selectedDefault = breakfastPlan === 'with' ? defaultLeadMinutes : breakfastPlan === 'without' ? defaultWithoutBreakfastMinutes : undefined;
   const mode = choice?.mode || 'auto';
   const displayed = calculated.action === 'calculated' && displayTimeZone ? presentStayInstant(calculated.scheduledAt, displayTimeZone) : calculated.display;
@@ -72,7 +80,7 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
       {!calculated.hotelReportAt && <p role="alert">APZ no hotel ausente ou não confirmada. Informe-a manualmente antes de programar.</p>}
     </> : <p role="status">{!timeZone ? 'Confirme o fuso do hotel para calcular.' : !hotelApzIso && mode !== 'absolute' ? 'APZ no hotel ausente. Informe-a manualmente.' : calculated.reason === 'breakfast-plan-unconfirmed' ? 'Escolha com ou sem café para calcular no modo Auto. Não inferimos café pelo horário.' : 'Informe data, horário e antecedência válidos.'}</p>}
     {nativeTestReady && calculated.action === 'calculated' && calculated.scheduledAt && calculated.hotelReportAt &&
-      <button type="button" onClick={() => onProgram?.(calculated.scheduledAt, calculated.hotelReportAt)}>Confirmar tentativa de notificação neste aparelho</button>}
+      <button type="button" disabled={calculated.eligible !== true} onClick={program}>Confirmar tentativa de notificação neste aparelho</button>}
     <p>{nativeTestReady ? 'A tentativa de notificação exige confirmação explícita; recibo não confirma entrega ou som.' : 'Calculado; não programado no dispositivo. A substituição e o cancelamento de alarmes por pernoite ainda não estão disponíveis nesta integração.'}</p>
 
     <p>A edição deste pernoite não altera a antecedência padrão. Salve as alterações para mantê-las nesta conta e neste aparelho. Dados MyCrewCare continuam desligados.</p>

@@ -103,6 +103,10 @@ jobs:
         env:
           STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
         run: node scripts/regression-stay-editor-browser.mjs
+      - name: Stay preview eligibility, fake host callback only
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-alarm-preview-browser.mjs
       - name: APZ date inference through the actual editor, synthetic only
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
