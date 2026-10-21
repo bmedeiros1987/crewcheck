@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'shared/stay-edit-plan.*'
+      - 'shared/stay-apz-date.*'
+      - 'scripts/regression-stay-apz-date*.mjs'
       - 'shared/stay-editor-store.*'
       - 'shared/stay-alarm-adapter.*'
       - 'shared/stay-alarm-*'
@@ -63,6 +65,7 @@ jobs:
           TZ=Pacific/Auckland node --test scripts/regression-stay-edit-plan.mjs
       - run: node --test scripts/regression-stay-editor-persistence.mjs
       - run: node scripts/regression-stay-operational-projection.mjs
+      - run: node scripts/regression-stay-apz-date.mjs
       - name: Raw composed host, lease, editor and timezone contracts
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
@@ -100,6 +103,14 @@ jobs:
         env:
           STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
         run: node scripts/regression-stay-editor-browser.mjs
+      - name: Stay preview eligibility, fake host callback only
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-alarm-preview-browser.mjs
+      - name: APZ date inference through the actual editor, synthetic only
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-apz-date-browser.mjs
       - name: Saved stay to wakeup reference, preserve existing job
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json

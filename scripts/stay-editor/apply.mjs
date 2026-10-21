@@ -26,7 +26,7 @@ if (!source.includes(marker)) {
     card?.scrollIntoView({ block: 'center' }); card?.focus({ preventScroll: true });
   }, [selectedEventId]);
   function savedFor(event: ZeroLeg) {
-    const operational = readStayOperationalProjection(event);
+    const operational = readStayOperationalProjection(event, Date.now(), events);
     const local = operational.isCurrent() && operational.record ? {...operational.record,apzConfirmed:Boolean(operational.apzAt)} : null;
     if (local) return { ...local.draft, localEditorOnly: true, presentationTime: local.apzConfirmed ? local.draft.presentationTime : '', leadMinutes: local.choice?.mode === 'relative' ? local.choice.leadMinutes : undefined };`);
   block = block.replace("if (selectedEventId) setSelectedEventId('');", '// Retain removed explicit identity.');

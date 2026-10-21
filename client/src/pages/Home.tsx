@@ -5434,7 +5434,7 @@ export default function Home() {
         const stay=events.find(item=>item.kind==='stay'&&(item.canonical?.id||item.id)===selected.contextId);
         const hotelReport=stay&&alertRosterOwned(bundle.roster)?savedStayEditorEvent(stay.id,stay):null;
         if(!watchSession.isCurrent()) { invalidateWatchSnapshot();return; }
-        const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now):null;
+        const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now,events):null;
         const projectedEvents=localStay?.isCurrent()&&localStay.hotelName?events.map(item=>item===stay?{...item,hotel:localStay.hotelName}:item):events;
         const projectedEvent=projectedEvents.find(item=>item.id===event.id)||event;
         const base = buildCrewCheckWatchSnapshot(projectedEvents, projectedEvent, null, now, hotelReport);

@@ -24,3 +24,11 @@ assert.equal(api.projectStayOperational({accountId:'B',event,editor,now}).state,
 read=api.readStayOperationalProjection(event,now);globalThis.token='renewed';assert(!read.isCurrent());
 assert.equal(api.selectCurrentStayOperationalProjection([event],now).state,'selected');assert.equal(api.selectCurrentStayOperationalProjection([event,{...event,id:'overlap'}],now).reason,'ambiguous-current-stay');assert.equal(api.selectCurrentStayOperationalProjection([event],now-86400000).reason,'no-current-stay');
 console.log('PASS stay operational projection: actual store reload/edit, continuity, owner/occurrence/signature/bounds, zero/absolute/default/breakfast, DST/overnight, unique current and no future fallback; no writes except synthetic fixture storage, no transports.');
+
+const calendar={...event,canonical:{startDateTime:'2032-10-21T03:00:00Z',endDateTime:'2032-10-22T02:59:00Z',publishedDay:{}}};
+const next={id:'flight-next',kind:'flight',origin:'SYN',canonical:{startDateTime:'2032-10-22T08:00:00Z'}};
+const linked=[calendar,next];globalThis.token='synthetic';
+save({...editor,stays:{[event.id]:{...record,signature:api.stayOperationalSignature(calendar),apzDate:'2032-10-22',timeZone:'America/Sao_Paulo',draft:{...record.draft,presentationTime:'04:20'}}}});
+read=api.readStayOperationalProjection(calendar,Date.parse('2032-10-21T19:00:00Z'),linked);
+assert.equal(read.calculation.scheduledAt,'2032-10-22T05:50:00.000Z');assert(read.isCurrent());
+next.origin='OTHER';assert(!read.isCurrent(),'next-flight removal or incompatible origin invalidates bounded projection');

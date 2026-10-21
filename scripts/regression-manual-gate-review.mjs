@@ -38,9 +38,18 @@ try{
  }
  // Source normalization/public transport: no request-derived identity or generic clock.
  const valid=record();assert(customGateSourceUpdate(valid,T('08:40:00')));for(const update of [undefined,{...valid.departureGateUpdate,schema:'unknown'},{...valid.departureGateUpdate,updatedAt:undefined},{...valid.departureGateUpdate,gate:'88'},{...valid.departureGateUpdate,origin:'BSB'},{...valid.departureGateUpdate,scheduledDepartureUtc:'2032-10-21T10:30:00Z'}])assert.equal(customGateSourceUpdate({...valid,updated:T('08:39:00'),sourceReceivedAt:T('08:39:00'),departureGateUpdate:update},T('08:40:00')),null);
+ // Every populated alias must describe the same source occurrence and gate.
+ for(const patch of [
+  {departure:{gate:'88'}}, {departure:{iata:'BSB'}}, {arrival:{iata:'REC'}},
+  {departure:{scheduled:'2032-10-21T10:30:00Z'}}, {flight_iata:'LA4003'}, {flight_icao:'LAN4003'},
+  {departure:{gate:88}}, {departure:{scheduled:'not-an-instant'}}
+ ]) assert.equal(customGateSourceUpdate({...valid,...patch},T('08:40:00')),null,'conflicting/malformed source aliases cannot establish a gate update');
+ const equivalent={...valid,gate:' 15 ',flight_iata:'la4002',flight_icao:'LAN4002',departure:{gate:'15',iata:' cgh ',scheduled:'2032-10-20T07:30:00-03:00'},arrival:{iata:'cnf'}};
+ assert.deepEqual(customGateSourceUpdate(equivalent,T('08:40:00')),customGateSourceUpdate(valid,T('08:40:00')),'equivalent aliases preserve proof, including source offsets');
  const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,99,true,ts.ScriptKind.JS),fn=name=>ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name).getText(ast);let body=valid;
  const scope=vm.createContext({envAny:()=> 'https://fixture.invalid',jsonFetch:async()=>({response:{ok:true},payload:body}),customGateSourceUpdate:p=>customGateSourceUpdate(p,T('08:40:00')),ciriumRadarProjection:()=>({})});vm.runInContext(['firstKnown','providerCustom','publicRadarPayload'].map(fn).join('\n'),scope);
  const normalized=await scope.providerCustom({iata:'REQUEST-NOT-EVIDENCE'},1,'OTHER','OTHER');assert.equal(normalized.gateUpdate.flight,'LA4002');assert.equal(scope.publicRadarPayload(normalized).gateUpdate.sourceUpdatedAt,'2032-10-20T08:35:00.000Z');
+ body={...valid,departure:{gate:'88'}};const conflicted=await scope.providerCustom({},1,'','');assert.equal(conflicted.gateUpdate,null,'provider cannot promote conflicting aliases');assert.equal(scope.publicRadarPayload(conflicted).gateUpdate,null,'public projection preserves rejected proof');
  body={...valid,departureGateUpdate:undefined,updated:T('08:39:00')};assert.equal((await scope.providerCustom({},1,'','')).gateUpdate,null,'aircraft/query/cache clocks never establish a gate update');
  console.log('PASS actual manual gate policy/writer + custom source/public projection: identity,3zones, strict source clocks, no receipt promotion, watermark/out-of-order/equal-time ambiguity, persist keep/accept, replay/account/source/manual fences, multiple changes, offline/quota; zero real data/network');
 }finally{fs.rmSync(tmp,{recursive:true,force:true})}
