@@ -91,3 +91,4 @@ jobs:
           done
           node scripts/regression-departure-route-state-browser.mjs
           node scripts/regression-positioning-terminal-error-browser.mjs
+          node scripts/regression-followed-flights-browser.mjs
