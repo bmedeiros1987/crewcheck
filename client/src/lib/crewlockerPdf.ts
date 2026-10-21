@@ -6,8 +6,8 @@ export async function openLocalCrewPdf(blob: Blob) {
   const task=pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer()),isEvalSupported:false,enableXfa:false,useWorkerFetch:false});
   let pdf;
   try {pdf=await task.promise;} catch(error){await task.destroy();throw error;}
-  if(pdf.numPages>40){await pdf.destroy();throw new Error('PDF acima de 40 páginas.');}
-  return pdf;
+  if(pdf.numPages>40){await task.destroy();throw new Error('PDF acima de 40 páginas.');}
+  return {numPages:pdf.numPages,getPage:pdf.getPage.bind(pdf),destroy:()=>task.destroy()};
 }
 /** Device-local only. Never retains text, identifiers or document bytes. */
 export async function crewPdfText(blob:Blob):Promise<string> {
