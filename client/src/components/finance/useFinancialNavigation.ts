@@ -18,7 +18,7 @@ function read(mode: string, month: string): Context {
   const p = new URLSearchParams(location.search), active = p.get('fmode') === mode;
   const get = (key: string) => active ? p.get('f'+key) : null;
   const date = (key: string) => validFinancialDay(get(key)||'') ? get(key)! : month+'-01';
-  return { screen: (['overview','payment','statement','charts'].includes(get('screen')||'') ? get('screen') : 'overview') as FinancialScreenName,
+  return { screen: (['overview','payment','statement','charts','changes'].includes(get('screen')||'') ? get('screen') : 'overview') as FinancialScreenName,
     kind: (['month','week','year','custom'].includes(get('kind')||'') ? get('kind') : 'month') as FinancialRange['kind'],
     month: validFinancialDay((get('month')||'')+'-01') ? get('month')! : month,
     day: date('day'), from: date('from'), to: date('to'), currency: /^[A-Z]{3}$/.test(get('currency')||'') ? get('currency')! : 'BRL',

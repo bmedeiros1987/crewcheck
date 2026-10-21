@@ -19,6 +19,9 @@ import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailabi
 import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
+import {useFreeDayPostponementReview,type FreeDayPostponementEvaluation} from '@/lib/useFreeDayPostponementReview';
+import FinancialFreeDayComparison from '@/components/finance/FinancialFreeDayComparison';
+import {FreeDaySourceConsent} from '@/components/FreeDaySourceConsent';
 import { FreeDayPostponementAlerts } from '@/components/FreeDayPostponementAlerts';
 import { beginOwnedPlannedImport, loadOwnedPlannedRoster, saveOwnedPlannedRoster, clearOwnedPlannedRoster, isCurrentPlannedRoster, type OwnedPlannedRoster } from '@/lib/plannedRosterStore';
 import { payableReserveHours } from '@/lib/financialReserveCredits';
@@ -120,7 +123,7 @@ import {payrollOperationalCoverage} from '@/lib/payrollPaymentComposition';
 import {salaryDisplaySummary,sumSalaryDisplaySummaries} from '@/lib/salaryDisplayBasis';
 import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
 import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/finance/SalaryBreakdownChart';
-import FinancialScreen from '@/components/finance/FinancialScreen';
+import FinancialScreen, {useFinancialScreen} from '@/components/finance/FinancialScreen';
 import { nextAllowancePayment } from '@/lib/nextFinancialPayment';
 import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
 import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
@@ -4166,8 +4169,19 @@ function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[]
   const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
   return { ...base, rows, monthlyRows:rows, unclassifiedItems, monthlyUnclassifiedItems:unclassifiedItems, nativeSummary, monthlySummary, monthly:monthlySummary.convertedTotalBRL, currencySummary, totalsByCurrency:nativeSummary.totalsByCurrency, currencyCount:Object.keys(nativeSummary.totalsByCurrency).length, pendingCurrencies:monthlySummary.pendingCurrencies, convertedComplete:monthlySummary.convertedComplete, scopeIncomplete } as ReturnType<typeof calculatePerDiem> & { scopeIncomplete:boolean };
 }
-function PerDiemView({ bundle }: { bundle: BundleState }) {
-  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="allowance" metric={snapshot=>snapshot.perdiem.nativeSummary.totalsByCurrency} rangeMetric={(snapshot,range)=>scopedFinancialForecast([snapshot],range,[]).nativeSummary.totalsByCurrency}
+function FinancialFreeDayDetails({evaluation}:{evaluation:FreeDayPostponementEvaluation}){
+ const {session,review,boundCurrent,period}=evaluation;
+ const {range}=useFinancialScreen();
+ if(!session)return null;
+ const outside=Boolean(range&&(!range.valid||period&&(period<range.start.slice(0,7)||period>range.end.slice(0,7))));
+ const reference=boundCurrent&&period?period.split('-').reverse().join('/'):null;
+ if(outside)return <section className="cc-financial-free-day" data-comparison-state="outside-period" aria-label="Início de folga"><strong>Início de folga{reference?` · ${reference}`:''}</strong><span role="status">{range?.valid?'Fora do período':'Período inválido'}</span></section>;
+ // Presentation projection only: the canonical review and delivery owner stay unchanged.
+ const visibleReview=range?{...review,alerts:review.alerts.filter(alert=>alert.date>=range.start&&alert.date<=range.end),pending:review.pending.filter(item=>!validFinancialDay(item.date)||item.date>=range.start&&item.date<=range.end)}:review;
+ return <section data-free-day-reference-month={boundCurrent?period||undefined:undefined}>{reference&&<small>Referência · {reference}</small>}<FinancialFreeDayComparison key={session} session={session} review={visibleReview}><FreeDaySourceConsent key={session} session={session} bound={boundCurrent}/></FinancialFreeDayComparison></section>;
+}
+function PerDiemView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDayEvaluation:FreeDayPostponementEvaluation }) {
+  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} changesDetails={<FinancialFreeDayDetails evaluation={freeDayEvaluation}/>} mode="allowance" metric={snapshot=>snapshot.perdiem.nativeSummary.totalsByCurrency} rangeMetric={(snapshot,range)=>scopedFinancialForecast([snapshot],range,[]).nativeSummary.totalsByCurrency}
     periodMetric={(snapshots,range,missing)=>scopedFinancialForecast(snapshots,range,missing).nativeSummary.totalsByCurrency}
     weeks={(snapshots,range)=>financialWeeks(range).map(week=>({range:week,value:scopedFinancialForecast(snapshots,week,[]).currencySummary}))}
     render={({snapshots,range,missing,controls,graph,coverageReady,requestRange})=>{
@@ -4193,7 +4207,7 @@ function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
 function salaryForecastMetric(snapshot: ReturnType<typeof financeSnapshot>, range: FinancialRange): Record<string,number> {
   return salaryCalculationDiagnostic([salaryDiagnosticItem(snapshot)],range,[]).ready && Number.isFinite(snapshot.salary.gross) ? {BRL:snapshot.salary.gross} : {};
 }
-function SalaryReliableView({ bundle }: { bundle: BundleState }) {
+function SalaryReliableView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDayEvaluation:FreeDayPostponementEvaluation }) {
   const {basis,choose:chooseBasis}=useSalaryDisplayBasis();
   const summaryForMonth=(snapshot:ReturnType<typeof financeSnapshot>,gross:number|null,complete:boolean)=>{
     const month=`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`;
@@ -4209,7 +4223,7 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
   const privacy = useFinancialPrivacy();
   const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
   const moneyCurrency = (value: number, currency: PerDiemCurrency) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value));
-  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="salary" rangeMetric={metricForBasis} metric={snapshot=>metricForBasis(snapshot,financialRange('month',`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`,'','',''))}
+  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} changesDetails={<FinancialFreeDayDetails evaluation={freeDayEvaluation}/>} mode="salary" rangeMetric={metricForBasis} metric={snapshot=>metricForBasis(snapshot,financialRange('month',`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`,'','',''))}
     render={({snapshots,range,missing,controls,graph,requestRange})=>{
       const fullMonths = range.valid && range.start.endsWith('-01') && range.end===financialRange('month',range.end.slice(0,7),'','','').end;
       const selected = snapshots.filter(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`>=range.start.slice(0,7)&&`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`<=range.end.slice(0,7));
@@ -5281,6 +5295,7 @@ export default function Home() {
   if(view==='currency'&&currencyPreviousView.current!=='currency')currencyReturnView.current=['perdiem','salary'].includes(currencyPreviousView.current)?currencyPreviousView.current:'cockpit';
   currencyPreviousView.current=view;
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
+  const freeDayEvaluation=useFreeDayPostponementReview(bundle.roster,bundle.source);
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawerState] = useState(false);
   const menuScrollRef = useRef(0);
@@ -5446,7 +5461,11 @@ export default function Home() {
       document.documentElement.style.colorScheme = next;
     };
     const forced = sessionStorage.getItem('crewcheck_force_view_once');
-    if (forced) { setView(normalizeInitialView(forced)); sessionStorage.removeItem('crewcheck_force_view_once'); }
+    if (forced) {
+      const destination = new URLSearchParams(window.location.search);
+      if (!destination.has('view') && !destination.has('connect')) setView(normalizeInitialView(forced));
+      sessionStorage.removeItem('crewcheck_force_view_once');
+    }
     window.addEventListener('crewcheck:open-menu', open);
     window.addEventListener('crewcheck:set-view', setViewFromEvent as EventListener);
     window.addEventListener('crewcheck:theme-change', syncTheme);
@@ -5571,7 +5590,7 @@ export default function Home() {
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
     {view === 'cockpit' && <Cockpit events={events} compliance={reviewableCompliance(compliance, bundle.roster)} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>}
-    <FreeDayPostponementAlerts roster={bundle.roster} source={bundle.source} view={view} onOpen={() => setView('alerts')}/>
+    <FreeDayPostponementAlerts evaluation={freeDayEvaluation} roster={bundle.roster} source={bundle.source} view={view} onOpen={() => setView('alerts')}/>
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
@@ -5593,8 +5612,8 @@ export default function Home() {
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
     {view === 'currency' && <CurrencyCalculator/>}
-    {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
-    {view === 'salary' && <SalaryReliableView bundle={bundle}/>}
+    {view === 'perdiem' && <PerDiemView bundle={bundle} freeDayEvaluation={freeDayEvaluation}/>}
+    {view === 'salary' && <SalaryReliableView bundle={bundle} freeDayEvaluation={freeDayEvaluation}/>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
     {view === 'load' && <LoadView bundle={bundle}/>}
     {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}
