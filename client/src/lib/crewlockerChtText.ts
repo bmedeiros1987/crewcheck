@@ -18,7 +18,7 @@ function date(raw:string, english=false):ValidityDate|null {
 /** Textual candidates only: no holder/ID extraction, OCR, fitness or source validation. */
 export function parseChtText(text:string):{recognized:boolean;entries:ValidityEntry[];conflicts:string[]} {
   if(typeof text!=='string'||text.length>500000)return {recognized:false,entries:[],conflicts:text?.length>500000?['text-too-large']:[]};
-  const input=normalized(text),recognized=/\bCHT\b|CERTIFICADO\s+DE\s+HABILITACAO|\bXII\b[\s\S]{0,120}\bA\s?320(?=\s|\d)/.test(input);
+  const input=normalized(text),recognized=/\bCHT\b|CERTIFICADO\s+DE\s+HABILITACAO|\bXII\b[\s\S]{0,80}(?:HABILITACOES|RATINGS)/.test(input);
   if(!recognized)return {recognized:false,entries:[],conflicts:[]};
   const entries:ValidityEntry[]=[],conflicts:string[]=[];
   const sections:Record<string,string>={XII:'',XIII:'',XIV:''};let active='';
@@ -38,7 +38,35 @@ export function parseChtText(text:string):{recognized:boolean;entries:ValidityEn
   };
   // Explicit labels anchor each date; issue dates and unrelated numbers never qualify.
   const expiryToken='(\\d{1,2}[/.\\-]\\d{1,2}[/.\\-]\\d{4}|\\d{1,2}[/.\\-]\\d{4})(?!\\d|[/.\\-]\\d)';
-  for(const match of sections.XII.matchAll(new RegExp('\\bA\\s?320[ \t|]*(?:VALIDADE|VALID|UNTIL|ATE|:)?[ \t|]*'+expiryToken,'g')))add('rating','A320',match[1]);
+  // Read explicit table tokens, not an aircraft catalogue or an inferred fleet.
+  // Code/date concatenation is ambiguous: never split the numeric suffix by guessing.
+  const codePattern=/^[A-Z]{1,5}-?\d{1,4}[A-Z]{0,3}$/;
+  const pendingRating=(label:string,reason:string)=>{
+    const entry:ValidityEntry={id:'',revision:1,category:'rating',label,expiry:{kind:'unknown'},confirmed:false,origin:'pdf_text',sourceCheck:'pending',signatureCheck:'unknown',fitnessCheck:'not_assessed'};
+    entry.id='cht:'+semantic(entry).toLowerCase();
+    if(!entries.some(item=>semantic(item)===semantic(entry)))entries.push(entry);
+    conflicts.push(`${label}: ${reason}`);
+  };
+  for(const rawLine of sections.XII.split(/\r?\n/)){
+    const line=rawLine.replace(/^\s*XII\b\s*[-:]?\s*/,'').trim();
+    if(!line)continue;
+    const cells=line.split('|').map(cell=>cell.trim());
+    const plain=cells.length===1?line.match(/^([A-Z]{1,5}-?\d{1,4}[A-Z]{0,3})(?:[ \t]+(.*))?$/):null;
+    const code=cells.length>1?cells[0]:plain?.[1];
+    if(!code||!codePattern.test(code)){
+      if(cells.length>1&&/\d/.test(cells[0])&&/\d/.test(cells[1]||''))conflicts.push('Habilitação: código da tabela exige revisão');
+      if(/^[A-Z][A-Z0-9-]*\d[/.]\d/.test(line))conflicts.push('Habilitação: código e validade sem separação inequívoca');
+      continue;
+    }
+    const raw=cells.length>1?cells[1]:plain?.[2]||'';
+    if(!raw){pendingRating(code,'validade ausente');continue;}
+    // Whole validity cell only; a partial date or a second unsplit date cannot qualify.
+    if(!/^(?:\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}|\d{1,2}[/.\-]\d{4})$/.test(raw)){
+      pendingRating(code,'validade ausente ou ambígua');continue;
+    }
+    if(!date(raw)){pendingRating(code,'data inválida');continue;}
+    add('rating',code,raw);
+  }
   const medical=new RegExp('(?:\\bCMA\\s*(?:DE\\s*)?(SEGUNDA|SECOND|2|PRIMEIRA|FIRST|1)(?:[ªA]?\\s*CLASSE)?|\\b(?:MEDICAL(?:\\s+CERTIFICATE)?\\s+CLASS|CLASS)\\s*(1|2)(?:\\s+MEDICAL)?)\\s*(?:[\\s/:,;|()-]|PLA|ATPL|ATE|UNTIL|VALIDADE|VALIDO|VALID|CLASS|CLASSE)*\\s*'+expiryToken,'g');
   for(const match of sections.XIV.matchAll(medical)){
     const cls=/^(SEGUNDA|SECOND|2)$/.test(match[1]||match[2])?'2':'1';
