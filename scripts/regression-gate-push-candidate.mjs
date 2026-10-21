@@ -128,4 +128,14 @@ await test('existing receiver rejects other binding and expired gate envelope', 
   assert.equal((await run({ envelope: { ...envelope, ownerId: 'owner_fixture_B' } })).status, 'blocked');
   assert.equal((await run({ now: Date.parse(envelope.expiresAt) })).status, 'blocked');
 });
+await test('LIVE HOLD counterexample: topic-only revocation cannot invalidate an unchanged installed binding', async () => {
+  const f = fixture(); await f.create().process(); f.current.observation = observation('25', -30_000); await f.create().process();
+  const envelope = { ...f.envelopes[0], eventKey: 'inflight_topic_revocation_fixture' };
+  f.current.consent.enabled = false; let shown = 0;
+  const result = await f.worker.CrewCheckPushOffline.processPush({ enabled: true, envelope, store: f.store, now: NOW,
+    registration: { showNotification: async () => { shown++; } } });
+  // Expected COUNTEREXAMPLE, not a passing implementation of topic revocation.
+  // Live consent mutation must invalidate/rotate the installed receiver binding.
+  assert.equal(result.status, 'display_api_resolved'); assert.equal(shown, 1);
+});
 console.log(JSON.stringify({ passed, networkCalls: 0, realMessages: 0, physicalDelivery: false, productionEnabled: false, repository: 'synthetic transactional adapter; not SQL durability certification' }));

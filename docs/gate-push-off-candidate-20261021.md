@@ -65,10 +65,14 @@ and sealed candidate limits remain separate from fixture success.
    by this draft. No production gate consent or installation is presumed. The
    existing receiver knows the installation revision, not the separate topic
    revision checked by this producer. A live topic-consent mutation MUST revoke
-   or rotate that device binding (and cancel pending jobs); otherwise a previously
+   or rotate that binding on the actual installed receiver, with acknowledgement,
+   as well as cancel pending jobs; a server-only revision change is insufficient.
+   Otherwise a previously
    accepted generic envelope could still display after topic revocation. This
    draft does not certify post-acceptance topic revocation, retract accepted
    notifications, or claim that its sender checks close that receiver boundary.
+   The regression includes this counterexample as an explicit live HOLD, not a
+   test asserting that topic revocation has been implemented.
 3. Existing PWA worker is reused unchanged. Enabled transport configuration and
    actual supported-device subscription/permission remain unverified. No new
    VAPID/protection key is generated/read/configured and no flag is enabled.
