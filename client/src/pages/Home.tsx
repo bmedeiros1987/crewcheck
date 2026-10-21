@@ -116,7 +116,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
 import NextPaymentCard from '@/components/finance/NextPaymentCard';
 import {useSalaryDisplayBasis} from '@/components/finance/SalaryDisplayBasis';
-import { consumeSalaryDsr, salaryDsrReceipt } from '@/lib/salaryDsrConsumer';
+import { consumeSalaryDsr, salaryDsrReceipt, observedSalaryFlightSubtotal } from '@/lib/salaryDsrConsumer';
 import {payrollOperationalCoverage} from '@/lib/payrollPaymentComposition';
 import {salaryDisplaySummary,sumSalaryDisplaySummaries} from '@/lib/salaryDisplayBasis';
 import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
@@ -4026,16 +4026,17 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   // Rates are source metadata only; amounts above remain produced by the existing engine.
   const rateInputs = ['salary.dayKm','salary.nightKm','salary.reserveHour','salary.standbyHour','salary.base'].map(key=>{const rate=confirmedRateAt(key,rosterFinancialDate(roster));return rate?{key,sourceFingerprint:rate.sourceFingerprint,revision:rate.revision,value:rate.value,effectiveFrom:rate.effectiveFrom,effectiveTo:rate.effectiveTo}:null;});
   const receipt = salaryDsrReceipt(dsrOwner,dsrMonth,JSON.stringify({version:'salary-engine-dsr-consumer:v1',roster:rosterFingerprint(roster),cfg,rateInputs,monthlyInputs,rows,reserveAssessment,standbyAssessment,dsrContext}),dsrFence);
-  const knownFlight = (key:'production'|'chief'|'instructor')=>{const valid=rows.filter(row=>row.distanceKnown&&row.timeKnown&&Number.isFinite(row[key])&&row[key]>=0);return valid.length?valid.reduce((sum,row)=>sum+row[key],0):null;};
+  const knownFlight = (key:'production'|'chief'|'instructor')=>observedSalaryFlightSubtotal(rows,key);
   const dsr = consumeSalaryDsr({ownerId:dsrOwner,month:dsrMonth,receipt,context:dsrContext,isCurrent:dsrFence.isCurrent,parts:[
-    {key:'base',amount:cfg.basePay,knownAmount:cfg.baseConfigured?cfg.basePay:null,complete:cfg.baseConfigured!==false},
+    {key:'base',amount:cfg.basePay,knownAmount:cfg.baseConfigured?cfg.basePay:null,complete:cfg.baseConfigured===true},
     {key:'fixedAdditions',amount:cfg.fixedAdditions,knownAmount:cfg.fixedAdditionsConfigured?cfg.fixedAdditions:null,complete:cfg.fixedAdditionsConfigured===true},
     // Current imports prove observed work, not an exhaustive category inventory.
     {key:'production',amount:null,knownAmount:!cfg.requiresManualFunction?knownFlight('production'):null,complete:false},
     {key:'reserve',amount:null,knownAmount:reserveAssessment.knownCount&&!cfg.requiresManualFunction?reserveAssessment.knownAmount:null,complete:false},
     {key:'standby',amount:null,knownAmount:standbyAssessment.knownCount&&!cfg.requiresManualFunction?standbyAssessment.knownAmount:null,complete:false},
     {key:'chief',amount:null,knownAmount:readOptionalNumberSetting('crewcheck_act_chief_sector_brl')!==null?knownFlight('chief'):null,complete:false},
-    {key:'instructor',amount:null,knownAmount:readOptionalNumberSetting('crewcheck_act_instructor_sector_brl')!==null?knownFlight('instructor'):null,complete:false},
+    // Legacy instructor flag is global/defaulted, not owner-bound eligibility evidence.
+    {key:'instructor',amount:null,knownAmount:null,complete:false},
   ]});
   const gross = dsr.current&&dsr.composition.grossMinor!==null?dsr.composition.grossMinor/100:NaN;
   const inss = Math.max(0, cfg.inssDeduction);

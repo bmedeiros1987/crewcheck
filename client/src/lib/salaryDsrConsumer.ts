@@ -5,6 +5,11 @@ export type SalaryComponentKey='base'|'fixedAdditions'|'production'|'reserve'|'s
 export type SalaryDsrPart={key:SalaryComponentKey;amount:number|null;knownAmount:number|null;complete:boolean};
 const keys:SalaryComponentKey[]=['base','fixedAdditions','production','reserve','standby','chief','instructor'];
 const cents=(value:number|null)=>value!==null&&Number.isFinite(value)&&value>=0&&Number.isSafeInteger(Math.round(value*100))?Math.round(value*100):null;
+/** Sector additions use their own evidence, independently of geographic KM. */
+export function observedSalaryFlightSubtotal(rows:ReadonlyArray<{production:number;chief:number;instructor:number;distanceKnown:boolean;timeKnown:boolean;chiefEligible:boolean;instructorEvidence?:boolean}>,key:'production'|'chief'|'instructor'){
+ const known=rows.filter(row=>(key==='production'?row.distanceKnown&&row.timeKnown:key==='chief'?row.chiefEligible===true:row.instructorEvidence===true)&&Number.isFinite(row[key])&&row[key]>=0);
+ return known.length?known.reduce((sum,row)=>sum+row[key],0):null;
+}
 let sequence=0;
 let active:{isCurrent:()=>boolean}|null=null;
 const receipts=new Map<string,{signature:string;revision:number;sourceId:string}>();

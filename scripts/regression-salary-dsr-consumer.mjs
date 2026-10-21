@@ -4,7 +4,9 @@ import fs from 'node:fs';import os from 'node:os';import path from 'node:path';i
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'salary-dsr-consumer-')),out=path.join(dir,'consumer.cjs');
 await build({entryPoints:['client/src/lib/salaryDsrConsumer.ts'],bundle:true,platform:'node',format:'cjs',outfile:out});
 try{
- const {consumeSalaryDsr, salaryDsrReceipt}=createRequire(import.meta.url)(out);
+ const {consumeSalaryDsr, salaryDsrReceipt, observedSalaryFlightSubtotal}=createRequire(import.meta.url)(out);
+ const sector={production:0,chief:17,instructor:23,distanceKnown:false,timeKnown:false,chiefEligible:true};
+ assert.equal(observedSalaryFlightSubtotal([sector],'production'),null);assert.equal(observedSalaryFlightSubtotal([sector],'chief'),17,'known chief sector survives unknown KM/time');assert.equal(observedSalaryFlightSubtotal([sector],'instructor'),null,'default/global instructor is not scoped evidence');assert.equal(observedSalaryFlightSubtotal([{...sector,instructorEvidence:true}],'instructor'),23);assert.equal(observedSalaryFlightSubtotal([{...sector,chiefEligible:false}],'chief'),null,'missing eligibility does not become zero');
  const ownerId='synthetic-owner',month='2026-10',source={ownerId,competence:month,sourceId:'synthetic-report',revision:2,effectiveFrom:month+'-01',effectiveTo:month+'-31'};
  const context={profile:{...source,company:'TAM',role:'cabin',regime:'NB',review:'confirmed',sourceKind:'employer_document'},basisReview:{...source,review:'confirmed'},reportedDsr:{...source,amountMinor:50000,currency:'BRL',status:'confirmed'},sourcePayrollMonth:'2026-11',sourceOperationalMonth:month,derivation:'reconciled_paid_dsr'};
  let current=true;const fence={isCurrent:()=>current};
