@@ -8,11 +8,14 @@ import ts from 'typescript';
 import {build} from 'esbuild';
 const text=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',text,99,true,ts.ScriptKind.TSX);
 const names=['RadarView','radarGateInfo','validatedRadarForEvent','radarFlightDateLabel'];const functions=names.map(name=>{const n=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(n,name);return n.getText(ast)}).join('\n');
+const followCandidate=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='followCandidate')?.getText(ast)||'';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'crewcheck-radar-ui-'));
 const code=`import React,{useState,useEffect,useRef} from 'react';import {createRoot} from 'react-dom/client';import {Plane,ShieldCheck,Radar,Globe2,CloudSun} from 'lucide-react';
+import {followedFlight} from './shared/followedFlights.mjs';
 import {getToken,getStoredUser} from '@/lib/authClient';import {manualGateAccountKey,readManualGate,resolveNextFlightGate,RADAR_GATE_STALE_MS} from '@/lib/nextFlightGate';import {gateQueryDay,originFlightDate,publishedGateDate,radarResultDecision} from './shared/gate-query-day.mjs';import {radarFailurePayload,radarAvailabilityLabel} from '@/lib/radarAvailability';
-const safe=(x,f='')=>x||f,normalizedAirlineCode=()=> 'LA',airlineNameFor=()=> 'LATAM',Brand=()=>null,FlightDeckNavigationContext=()=>null,AirlineLogo=()=>null,ManualGateEditor=()=>null,readRadarSnapshot=()=>null;
+const safe=(x,f='')=>x||f,normalizedAirlineCode=()=> 'LA',airlineNameFor=()=> 'LATAM',Brand=()=>null,FlightDeckNavigationContext=()=>null,AirlineLogo=()=>null,ManualGateEditor=()=>null,FollowFlightPanel=()=>null,readRadarSnapshot=()=>null;
 window.requests=[];function fetchRadarSnapshot(event){return new Promise(resolve=>window.requests.push({event,resolve}))}
+${followCandidate}
 ${functions}
 const root=createRoot(document.getElementById('root'));const event=id=>({id,kind:'flight',flightNumber:id==='one'?'LA3981':'LA3982',origin:'CPV',destination:'GRU',day:{date:'14/10/2032'},canonical:{startDateTime:'2032-10-14T12:00:00Z'}});
 window.renderRadar=id=>root.render(<RadarView event={event(id)}/>);window.unmountRadar=()=>root.render(<p>Unmounted</p>);window.reply=(i,status,reason,message)=>window.requests[i].resolve(message?{ok:false,querySuppressed:true,queryReason:reason,message}:radarFailurePayload({status,payload:{ok:false,querySuppressed:true,queryReason:reason,gate:'DO-NOT-DISPLAY'}}));window.renderRadar('one');`;
