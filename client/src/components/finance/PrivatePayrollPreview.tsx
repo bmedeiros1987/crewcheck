@@ -33,7 +33,7 @@ export default function PrivatePayrollPreview({ extraction }: { extraction: Priv
     <div className="finance-learning-table-wrap"><table><caption>Rubricas extraídas — todas exigem revisão</caption>
       <thead><tr><th>Rubrica</th><th>Tipo</th><th>Competência</th><th>Valor e origem</th></tr></thead>
       <tbody>{extraction.items.map((item, index) => <tr key={index}>
-        <td>{privacy.hidden ? 'Rubrica oculta' : item.label}</td>
+        <td>{privacy.text(item.label)}</td>
         <td>{directions[item.direction]}{item.nature ? ` · ${natures[item.nature]}` : ''}</td>
         <td>{item.competence || 'Não informada'}</td><td>{field(item.amount, true)}</td>
       </tr>)}</tbody>

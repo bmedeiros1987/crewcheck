@@ -49,7 +49,7 @@ async function checkHidden(page){
  assert(!moneyPattern.test(attrs),'no monetary attributes/tooltips');
  assert.equal(await root.locator('.cc-financial-bar-track').count(),0,'proportional bars are not exposed');
  assert(!moneyPattern.test(await root.ariaSnapshot()),'accessibility tree has no amounts');
- assert.match(await root.textContent(),/Valor oculto|Não calculável|Sem itens previstos/);
+ assert.match(await root.textContent(),/R\$ •••|Não calculável|Sem itens previstos/);
 }
 async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};
  // expand() deliberately exposes every details body for privacy assertions,
@@ -75,11 +75,11 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);await showFinancial(page,'charts');
   if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);
   const before=await page.locator('.cc-per-diem-content').textContent();
-  const persistedBefore=await page.evaluate(()=>JSON.stringify(localStorage));
+  const persistedBefore=await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>!key.startsWith('crewcheck:financial-privacy:v2:')))));
   const toggle=page.getByRole('button',{name:'Ocultar valores financeiros'}).first();await toggle.focus();await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().waitFor();await checkHidden(page);
   assert.equal(await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().getAttribute('aria-pressed'),'true');
-  assert.equal(await page.evaluate(()=>JSON.stringify(localStorage)),persistedBefore,'display toggle never writes data/settings');
+  assert.equal(await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>!key.startsWith('crewcheck:financial-privacy:v2:'))))),persistedBefore,'display toggle writes only the account/device privacy preference; financial data/settings unchanged');
   if(kind==='domestic')await page.evaluate(()=>scrollTo(0,0));
   if(kind==='domestic')await page.screenshot({path:path.join(out,'hidden-mobile.png'),fullPage:false});
   await page.getByLabel('Filtro financeiro').selectOption('year');await checkHidden(page);await page.getByLabel('Filtro financeiro').selectOption('month');
@@ -158,7 +158,8 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'other-synthetic-account',role:'user'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   assert.equal(await page.getByRole('button',{name:'Mostrar valores financeiros'}).count(),0,'other account does not inherit hidden state');
   await page.reload();await page.locator('.cz-app').waitFor();await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();
-  await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().waitFor();
+  await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().waitFor();
+  await checkHidden(page); // seed restores original owner; its hidden device preference survives reload.
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile layout fits');
   assert.deepEqual(errors,[]);results.push({kind,width,keyboard:true,accessibility:true,roundTrip:true,accountIsolation:true,reload:true});await context.close();
  }
