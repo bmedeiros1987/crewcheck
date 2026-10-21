@@ -2,7 +2,7 @@ import type { FinancialRange } from './financialHistoryPeriods';
 import { payrollMonthBounds } from './financialPayrollPeriods';
 export type SalaryDiagnosticItem = {
   month: string; days: number; configured: boolean; baseConfigured: boolean;fixedAdditionsConfigured?:boolean;
-  requiresManualFunction: boolean; variable: number; variableComplete: boolean; fixedMonth?: string; pendingActivityCount?: number;
+  requiresManualFunction: boolean; variable: number; variableComplete: boolean; fixedMonth?: string; pendingActivityCount?: number; dsrPending?: boolean;
 };
 /** Explains caller prerequisites without changing canonical calculation, moving
  * fixed pay to an operational month, or substituting missing data with zero. */
@@ -14,6 +14,7 @@ export function salaryCalculationDiagnostic(items: SalaryDiagnosticItem[], range
   if (missing.length) reasons.push(`Falta escala para ${missing.join(', ')}. Nenhum valor foi presumido para esses meses.`);
   if (!items.length) reasons.push('Nenhuma escala com vínculo confirmado está disponível para o período.');
   for (const item of items) {
+    if(item.dsrPending) reasons.push(`${item.month}: DSR e inventário salarial completos pendentes; subtotal conhecido separado.`);
     if (!item.days) reasons.push(`${item.month}: a escala não contém dias publicados.`);
     if (item.requiresManualFunction) reasons.push(`${item.month}: a função profissional está pendente; as tarifas salariais não foram selecionadas.`);
     if (!item.configured) reasons.push(`${item.month}: não há tarifas ou valores salariais disponíveis para esta conta e competência.`);

@@ -116,6 +116,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
 import NextPaymentCard from '@/components/finance/NextPaymentCard';
 import {useSalaryDisplayBasis} from '@/components/finance/SalaryDisplayBasis';
+import { consumeSalaryDsr, salaryDsrReceipt } from '@/lib/salaryDsrConsumer';
 import {payrollOperationalCoverage} from '@/lib/payrollPaymentComposition';
 import {salaryDisplaySummary,sumSalaryDisplaySummaries} from '@/lib/salaryDisplayBasis';
 import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
@@ -128,7 +129,7 @@ import FinancialStatementReconciliation from '@/components/finance/FinancialStat
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
+import { confirmedPayrollDsrContext, financialRateOwner, confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
@@ -3941,6 +3942,7 @@ function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean | null {
 function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const competencePrefix = nominalFinancialCompetencePrefix(roster);
   events = events.filter(event => Boolean(competencePrefix && rosterDisplayIso({ ...event, operationalTimeZone: (event as any).operationalTimeZone || ROSTER_DISPLAY_TIME_ZONE })?.startsWith(competencePrefix + '-')));
+  const dsrFence = captureAuthSession();
   const cfg = loadActCompensationConfig(roster);
   const flightEvents = dedupeProjectedLegs(events.filter((event) => event.kind === 'flight' && !event.placeholder));
   const instructor = storage.get('crewcheck_instructor', '0') !== '0';
@@ -4017,8 +4019,25 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const production = rows.reduce((sum, row) => sum + row.production, 0);
   const chief = rows.reduce((sum, row) => sum + row.chief, 0);
   const instructorPay = rows.reduce((sum, row) => sum + row.instructor, 0);
-  const fixedReady=cfg.baseConfigured!==false&&cfg.fixedAdditionsConfigured!==false&&[cfg.basePay,cfg.fixedAdditions].every(value=>Number.isFinite(value)&&value>=0);
-  const gross = fixedReady?cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + reserve + standby:NaN;
+  const dsrMonth = competencePrefix || '';
+  const dsrOwner = financialRateOwner() || '';
+  const dsrContext = dsrFence.isCurrent() ? confirmedPayrollDsrContext(dsrMonth) : null;
+  const monthlyInputs = readMonthlyFinancialSettings(dsrMonth);
+  // Rates are source metadata only; amounts above remain produced by the existing engine.
+  const rateInputs = ['salary.dayKm','salary.nightKm','salary.reserveHour','salary.standbyHour','salary.base'].map(key=>{const rate=confirmedRateAt(key,rosterFinancialDate(roster));return rate?{key,sourceFingerprint:rate.sourceFingerprint,revision:rate.revision,value:rate.value,effectiveFrom:rate.effectiveFrom,effectiveTo:rate.effectiveTo}:null;});
+  const receipt = salaryDsrReceipt(dsrOwner,dsrMonth,JSON.stringify({version:'salary-engine-dsr-consumer:v1',roster:rosterFingerprint(roster),cfg,rateInputs,monthlyInputs,rows,reserveAssessment,standbyAssessment,dsrContext}),dsrFence);
+  const knownFlight = (key:'production'|'chief'|'instructor')=>{const valid=rows.filter(row=>row.distanceKnown&&row.timeKnown&&Number.isFinite(row[key])&&row[key]>=0);return valid.length?valid.reduce((sum,row)=>sum+row[key],0):null;};
+  const dsr = consumeSalaryDsr({ownerId:dsrOwner,month:dsrMonth,receipt,context:dsrContext,isCurrent:dsrFence.isCurrent,parts:[
+    {key:'base',amount:cfg.basePay,knownAmount:cfg.baseConfigured?cfg.basePay:null,complete:cfg.baseConfigured!==false},
+    {key:'fixedAdditions',amount:cfg.fixedAdditions,knownAmount:cfg.fixedAdditionsConfigured?cfg.fixedAdditions:null,complete:cfg.fixedAdditionsConfigured===true},
+    // Current imports prove observed work, not an exhaustive category inventory.
+    {key:'production',amount:null,knownAmount:!cfg.requiresManualFunction?knownFlight('production'):null,complete:false},
+    {key:'reserve',amount:null,knownAmount:reserveAssessment.knownCount&&!cfg.requiresManualFunction?reserveAssessment.knownAmount:null,complete:false},
+    {key:'standby',amount:null,knownAmount:standbyAssessment.knownCount&&!cfg.requiresManualFunction?standbyAssessment.knownAmount:null,complete:false},
+    {key:'chief',amount:null,knownAmount:readOptionalNumberSetting('crewcheck_act_chief_sector_brl')!==null?knownFlight('chief'):null,complete:false},
+    {key:'instructor',amount:null,knownAmount:readOptionalNumberSetting('crewcheck_act_instructor_sector_brl')!==null?knownFlight('instructor'):null,complete:false},
+  ]});
+  const gross = dsr.current&&dsr.composition.grossMinor!==null?dsr.composition.grossMinor/100:NaN;
   const inss = Math.max(0, cfg.inssDeduction);
   const irrf = Math.max(0, cfg.irrfDeduction);
   const otherDeductions = Math.max(0, cfg.otherDeductions);
@@ -4053,6 +4072,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     net,
     config: cfg,
     configured: cfg.configured,
+    dsr,
   };
 }
 function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabel, nextPayment }: { bundle: BundleState; forecastOverride?: ReturnType<typeof calculatePerDiem> & { scopeIncomplete?: boolean }; controls?: ReactNode; graph?: ReactNode; rangeLabel?: string; nextPayment?: ReactNode }) {
@@ -4187,6 +4207,7 @@ function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
     requiresManualFunction: salary.config.requiresManualFunction,
     variableComplete: salary.rows.every(row => row.distanceKnown),
     pendingActivityCount: salary.reserveAssessment.pendingCount + salary.standbyAssessment.pendingCount,
+    dsrPending: !salary.dsr.isCurrent()||salary.dsr.composition.state!=='complete',
     variable: salary.production + salary.reserve + salary.standby + salary.chief + salary.instructorPay,
     fixedMonth: reviewedPayrollCycleForOperationalMonth(month)?.fixedMonth };
 }
@@ -4228,6 +4249,7 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
         </FinancialScreen>
         <FinancialScreen names={['payment']}>
         <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>
+        <section data-salary-dsr aria-label="DSR e parcelas conhecidas">{selected.map(item=>{const dsr=item.snapshot.salary.dsr;if(!dsr.isCurrent())return null;return <div key={`${item.roster.year}-${item.roster.month}`}><strong>{item.roster.month}/{item.roster.year} · DSR {dsr.composition.dsr.amountMinor===null?'pendente':moneyBRL(dsr.composition.dsr.amountMinor/100)}</strong><p>Subtotal conhecido, sem DSR: {moneyBRL(dsr.observedSubtotalMinor===null?null:dsr.observedSubtotalMinor/100)}</p><details><summary>Detalhes do DSR</summary><p>Inventário de atividades incompleto; ausência de registro não confirma zero. Bruto e líquido completos permanecem pendentes.</p>{dsr.composition.reportedDsrMinor!==null&&<p data-reported-dsr>DSR informado no demonstrativo: {moneyBRL(dsr.composition.reportedDsrMinor/100)} · folha {dsr.sourcePayrollMonth} · trabalho {dsr.sourceOperationalMonth}. Separado desta previsão.</p>}</details></div>;})}</section>
         <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, itemDiagnostic=salaryCalculationDiagnostic([salaryDiagnosticItem(item.snapshot)],financialRange('month',`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,'','',''),[]), cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`), deductionsKnown=salaryDeductionEvidence(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {privacy.text(salary.config.source)}</p><p>{salary.config.baseLabel||'Salário-base'}: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {salary.config.fixedAdditionsConfigured?moneyBRL(salary.config.fixedAdditions):'Não informado'}.</p>{itemDiagnostic.variable===null&&<p>Variáveis e total: não calculáveis; há dados ou função profissional pendentes.</p>}<p>Parcelas previstas: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p>{[salary.reserveAssessment,salary.standbyAssessment].map((assessment,index)=>assessment.pendingCount>0&&<p key={index} data-salary-activity-pending={index===0?'reserve':'standby'}>{index===0?'Reserva':'Sobreaviso'}: {assessment.knownCount>0?`subtotal com horários comprovados ${moneyBRL(assessment.knownAmount)}; `:''}{assessment.pendingCount} intervalo(s) sem horários publicados comprovados. O subtotal não representa a parcela completa.</p>)}{(salary.reserveAssessment.rows.length>0||salary.standbyAssessment.rows.length>0)&&<details className="cc-per-diem-source"><summary>Horários de reservas e sobreaviso</summary>{[...salary.reserveAssessment.rows,...salary.standbyAssessment.rows].map(row=><p key={row.id}>{row.date} · {row.code} · {row.timeKnown?moneyBRL(row.value!):'Não calculável'}<small>{row.report||'Início ausente'} até {row.release||'Fim ausente'} · {row.issue||'Intervalo publicado; previsão sem confirmação de pagamento.'}</small></p>)}</details>}<p>Descontos informados: INSS {deductionsKnown.inss?moneyBRL(salary.inss):'Não informado'}, IRRF {deductionsKnown.irrf?moneyBRL(salary.irrf):'Não informado'}, outros {deductionsKnown.otherDeductions?moneyBRL(salary.otherDeductions):'Não informado'}. Líquido simulado da competência: {itemDiagnostic.ready&&deductionsKnown.complete&&payrollOperationalCoverage(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,item.roster.days.map(day=>day.date)).complete?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
         </FinancialScreen>
         <FinancialScreen names={['statement']}><section className="cz-finance-table cc-per-diem-items" data-salary-items><h3>Extrato previsto · Componentes por voo · {rows.length} itens</h3><details className="cc-per-diem-source"><summary aria-label="Entender os KM da previsão salarial">?</summary><p data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. Distância geográfica estimada não confirma KM remunerável. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho. Confira o demonstrativo da empresa.</p><p>O grupo de tarifa majorada pode incluir noturno estimado, extra e domingo/feriado. Não representa KM noturno físico.</p></details><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?[...rows].sort((a,b)=>a.iso.localeCompare(b.iso)).map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small><span data-salary-distance-basis={row.distanceBasis || 'unavailable'}>{row.distanceKnown?'Distância geográfica estimada entre aeroportos; KM remunerável não confirmado. ':'KM remunerável não confirmado. '}Grupos de tarifa base/majorada: o grupo majorado inclui noturno estimado, extra e domingo/feriado; não representa KM noturno físico.</span>{!row.timeKnown?'Horários ou fuso operacional ausentes ou ambíguos; parcela não calculável. ':''}{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?(privacy.hidden?'Valores ocultos':`${row.dayKm} km à tarifa base × R$ ${row.dayRateApplied.toLocaleString('pt-BR',{maximumFractionDigits:10})} · ${row.nightKm} km no grupo de tarifa majorada × R$ ${row.nightRateApplied.toLocaleString('pt-BR',{maximumFractionDigits:10})}`):'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {privacy.text(row.payRule)} · {privacy.text(row.source)}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</section></FinancialScreen>
