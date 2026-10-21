@@ -26,6 +26,7 @@ export function CrewValidityEditor({ initial, initialDays = DEFAULT_ALERT_DAYS, 
     } catch(e) { setError(e instanceof Error ? e.message : 'Revise os campos.'); }
   }
   async function save() {
+    if(editingId)return;
     setBusy(true); setError('');
     try { validateEntries(entries); await onSave(entries,normalizeAlertDays(days.split(',').map(d=> d.trim() === '' ? NaN : Number(d.trim())))); }
     catch(e) { setError(e instanceof Error ? e.message : 'Falha ao salvar.'); } finally { setBusy(false); }
@@ -49,6 +50,6 @@ export function CrewValidityEditor({ initial, initialDays = DEFAULT_ALERT_DAYS, 
     <label className="cc-validity-days"><span>Avisos antecipados em dias, separados por vírgula (0 a 730)</span><input value={days} onChange={e=>setDays(e.target.value)} disabled={busy}/></label>
     <p>Para mês/ano, os marcos usam o início do mês como planejamento conservador. Esse marco não é a data oficial de vencimento.</p>
     {error && <p role="alert">{error}</p>}
-    <div className="actions"><button type="button" className="primary" disabled={busy} onClick={save}>Salvar revisão</button><button type="button" disabled={busy} onClick={onCancel}>Cancelar</button></div>
+    <div className="actions"><button type="button" className="primary" disabled={busy||!!editingId} onClick={save}>Salvar revisão</button><button type="button" disabled={busy} onClick={onCancel}>Cancelar</button></div>
   </section>;
 }
