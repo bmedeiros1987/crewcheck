@@ -29,7 +29,7 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
   function program() {
     const current = calculate();
     if (current.action !== 'calculated' || current.eligible !== true) { refreshPreview(value => value + 1); return; }
-    onProgram?.(current.scheduledAt, current.hotelReportAt);
+    return onProgram?.(current.scheduledAt, current.hotelReportAt);
   }
   const selectedDefault = breakfastPlan === 'with' ? defaultLeadMinutes : breakfastPlan === 'without' ? defaultWithoutBreakfastMinutes : undefined;
   const mode = choice?.mode || 'auto';
