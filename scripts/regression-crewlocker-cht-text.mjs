@@ -20,6 +20,7 @@ assert.equal(mergeChtEntries(result.entries,parseChtText(text).entries).length,4
 assert.equal(parseChtText('Emissão 03/02/2030').recognized,false);assert.equal(parseChtText('CHT PORTUGUESE LEVEL 6').entries.length,0);
 for(const bad of ['31/02/2030','29/02/2031','00/12/2030','17/13/2030']){const p=parseChtText('CHT CMA 1 '+bad);assert.equal(p.entries.length,0);assert(p.conflicts.length);}
 for(const invalid of ['13/2031','08/20310','08/2031/17'])assert.equal(parseChtText('CHT A320 '+invalid).entries.length,0,'no partial-date admission');
+const damaged=parseChtText('CHT A32008/2031 A32013/2031');assert.equal(damaged.entries[0].confirmed,false,'invalid second reading requires review');assert.equal(mergeChtEntries(result.entries,damaged.entries).find(e=>e.label==='A320').confirmed,false,'dedup cannot erase incoming ambiguity');
 const conflict=parseChtText(text+'\nXII A320 09/2031');assert.equal(conflict.entries.length,5);assert(conflict.entries.filter(e=>e.label==='A320').every(e=>!e.confirmed));assert(conflict.conflicts.includes('A320: validades divergentes'));
 const manual={...result.entries.find(e=>e.label==='A320'),id:'manual-history',origin:'manual',revision:7,sourceCheck:'verified'};
 const original=JSON.stringify(manual),merged=mergeChtEntries([manual],conflict.entries);assert.equal(JSON.stringify(merged[0]),original,'manual reviewed record preserved');assert(merged.find(e=>e.label==='A320'&&e.expiry.value==='2031-09').confirmed===false);assert(merged.every(e=>!e.supersededBy));

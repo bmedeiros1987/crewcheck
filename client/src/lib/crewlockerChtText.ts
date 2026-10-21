@@ -37,14 +37,15 @@ export function parseChtText(text:string):{recognized:boolean;entries:ValidityEn
     add('medical',`CMA classe ${cls}`,match[3],Boolean(match[2]));
   }
   for(const match of input.matchAll(new RegExp('\\bENGLISH\\s*(?:LEVEL|NIVEL)\\s*([1-6])\\s*(?:VALID\\s*)?(?:UNTIL|ATE|VALIDADE)\\s*'+expiryToken,'g')))add('rating',`Inglês nível ${match[1]}`,match[2],match[2].split(/[/.\-]/).length===3);
-  for(const entry of entries){if(entries.some(other=>group(other)===group(entry)&&semantic(other)!==semantic(entry))){entry.confirmed=false;conflicts.push(`${entry.label}: validades divergentes`);}}
+  for(const entry of entries){if(conflicts.includes(`${entry.label}: data inválida`))entry.confirmed=false;if(entries.some(other=>group(other)===group(entry)&&semantic(other)!==semantic(entry))){entry.confirmed=false;conflicts.push(`${entry.label}: validades divergentes`);}}
   return {recognized:true,entries:entries.sort((a,b)=>a.id.localeCompare(b.id)),conflicts:[...new Set(conflicts)].sort()};
 }
 /** Preserve reviewed/manual records and history. A new date never supersedes an old one. */
 export function mergeChtEntries(existing:readonly ValidityEntry[],incoming:readonly ValidityEntry[]):ValidityEntry[] {
   const result=existing.map(clone);
   for(const candidate of incoming){
-    if(result.some(entry=>semantic(entry)===semantic(candidate)))continue;
+    const duplicate=result.find(entry=>semantic(entry)===semantic(candidate));
+    if(duplicate){if(!duplicate.supersededBy&&duplicate.origin==='pdf_text'&&!candidate.confirmed)duplicate.confirmed=false;continue;}
     const next=clone(candidate);
     if(result.some(entry=>!entry.supersededBy&&group(entry)===group(next)&&semantic(entry)!==semantic(next))){
       next.confirmed=false;
