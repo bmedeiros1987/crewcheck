@@ -1,0 +1,36 @@
+name: Gate push OFF candidate
+on:
+  pull_request:
+    paths:
+      - 'server/web-push/**'
+      - 'server/gate-source-update.mjs'
+      - 'shared/gate-query-day.mjs'
+      - 'client/public/crewcheck-push-offline.js'
+      - 'scripts/regression-gate-push-candidate.mjs'
+      - 'docs/gate-push-off-candidate-20261021.md'
+      - '.github/workflows/gate-push-off-candidate.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Source, producer, existing dispatcher and PWA receiver offline
+        run: |
+          node --check server/web-push/gateCandidate.mjs
+          node scripts/regression-gate-push-candidate.mjs
+          node scripts/regression-web-push-offline.mjs
+          node scripts/regression-web-push-cancellation-contract.mjs
+      - name: Canonical preparation and repeat receiver/lifecycle checks
+        run: |
+          npm run prepare:v139
+          node scripts/regression-gate-push-candidate.mjs
+          node scripts/regression-web-push-offline.mjs
+          node scripts/regression-web-push-cancellation-contract.mjs
