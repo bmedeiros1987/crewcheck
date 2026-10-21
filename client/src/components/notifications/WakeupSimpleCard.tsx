@@ -4,7 +4,7 @@ import {wakeDateFields, wakeNextConfirmed} from '../../../../shared/wakeupPlan.m
 import './wakeup-simple.css';
 
 type Props={
-  automatic:boolean; day:string; time:string; onEdit:(patch:{automatic?:boolean;day?:string;time?:string})=>void;
+  automaticLabel?:string; automatic:boolean; day:string; time:string; onEdit:(patch:{automatic?:boolean;day?:string;time?:string})=>void;
   planned:Date|null; jobs:any[]; jobsState:string; now:number; reason:string; busy:boolean;
   onActivate:()=>void; onRefresh:()=>void; children:ReactNode; channelSelection?:ReactNode;
 };
@@ -26,7 +26,7 @@ export function WakeupSimpleCard(props:Props) {
     <section className="cc-wake-editor" aria-label="Configurar despertador">
       <h2>Horário e dia</h2>
       <p className="cc-wake-fuso"><BellOff size={16} aria-hidden="true"/> Toque no celular indisponível nesta versão.</p>
-      <label className="cc-wake-auto"><input type="checkbox" checked={props.automatic} disabled={props.busy} onChange={event=>props.onEdit({automatic:event.target.checked})}/><span>Usar horário da escala</span></label>
+      <label className="cc-wake-auto"><input type="checkbox" checked={props.automatic} disabled={props.busy} onChange={event=>props.onEdit({automatic:event.target.checked})}/><span>{props.automaticLabel || 'Usar horário da escala'}</span></label>
       <div className="cc-wake-fields">
         <label>Horário<input type="time" value={fields.time} disabled={props.automatic||props.busy} onChange={event=>props.onEdit({time:event.target.value})}/></label>
         <label>Dia<input type="date" value={fields.day} disabled={props.automatic||props.busy} onChange={event=>props.onEdit({day:event.target.value})}/></label>
