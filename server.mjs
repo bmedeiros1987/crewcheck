@@ -1,5 +1,6 @@
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
+import { selectAeroDataBoxOccurrence } from './server/aerodatabox-occurrence.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
@@ -276,7 +277,7 @@ async function providerAeroDataBox(ctx, timeoutMs) {
     markProvider('aerodatabox', false);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
   }
-  const row = Array.isArray(payload) ? payload[0] : Array.isArray(payload?.items) ? payload.items[0] : payload;
+  const row = selectAeroDataBoxOccurrence(payload, ctx.gateQueryEvidence);
   if (!row) {
     markProvider('aerodatabox', false);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
