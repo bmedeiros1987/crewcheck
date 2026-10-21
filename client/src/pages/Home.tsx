@@ -4209,6 +4209,7 @@ function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
     variableComplete: salary.rows.every(row => row.distanceKnown),
     pendingActivityCount: salary.reserveAssessment.pendingCount + salary.standbyAssessment.pendingCount,
     dsrPending: !salary.dsr.isCurrent()||salary.dsr.composition.state!=='complete',
+    inventoryComplete: salary.dsr.inventoryComplete,
     variable: salary.production + salary.reserve + salary.standby + salary.chief + salary.instructorPay,
     fixedMonth: reviewedPayrollCycleForOperationalMonth(month)?.fixedMonth };
 }
