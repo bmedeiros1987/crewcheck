@@ -12,14 +12,15 @@ try{
  let current=true;const fence={isCurrent:()=>current};
  const receipt=salaryDsrReceipt(ownerId,month,'actual-inputs-A',fence);
  assert.equal(salaryDsrReceipt(ownerId,month,'actual-inputs-A',fence).revision,receipt.revision);
- const changed=salaryDsrReceipt(ownerId,month,'actual-inputs-B',fence);assert(changed.revision>receipt.revision);
+ const changed=salaryDsrReceipt(ownerId,month,'actual-inputs-B',fence);assert(changed.revision>receipt.revision);assert.equal(receipt.isCurrent(),false,'A invalidated when B replaces same forecast');assert.equal(changed.isCurrent(),true);salaryDsrReceipt(ownerId,'2026-09','other-month',fence);salaryDsrReceipt(ownerId,month,'comparison-source',fence,'comparison-before');assert.equal(changed.isCurrent(),true,'other month and comparison cannot invalidate current forecast');
+ const sourceA=salaryDsrReceipt(ownerId,month,JSON.stringify({effective:1,manual:1}),fence,'source-origin'),sourceB=salaryDsrReceipt(ownerId,month,JSON.stringify({effective:1,manual:null,learned:1}),fence,'source-origin');assert.equal(sourceA.isCurrent(),false);assert(sourceB.revision>sourceA.revision,'same amount with manual-to-learned origin change revises inputs');
  const parts=['base','fixedAdditions','production','reserve','standby','chief','instructor'].map(key=>({key,amount:null,knownAmount:null,complete:false}));
  const call=(patch={})=>consumeSalaryDsr({ownerId,month,receipt:changed,context,parts,isCurrent:fence.isCurrent,...patch});
  let value=call();assert.equal(value.composition.grossMinor,null);assert.equal(value.observedSubtotalMinor,null);assert.equal(value.composition.reportedDsrMinor,50000);
  value=call({parts:parts.map(p=>p.key==='production'?{...p,knownAmount:123.45}:p)});assert.equal(value.observedSubtotalMinor,12345);assert.equal(value.composition.dsr.amountMinor,null);assert.equal(value.components.find(p=>p.key==='production').amountMinor,null,'observed subtotal is not a complete component');
  value=call({parts:parts.map(p=>p.key==='reserve'?{...p,knownAmount:0}:p)});assert.equal(value.observedSubtotalMinor,0,'explicit known zero stays distinct from absence');assert.equal(value.composition.dsr.amountMinor,null);
  value=call({parts:parts.map(p=>p.key==='reserve'?{...p,knownAmount:NaN}:p)});assert.equal(value.observedSubtotalMinor,null,'NaN cannot become zero');
- value=call({ownerId:'other-owner'});assert.equal(value.composition.reportedDsrMinor,null);
+ value=call({ownerId:'other-owner'});assert.equal(value.composition.reportedDsrMinor,null);assert.equal(value.observedSubtotalMinor,null);
  value=call({month:'2026-09'});assert.equal(value.composition.reportedDsrMinor,null);
  const complete=parts.map(p=>({...p,amount:p.key==='production'?220:0,knownAmount:p.key==='production'?220:0,complete:true}));
  value=call({parts:complete});assert.equal(value.composition.dsr.amountMinor,8000);assert.equal(value.composition.grossMinor,30000);assert.equal(value.observedSubtotalMinor,22000,'reported DSR is not added');

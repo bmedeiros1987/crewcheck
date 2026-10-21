@@ -2308,10 +2308,10 @@ function homeAllowancePayment(roster: CrewRoster) {
   const snapshot=financeSnapshot(roster),month=String(roster.year)+'-'+String(roster.month).padStart(2,'0');
   return nextAllowancePayment(snapshot.perdiem.monthlyRows,snapshot.perdiem.unclassifiedItems,[month],new Date(),roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date));
 }
-function financeSnapshot(roster: CrewRoster) {
+function financeSnapshot(roster: CrewRoster, salaryScope = 'forecast') {
   const events = buildLegs(roster);
   const perdiem = calculatePerDiem(events, roster);
-  const salary = calculateSalary(events, roster);
+  const salary = calculateSalary(events, roster, salaryScope);
   return { roster, perdiem, salary };
 }
 function notifyCrewCheck(title: string, body: string) {
@@ -2564,14 +2564,15 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   );
   const financial = useMemo(() => {
     if (!planned || !comparison?.summary.periodMatches) return null;
-    const before = financeSnapshot(planned.roster);
-    const after = financeSnapshot(bundle.roster);
+    const before = financeSnapshot(planned.roster,'comparison-before');
+    const after = financeSnapshot(bundle.roster,'comparison-after');
     const beforeVariable = before.salary.production + before.salary.reserve + before.salary.standby
       + before.salary.chief + before.salary.instructorPay;
     const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
       + after.salary.chief + after.salary.instructorPay;
     const perDiemDelta = nativeForecastDelta(before.perdiem.nativeSummary, after.perdiem.nativeSummary);
-    const salaryReady = before.salary.configured && after.salary.configured
+    const salaryReady = before.salary.dsr.inventoryComplete && after.salary.dsr.inventoryComplete
+      && before.salary.configured && after.salary.configured
       && !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction
       && Number.isFinite(beforeVariable) && Number.isFinite(afterVariable)
       && [...(before.salary.rows || []), ...(after.salary.rows || [])].every(row => row.timeKnown === true && row.distanceKnown === true && Number.isFinite(row.total));
@@ -3942,7 +3943,7 @@ function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean | null {
   return configured.includes(iso);
 }
 
-function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
+function calculateSalary(events: ZeroLeg[], roster: CrewRoster, salaryScope = 'forecast') {
   const competencePrefix = nominalFinancialCompetencePrefix(roster);
   events = events.filter(event => Boolean(competencePrefix && rosterDisplayIso({ ...event, operationalTimeZone: (event as any).operationalTimeZone || ROSTER_DISPLAY_TIME_ZONE })?.startsWith(competencePrefix + '-')));
   const dsrFence = captureAuthSession();
@@ -4028,7 +4029,8 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const monthlyInputs = readMonthlyFinancialSettings(dsrMonth);
   // Rates are source metadata only; amounts above remain produced by the existing engine.
   const rateInputs = ['salary.dayKm','salary.nightKm','salary.reserveHour','salary.standbyHour','salary.base'].map(key=>{const rate=confirmedRateAt(key,rosterFinancialDate(roster));return rate?{key,sourceFingerprint:rate.sourceFingerprint,revision:rate.revision,value:rate.value,effectiveFrom:rate.effectiveFrom,effectiveTo:rate.effectiveTo}:null;});
-  const receipt = salaryDsrReceipt(dsrOwner,dsrMonth,JSON.stringify({version:'salary-engine-dsr-consumer:v1',roster:rosterFingerprint(roster),cfg,rateInputs,monthlyInputs,rows,reserveAssessment,standbyAssessment,dsrContext}),dsrFence);
+  const manualInputs = ['crewcheck_act_km_metric_brl','crewcheck_act_day_km_metric_brl','crewcheck_act_night_km_metric_brl','crewcheck_act_reserve_hour_brl','crewcheck_act_standby_hour_brl','crewcheck_act_chief_sector_brl','crewcheck_act_instructor_sector_brl','crewcheck_salary_base_brl','crewcheck_salary_fixed_additions_brl','crewcheck_salary_inss_brl','crewcheck_salary_irrf_brl','crewcheck_salary_other_deductions_brl','crewcheck_salary_fgts_rate'].map(key=>({key,value:readOptionalNumberSetting(key)}));
+  const receipt = salaryDsrReceipt(dsrOwner,dsrMonth,JSON.stringify({version:'salary-engine-dsr-consumer:v1',roster:rosterFingerprint(roster),cfg,rateInputs,manualInputs,monthlyInputs,rows,reserveAssessment,standbyAssessment,dsrContext}),dsrFence,salaryScope);
   const knownFlight = (key:'production'|'chief'|'instructor')=>observedSalaryFlightSubtotal(rows,key);
   const dsr = consumeSalaryDsr({ownerId:dsrOwner,month:dsrMonth,receipt,context:dsrContext,isCurrent:dsrFence.isCurrent,parts:[
     {key:'base',amount:cfg.basePay,knownAmount:cfg.baseConfigured?cfg.basePay:null,complete:cfg.baseConfigured===true},
