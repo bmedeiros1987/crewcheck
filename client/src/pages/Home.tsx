@@ -4333,7 +4333,7 @@ async function postCrewCheckJson(url: string, payload: Record<string, unknown>):
   return authFetch<any>(url, { method: 'POST', body: JSON.stringify(payload), cache: 'no-store' });
 }
 
-function StayAwareWakeupView({event,events,owned}:{event:ZeroLeg;events:ZeroLeg[];owned:boolean}) {
+function StayAwareWakeupView({event,events,roster}:{event:ZeroLeg;events:ZeroLeg[];roster:CrewRoster}) {
   const [,refresh]=useState(0);
   useEffect(()=>{
     const update=()=>refresh(value=>value+1);
@@ -4342,7 +4342,7 @@ function StayAwareWakeupView({event,events,owned}:{event:ZeroLeg;events:ZeroLeg[
     const clock=window.setInterval(update,30000);
     return()=>{names.forEach(name=>window.removeEventListener(name,update));window.clearInterval(clock);};
   },[]);
-  const selected=owned?selectCurrentStayOperationalProjection(events):null;
+  const selected=alertRosterOwned(roster)?selectCurrentStayOperationalProjection(events):null;
   const projection=selected?.projection;
   const reference=selected&&selected.state!=='missing'?{
     plannedAt:projection?.isCurrent()&&projection.state==='calculated'?projection.calculation?.scheduledAt||null:null,
@@ -4351,7 +4351,7 @@ function StayAwareWakeupView({event,events,owned}:{event:ZeroLeg;events:ZeroLeg[
     timeZone:projection?.isCurrent()?projection.record?.timeZone||'UTC':'UTC',
   }:undefined;
   // Preserve the flight/job identity. A changed reference never mutates a saved job.
-  return <><WakeupView event={reference?{...event,stayWakeup:reference}:event}/>{selected?.event&&<section className="cz-toolbox"><button onClick={()=>editOperationalStay(selected.event)}>Editar pernoite</button>{projection?.isCurrent()&&<details><summary>Detalhes do pernoite</summary><p>{projection.hotelName || 'Hotel a confirmar'}</p>{projection.room&&<p>Quarto {projection.room}</p>}</details>}</section>}</>;
+  return <><WakeupView event={reference?{...event,stayWakeup:reference}:event}/>{selected?.event&&<section className="cz-toolbox"><button onClick={()=>{if(alertRosterOwned(roster)&&projection?.isCurrent())editOperationalStay(selected.event);}}>Editar pernoite</button>{projection?.isCurrent()&&<details><summary>Detalhes do pernoite</summary><p>{projection.hotelName || 'Hotel a confirmar'}</p>{projection.room&&<p>Quarto {projection.room}</p>}</details>}</section>}</>;
 }
 
 function WakeupView({ event }: { event: ZeroLeg }) {
@@ -5646,7 +5646,7 @@ export default function Home() {
     {view === 'calendar' && <CalendarToolsView actions={actions} bundle={bundle} gym={gym}/>}
     {view === 'exports' && <ExportToolsView actions={actions}/>}
     {view === 'routine' && <RoutineView bundle={bundle}/>}
-    {view === 'wakeup' && <StayAwareWakeupView event={event} events={events} owned={alertRosterOwned(bundle.roster)}/>}
+    {view === 'wakeup' && <StayAwareWakeupView event={event} events={events} roster={bundle.roster}/>}
     {view === 'hotels' && <HotelsView events={events}/>}
     {view === 'gyms' && <GymsView events={events}/>}
     {view === 'presentation' && <PresentationManagerView events={events}/>}
