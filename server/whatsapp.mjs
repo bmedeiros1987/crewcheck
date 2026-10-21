@@ -450,6 +450,9 @@ function webhookHealth() {
   const inbound = Boolean(verifyToken() && appSecret());
   const outbound = Boolean(accessToken() && phoneNumberId());
   return {
+    provider: 'meta_cloud_api',
+    configurationOnly: true,
+    deliveryProof: 'not_checked',
     ok: inbound,
     configured: inbound,
     inbound,
@@ -466,10 +469,10 @@ function webhookHealth() {
     conciergeText: true,
     clientCertificateRequired: false,
     message: inbound && outbound
-      ? 'WhatsApp oficial pronto para receber, vincular e responder por texto.'
+      ? 'Configuração da Meta presente; envio e entrega não verificados.'
       : inbound
-        ? 'Webhook pronto. Configure token permanente e Phone Number ID para responder mensagens.'
-        : 'Configure WHATSAPP_VERIFY_TOKEN e META_APP_SECRET no Render.',
+        ? 'Webhook Meta configurado; configuração de saída ausente.'
+        : 'Webhook Meta sem configuração completa.',
   };
 }
 
