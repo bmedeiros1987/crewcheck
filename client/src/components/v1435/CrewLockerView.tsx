@@ -223,7 +223,7 @@ export default function CrewLockerView() {
         <label><span>Nome do titular</span><input value={holderName} onChange={(event) => setHolderName(event.target.value)} required/></label>
         <label><span>Órgão emissor</span><input value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="Ex.: ANAC"/></label>
         <p role="status">{reading?'Lendo PDF neste aparelho…':readNote||'CHT digital: leitura local de validades.'}</p>
-        <label className="file"><span>Arquivo</span><input type="file" accept=".pdf,application/pdf,image/*" onChange={(event) => void selectDocument(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
+        <label className="file"><span>Arquivo</span><input type="file" onChange={(event) => void selectDocument(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
       </div>
       {!!detected?.entries.length && <details><summary>{detected.entries.length} validades · conferir ou ajustar</summary><ul>{detected.entries.map(entry=><li key={entry.id}>{entry.label} · {validityLabel(entry.expiry)}</li>)}</ul><button type="button" onClick={()=>setAdjustImport(true)}>Ajustar validades</button></details>}
       {adjustImport&&detected&&<CrewValidityEditor initial={detected.entries} initialDays={importDays} onCancel={()=>setAdjustImport(false)} onSave={async (entries,days)=>{setDetected({...detected,entries});setImportDays(days);setAdjustImport(false);}}/>}

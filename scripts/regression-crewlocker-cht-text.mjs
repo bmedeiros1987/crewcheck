@@ -75,3 +75,6 @@ for(const raw of ['08/2031 09/2032 Comissário','08/2031 Comissário 17/05/2033'
 console.log('PASS actual PDF whitespace columns: exact four parent candidates, medical row and trailing duty text, multiple ratings; second/partial dates rejected.');
 
 const twoMedicalDates=parseChtText('CHT\nXIV MEDICAL CERTIFICATE\nSegunda / 17/05/2033 18/05/2034');assert(twoMedicalDates.entries.every(e=>!e.confirmed));assert(twoMedicalDates.conflicts.length);
+
+for(const variant of [text.replace('A320 |','A 320 |'),text.replaceAll(' | ',' ').replace('A320 08/2031','A 320 08/2031')]){const p=parseChtText(variant);assert.equal(p.entries.length,4);assert.deepEqual(p.entries.find(e=>e.label==='A320').expiry,{kind:'month',value:'2031-08'});assert.deepEqual(p.conflicts,[]);}
+console.log('PASS explicit spaced rating tokens with pipe and whitespace table columns');

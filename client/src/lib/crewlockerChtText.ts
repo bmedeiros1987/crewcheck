@@ -51,8 +51,8 @@ export function parseChtText(text:string):{recognized:boolean;entries:ValidityEn
     const line=rawLine.replace(/^\s*XII\b\s*[-:]?\s*/,'').trim();
     if(!line)continue;
     const cells=line.split('|').map(cell=>cell.trim());
-    const plain=cells.length===1?line.match(/^([A-Z]{1,5}-?\d{1,4}[A-Z]{0,3})(?:[ \t]+(.*))?$/):null;
-    const code=cells.length>1?cells[0]:plain?.[1];
+    const plain=cells.length===1?line.match(/^([A-Z]{1,5}[ \t]*-?[ \t]*\d{1,4}[A-Z]{0,3})(?:[ \t]+(.*))?$/):null;
+    const code=(cells.length>1?cells[0]:plain?.[1])?.replace(/[ \t]+/g,'');
     if(!code||!codePattern.test(code)){
       if(cells.length>1&&/\d/.test(cells[0])&&/\d/.test(cells[1]||''))conflicts.push('Habilitação: código da tabela exige revisão');
       if(/^[A-Z][A-Z0-9-]*\d[/.]\d/.test(line))conflicts.push('Habilitação: código e validade sem separação inequívoca');
