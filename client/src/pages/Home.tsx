@@ -4043,7 +4043,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const irrf = Math.max(0, cfg.irrfDeduction);
   const otherDeductions = Math.max(0, cfg.otherDeductions);
   const fgts = gross * cfg.fgtsRate / 100;
-  const net = Math.max(0, gross - inss - irrf - otherDeductions);
+  const net = salaryDisplaySummary('net',Number.isFinite(gross)?gross:null,Number.isFinite(gross),[dsrMonth],[monthlyInputs]).amount ?? NaN;
   return {
     rows,
     sectors,

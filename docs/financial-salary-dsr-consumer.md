@@ -1,0 +1,11 @@
+# Local salary DSR consumer
+
+This consumer delegates exclusively to composeSalaryWithDsr and confirmedPayrollDsrContext. No shared financial model, tariff, transport, writer or server admission changes.
+
+`salaryDsrReceipt` assigns an ephemeral calculation revision to an owner/month/input signature. Signature includes the actual engine config/results, roster fingerprint, confirmed rate metadata, monthly settings/revision and the real payroll context. The receipt is memory-only, invalidated by the captured auth continuity fence. It is neither a persistent payroll revision nor server authentication. Source ids contain no token. It must never authorize Concierge sync.
+
+Each full component is amountMinor or null; observations remain separately under observedParts/observedSubtotalMinor. Explicit observed zero and missing observation differ. Unknown KM/time blocks production but does not erase a chief sector with existing eligibility evidence. Legacy global instructor default is not owner-bound eligibility and does not prove observed zero. Missing inventory leaves variable full components null. No DSR partial is calculated outside the shared model. Reported DSR remains separate, scoped to its exact operational/payroll months. Gross and net remain unavailable while full composition is incomplete. Net also requires the existing monthly deduction evidence; no old net survives a changed gross.
+
+Future inventory producer contract (not implemented): owner, operational competence, original publication/source identity and revision, category-specific exhaustive event inventory for every covered day, explicit known empty categories, and invalidation when source/classification/session changes. Coverage must establish both dates and all occurrences/classification; payrollOperationalCoverage's date list, rosterFingerprint and current publication completeDates empty are insufficient. No user/default boolean may mint this evidence. Until that producer exists, observed known work is displayed as a subtotal rather than erased or called complete.
+
+Tests are synthetic/offline only. Confirmed source fixture comes from the real parser/archive producer. No printed evidence is borrowed as provenance for estimated work.
