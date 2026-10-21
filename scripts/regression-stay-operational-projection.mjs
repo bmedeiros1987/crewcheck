@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const {build}=createRequire(process.env.STAY_TEST_DEPENDENCIES_PACKAGE||import.meta.url)('esbuild');
+const output=await build({entryPoints:['client/src/lib/stayOperationalProjection.ts'],bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'synthetic-session',setup(b){b.onResolve({filter:/authClient$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const getToken=()=>globalThis.token;export const getStoredUser=()=>({id:globalThis.account});export const captureAuthSession=()=>{const token=globalThis.token,account=globalThis.account;return{isCurrent:()=>globalThis.token===token&&globalThis.account===account}};`,loader:'js'}));}}]});
+const api=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const values=new Map();globalThis.localStorage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};globalThis.account='A';globalThis.token='synthetic';
+const now=Date.parse('2032-10-05T01:00:00Z');
+const event={kind:'stay',id:'stay-a',origin:'SYN',destination:'SYN',canonical:{startDateTime:'2032-10-05T00:00:00Z',endDateTime:'2032-10-06T12:00:00Z'}};
+const record={eventId:event.id,signature:api.stayOperationalSignature(event),draft:{hotelName:'Synthetic Hotel',room:'SYN-ROOM',presentationTime:'08:00'},timeZone:'UTC',apzDate:'2032-10-05',apzSource:'manual',apzConfirmed:true,breakfastPlan:'with',choice:{mode:'relative',leadMinutes:90}};
+const editor={version:2,accountId:'A',defaultLeadMinutes:90,defaultWithoutBreakfastMinutes:60,stays:{[event.id]:record}};
+const project=(patch={},e=event)=>api.projectStayOperational({accountId:'A',event:e,editor:{...editor,stays:{[event.id]:{...record,...patch}}},now});
+const save=state=>localStorage.setItem('crewcheck_stay_editor_v2:A',JSON.stringify(state));
+save(editor);let read=api.readStayOperationalProjection(event,now);assert.equal(read.state,'calculated');assert.equal(read.calculation.scheduledAt,'2032-10-05T06:30:00.000Z');assert(read.isCurrent());assert.equal(read.room,'SYN-ROOM');
+assert.equal(api.readStayOperationalProjection(event,now).apzAt,read.apzAt,'reload reads canonical saved record');
+save({...editor,stays:{[event.id]:{...record,draft:{...record.draft,presentationTime:'09:00'}}}});assert(!read.isCurrent());assert.equal(api.readStayOperationalProjection(event,now).calculation.scheduledAt,'2032-10-05T07:30:00.000Z');
+assert.equal(project({choice:{mode:'relative',leadMinutes:0}}).calculation.leadMinutes,0);assert.equal(project({choice:{mode:'relative',leadMinutes:0}}).state,'needs-review','existing calculator does not authorize alarm at APZ');
+assert.equal(project({choice:{mode:'absolute',alarmAt:'2032-10-05T05:00:00Z',timeZone:'UTC'}}).calculation.scheduledAt,'2032-10-05T05:00:00.000Z');
+assert.equal(project({choice:undefined,breakfastPlan:'unknown'}).state,'needs-review');assert.equal(project({choice:undefined,breakfastPlan:'without'}).calculation.leadMinutes,60);
+assert.equal(project({apzConfirmed:false}).apzAt,null);assert.equal(project({signature:'changed'}).room,'');assert.equal(project({eventId:'other'}).state,'needs-review');assert.equal(project({}, {...event,id:'other'}).state,'missing');
+assert.equal(project({apzDate:'2032-10-04'}).state,'needs-review');assert.equal(project({draft:{...record.draft,presentationTime:'00:00'}}).state,'needs-review','APZ must be strictly after start');
+assert.equal(project({apzDate:'2032-10-06',draft:{...record.draft,presentationTime:'01:00'}}).apzAt,'2032-10-06T01:00:00.000Z');
+for(const [day,clock] of [['2032-03-14','02:30'],['2032-11-07','01:30']]){const e={...event,canonical:{startDateTime:day+'T00:00:00Z',endDateTime:day+'T23:59:59Z'}};assert.equal(project({signature:api.stayOperationalSignature(e),timeZone:'America/New_York',apzDate:day,draft:{...record.draft,presentationTime:clock}},e).state,'needs-review');}
+assert.equal(api.projectStayOperational({accountId:'B',event,editor,now}).state,'missing');globalThis.account='B';assert.equal(api.readStayOperationalProjection(event,now).state,'missing');globalThis.account='A';save(editor);
+read=api.readStayOperationalProjection(event,now);globalThis.token='renewed';assert(!read.isCurrent());
+assert.equal(api.selectCurrentStayOperationalProjection([event],now).state,'selected');assert.equal(api.selectCurrentStayOperationalProjection([event,{...event,id:'overlap'}],now).reason,'ambiguous-current-stay');assert.equal(api.selectCurrentStayOperationalProjection([event],now-86400000).reason,'no-current-stay');
+console.log('PASS stay operational projection: actual store reload/edit, continuity, owner/occurrence/signature/bounds, zero/absolute/default/breakfast, DST/overnight, unique current and no future fallback; no writes except synthetic fixture storage, no transports.');
