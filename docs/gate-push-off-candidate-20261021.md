@@ -255,3 +255,5 @@ configuration presence audit, then explicit activation and physical validation.
 None is replaced by a JS epoch or by these fixtures.
 
 Review counterproof: a captured installation-v1 confirmation is rejected after the actual existing registry rotates to v2; only a fresh v2 confirmation can write topic consent. The disposable SQL test executes mutateInstallation itself, not a fake registry callback.
+
+Consent API errors: only the consent fence's own GateConsentConflictError (revision, installation, authority or input refusal, before or inside the rolled-back transaction) answers 409 GATE_CONSENT_CONFLICT with a generic body. Any other failure, including a driver error that carries status 409, answers 500 GATE_CONSENT_UNAVAILABLE without detail and logs only its sanitized code. The host remains OFF; only the literal code switch true reaches storage.

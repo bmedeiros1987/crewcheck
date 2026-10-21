@@ -9,7 +9,12 @@ import { radarResultDecision, radarFlightId } from '../../shared/gate-query-day.
 // Code connection only. No environment variable can activate this host.
 export const CREWCHECK_GATE_HOST_ENABLED = false;
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,160}$/.test(value);
-const denied = () => Object.assign(new Error('Autoridade, aparelho ou consentimento de portão não confirmados.'), { status: 409 });
+// Expected refusal (revision/authority/installation fence). Only this class maps
+// to HTTP 409; driver/storage failures stay internal and are never a conflict.
+export class GateConsentConflictError extends Error {
+  constructor() { super('Autoridade, aparelho ou consentimento de portão não confirmados.'); this.name = 'GateConsentConflictError'; this.status = 409; }
+}
+const denied = () => new GateConsentConflictError();
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const sameInstallation = (row, scope) => row?.email === scope.email && row.ownerId === scope.ownerId && row.installationId === scope.installationId && row.active === true;
 export const gateConsentKey = (owner, installation) => 'crewcheck-push-binding:gate-v1:' + crypto.createHash('sha256').update(JSON.stringify([owner, installation])).digest('hex');

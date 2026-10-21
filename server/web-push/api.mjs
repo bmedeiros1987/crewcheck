@@ -1,4 +1,4 @@
-import {CREWCHECK_GATE_HOST_ENABLED,changeGateConsent} from './gateHost.mjs';
+import {CREWCHECK_GATE_HOST_ENABLED,changeGateConsent,GateConsentConflictError} from './gateHost.mjs';
 import { requireExistingIdentity, readBody, sendJson, parseJsonColumn } from '../v139/common.mjs';
 import { mutateInstallation, revokeAccountInstallations, installationBindingKey } from './installationRegistry.mjs';
 import { reconcilePushReceipts } from './outbox.mjs';
@@ -24,7 +24,15 @@ export async function handleCrewCheckPush(req,res,url,{identify=requireExistingI
  const body=await read(req,20000);if(!validId(body?.installationId)){sendJson(res,400,{ok:false,message:'Aparelho não identificado.'});return true;}
  if(body.action==='gate-consent'){
   if(gateHostEnabled()!==true){sendJson(res,503,{ok:false,code:'GATE_HOST_DISABLED'});return true;}
-  const result=await changeGateConsent(identity.db,identity,body,{enabled:true,clock});sendJson(res,200,{ok:true,...result});return true;
+  let result;
+  try{result=await changeGateConsent(identity.db,identity,body,{enabled:true,clock});}
+  catch(error){
+   // A refused fence asks the device to reload; any other failure is internal and leaks no detail.
+   if(error instanceof GateConsentConflictError){sendJson(res,409,{ok:false,code:'GATE_CONSENT_CONFLICT',message:'Aparelho ou consentimento mudou. Recarregue antes de confirmar.'});return true;}
+   console.error('[crewcheck:gate-consent]',String(error?.code||error?.name||'GATE_CONSENT_ERROR').replace(/[^A-Za-z0-9_]/g,'').slice(0,80));
+   sendJson(res,500,{ok:false,code:'GATE_CONSENT_UNAVAILABLE',message:'Não foi possível registrar agora.'});return true;
+  }
+  sendJson(res,200,{ok:true,...result});return true;
  }
  const own={email:identity.email,ownerId};
  if(body.action==='revoke'){sendJson(res,200,{ok:true,...await revokeAccountInstallations(identity.db,own,body.installationId,clock())});return true;}

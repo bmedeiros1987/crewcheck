@@ -1,4 +1,5 @@
 import { changeGateConsent, createGateOutboxConnection, gateConsentKey } from '../server/web-push/gateHost.mjs';
+import { handleCrewCheckPush } from '../server/web-push/api.mjs';
 import crypto from 'node:crypto';
 import { installationStateKey,mutateInstallation } from '../server/web-push/installationRegistry.mjs';
 import assert from 'node:assert/strict';
@@ -84,6 +85,9 @@ try {
   await db.query('UPDATE crewcheck_watch_sessions SET revoked=0 WHERE owner_id=? AND session_id=?',[ownerId,sessionId]);
   await mutateInstallation(db,{...registryInput,expectedRevision:1});
   await assert.rejects(changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW}),/não confirmados/,'old confirmation cannot consent to rotated installation');
+  const callApi=async(input,context=identityContext)=>{let status,payload;const res={setHeader(){},writeHead(code){status=code;},end(raw){payload=JSON.parse(raw);}};
+   await handleCrewCheckPush({method:'POST',headers:{origin:'https://fixture.test'}},res,new URL('https://fixture.test/api/platform/notifications/crewcheck-installation'),{identify:async()=>({...context,db}),configuration:()=>({origin:'https://fixture.test'}),read:async()=>structuredClone(input),clock:()=>NOW,gateHostEnabled:()=>true});return {status,payload};};
+  const staleApi=await callApi({action:'gate-consent',...consentInput});assert.equal(staleApi.status,409,'API maps stale installation revision to conflict');assert.equal(staleApi.payload.code,'GATE_CONSENT_CONFLICT');
   const [staleConsent]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);assert.equal(staleConsent.length,0);
   consentInput.expectedInstallationRevision=2;
   const ack=await changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW});assert.equal(ack.authorityEpoch,epoch);assert.equal(ack.localFenceConfirmed,false);assert(!('sessionId' in ack));
@@ -110,6 +114,16 @@ try {
   assert.equal((await connected.dispatch(db,revocationJobs[0],configuration,async()=>{providerCalls++;throw Error('forbidden real transport');})).status,'cancelled');assert.equal(providerCalls,0);
   const [topicRows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);assert.equal((typeof topicRows[0].payload==='string'?JSON.parse(topicRows[0].payload):topicRows[0].payload).active,true,'session invalidation blocks independently of topic row');
   await assert.rejects(changeGateConsent(db,identityContext,{...consentInput,expectedRevision:1},{enabled:true,clock:()=>NOW}));
+  assert.equal((await callApi({action:'gate-consent',...consentInput,enabled:false,confirmed:false,expectedRevision:1})).status,409,'revoked session cannot write consent');
+  // The tombstoned session stays revoked. A separate canonical session of the same owner
+  // revokes topic consent through the actual API and CAS; a replay is then a conflict.
+  const freshSession='watch1_'+'c'.repeat(64),freshContext={...identityContext,payload:{...identityContext.payload,jti:freshSession}};
+  await db.query('INSERT INTO crewcheck_watch_sessions VALUES (?,?,?,0,?,1)',[ownerId,freshSession,'c'.repeat(64),NOW+600000]);
+  const revokedApi=await callApi({action:'gate-consent',...consentInput,enabled:false,confirmed:false,expectedRevision:1},freshContext);
+  assert.equal(revokedApi.status,200);assert.equal(revokedApi.payload.status,'server_consent_revoked');assert.equal(revokedApi.payload.enabled,false);assert.equal(revokedApi.payload.topicRevision,2);assert.equal(revokedApi.payload.localFenceConfirmed,false);assert(!('sessionId' in revokedApi.payload));
+  const [revokedRows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);const revokedTopic=typeof revokedRows[0].payload==='string'?JSON.parse(revokedRows[0].payload):revokedRows[0].payload;assert.equal(revokedTopic.active,false);assert.equal(revokedTopic.revision,2);
+  const replay=await callApi({action:'gate-consent',...consentInput,enabled:false,confirmed:false,expectedRevision:1},freshContext);assert.equal(replay.status,409);assert.equal(replay.payload.code,'GATE_CONSENT_CONFLICT');
+  assert.equal((await connected.enqueue(db,identityContext,{...jobInput,envelope:{...gateEnvelope,topicRevision:2,authorityEpoch:'c'.repeat(64),eventKey:'gate-change-v1:'+ 'f'.repeat(64)}})).status,'blocked','server-revoked topic cannot enqueue even at its current revision');
   console.log('PASS real canonical session reader + existing installation + gate consent CAS + existing persistent outbox: default OFF, scope/epoch/revision mismatch, no source proof and revocation before provider; no device enrollment or real sender');
   // Restore the deliberately uncertain durable state for an external engine restart.
   await seed();sends=0;await make().process();await mutate(a,s=>s.observation=observation('25'));
