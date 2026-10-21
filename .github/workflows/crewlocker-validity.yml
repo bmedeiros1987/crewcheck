@@ -33,6 +33,7 @@ jobs:
           CREWLOCKER_TEST_PACKAGE: ${{ runner.temp }}/locker-test/package.json
           CREWLOCKER_STATE: raw
         run: |
+          node scripts/regression-crewlocker-cht-document-type.mjs
           node scripts/regression-crewlocker-cht-text.mjs
           node scripts/regression-crewlocker-cht-browser.mjs
           node scripts/regression-crewlocker-validity.mjs
@@ -49,6 +50,7 @@ jobs:
           CREWLOCKER_TEST_PACKAGE: ${{ runner.temp }}/locker-test/package.json
           CREWLOCKER_STATE: prepared
         run: |
+          node scripts/regression-crewlocker-cht-document-type.mjs
           node scripts/regression-crewlocker-cht-text.mjs
           node scripts/regression-crewlocker-cht-browser.mjs
           node scripts/regression-crewlocker-validity.mjs
