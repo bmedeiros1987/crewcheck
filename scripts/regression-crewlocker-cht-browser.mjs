@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {createServer} from 'vite';
 const {chromium}=createRequire(process.env.CREWLOCKER_TEST_PACKAGE || import.meta.url)('playwright');
@@ -42,7 +43,7 @@ async function assertEntries(page){
 async function renderedCanvas(page,label){
  const canvas=page.getByLabel(label,{exact:true});await canvas.waitFor();
  await page.waitForFunction(label=>{const c=document.querySelector('canvas[aria-label="'+label+'"]');if(!c?.width||!c.height)return false;const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]&&pixels[i]<180&&pixels[i+1]<180&&pixels[i+2]<180)ink++;return ink>100;},label);
- return canvas.evaluate(c=>c.toDataURL());
+ return createHash('sha256').update(await canvas.evaluate(c=>c.toDataURL())).digest('hex');
 }
 try{
 for(const width of [390,1440]){
