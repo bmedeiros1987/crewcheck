@@ -1,4 +1,6 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { createInfobipWebhookAuthenticator } from './infobip-whatsapp-auth.mjs';
+export { verifyInfobipBasic, verifyInfobipHmac } from './infobip-whatsapp-auth.mjs';
 
 // Review candidate only. No production router imports this module. Environment
 // variables cannot enable it; no transport, credentials, DDL or logs live here.
@@ -11,25 +13,7 @@ export function infobipWhatsAppReleaseResponse() {
 
 const phone = value => typeof value === 'string' && /^[1-9]\d{7,14}$/.test(value);
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value);
-const equal = (a, b) => {
-  const left = Buffer.from(a), right = Buffer.from(b);
-  return left.length === right.length && timingSafeEqual(left, right);
-};
 const fail = code => { throw new Error(code); };
-
-// Basic is documented for notification profiles. This is deliberately separate
-// from Meta HMAC and outbound API-key authentication. No credential is created.
-export function verifyInfobipBasic(rawHeaders, username, password) {
-  if (!Array.isArray(rawHeaders) || rawHeaders.length % 2 ||
-      typeof username !== 'string' || !username || /[:\r\n]/.test(username) ||
-      typeof password !== 'string' || password.length < 32 || /[\r\n]/.test(password)) return false;
-  const values = [];
-  for (let i = 0; i < rawHeaders.length; i += 2) {
-    if (String(rawHeaders[i]).toLowerCase() === 'authorization') values.push(rawHeaders[i + 1]);
-  }
-  return values.length === 1 && typeof values[0] === 'string' &&
-    equal(values[0], `Basic ${Buffer.from(`${username}:${password}`, 'utf8').toString('base64')}`);
-}
 
 function timestamp(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) return NaN;
@@ -75,16 +59,17 @@ function linkStamp(link, event) {
 // back, and lookupLink uses the same transaction. No production store is supplied.
 // Candidate retry policy: 48h (general reporting docs describe 41h30; application
 // to this inbound profile remains unverified). Reply freshness stays 15m.
-export function createOfflineInfobipReceiver({ sender, username, password, store, now = Date.now }) {
+export function createOfflineInfobipReceiver({ sender, username, password, authentication, store, now = Date.now }) {
   if (!phone(sender) ||
       typeof store?.transaction !== 'function' || typeof now !== 'function') fail('CONFIGURATION');
+  const auth = createInfobipWebhookAuthenticator(authentication === undefined ? {mode: 'basic', username, password} : authentication);
   // Stable dedup namespace is independent of credential/audit-key rotation.
   // This hash is an internal uniqueness key, NOT a privacy/anonymization claim.
   const eventKey = event => createHash('sha256')
     .update(JSON.stringify(['infobip-inbound-v1', sender, event.messageId])).digest('hex');
   return async ({ method, rawHeaders, rawBody }) => {
     if (method !== 'POST') return { status: 405, code: 'METHOD' };
-    if (!verifyInfobipBasic(rawHeaders, username, password)) return { status: 401, code: 'AUTH' };
+    if (!auth.verify(rawHeaders, rawBody)) return { status: 401, code: 'AUTH' };
     let events;
     try { events = parseInbound(rawBody, sender, now()); }
     catch { return { status: 400, code: 'INVALID_EVENT' }; }

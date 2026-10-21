@@ -1,4 +1,5 @@
-import { createOfflineInfobipReceiver, INFOBIP_WHATSAPP_RELEASE_ENABLED, verifyInfobipBasic } from './infobip-whatsapp-candidate.mjs';
+import {createInfobipWebhookAuthenticator} from './infobip-whatsapp-auth.mjs';
+import { createOfflineInfobipReceiver, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
 import { createInfobipSqlStore } from './infobip-whatsapp-store.mjs';
 import { createInfobipTextTransport } from './infobip-whatsapp-transport.mjs';
 import {invokeConfiguredWhatsAppConcierge} from './whatsapp.mjs';
@@ -34,10 +35,10 @@ export function composeInfobipWhatsAppForOfflineTests({db, configuration, concie
   const {sender, encryptionKey, linkHashKey, webhookUsername, webhookPassword, baseUrl, apiKey} = configuration;
   const store = createInfobipSqlStore({db, sender, encryptionKey, linkHashKey, now});
   const transport = createInfobipTextTransport({sender, baseUrl, apiKey, request});
-  const receive = createOfflineInfobipReceiver({sender, username: webhookUsername, password: webhookPassword, store, now});
+  const receive = createOfflineInfobipReceiver({sender, username: webhookUsername, password: webhookPassword, authentication: configuration.webhookAuthentication, store, now});
   return Object.freeze({
     receive,
-    receiveDelivery: createOfflineInfobipDeliveryReceiver({username: webhookUsername, password: webhookPassword, store, now}),
+    receiveDelivery: createOfflineInfobipDeliveryReceiver({username: webhookUsername, password: webhookPassword, authentication: configuration.webhookAuthentication, store, now}),
     dispatch: eventKey => store.exerciseDispatch(eventKey, {concierge, send: transport.exercise, clock: now}),
     expire: eventKey => store.expirePayload(eventKey),
     maintain: options => store.maintain(options),
@@ -68,9 +69,10 @@ export function createInfobipWhatsAppRuntime(options = {}) {
   if (options.enabled !== true) return createHeldInfobipWhatsAppRuntime();
   const {scheduler = {set:fn=>setInterval(fn,10_000),clear:id=>clearInterval(id)},
     verifyTls = req=>req.socket?.encrypted === true} = options;
-  const configuration=Object.freeze({...options.configuration});
-  if (!verifyInfobipBasic(['Authorization',`Basic ${Buffer.from(`${configuration.webhookUsername}:${configuration.webhookPassword}`).toString('base64')}`],
-    configuration.webhookUsername,configuration.webhookPassword)) throw Error('INFOBIP_CONFIGURATION');
+  const input = options.configuration;
+  const configuration=Object.freeze({...input, ...(input?.webhookAuthentication === undefined ? {} : {webhookAuthentication:Object.freeze({...input.webhookAuthentication})})});
+  const auth = createInfobipWebhookAuthenticator(configuration.webhookAuthentication === undefined
+    ? {mode:'basic', username:configuration.webhookUsername, password:configuration.webhookPassword} : configuration.webhookAuthentication);
   if (typeof verifyTls !== 'function' || typeof scheduler?.set !== 'function' || typeof scheduler?.clear !== 'function') throw Error('INFOBIP_CONFIGURATION');
   const pipeline = composeInfobipWhatsAppForOfflineTests({...options,configuration});
   let closed=false,running=null,cursor='',timer;
@@ -107,10 +109,13 @@ export function createInfobipWhatsAppRuntime(options = {}) {
         if(closed)return respond(res,503,'INFOBIP_CLOSED');
         if(req.method!=='POST')return respond(res,405,'METHOD');
         if(verifyTls(req)!==true)return respond(res,503,'TLS_REQUIRED');
-        if(!verifyInfobipBasic(req.rawHeaders,configuration.webhookUsername,configuration.webhookPassword))return respond(res,401,'AUTH');
+        if(!auth.acceptsHeaders(req.rawHeaders))return respond(res,401,'AUTH');
         if(!/^application\/json(?:\s*;|$)/i.test(req.headers?.['content-type']||''))return respond(res,415,'CONTENT_TYPE');
         let rawBody,isDelivery=false;
-        try {rawBody=await readBoundedBody(req);const body=JSON.parse(rawBody);if(body?.results?.length!==1)throw Error();
+        try {rawBody=await readBoundedBody(req);}
+        catch{return respond(res,400,'INVALID_BODY');}
+        if(!auth.verify(req.rawHeaders,rawBody))return respond(res,401,'AUTH');
+        try {const body=JSON.parse(rawBody);if(body?.results?.length!==1)throw Error();
           isDelivery=Object.hasOwn(body.results[0]||{},'status');}
         catch{return respond(res,400,'INVALID_BODY');}
         if(closed)return respond(res,503,'INFOBIP_CLOSED');

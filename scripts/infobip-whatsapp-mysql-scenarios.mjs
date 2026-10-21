@@ -1,3 +1,4 @@
+import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 // Invoked only AFTER the owned-socket/clean-HEAD checks in the SQL harness.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,6 +14,17 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
  const packet=item=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
  const raw=async()=>{const [r]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);return typeof r[0]?.payload==='string'?JSON.parse(r[0].payload):r[0]?.payload;};
  const configuration={sender,encryptionKey:key,linkHashKey:salt,webhookUsername:'synthetic',webhookPassword:password,baseUrl:'https://synthetic.api.infobip.com',apiKey:'synthetic-api-key-not-real'};
+ await run('HMAC raw inbound keeps durable SQL dedup across recreation and key rotation',async()=>{
+   await reset();
+   const receive=secretKey=>createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey},store:createInfobipSqlStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch}),now:()=>epoch});
+   const signed=(secretKey,item=event)=>{const rawBody=Buffer.from(JSON.stringify({results:[item]}));return {method:'POST',rawHeaders:['x-hub-signature','SHA256='+createHmac('sha256',secretKey).update(rawBody).digest('hex').toUpperCase()],rawBody};};
+   const first='synthetic-hmac-key-one',rotated='synthetic-hmac-key-two';
+   const results=await Promise.all(Array.from({length:8},()=>receive(first)(signed(first))));
+   assert.equal(results.reduce((n,r)=>n+r.accepted,0),1);assert.equal(results.reduce((n,r)=>n+r.duplicates,0),7);
+   assert.equal((await receive(rotated)(signed(rotated))).duplicates,1);
+   assert.equal((await receive(rotated)(signed(rotated,{...event,message:{type:'TEXT',text:'CONFLICTING SYNTHETIC'}}))).status,503);
+   assert.equal((await raw()).status,'held');
+ });
  await run('canonical authenticated link start and Infobip completion through enabled HTTP composition',async()=>{
    await reset();await db.query('DELETE FROM crewcheck_whatsapp_links');
    const source=fs.readFileSync(new URL('../server/whatsapp.mjs',import.meta.url),'utf8');

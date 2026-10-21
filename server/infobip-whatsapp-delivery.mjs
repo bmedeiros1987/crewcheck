@@ -1,13 +1,15 @@
-import {verifyInfobipBasic, infobipDeliveryState} from './infobip-whatsapp-candidate.mjs';
+import {createInfobipWebhookAuthenticator} from './infobip-whatsapp-auth.mjs';
+import {infobipDeliveryState} from './infobip-whatsapp-candidate.mjs';
 
 // OFF candidate for the classic WhatsApp delivery-report results[] contract.
 // Account subscription payload/auth/routing still requires verification. SEEN is
 // a different contract and is never coerced into delivery. No public route here.
-export function createOfflineInfobipDeliveryReceiver({username, password, store, now = Date.now}) {
+export function createOfflineInfobipDeliveryReceiver({username, password, authentication, store, now = Date.now}) {
   if (typeof store?.recordDelivery !== 'function') throw Error('INFOBIP_DLR_CONFIGURATION');
+  const auth = createInfobipWebhookAuthenticator(authentication === undefined ? {mode:'basic', username, password} : authentication);
   return async ({method, rawHeaders, rawBody}) => {
     if (method !== 'POST') return {status: 405, code: 'METHOD'};
-    if (!verifyInfobipBasic(rawHeaders, username, password)) return {status: 401, code: 'AUTH'};
+    if (!auth.verify(rawHeaders, rawBody)) return {status: 401, code: 'AUTH'};
     let reports;
     try {
       if (!Buffer.isBuffer(rawBody) || !rawBody.length || rawBody.length > 65_536) throw Error();

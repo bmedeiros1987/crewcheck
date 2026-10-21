@@ -50,7 +50,10 @@ const timeout=setTimeout(()=>{console.error('FAIL bounded synthetic SQL suite');
 try{
  if(mode==='restart'){
    assert.equal((await make().receive(packet())).duplicates,1);assert.equal((await read()).status,'held');
-   console.log(JSON.stringify({head:HEAD,phase:'restart',passed:['real engine restart retained claim'],externalCalls:0}));
+   const hmacBody=Buffer.from(JSON.stringify({results:[event]})),hmacKey='synthetic-hmac-after-engine-restart';
+   const hmacReceive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:hmacKey},store:make().store,now:()=>clock});
+   assert.equal((await hmacReceive({method:'POST',rawHeaders:['x-hub-signature','SHA256='+createHmac('sha256',hmacKey).update(hmacBody).digest('hex')],rawBody:hmacBody})).duplicates,1);
+   console.log(JSON.stringify({head:HEAD,phase:'restart',passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim'],externalCalls:0}));
  }else{
    await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
    await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64),created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
