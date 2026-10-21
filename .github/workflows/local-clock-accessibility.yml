@@ -1,0 +1,20 @@
+name: Local clock accessible value
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14353/flydeck-premium.snippet'
+      - 'scripts/regression-local-clock-accessible-time.mjs'
+      - '.github/workflows/local-clock-accessibility.yml'
+permissions:
+  contents: read
+jobs:
+  accessible-clock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-local-clock-accessible-time.mjs
