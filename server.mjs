@@ -1,5 +1,6 @@
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
+import { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS } from './shared/radar-field-evidence.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
@@ -55,9 +56,11 @@ function buildFlightContext(value) {
   if (/^JJ\d+$/i.test(raw)) icao = `TAM${raw.replace(/^JJ/i, '')}`;
   return { raw, iata, icao, flightAware: icao };
 }
-function publicRadarPayload(item = {}) {
+function publicRadarPayload(item = {}, now = Date.now()) {
   if (item.querySuppressed) return gateQuerySuppressed({reason:item.queryReason || 'source-unverified'});
   return {
+    // Unproven gate/status/registration carry a fixed reason; proof itself stays in gateUpdate.
+    ...radarFieldEvidenceGaps(item, now),
     ...ciriumRadarProjection(item),
     ok: Boolean(item.ok),
     configured: Boolean(item.configured),
@@ -2448,12 +2451,14 @@ function conciergeFindFlight(roster = {}, requested = '') {
 }
 function conciergeApplyRadar(snapshot, flightInfo, radar) {
   if (!snapshot?.roster || !flightInfo?.leg || !radar) return snapshot;
+  // Radar never overwrites the published gate/status/registration. A proven gate is
+  // kept apart with its source instant and expiry, so it cannot outlive its proof.
+  const verified = verifiedRadarFields(radar, flightInfo.identity, Date.now());
+  const observed = verified.gate ? Date.parse(verified.observedAt.gate) : NaN;
   Object.assign(flightInfo.leg, {
-    gate: radar.gate || flightInfo.leg.gate || '',
     terminal: radar.terminal || flightInfo.leg.terminal || '',
-    status: radar.status || flightInfo.leg.status || '',
     aircraft: radar.aircraft || flightInfo.leg.aircraft || flightInfo.leg.aircraftType || '',
-    registration: radar.registration || flightInfo.leg.registration || '',
+    radarEvidence: Number.isFinite(observed) ? { gate: verified.gate, sourceObservedAt: verified.observedAt.gate, validUntil: new Date(observed + RADAR_FIELD_FRESH_MS).toISOString() } : null,
     radarUpdatedAt: new Date().toISOString(),
     radarQuality: Number(radar.quality || 0),
   });
@@ -2494,17 +2499,19 @@ async function conciergeRadarReply(text, profile, snapshot) {
     await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
   }
   if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  const verified = verifiedRadarFields(radar, queryContext.gateQueryEvidence, Date.now());
+  const shown = field => verified[field] || (verified.gaps[field] ? `indisponível (${radarEvidenceGapLabel(verified.gaps[field])})` : 'a confirmar');
   const lines = [
     `Radar ${buildFlightContext(flight).iata || flight}`,
     `${info?.leg?.origin || radar.origin || '—'} → ${info?.leg?.destination || radar.destination || '—'}`,
-    `Status: ${radar.status || 'a confirmar'}`,
-    `Portão: ${radar.gate || 'a confirmar'}${radar.terminal ? ` · Terminal ${radar.terminal}` : ''}`,
+    `Status: ${shown('status')}`,
+    `Portão: ${shown('gate')}${radar.terminal ? ` · Terminal ${radar.terminal}` : ''}`,
     `Partida: ${radar.departure || info?.leg?.departureTime || 'a confirmar'}`,
     `Chegada: ${radar.arrival || info?.leg?.arrivalTime || 'a confirmar'}`,
     `Qualidade da consulta: ${Number(radar.quality || 0)}% · ${Number(radar.alternatives || 0)} fonte(s) útil(eis)`,
   ];
   if (!radar.ok) lines.push(radar.message || 'As fontes não confirmaram dados ao vivo agora.');
-  else if (radar.gate) lines.push('O portão foi sincronizado com o card da próxima programação.');
+  else if (verified.gate) lines.push('Portão comprovado pela fonte nesta consulta; a escala publicada não foi alterada.');
   return lines.join('\n');
 }
 async function conciergeWeatherReply(text, snapshot) {

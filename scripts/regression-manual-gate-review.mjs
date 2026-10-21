@@ -1,3 +1,4 @@
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import vm from 'node:vm';import {pathToFileURL} from 'node:url';import ts from 'typescript';import {build} from 'esbuild';
 import {customGateSourceUpdate} from '../server/gate-source-update.mjs';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'manual-gate-review-'));
@@ -47,7 +48,7 @@ try{
  const equivalent={...valid,gate:' 15 ',flight_iata:'la4002',flight_icao:'LAN4002',departure:{gate:'15',iata:' cgh ',scheduled:'2032-10-20T07:30:00-03:00'},arrival:{iata:'cnf'}};
  assert.deepEqual(customGateSourceUpdate(equivalent,T('08:40:00')),customGateSourceUpdate(valid,T('08:40:00')),'equivalent aliases preserve proof, including source offsets');
  const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,99,true,ts.ScriptKind.JS),fn=name=>ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name).getText(ast);let body=valid;
- const scope=vm.createContext({envAny:()=> 'https://fixture.invalid',jsonFetch:async()=>({response:{ok:true},payload:body}),customGateSourceUpdate:p=>customGateSourceUpdate(p,T('08:40:00')),ciriumRadarProjection:()=>({})});vm.runInContext(['firstKnown','providerCustom','publicRadarPayload'].map(fn).join('\n'),scope);
+ const scope=vm.createContext({...radarEvidence,envAny:()=> 'https://fixture.invalid',jsonFetch:async()=>({response:{ok:true},payload:body}),customGateSourceUpdate:p=>customGateSourceUpdate(p,T('08:40:00')),ciriumRadarProjection:()=>({})});vm.runInContext(['firstKnown','providerCustom','publicRadarPayload'].map(fn).join('\n'),scope);
  const normalized=await scope.providerCustom({iata:'REQUEST-NOT-EVIDENCE'},1,'OTHER','OTHER');assert.equal(normalized.gateUpdate.flight,'LA4002');assert.equal(scope.publicRadarPayload(normalized).gateUpdate.sourceUpdatedAt,'2032-10-20T08:35:00.000Z');
  body={...valid,departure:{gate:'88'}};const conflicted=await scope.providerCustom({},1,'','');assert.equal(conflicted.gateUpdate,null,'provider cannot promote conflicting aliases');assert.equal(scope.publicRadarPayload(conflicted).gateUpdate,null,'public projection preserves rejected proof');
  body={...valid,departureGateUpdate:undefined,updated:T('08:39:00')};assert.equal((await scope.providerCustom({},1,'','')).gateUpdate,null,'aircraft/query/cache clocks never establish a gate update');
