@@ -63,9 +63,10 @@ jobs:
           mkdir -p /tmp/crewcheck-gate-sql-qa-ci
           docker run --detach --rm --name crewcheck-gate-sql-qa --network none --mount type=bind,source=/tmp/crewcheck-gate-sql-qa-ci,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_gate_push_qa mysql:8.4 --datadir=/var/run/mysqld/data
           for attempt in $(seq 1 90); do
-            if docker exec crewcheck-gate-sql-qa mysqladmin ping --socket=/var/run/mysqld/mysqld.sock --silent; then break; fi
+            if docker logs crewcheck-gate-sql-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-gate-sql-qa mysql --socket=/var/run/mysqld/mysqld.sock -u root crewcheck_gate_push_qa -e 'SELECT 1'; then break; fi
             sleep 1
           done
+          docker exec crewcheck-gate-sql-qa mysql --socket=/var/run/mysqld/mysqld.sock -u root crewcheck_gate_push_qa -e 'SELECT 1'
           docker exec crewcheck-gate-sql-qa chmod 755 /var/run/mysqld
       - name: Producer through real InnoDB, durable claims and revocable fixture authority
         env:
@@ -76,9 +77,10 @@ jobs:
         run: |
           docker restart crewcheck-gate-sql-qa
           for attempt in $(seq 1 90); do
-            if docker exec crewcheck-gate-sql-qa mysqladmin ping --socket=/var/run/mysqld/mysqld.sock --silent; then break; fi
+            if docker logs crewcheck-gate-sql-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-gate-sql-qa mysql --socket=/var/run/mysqld/mysqld.sock -u root crewcheck_gate_push_qa -e 'SELECT 1'; then break; fi
             sleep 1
           done
+          docker exec crewcheck-gate-sql-qa mysql --socket=/var/run/mysqld/mysqld.sock -u root crewcheck_gate_push_qa -e 'SELECT 1'
       - name: Recreated producer after actual engine restart
         env:
           CREWCHECK_GATE_QA: isolated-mysql

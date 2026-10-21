@@ -39,7 +39,7 @@ try {
   await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
   await db.query('INSERT INTO crewcheck_platform_profiles VALUES (?,?),(?,?)',[email,ownerId,'gate-b@example.test','owner_fixture_B']);
   const seed=async()=>{await db.query('DELETE FROM crewcheck_telegram_state');await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[a.authorityKey,JSON.stringify({kind:'isolated-gate-authority',email,ownerId,state:initial()})]);};
-  await seed();assert.equal((await make().process()).status,'baseline');assert.equal(sends,0);
+  await seed();await assert.rejects(a.repository.transaction('rollback-probe',async record=>{await record.save({status:'must-rollback'});throw Error('synthetic rollback');}),/synthetic rollback/);const [rolledBack]=await db.query("SELECT state_key FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.key'))='rollback-probe'");assert.equal(rolledBack.length,0,'baseline and save roll back atomically');assert.equal((await make().process()).status,'baseline');assert.equal(sends,0);
   await mutate(a,s=>s.observation=observation('25'));
   await Promise.all(Array.from({length:8},()=>make().process()));assert.equal(sends,1,'eight real SQL consumers send exactly once');
   await make().process();assert.equal(sends,1,'new adapter preserves dedup');
@@ -61,7 +61,7 @@ try {
    await db.query(sql.replaceAll('$1','?'),args);
   }
   const [left]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-push-outbox:gate-off:%'");assert.equal(left.length,1);assert.equal((typeof left[0].payload==='string'?JSON.parse(left[0].payload):left[0].payload).ownerId,'owner_fixture_B');
-  await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['owner_replacement_fixture',email]);assert.equal((await make().process()).status,'blocked');await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[ownerId,email]);
+  await seed();await make().process();await mutate(a,s=>s.observation=observation('25'));sends=0;await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['owner_replacement_fixture',email]);assert.equal((await make().process()).status,'blocked');assert.equal(sends,0,'owner replacement blocks an otherwise valid pending change');await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[ownerId,email]);
   // Restore the deliberately uncertain durable state for an external engine restart.
   await seed();sends=0;await make().process();await mutate(a,s=>s.observation=observation('25'));
   await assert.rejects(make(a,{repository:crashRepository}).process(),/synthetic crash/);assert.equal(sends,1);
