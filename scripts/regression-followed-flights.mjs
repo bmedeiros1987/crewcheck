@@ -3,7 +3,7 @@ import {followedFlight,followedFlightKey,readFollowedFlights,changeFollowedFligh
 const data=new Map(), storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};
 const a={eventId:'synthetic',flight:'ZZ1234',origin:'SSA',destination:'GRU',scheduledDepartureUtc:'2030-10-21T13:00:00Z',date:'2030-10-21'};
 assert.equal(changeFollowedFlights(storage,'A',a,true),true);
-assert.deepEqual(readFollowedFlights(storage,'A'),[a]);
+assert.deepEqual(readFollowedFlights(storage,'A'),[followedFlight(a)]);
 assert.deepEqual(readFollowedFlights(storage,'B'),[]);
 changeFollowedFlights(storage,'A',{...a,eventId:'updated-id'},true);assert.equal(readFollowedFlights(storage,'A').length,1);
 assert.notEqual(followedFlightKey(a),followedFlightKey({...a,scheduledDepartureUtc:'2030-10-22T13:00:00Z'}));

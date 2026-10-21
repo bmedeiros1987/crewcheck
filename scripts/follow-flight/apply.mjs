@@ -25,6 +25,10 @@ if (!source.includes('function FollowFlightPanel(')) {
     return <article key={followedFlightKey(item)}><strong>{item.flight} · {item.origin} → {item.destination}</strong><span>{new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(item.scheduledDepartureUtc))} UTC</span><p>{status || 'Status sem dados'} · Portão {gate || 'sem dados'}</p>{snapshot && (gate || status) ? <small>Fonte: {(snapshot as RadarSnapshot & {source?:string}).source || 'não informada'} · recebida {new Intl.DateTimeFormat('pt-BR', {timeStyle:'short'}).format(new Date(Number(snapshot.updatedAt)))}</small> : <small>Sem dados operacionais válidos no cache</small>}<button aria-label={'Parar acompanhamento de ' + item.flight + ' ' + item.origin + ' para ' + item.destination} onClick={() => change(item, false)}>Parar</button></article>;
   })}<details><summary>ℹ️</summary><small>Seleção local, separada da escala. Usa apenas dados já consultados e válidos; não cria consultas, reserva, bilhete nem alerta fora do app.</small></details></section>;
 }
+function positioningFollowCandidate(record: any): FollowedFlight | null {
+  if (!record || !Number.isFinite(Date.parse(record.departureAt))) return null;
+  return followedFlight({eventId:'positioning:' + String(record.eventId),flight:record.flightNumber,origin:record.origin,destination:record.destination,scheduledDepartureUtc:record.departureAt,date:new Date(Date.parse(record.departureAt) - 3 * 60 * 60_000).toISOString().slice(0,10)});
+}
 function followCandidate(event: ZeroLeg): FollowedFlight | null {
   return followedFlight({eventId:event.id,flight:String(event.flightNumber || '').replace(/\\s+/g,'').toUpperCase(),origin:event.origin,destination:event.destination,scheduledDepartureUtc:event.canonical?.startDateTime,date:event.day?.date || event.canonical?.date});
 }
@@ -38,7 +42,7 @@ function followCandidate(event: ZeroLeg): FollowedFlight | null {
  let departure=source.slice(departureStart,departureEnd);
  const end='</section></>;';
  const last=departure.lastIndexOf(end); if(last<0) throw Error('Missing departure footer');
- const panel=`</section><FollowFlightPanel key={manualGateAccountKey(getStoredUser())} candidate={positioningRecord ? followedFlight({eventId:'positioning:' + String(positioningRecord.eventId),flight:positioningRecord.flightNumber,origin:positioningRecord.origin,destination:positioningRecord.destination,scheduledDepartureUtc:positioningRecord.departureAt,date:new Date(new Date(positioningRecord.departureAt).getTime() - 3 * 60 * 60_000).toISOString().slice(0,10)}) : null}/></>;`;
+ const panel=`</section><FollowFlightPanel key={manualGateAccountKey(getStoredUser())} candidate={positioningFollowCandidate(positioningRecord)}/></>;`;
  departure=departure.slice(0,last)+panel+departure.slice(last+end.length);
  source=source.slice(0,departureStart)+departure+source.slice(departureEnd);
  // Existing positioning selection is already occurrence-scoped; reuse it without a new search.
