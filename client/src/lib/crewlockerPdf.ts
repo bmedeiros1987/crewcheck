@@ -1,3 +1,8 @@
+/** Content signature, including PDFs supplied by mobile providers without MIME. */
+export async function isLocalCrewPdf(blob:Blob):Promise<boolean>{
+  const header=new Uint8Array(await blob.slice(0,1024).arrayBuffer());
+  return new TextDecoder('latin1').decode(header).includes('%PDF-');
+}
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 export async function openLocalCrewPdf(blob: Blob) {
   if(blob.size>15*1024*1024)throw new Error('PDF acima de 15 MB.');
