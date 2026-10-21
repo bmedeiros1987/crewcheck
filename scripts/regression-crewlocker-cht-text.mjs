@@ -63,3 +63,15 @@ console.log('PASS generic XII table tokens B737/E190/ATR72 and multiple ratings;
 
 assert.equal(parseChtText('CHT\nXII RATINGS\nB737 08/2031').entries[0].label,'B737','explicit whitespace delimiter supported');
 const malformedCode=parseChtText('CHT\nXII RATINGS\nB737000 | 08/2031');assert.equal(malformedCode.entries.length,0);assert(malformedCode.conflicts.length,'invalid table token cannot silently succeed');
+
+const noPipes=text.replaceAll(' | ',' '),noPipeResult=parseChtText(noPipes);
+assert.deepEqual(noPipeResult.entries,result.entries,'literal parent with actual PDF whitespace columns yields exactly the same four candidates');
+assert.deepEqual(noPipeResult.conflicts,[]);
+const plainMultiple=parseChtText(text.replace('A320 | 08/2031 | Comissário(a) de Vôo / Flight Attendant','A320 08/2031 Comissário(a) de Vôo / Flight Attendant\nB737 09/2032 Comissário(a) de Vôo\nE190 10/2033 Flight Attendant\nATR72 11/2034 Cabin Crew').replaceAll(' | ',' '));
+assert.equal(plainMultiple.entries.filter(e=>e.category==='rating'&&e.confirmed).length,4,'multiple explicit ratings with trailing duty columns and no pipes');
+for(const raw of ['08/2031 09/2032 Comissário','08/2031 Comissário 17/05/2033','08/2031/17 Comissário','08/20310 Comissário']){
+ const parsed=parseChtText('CHT\nXII RATINGS\nB737 '+raw);assert(parsed.entries.every(e=>!e.confirmed),'second/partial validity must stay pending');assert(parsed.conflicts.length);
+}
+console.log('PASS actual PDF whitespace columns: exact four parent candidates, medical row and trailing duty text, multiple ratings; second/partial dates rejected.');
+
+const twoMedicalDates=parseChtText('CHT\nXIV MEDICAL CERTIFICATE\nSegunda / 17/05/2033 18/05/2034');assert(twoMedicalDates.entries.every(e=>!e.confirmed));assert(twoMedicalDates.conflicts.length);

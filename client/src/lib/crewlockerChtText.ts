@@ -58,7 +58,12 @@ export function parseChtText(text:string):{recognized:boolean;entries:ValidityEn
       if(/^[A-Z][A-Z0-9-]*\d[/.]\d/.test(line))conflicts.push('Habilitação: código e validade sem separação inequívoca');
       continue;
     }
-    const raw=cells.length>1?cells[1]:plain?.[2]||'';
+    let raw=cells.length>1?cells[1]:plain?.[2]||'';
+    if(cells.length===1&&raw){
+      const fields=raw.match(/^(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}|\d{1,2}[/.\-]\d{4})(?:[ \t]+(.*))?$/);
+      if(fields && !/(?:\d[/.\-]\d|\b\d{4}\b)/.test(fields[2]||''))raw=fields[1];
+      else {pendingRating(code,'validade ausente ou ambígua');continue;}
+    }
     if(!raw){pendingRating(code,'validade ausente');continue;}
     // Whole validity cell only; a partial date or a second unsplit date cannot qualify.
     if(!/^(?:\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}|\d{1,2}[/.\-]\d{4})$/.test(raw)){
@@ -72,7 +77,12 @@ export function parseChtText(text:string):{recognized:boolean;entries:ValidityEn
     const cls=/^(SEGUNDA|SECOND|2)$/.test(match[1]||match[2])?'2':'1';
     add('medical',`CMA classe ${cls}`,match[3],Boolean(match[2]));
   }
-  for(const match of sections.XIV.matchAll(new RegExp('\\b(SEGUNDA|SECOND|PRIMEIRA|FIRST)\\s*(?:/\\s*)?\\|\\s*'+expiryToken,'g')))add('medical',/^(SEGUNDA|SECOND)$/.test(match[1])?'CMA classe 2':'CMA classe 1',match[2],match[1]==='SECOND'||match[1]==='FIRST');
+  for(const match of sections.XIV.matchAll(new RegExp('\\b(SEGUNDA|SECOND|PRIMEIRA|FIRST)(?:\\s*/\\s*(?:\\|\\s*)?|\\s*\\|\\s*|[ \t]+)'+expiryToken,'g'))){
+    const label=/^(SEGUNDA|SECOND)$/.test(match[1])?'CMA classe 2':'CMA classe 1';
+    const trailing=sections.XIV.slice(match.index!+match[0].length).split(/\r?\n/,1)[0];
+    if(/(?:\d[/.\-]\d|\b\d{4}\b)/.test(trailing)){conflicts.push(`${label}: data inválida`);continue;}
+    add('medical',label,match[2],match[1]==='SECOND'||match[1]==='FIRST');
+  }
   for(const match of sections.XIV.matchAll(new RegExp('\\b(FIRST|SECOND)\\s*CLASS\\s*VALID\\s*UNTIL\\s*'+expiryToken,'g')))add('medical',match[1]==='FIRST'?'CMA classe 1':'CMA classe 2',match[2],true);
   for(const match of sections.XIII.matchAll(new RegExp('\\bENGLISH\\s*(?:LEVEL|NIVEL)\\s*([1-6])\\s*(?:VALID\\s*)?(?:UNTIL|ATE|VALIDADE)\\s*'+expiryToken,'g')))add('other',`Inglês nível ${match[1]}`,match[2],match[2].split(/[/.\-]/).length===3);
   for(const entry of entries){if(conflicts.includes(`${entry.label}: data inválida`))entry.confirmed=false;if(entries.some(other=>group(other)===group(entry)&&semantic(other)!==semantic(entry))){entry.confirmed=false;conflicts.push(`${entry.label}: validades divergentes`);}}
