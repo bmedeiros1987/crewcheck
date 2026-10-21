@@ -53,7 +53,7 @@ import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/pl
 import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
 import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
-import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor} from '@/lib/stayEditorNavigation';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import {readStayOperationalProjection} from '@/lib/stayOperationalProjection';
 import {getToken} from '@/lib/authClient';
