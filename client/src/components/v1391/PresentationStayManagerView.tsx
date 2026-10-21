@@ -236,7 +236,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   function inferDate(clock: string, zone = hotelTimeZone) {
     if (selected?.kind !== 'stay' || apzDateExplicit.current) return;
     const date = inferStayApzDate({ event: selected, events, clock, timeZone: zone, now: Date.now() });
-    if (date) setApzDate(date);
+    setApzDate(date || '');
   }
   const apzEpoch = selected?.kind === 'stay' && apzConfirmed ? stayLocalInstant(apzDate, draft.presentationTime, hotelTimeZone) : null;
   const displayZone = resolveStayDisplayZone(displayPreference, { localZone: hotelTimeZone, baseZone: baseTimeZone(getStoredUser()?.base) });
@@ -272,6 +272,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
       apzConfirmed: apzConfirmed && apzEpoch !== null, apzSource: apzConfirmed ? 'manual' : apzSource, choice, breakfastPlan,
       alarmState: cancelled ? 'cancelled' : 'not-programmed',
     } } }, accountId);
+    apzDateExplicit.current = true;
     dirty.current = false; drafts.current.delete(selected.id);
   }
   function applyDefault() {
