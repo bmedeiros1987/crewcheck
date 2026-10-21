@@ -1,6 +1,14 @@
 // Safety boundary for the existing SQL notification queue. No new provider/queue.
 import { LEAVE_CYCLE, cycleJobPrefix, lockCycle } from './v139/notificationCycles.mjs';
 export const JOB_GRACE_SECONDS = 120;
+// No verified account-to-phone authority exists in the current server model.
+// Provider configuration, an admin test and a client-supplied number are not binding proof.
+export function phoneScheduleCapability() {
+  return { available: false, reason: 'phone_binding_unavailable',
+    message: 'Agendamento de ligação indisponível: falta vínculo de telefone verificado no servidor para esta conta. O teste manual é separado.' };
+}
+const includesPhone = channel => String(channel || '').toLowerCase().trim().split('+').some(part => ['phone', 'phone-call', 'infobip', 'both', 'all'].includes(part));
+
 const aliases = { both: 'telegram+phone-call', phone: 'phone-call', infobip: 'phone-call', all: 'telegram+telegram-call+phone-call' };
 const allowed = new Set(['telegram', 'telegram-call', 'phone-call', 'telegram+telegram-call', 'telegram+phone-call', 'telegram-call+phone-call', 'telegram+telegram-call+phone-call']);
 const terminal = new Set(['sent', 'partial', 'uncertain', 'cancelled', 'expired', 'failed']);
@@ -26,6 +34,7 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   const db = await dbPool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
   if (!await currentOwner(db, user)) return sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' });
+  if (includesPhone(channel)) return sendJson(res, 409, { ok: false, code: 'phone_binding_unavailable', message: phoneScheduleCapability().message });
   await ensureNotificationTable(db);
   const linked = await linkedTelegramRecord(db, user.email);
   const chatId = String(linked?.chatId || '').trim();
@@ -74,6 +83,12 @@ export async function dispatchClaimedJob(db, selected, { deliver, findLink, now 
   const [rows] = await db.query("SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE id=? AND status='processing' LIMIT 1", [selected.id]);
   const job = rows[0];
   if (!job) return { status: 'skipped' }; // cancellation after selection/claim
+  // Legacy/forged phone jobs have no durable verified recipient proof either.
+  // Reject the whole combined job rather than silently dropping a selected channel.
+  if (includesPhone(job.channel)) {
+    await db.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL,last_error=? WHERE id=? AND status='processing' AND locked_at=?", ['phone_binding_unavailable', job.id, job.locked_at]);
+    return { status: 'cancelled', accepted: false, delivered: false, reason: 'phone_binding_unavailable' };
+  }
   // No activation exists for free-day preparation; reject even a forged processing claim.
   if (/^free-day:/i.test(String(job.job_key))) {
     await db.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL WHERE id=? AND status='processing' AND locked_at=?", [job.id, job.locked_at]);
