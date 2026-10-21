@@ -60,6 +60,13 @@ await test('default OFF touches no host/repository/provider/configuration', asyn
   assert.deepEqual(await createOfflineGatePushCandidate({ host: forbidden, repository: forbidden, mockProvider: forbidden }).process(), { status: 'disabled', received: null });
   assert.throws(() => createOfflineGatePushCandidate({ enabled: true, host: { kind: 'live' } }));
 });
+await test('absent authoritative host state fails closed before touching the journal', async () => {
+  for (const value of [null,undefined,{}, {ownerId:'owner_fixture_A'}]) {
+    const forbidden=()=>{throw Error('missing authority cannot reach journal/provider');};
+    const candidate=createOfflineGatePushCandidate({enabled:true,host:{kind:'isolated-gate-authority',read:async()=>value},repository:{transaction:forbidden,isCurrent:forbidden},mockProvider:{kind:'isolated-web-push-mock',send:forbidden},clock:()=>NOW});
+    assert.equal((await candidate.process()).status,'blocked');
+  }
+});
 await test('producer -> existing dispatcher -> actual worker: baseline then one change, concurrent dedup and recreation', async () => {
   const f = fixture(), p = f.create(); assert.equal((await p.process()).status, 'baseline'); assert.equal(f.sends, 0);
   f.current.observation = observation('25', -30_000);

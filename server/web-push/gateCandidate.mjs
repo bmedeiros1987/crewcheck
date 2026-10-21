@@ -22,7 +22,7 @@ export function createOfflineGatePushCandidate(options = {}) {
   function admitted(value, now) {
     const state = structuredClone(value);
     const { ownerId, authority, installation, consent, identity, observation } = state || {};
-    if (authority?.ownerId !== ownerId || !id(authority.epoch) || authority.revoked !== false
+    if (!authority || authority.ownerId !== ownerId || !id(authority.epoch) || authority.revoked !== false
       || !Number.isFinite(authority.expiresAt) || authority.expiresAt <= now || authority.expiresAt - now > 5 * 60_000) return null;
     if (!id(ownerId) || !id(installation?.installationId) || installation.ownerId !== ownerId
       || installation.active !== true || !Number.isSafeInteger(installation.revision) || installation.revision < 1
