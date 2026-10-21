@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { rosterDisplayIso } from '@/lib/rosterDisplayDate';
+import { rosterDisplayIso, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { getStoredUser } from '@/lib/authClient';
 import { AimsRosterTable } from './AimsRosterTable';
 import './aims-document.css';
@@ -27,6 +27,22 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId, o
   const pinch = useRef<{ distance: number; zoom: number; anchor: number; center: number } | null>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const [fit, setFit] = useState(false);
+  // Match the existing civil-date display convention, never the selected day or
+  // the device's timezone. Recheck after suspension as timers may be throttled.
+  const [today, setToday] = useState(() => rosterInstantIso(new Date(), ROSTER_DISPLAY_TIME_ZONE));
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const update = () => {
+      clearTimeout(timer);
+      setToday(rosterInstantIso(new Date(), ROSTER_DISPLAY_TIME_ZONE));
+      timer = setTimeout(update, 60000 - Date.now() % 60000 + 20);
+    };
+    update();
+    window.addEventListener('focus', update);
+    window.addEventListener('pageshow', update);
+    document.addEventListener('visibilitychange', update);
+    return () => { clearTimeout(timer); window.removeEventListener('focus', update); window.removeEventListener('pageshow', update); document.removeEventListener('visibilitychange', update); };
+  }, []);
   const returnPosition = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const dates = useMemo(() => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return [];
@@ -102,7 +118,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId, o
         <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})`, '--doc-width': `calc(${groups.length} * 7.5rem * var(--cc-text-scale, 1) + 24px)`, '--doc-days':groups.length } as React.CSSProperties}>
           {<div className="cc-doc-strip">
             {groups.map(group => <section key={group.iso} className="cc-doc-day" data-roster-iso={group.iso} aria-label={`Dia ${group.iso}`}>
-              <h3><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
+              <h3 aria-current={group.iso === today ? 'date' : undefined}><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
               {group.entries.map(({ event, index }) => { const meta = describe(event); return <div className="cc-doc-entry cc-roster-legend-v1397" key={index}>
                 <span data-mode={meta.mode} className="cc-doc-token"><button type="button" data-roster-event-id={event.id} data-event-index={index} aria-label={`${meta.label}: ${code(event)}, dia ${group.iso}. Abrir detalhes publicados`} aria-expanded={selected === event} onClick={e => open(event, e.currentTarget)}>
                   {meta.mode === 'stay' ? <span className="cc-doc-stay-line">{event.destination || event.origin || '—'} · {sourceStart(event)}–{sourceEnd(event)}</span> : <>
