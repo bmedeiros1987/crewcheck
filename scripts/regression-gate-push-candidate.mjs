@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { validPushEnvelope } from '../shared/crewcheckPushContract.mjs';
 import { createOfflineGatePushCandidate } from '../server/web-push/gateCandidate.mjs';
 
 globalThis.fetch = () => { throw Error('Real network forbidden'); };
@@ -19,14 +20,14 @@ function fixture() {
   const worker = { URL, Date, structuredClone }; vm.createContext(worker);
   vm.runInContext(fs.readFileSync('client/public/crewcheck-push-offline.js', 'utf8'), worker);
   vm.runInContext(fs.readFileSync('client/public/crewcheck-gate-receiver-offline.js', 'utf8'), worker);
-  let topicBinding = { ownerId: current.ownerId, installationId: current.installation.installationId, consentRevision: 1, topicRevision: 1, active: true };
+  let topicBinding = { ownerId: current.ownerId, installationId: current.installation.installationId, consentRevision: 1, topicRevision: 1, authorityEpoch: current.authority.epoch, active: true };
   const notifications = []; let lockTail = Promise.resolve();
   const locks = { request: (_name, _options, run) => { const result = lockTail.then(run); lockTail = result.catch(() => {}); return result; } };
   const store = { binding: async () => ({ ownerId: current.ownerId, installationId: current.installation.installationId, consentRevision: current.installation.revision }),
     claim: async key => { if (displayed.has(key)) return false; displayed.add(key); return true; }, record: async () => {},
     gateBinding: async () => structuredClone(topicBinding),
     invalidateGate: async expected => {
-      if (!['ownerId', 'installationId', 'consentRevision', 'topicRevision'].every(key => topicBinding[key] === expected[key])) return false;
+      if (!['ownerId', 'installationId', 'consentRevision', 'topicRevision', 'authorityEpoch'].every(key => topicBinding[key] === expected[key])) return false;
       topicBinding = { ...topicBinding, active: false }; return true;
     } };
   const registration = { getNotifications: async () => notifications,
@@ -73,6 +74,7 @@ await test('producer -> existing dispatcher -> actual worker: baseline then one 
   const results = await Promise.all(Array.from({ length: 8 }, () => p.process()));
   assert.equal(f.sends, 1); assert.equal(f.displays, 1); assert(results.every(r => r.received === null));
   await f.create().process(); assert.equal(f.sends, 1, 'recreated producer preserves host claims');
+  assert.equal(f.envelopes[0].authorityEpoch, f.current.authority.epoch, 'copy admitted opaque server epoch exactly');
   assert.equal(f.current.manualGate, '17', 'manual gate remains untouched');
   const serialized = JSON.stringify(f.envelopes[0]);
   for (const secret of ['LA100', 'GRU', 'REC', '24', '25', 'owner_fixture_A@example.test', 'manualGate']) {
@@ -80,6 +82,10 @@ await test('producer -> existing dispatcher -> actual worker: baseline then one 
   }
 });
 const invalidCases = [
+  ['missing epoch', s => { delete s.authority.epoch; }],
+  ['nonprimitive epoch', s => { s.authority.epoch = {value:'epoch_fixture_01'}; }],
+  ['short epoch', s => { s.authority.epoch = 'short'; }],
+  ['invalid epoch chars', s => { s.authority.epoch = 'epoch.fixture.01'; }],
   ['missing authority', s => { delete s.authority; }],
   ['revoked authority', s => { s.authority.revoked = true; }],
   ['expired authority', s => { s.authority.expiresAt = NOW; }],
@@ -133,9 +139,10 @@ for (const cut of [2, 3, 4, 5]) await test('revocation at host read ' + cut + ' 
   await f.create().process(); assert.equal(f.sends, 0); assert.equal(f.displays, 0);
 });
 await test('owner, consent and roster replacements establish a fresh baseline without backfill', async () => {
-  for (const field of ['owner', 'consent', 'roster']) {
+  for (const field of ['owner', 'consent', 'roster', 'epoch']) {
     const f = fixture(); await f.create().process(); f.current.observation = observation('25', -30_000);
     if (field === 'owner') { f.current.authority.ownerId = 'owner_fixture_B'; f.current.authority.epoch = 'epoch_fixture_02'; f.current.ownerId = 'owner_fixture_B'; f.current.installation.ownerId = 'owner_fixture_B'; f.current.consent.ownerId = 'owner_fixture_B'; }
+    if (field === 'epoch') f.current.authority.epoch = 'epoch_fixture_02';
     if (field === 'consent') f.current.consent.revision++;
     if (field === 'roster') f.current.rosterRevision = 'roster_fixture_v2';
     assert.equal((await f.create().process()).status, 'baseline'); assert.equal(f.sends, 0);
@@ -153,21 +160,26 @@ await test('existing receiver rejects other binding and expired gate envelope', 
   assert.equal((await run({ envelope: { ...envelope, ownerId: 'owner_fixture_B' } })).status, 'blocked');
   assert.equal((await run({ now: Date.parse(envelope.expiresAt) })).status, 'blocked');
 });
-await test('LIVE HOLD counterexample: topic-only revocation cannot invalidate an unchanged installed binding', async () => {
+await test('wire contract rejects missing/changed-type epoch, extra fields and noncanonical topic revision', async () => {
+  const f=fixture();await f.create().process();f.current.observation=observation('25',-30000);await f.create().process();
+  const original=f.envelopes[0];assert(validPushEnvelope(original));
+  for(const delta of [{authorityEpoch:undefined},{authorityEpoch:42},{authorityEpoch:new String(original.authorityEpoch)},{authorityEpoch:'short'},{topicRevision:'1'},{topicRevision:0},{extra:'field'}])assert.equal(validPushEnvelope({...original,...delta}),false);
+});
+await test('generic receiver cannot bypass the epoch/topic fence', async () => {
   const f = fixture(); await f.create().process(); f.current.observation = observation('25', -30_000); await f.create().process();
   const envelope = { ...f.envelopes[0], eventKey: 'inflight_topic_revocation_fixture' };
   f.current.consent.enabled = false; let shown = 0;
   const result = await f.worker.CrewCheckPushOffline.processPush({ enabled: true, envelope, store: f.store, now: NOW,
     registration: { showNotification: async () => { shown++; } } });
-  // Expected COUNTEREXAMPLE, not a passing implementation of topic revocation.
-  // Live consent mutation must invalidate/rotate the installed receiver binding.
-  assert.equal(result.status, 'display_api_resolved'); assert.equal(shown, 1);
+  // The generic receiver has no gate-binding authority and must fail closed.
+  // Live mutation still requires the correlated gate fence and ACK.
+  assert.equal(result.status, 'blocked'); assert.equal(shown, 0);
 });
 await test('new gate fence closes the counterexample after correlated local revocation ACK', async () => {
   const f = fixture(); await f.create().process(); f.current.observation = observation('25', -30_000); await f.create().process();
-  const envelope = { ...f.envelopes[0], eventKey: 'gate-change-v1:inflight_fixture' };
+  const envelope = { ...f.envelopes[0], eventKey: 'gate-change-v1:' + 'a'.repeat(64) };
   const request = { ownerId: envelope.ownerId, installationId: envelope.installationId, consentRevision: envelope.consentRevision,
-    topicRevision: envelope.topicRevision, requestId: 'revocation_fixture_01' };
+    topicRevision: envelope.topicRevision, authorityEpoch: envelope.authorityEpoch, requestId: 'revocation_fixture_01' };
   const revoked = await f.receiver.revoke(request);
   assert.equal(revoked.status, 'local_fence_confirmed'); assert.equal(revoked.ack.requestId, request.requestId);
   assert(f.notifications.every(n => n.closed));

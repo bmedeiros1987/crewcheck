@@ -5,6 +5,7 @@ on:
       - 'server/web-push/**'
       - 'server/gate-source-update.mjs'
       - 'shared/gate-query-day.mjs'
+      - 'shared/crewcheckPushContract.mjs'
       - 'client/public/crewcheck-push-offline.js'
       - 'client/public/crewcheck-gate-receiver-offline.js'
       - 'scripts/regression-gate-push-candidate.mjs'

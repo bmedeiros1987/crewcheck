@@ -88,7 +88,7 @@ export function createOfflineGatePushCandidate(options = {}) {
         return blocked('context-changed-before-dispatch');
       const envelope = { schema: 'crewcheck-notice-v1', ownerId: current.ownerId,
         installationId: current.installation.installationId, consentRevision: current.installation.revision,
-        eventKey: event.eventKey, topicRevision: current.consent.revision,
+        eventKey: event.eventKey, topicRevision: current.consent.revision, authorityEpoch: current.authority.epoch,
         expiresAt: new Date(event.expiresAt).toISOString(), route: '/app' };
       const context = { ownerId: current.ownerId, sourceVerified: true, eligible: true, consent: true,
         gateCandidate: current };

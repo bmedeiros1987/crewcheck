@@ -25,7 +25,7 @@ async function mutate(a, change) {
  await c.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(value),a.authorityKey]);await c.commit();}catch(e){await c.rollback();throw e;}finally{c.release();}
 }
 let sends=0;
-const mockProvider={kind:'isolated-web-push-mock',send:async()=>{sends++;return{accepted:true};}};
+const mockProvider={kind:'isolated-web-push-mock',send:async envelope=>{assert.equal(envelope.authorityEpoch,'epoch_fixture_01');assert.equal(Object.keys(envelope).length,9);sends++;return{accepted:true};}};
 const make=(a=adapter(),extra={})=>createOfflineGatePushCandidate({enabled:true,...a,mockProvider,clock:()=>NOW,...extra});
 try {
  const [where]=await db.query('SELECT DATABASE() AS name,@@datadir AS datadir');

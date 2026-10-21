@@ -33,10 +33,14 @@ try {
   };
   const rpc = value => page.evaluate(value => window.rpc(value), value);
   await setup();
-  const binding = { ownerId: 'owner_fixture_A', installationId: 'installation_fixture_01', consentRevision: 2, topicRevision: 3 };
-  const envelope = { schema: 'crewcheck-notice-v1', ...binding, eventKey: 'gate-change-v1:browser_fixture', expiresAt: '2032-10-14T12:01:00Z', route: '/app' };
+  const binding = { ownerId: 'owner_fixture_A', installationId: 'installation_fixture_01', consentRevision: 2, topicRevision: 3, authorityEpoch: 'epoch_fixture_01' };
+  const envelope = { schema: 'crewcheck-notice-v1', ...binding, eventKey: 'gate-change-v1:' + 'a'.repeat(64), expiresAt: '2032-10-14T12:01:00Z', route: '/app' };
   const request = { ...binding, requestId: 'revocation_fixture_01' };
   assert.equal((await rpc({ action: 'seed', binding })).seeded, true);
+  for (const delta of [{authorityEpoch:undefined},{authorityEpoch:'epoch_fixture_02'},{authorityEpoch:'Epoch_fixture_01'},{ownerId:'owner_fixture_B'},{installationId:'installation_fixture_02'},{consentRevision:3},{topicRevision:4}]) {
+    const r=await rpc({action:'receive',envelope:{...envelope,...delta}}); assert(['blocked','revoked'].includes(r.status));
+    assert.equal((await rpc({action:'status'})).entered,false);
+  }
   await page.evaluate(envelope => { window.pendingReceive = window.rpc({ action: 'receive', envelope }); }, envelope);
   await page.waitForFunction(async () => (await window.rpc({ action: 'status' })).entered);
   await page.evaluate(request => { window.acknowledged = false; window.pendingRevoke = window.rpc({ action: 'revoke', request }).then(value => { window.acknowledged = true; return value; }); }, request);
@@ -46,10 +50,19 @@ try {
   const result = await page.evaluate(() => Promise.all([window.pendingReceive, window.pendingRevoke]));
   assert.equal(result[0].status, 'display_api_resolved'); assert.equal(result[1].ack.requestId, request.requestId);
   const after = await rpc({ action: 'status' }); assert.equal(after.binding.active, false); assert(after.notifications.every(n => n.closed));
-  assert.equal((await rpc({ action: 'receive', envelope: { ...envelope, eventKey: 'gate-change-v1:late_browser_fixture' } })).status, 'revoked');
+  assert.equal((await rpc({ action: 'receive', envelope: { ...envelope, eventKey: 'gate-change-v1:' + 'b'.repeat(64) } })).status, 'revoked');
   await page.close(); page = await context.newPage(); await setup(); await rpc({ action: 'recreate' });
   assert.equal((await rpc({ action: 'status' })).binding.active, false, 'actual IndexedDB tombstone persists across page/receiver recreation');
-  assert.equal((await rpc({ action: 'receive', envelope: { ...envelope, eventKey: 'gate-change-v1:recreated_fixture' } })).status, 'revoked');
+  assert.equal((await rpc({ action: 'receive', envelope: { ...envelope, eventKey: 'gate-change-v1:' + 'c'.repeat(64) } })).status, 'revoked');
   assert.equal((await rpc({ action: 'revoke', request: { ...request, topicRevision: 4 } })).ack, null);
+  const rotated={...binding,authorityEpoch:'epoch_fixture_02'};
+  await rpc({action:'seed',binding:rotated}); await rpc({action:'recreate'});
+  assert.equal((await rpc({action:'receive',envelope})).status,'revoked');
+  assert.equal((await rpc({action:'revoke',request})).ack,null);
+  assert.equal((await rpc({action:'status'})).binding.active,true,'old epoch cannot tombstone replacement');
+  const rotatedAck=await rpc({action:'revoke',request:{...request,authorityEpoch:rotated.authorityEpoch}});
+  assert.equal(rotatedAck.ack.authorityEpoch,rotated.authorityEpoch);
+  await page.reload(); await setup(); await rpc({action:'recreate'});
+  assert.equal((await rpc({action:'receive',envelope:{...envelope,authorityEpoch:rotated.authorityEpoch}})).status,'revoked');
   console.log('PASS actual worker + IndexedDB + origin Web Locks: pending display/revoke serialization, correlated ACK after fence/close, late and recreated receiver blocked; mock display only, no permission or real notification.');
 } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }

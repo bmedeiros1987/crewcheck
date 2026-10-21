@@ -3,6 +3,16 @@
 (function (root) {
   const sameBinding = (a, b) => a && b && a.ownerId === b.ownerId && a.installationId === b.installationId && a.consentRevision === b.consentRevision;
   const valid = value => value && value.schema === 'crewcheck-notice-v1' && ['ownerId', 'installationId', 'eventKey'].every(key => typeof value[key] === 'string' && value[key].length >= 8 && value[key].length <= 160) && Number.isSafeInteger(value.consentRevision) && value.consentRevision > 0 && value.route === '/app';
+  const gate = value => value && (Object.hasOwn(value, 'authorityEpoch') || Object.hasOwn(value, 'topicRevision') || (typeof value.eventKey === 'string' && value.eventKey.startsWith('gate-change-v1:')));
+  const gateFields = ['ownerId', 'installationId', 'consentRevision', 'topicRevision', 'authorityEpoch'];
+  async function gateCurrent(store, envelope) {
+    if (!gate(envelope)) return true;
+    if (Object.keys(envelope).length !== 9 || typeof envelope.authorityEpoch !== 'string' || !/^[A-Za-z0-9_-]{8,160}$/.test(envelope.authorityEpoch)
+      || !Number.isSafeInteger(envelope.topicRevision) || envelope.topicRevision < 1 || !/^gate-change-v1:[a-f0-9]{64}$/.test(envelope.eventKey || '')
+      || typeof store.gateBinding !== 'function') return false;
+    const binding = await store.gateBinding();
+    return binding?.active === true && gateFields.every(key => binding[key] === envelope[key]);
+  }
   function indexedStore(indexedDB) {
     const database = new Promise((resolve, reject) => {
       const request = indexedDB.open('crewcheck-notification-installation-v1', 1);
@@ -37,12 +47,12 @@
     };
   }
   async function processPush({ enabled = false, envelope, store, registration, now = Date.now(), clock = () => now }) {
-    if (enabled !== true || !valid(envelope) || !Number.isFinite(now) || !Number.isFinite(Date.parse(envelope.expiresAt)) || Date.parse(envelope.expiresAt) <= now || !sameBinding(await store.binding(), envelope)) return { status: 'blocked', received: null };
+    if (enabled !== true || !valid(envelope) || !Number.isFinite(now) || !Number.isFinite(Date.parse(envelope.expiresAt)) || Date.parse(envelope.expiresAt) <= now || !sameBinding(await store.binding(), envelope) || !await gateCurrent(store, envelope)) return { status: 'blocked', received: null };
     const key = JSON.stringify([envelope.ownerId, envelope.eventKey, envelope.installationId, envelope.consentRevision]);
     if (!await store.claim(key, envelope)) return { status: 'duplicate_or_revoked', received: null };
     if (Date.parse(envelope.expiresAt) <= clock()) { await store.record(key, 'expired'); return { status: 'expired', received: null }; }
     // Check binding again after the persistent claim. Never show account details.
-    if (!sameBinding(await store.binding(), envelope)) { await store.record(key, 'revoked'); return { status: 'revoked', received: null }; }
+    if (!sameBinding(await store.binding(), envelope) || !await gateCurrent(store, envelope)) { await store.record(key, 'revoked'); return { status: 'revoked', received: null }; }
     try {
       if (Date.parse(envelope.expiresAt) <= clock()) { await store.record(key, 'expired'); return { status: 'expired', received: null }; }
       await registration.showNotification('CrewCheck', { body: 'Há uma atualização para conferir no CrewCheck.', tag: key, data: { route: '/app', envelope, binding: { ownerId: envelope.ownerId, installationId: envelope.installationId, consentRevision: envelope.consentRevision } } });
@@ -53,7 +63,7 @@
   }
   async function processClick({ notification, store, clients, origin }) {
     notification.close();
-    if (notification.data?.route !== '/app' || !sameBinding(await store.binding(), notification.data.binding)) return { opened: false };
+    if (notification.data?.route !== '/app' || !sameBinding(await store.binding(), notification.data.binding) || !await gateCurrent(store, notification.data.envelope)) return { opened: false };
     if(store.report&&valid(notification.data.envelope))await store.report(JSON.stringify([notification.data.envelope.ownerId,notification.data.envelope.eventKey,notification.data.envelope.installationId,notification.data.envelope.consentRevision]),notification.data.envelope,'clicked');
     const target = new URL('/app', origin).href;
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });

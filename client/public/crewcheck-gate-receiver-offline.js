@@ -2,12 +2,12 @@
  * permission, subscription or startup path. Binding must come from a separately
  * reviewed host; neither this component nor a binding authenticates an account. */
 (function (root) {
-  const fields = ['ownerId', 'installationId', 'consentRevision', 'topicRevision'];
+  const fields = ['ownerId', 'installationId', 'consentRevision', 'topicRevision', 'authorityEpoch'];
   const same = (a, b) => a && b && fields.every(key => a[key] === b[key]);
-  const valid = value => value && ['ownerId', 'installationId'].every(key => typeof value[key] === 'string' && /^[a-zA-Z0-9_-]{8,160}$/.test(value[key]))
+  const valid = value => value && ['ownerId', 'installationId', 'authorityEpoch'].every(key => typeof value[key] === 'string' && /^[a-zA-Z0-9_-]{8,160}$/.test(value[key]))
     && ['consentRevision', 'topicRevision'].every(key => Number.isSafeInteger(value[key]) && value[key] > 0);
   const scope = value => Object.fromEntries(fields.map(key => [key, value[key]]));
-  const gateEnvelope = value => valid(value) && typeof value.eventKey === 'string' && value.eventKey.startsWith('gate-change-v1:');
+  const gateEnvelope = value => valid(value) && Object.keys(value).length === 9 && typeof value.eventKey === 'string' && /^gate-change-v1:[a-f0-9]{64}$/.test(value.eventKey);
   const blocked = status => ({ status, received: null });
   function matchesAck(ack, request) {
     return Boolean(valid(request) && typeof request.requestId === 'string' && /^[a-zA-Z0-9_-]{8,160}$/.test(request.requestId) && ack?.schema === 'crewcheck.gate-revoked.v1'
@@ -56,7 +56,7 @@
               && ['ownerId', 'installationId', 'consentRevision'].every(key => binding[key] === envelope[key]);
           };
           if (!await current()) return blocked('revoked');
-          const guarded = { binding: async () => await current() ? store.binding() : null,
+          const guarded = { gateBinding: async () => await current() ? store.gateBinding() : null, binding: async () => await current() ? store.binding() : null,
             claim: store.claim.bind(store), record: store.record.bind(store),
             ...(store.report ? { report: store.report.bind(store) } : {}) };
           // Keep the SAME lock through showNotification resolution. A revocation
@@ -69,7 +69,7 @@
         if (!valid(request) || typeof request.requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,160}$/.test(request.requestId)) return { status: 'blocked', ack: null };
         try {
           return await exclusive(async () => {
-            // Host transaction must compare all four fields and persist an
+            // Host transaction must compare all five fields and persist an
             // inactive tombstone BEFORE returning. Stale A cannot invalidate B.
             if (!await store.invalidateGate(scope(request))) return { status: 'stale', ack: null };
             const notifications = await registration.getNotifications();

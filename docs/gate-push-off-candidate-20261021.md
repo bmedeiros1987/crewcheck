@@ -172,3 +172,37 @@ on this Mac did not create a socket/log and was stopped; no local SQL pass is
 claimed until a real engine test completes. Existing Node producer/worker suites
 remain separate evidence. No shipping receiver, real auth writer, real source
 writer, sender or native code is connected by this continuation; LIVE remains HOLD.
+
+
+## Authority epoch transport continuation — still draft/OFF
+
+The candidate copies `current.authority.epoch` from the existing admitted host
+snapshot into the envelope as `authorityEpoch`. It never reads an epoch from
+JavaScript, creates one, or treats one as proof of login. The isolated host/SQL
+fixture still does **not** establish production server authority. There is no
+new writer, endpoint, enrollment, transport or activation.
+
+Gate envelopes have exactly nine fields: `schema`, `ownerId`, `installationId`,
+`consentRevision`, `topicRevision`, `authorityEpoch`, `eventKey`, `expiresAt`,
+`route`. Epoch is an opaque primitive string matching `[A-Za-z0-9_-]{8,160}`;
+comparison is case-sensitive and exact. Revisions remain positive safe integers
+in the existing web contract. Native FCM uses canonical decimal strings for
+those revisions: that future transport encoding must preserve the same values,
+not create or renew authority. Native code is not integrated by this change.
+
+The isolated web receiver now compares five binding fields, including epoch,
+for display, tombstone persistence, scoped tray dismissal and correlated ACK.
+Old ACK/revoke requests cannot tombstone a replacement epoch. Missing/malformed
+epoch fails closed. The generic push receiver cannot display or open a gate
+notice without the guarded gate-binding store; it cannot bypass the topic fence.
+The shipping service worker does not import the isolated gate receiver. No JS
+binding/admission writer is added. Restart tests cover persisted IndexedDB
+revocation and replacement epochs, not proof of authenticated production restart.
+
+Synthetic coverage includes missing/type/case/changed epoch, owner/install/
+revision mismatches, mutation during claim, in-transit notices, ACK correlation,
+receiver recreation, dedup and real browser IndexedDB/Web Locks with display
+mocked. Existing SQL tests retain epoch revocation under owner locks and durable
+claim/restart coverage. Server mutation alone is still insufficient: production
+requires the separately reviewed host authority, revocation barrier and ACK.
+Native clock review and source/authority/transport activation remain separate HOLDs.
