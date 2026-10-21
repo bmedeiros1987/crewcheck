@@ -51,7 +51,7 @@ async function transaction(db, run) {
   catch (error) { await c.rollback(); throw error; } finally { c.release(); }
 }
 export async function changeGateConsent(db, identity, input, { enabled = false, clock = Date.now } = {}) {
-  if (!enabled) return { status: 'disabled', received: null };
+  if (enabled !== true) return { status: 'disabled', received: null };
   const p = principal(identity, clock());
   if (!p || !id(input?.installationId) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.expectedRevision >= Number.MAX_SAFE_INTEGER
     || typeof input.enabled !== 'boolean' || input.enabled && input.confirmed !== true
@@ -72,7 +72,7 @@ export async function changeGateConsent(db, identity, input, { enabled = false, 
   });
 }
 export function createGateOutboxConnection({ enabled = false, readSource = async () => null, clock = Date.now } = {}) {
-  if (!enabled) return Object.freeze({ enqueue: async () => ({ status: 'disabled', received: null }), dispatch: async () => ({ status: 'disabled', received: null }) });
+  if (enabled !== true) return Object.freeze({ enqueue: async () => ({ status: 'disabled', received: null }), dispatch: async () => ({ status: 'disabled', received: null }) });
   const verifyContext = async (c, job, now) => {
     const envelope = job.envelope, scope = { email: job.email, ownerId: envelope?.ownerId, installationId: envelope?.installationId };
     if (!validPushEnvelope(envelope) || !id(envelope.authorityEpoch) || !Number.isFinite(now)) return false;
@@ -94,7 +94,7 @@ export function createGateOutboxConnection({ enabled = false, readSource = async
     if (!proof || proof.gate !== context.gate || proof.sourceUpdatedAt !== context.sourceUpdatedAt || !/^[A-Z]?\d{1,3}[A-Z]?$/.test(proof.gate)
       || radarFlightId(proof.flight) !== radarFlightId(context.identity.flight) || proof.origin !== context.identity.origin || proof.destination !== context.identity.destination
       || Date.parse(proof.scheduledDepartureUtc) !== Date.parse(context.identity.scheduledDepartureUtc)) return false;
-    if (previousProof.gate === proof.gate || Date.parse(previousProof.sourceUpdatedAt) >= Date.parse(proof.sourceUpdatedAt)) return false;
+    if (now - Date.parse(previousProof.sourceUpdatedAt) > 1800000 || previousProof.gate === proof.gate || Date.parse(previousProof.sourceUpdatedAt) >= Date.parse(proof.sourceUpdatedAt)) return false;
     const observed = Date.parse(proof.sourceUpdatedAt), departure = Date.parse(proof.scheduledDepartureUtc);
     return now - observed <= 1800000 && observed <= now && departure - now <= 28800000 && now - departure < 3600000
       && Date.parse(envelope.expiresAt) <= Math.min(observed + 1800000, departure + 3600000);

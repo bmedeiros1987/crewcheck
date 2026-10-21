@@ -4,6 +4,8 @@ import { handleCrewCheckPush } from '../server/web-push/api.mjs';
 assert.equal(CREWCHECK_GATE_HOST_ENABLED,false);
 const forbidden=new Proxy({}, {get(){throw Error('OFF cannot touch storage/source/authority/provider');}});
 assert.equal((await changeGateConsent(forbidden,forbidden,forbidden)).status,'disabled');
+assert.equal((await changeGateConsent(forbidden,forbidden,forbidden,{enabled:'true'})).status,'disabled');
+assert.equal((await createGateOutboxConnection({enabled:'true'}).dispatch(forbidden,forbidden,forbidden)).status,'disabled');
 const connection=createGateOutboxConnection({readSource:forbidden});
 assert.equal((await connection.enqueue(forbidden,forbidden,forbidden)).status,'disabled');
 assert.equal((await connection.dispatch(forbidden,forbidden,forbidden,forbidden)).status,'disabled');
