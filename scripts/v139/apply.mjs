@@ -217,6 +217,7 @@ await import('../pulse-alert-experience/apply.mjs');
 await import('../p1-infobip-whatsapp-off/apply.mjs');
 await import('../telegram-concierge-menu/apply.mjs');
 await import('../departure-roster-projection/apply.mjs');
+await import('../follow-flight/apply.mjs');
 
 }
 

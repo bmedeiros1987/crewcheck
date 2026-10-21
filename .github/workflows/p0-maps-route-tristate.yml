@@ -9,6 +9,9 @@ on:
       - 'client/src/lib/departureRouteState.ts'
       - 'client/src/components/v1391/useRosterLayout.ts'
       - 'scripts/v139/apply.mjs'
+      - 'scripts/follow-flight/**'
+      - 'shared/followedFlights.*'
+      - 'scripts/regression-followed-flights*.mjs'
       - 'scripts/departure-roster-projection/**'
       - 'scripts/regression-departure-roster-projection*.mjs'
       - 'shared/departureRosterProjection.*'
@@ -58,6 +61,8 @@ jobs:
           node scripts/regression-departure-route-state.mjs
           node scripts/regression-departure-route-effects.mjs
           node scripts/regression-departure-positioning-terminal.mjs
+          node scripts/regression-followed-flights.mjs
+          node scripts/regression-followed-flights-ui.mjs
           node scripts/regression-departure-roster-projection.mjs
           node scripts/regression-departure-roster-projection-ui.mjs
           node scripts/regression-v14-3-34-positioning-radar-cache.mjs
@@ -86,3 +91,4 @@ jobs:
           done
           node scripts/regression-departure-route-state-browser.mjs
           node scripts/regression-positioning-terminal-error-browser.mjs
+          node scripts/regression-followed-flights-browser.mjs
