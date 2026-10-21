@@ -5461,7 +5461,11 @@ export default function Home() {
       document.documentElement.style.colorScheme = next;
     };
     const forced = sessionStorage.getItem('crewcheck_force_view_once');
-    if (forced) { setView(normalizeInitialView(forced)); sessionStorage.removeItem('crewcheck_force_view_once'); }
+    if (forced) {
+      const destination = new URLSearchParams(window.location.search);
+      if (!destination.has('view') && !destination.has('connect')) setView(normalizeInitialView(forced));
+      sessionStorage.removeItem('crewcheck_force_view_once');
+    }
     window.addEventListener('crewcheck:open-menu', open);
     window.addEventListener('crewcheck:set-view', setViewFromEvent as EventListener);
     window.addEventListener('crewcheck:theme-change', syncTheme);
