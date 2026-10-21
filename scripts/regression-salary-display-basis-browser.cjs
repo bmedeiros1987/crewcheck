@@ -55,7 +55,7 @@ for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const 
  }
  await page.getByRole('radio',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.250,00/);
  await page.getByRole('radio',{name:'Líquido',exact:true}).focus();await page.keyboard.press('ArrowLeft');assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);await page.keyboard.press('ArrowRight');
- await page.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).first().click();assert.doesNotMatch(await page.locator('.cc-salary-basis-amount').innerText(),/2.250/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/Valor oculto/);
+ await page.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).first().click();assert.doesNotMatch(await page.locator('.cc-salary-basis-amount').innerText(),/2.250/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/R\$ •••/);
  await page.getByRole('button',{name:'Mostrar valores financeiros',exact:true}).first().click();
  await open();assert.equal(await page.getByRole('radio',{name:'Líquido',exact:true}).isChecked(),true,'reload keeps account choice');
  await page.evaluate(()=>{const key='crewcheck_financial_month_settings_v1:financial-ui-qa:2032-02',r=JSON.parse(localStorage.getItem(key));delete r.values.irrf;localStorage.setItem(key,JSON.stringify(r));window.dispatchEvent(new Event('crewcheck:financial-config-changed'));});
