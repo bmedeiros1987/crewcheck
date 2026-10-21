@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {followedFlight,followedFlightKey,readFollowedFlights,changeFollowedFlights} from '../shared/followedFlights.mjs';
+const data=new Map(), storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};
+const a={eventId:'synthetic',flight:'ZZ1234',origin:'SSA',destination:'GRU',scheduledDepartureUtc:'2030-10-21T13:00:00Z',date:'2030-10-21'};
+assert.equal(changeFollowedFlights(storage,'A',a,true),true);
+assert.deepEqual(readFollowedFlights(storage,'A'),[a]);
+assert.deepEqual(readFollowedFlights(storage,'B'),[]);
+changeFollowedFlights(storage,'A',{...a,eventId:'updated-id'},true);assert.equal(readFollowedFlights(storage,'A').length,1);
+assert.notEqual(followedFlightKey(a),followedFlightKey({...a,scheduledDepartureUtc:'2030-10-22T13:00:00Z'}));
+assert.notEqual(followedFlightKey(a),followedFlightKey({...a,destination:'CWB'}));
+for (const bad of [{...a,date:'2030-02-30'},{...a,scheduledDepartureUtc:'2030-10-21 13:00'},{...a,origin:'ssa'},{...a,eventId:''},null]) assert.equal(followedFlight(bad),null);
+changeFollowedFlights(storage,'A',a,false);assert.deepEqual(readFollowedFlights(storage,'A'),[]);
+assert.equal(changeFollowedFlights(storage,'local',a,true),false);
+assert.equal(changeFollowedFlights({setItem(){throw Error()},getItem(){return null}},'A',a,true),false);
+console.log('PASS account/device isolation, reload, stop, exact flight/date/route/instant dedupe, malformed input, storage failure; no network');
