@@ -8,6 +8,7 @@ on:
       - 'client/public/crewcheck-push-offline.js'
       - 'client/public/crewcheck-gate-receiver-offline.js'
       - 'scripts/regression-gate-push-candidate.mjs'
+      - 'scripts/regression-gate-push-mysql.mjs'
       - 'scripts/regression-gate-receiver-*.mjs'
       - 'docs/gate-push-off-candidate-20261021.md'
       - '.github/workflows/gate-push-off-candidate.yml'
@@ -46,3 +47,44 @@ jobs:
         env:
           GATE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/gate-browser/package.json
         run: node scripts/regression-gate-receiver-browser.mjs
+
+  isolated-sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Start disposable MySQL without a network
+        run: |
+          mkdir -p /tmp/crewcheck-gate-sql-qa-ci
+          docker run --detach --rm --name crewcheck-gate-sql-qa --network none --mount type=bind,source=/tmp/crewcheck-gate-sql-qa-ci,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_gate_push_qa mysql:8.4 --datadir=/var/run/mysqld/data
+          for attempt in $(seq 1 90); do
+            if docker exec crewcheck-gate-sql-qa mysqladmin ping --socket=/var/run/mysqld/mysqld.sock --silent; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-gate-sql-qa chmod 755 /var/run/mysqld
+      - name: Producer through real InnoDB, durable claims and revocable fixture authority
+        env:
+          CREWCHECK_GATE_QA: isolated-mysql
+          CREWCHECK_GATE_QA_SOCKET: /tmp/crewcheck-gate-sql-qa-ci/mysqld.sock
+        run: node scripts/regression-gate-push-mysql.mjs
+      - name: Restart SQL engine and prove no resend
+        run: |
+          docker restart crewcheck-gate-sql-qa
+          for attempt in $(seq 1 90); do
+            if docker exec crewcheck-gate-sql-qa mysqladmin ping --socket=/var/run/mysqld/mysqld.sock --silent; then break; fi
+            sleep 1
+          done
+      - name: Recreated producer after actual engine restart
+        env:
+          CREWCHECK_GATE_QA: isolated-mysql
+          CREWCHECK_GATE_QA_SOCKET: /tmp/crewcheck-gate-sql-qa-ci/mysqld.sock
+          CREWCHECK_GATE_QA_RESTART: verify
+        run: node scripts/regression-gate-push-mysql.mjs
+      - name: Remove disposable SQL
+        if: always()
+        run: docker rm --force crewcheck-gate-sql-qa || true

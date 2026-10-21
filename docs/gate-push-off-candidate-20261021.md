@@ -139,3 +139,36 @@ manifest, Gradle, Watch, token or APK change is part of this patch.
 
 This component is reviewable independently while these live adapters remain
 blocked. It must not be described as functioning closed-app notifications.
+
+
+## SQL continuation (isolated only, 2026-10-21)
+
+The candidate now carries an explicit synthetic owner epoch and finite admission
+lease (at most five minutes), included in context comparison and event expiry.
+These fields are fixture authority, not a getMe/authentication implementation.
+Missing, revoked, foreign, expired or overlong authority fails closed.
+
+`gateSqlOffline.mjs` connects the SAME candidate/dispatcher to the existing state
+and profile table layout in database `crewcheck_gate_push_qa` only. It requires an
+explicit fixture flag and example.test owner email, verifies the database before
+owner reads/writes, scopes all keys by owner/email, and locks profile, authority
+and journal rows in the same transaction. Epoch/consent/install/roster changes
+between claim and dispatch are rechecked under those locks. The existing account
+state deletion prefixes cover its binding and journal records. No DDL, environment
+lookup, production admission, startup import or credential discovery is added.
+
+The existing mock dispatcher now commits its dispatching claim in a first
+transaction BEFORE mock I/O; finalization uses a second transaction with the same
+owner/context validation. A crash after mock acceptance can roll back finalization
+but leaves the committed claim non-retryable. Concurrent callers may observe
+`dispatching`; they must never call it delivered/accepted until terminal state.
+
+The new MySQL fixture runs producer baseline/change, eight consumers, recreation,
+revocation/epoch/consent/installation/roster changes between claim and send, rollback
+after mock acceptance, owner replacement and exact account deletion isolation.
+CI restarts the disposable SQL ENGINE before proving the claim cannot resend.
+It uses --network none, synthetic records and a mock sender. Local SQL startup
+on this Mac did not create a socket/log and was stopped; no local SQL pass is
+claimed until a real engine test completes. Existing Node producer/worker suites
+remain separate evidence. No shipping receiver, real auth writer, real source
+writer, sender or native code is connected by this continuation; LIVE remains HOLD.

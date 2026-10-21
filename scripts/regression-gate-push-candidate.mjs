@@ -8,7 +8,7 @@ const NOW = Date.parse('2032-10-14T12:00:00Z');
 const identity = { flight: 'LA100', origin: 'GRU', destination: 'REC', departureDate: '2032-10-14', scheduledDepartureUtc: '2032-10-14T13:00:00Z' };
 const observation = (gate = '24', offset = -60_000) => ({ ok: true, provider: 'custom', ...identity, gate,
   departureGateUpdate: { schema: 'crewcheck.departure-gate-update.v1', ...identity, gate, updatedAt: new Date(NOW + offset).toISOString() } });
-const state = () => ({ ownerId: 'owner_fixture_A', rosterRevision: 'roster_fixture_v1', identity,
+const state = () => ({ ownerId: 'owner_fixture_A', authority: { ownerId: 'owner_fixture_A', epoch: 'epoch_fixture_01', expiresAt: NOW + 300_000, revoked: false }, rosterRevision: 'roster_fixture_v1', identity,
   manualGate: '17', installation: { ownerId: 'owner_fixture_A', installationId: 'installation_fixture_01', revision: 1, active: true },
   consent: { ownerId: 'owner_fixture_A', installationId: 'installation_fixture_01', installationRevision: 1, revision: 1, enabled: true, topic: 'departure-gate-change' }, observation: observation() });
 let passed = 0;
@@ -53,7 +53,7 @@ function fixture() {
   } };
   const create = () => createOfflineGatePushCandidate({ enabled: true, host, repository, mockProvider, clock: () => now });
   return { create, records, envelopes, store, worker, receiver, notifications, get current() { return current; }, set current(v) { current = v; },
-    get sends() { return sends; }, get displays() { return displays; }, set hook(v) { hook = v; }, set now(v) { now = v; }, set throwSend(v) { throwSend = v; } };
+    get sends() { return sends; }, get displays() { return displays; }, get now() { return now; }, set hook(v) { hook = v; }, set now(v) { now = v; }, set throwSend(v) { throwSend = v; } };
 }
 await test('default OFF touches no host/repository/provider/configuration', async () => {
   const forbidden = new Proxy({}, { get() { throw Error('OFF must not inspect dependencies'); } });
@@ -73,6 +73,11 @@ await test('producer -> existing dispatcher -> actual worker: baseline then one 
   }
 });
 const invalidCases = [
+  ['missing authority', s => { delete s.authority; }],
+  ['revoked authority', s => { s.authority.revoked = true; }],
+  ['expired authority', s => { s.authority.expiresAt = NOW; }],
+  ['authority beyond bounded lease', s => { s.authority.expiresAt = NOW + 300001; }],
+  ['foreign authority', s => { s.authority.ownerId = 'owner_fixture_B'; }],
   ['no topic consent', s => { s.consent.enabled = false; }],
   ['BIDS consent is not gate consent', s => { s.consent.topic = 'bids'; }],
   ['other owner consent', s => { s.consent.ownerId = 'owner_fixture_B'; }],
@@ -106,7 +111,7 @@ await test('same gate with newer evidence is not another event', async () => {
   assert.equal((await p.process()).status, 'baseline'); assert.equal(f.sends, 0);
 });
 await test('stale baseline cannot manufacture a new change from a fresh source', async () => {
-  const f = fixture(); await f.create().process(); f.now = NOW + 30 * 60_000;
+  const f = fixture(); await f.create().process(); f.now = NOW + 30 * 60_000; f.current.authority.expiresAt = f.now + 300_000; // explicit synthetic lease renewal
   f.current.observation = observation('25', 29 * 60_000);
   assert.equal((await f.create().process()).status, 'baseline'); assert.equal(f.sends, 0);
 });
@@ -123,7 +128,7 @@ for (const cut of [2, 3, 4, 5]) await test('revocation at host read ' + cut + ' 
 await test('owner, consent and roster replacements establish a fresh baseline without backfill', async () => {
   for (const field of ['owner', 'consent', 'roster']) {
     const f = fixture(); await f.create().process(); f.current.observation = observation('25', -30_000);
-    if (field === 'owner') { f.current.ownerId = 'owner_fixture_B'; f.current.installation.ownerId = 'owner_fixture_B'; f.current.consent.ownerId = 'owner_fixture_B'; }
+    if (field === 'owner') { f.current.authority.ownerId = 'owner_fixture_B'; f.current.authority.epoch = 'epoch_fixture_02'; f.current.ownerId = 'owner_fixture_B'; f.current.installation.ownerId = 'owner_fixture_B'; f.current.consent.ownerId = 'owner_fixture_B'; }
     if (field === 'consent') f.current.consent.revision++;
     if (field === 'roster') f.current.rosterRevision = 'roster_fixture_v2';
     assert.equal((await f.create().process()).status, 'baseline'); assert.equal(f.sends, 0);

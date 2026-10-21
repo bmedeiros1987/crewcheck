@@ -21,7 +21,9 @@ export function createOfflineGatePushCandidate(options = {}) {
 
   function admitted(value, now) {
     const state = structuredClone(value);
-    const { ownerId, installation, consent, identity, observation } = state || {};
+    const { ownerId, authority, installation, consent, identity, observation } = state || {};
+    if (authority?.ownerId !== ownerId || !id(authority.epoch) || authority.revoked !== false
+      || !Number.isFinite(authority.expiresAt) || authority.expiresAt <= now || authority.expiresAt - now > 5 * 60_000) return null;
     if (!id(ownerId) || !id(installation?.installationId) || installation.ownerId !== ownerId
       || installation.active !== true || !Number.isSafeInteger(installation.revision) || installation.revision < 1
       || consent?.ownerId !== ownerId || consent.installationId !== installation.installationId
@@ -42,10 +44,10 @@ export function createOfflineGatePushCandidate(options = {}) {
     const observedAt = Date.parse(proof.sourceUpdatedAt), departure = Date.parse(identity.scheduledDepartureUtc);
     if (now - observedAt > MAX_AGE || departure - now > 8 * 60 * 60_000 || now - departure >= 60 * 60_000) return null;
     const occurrence = [radarFlightId(identity.flight), identity.origin, identity.destination, new Date(departure).toISOString()];
-    return { ownerId, installation: { ownerId, installationId: installation.installationId, revision: installation.revision, active: true },
+    return { ownerId, authority: { ownerId, epoch: authority.epoch, expiresAt: authority.expiresAt, revoked: false }, installation: { ownerId, installationId: installation.installationId, revision: installation.revision, active: true },
       consent: { ownerId, installationId: consent.installationId, installationRevision: consent.installationRevision, revision: consent.revision, enabled: true, topic: consent.topic },
       rosterRevision: state.rosterRevision, occurrence,
-      gate: proof.gate, observedAt, expiresAt: Math.min(observedAt + MAX_AGE, departure + 60 * 60_000) };
+      gate: proof.gate, observedAt, expiresAt: Math.min(authority.expiresAt, observedAt + MAX_AGE, departure + 60 * 60_000) };
   }
 
   return Object.freeze({ async process() {
@@ -53,7 +55,7 @@ export function createOfflineGatePushCandidate(options = {}) {
     const initial = admitted(await host.read(), clock());
     if (!initial) return blocked('authority-consent-or-source-unconfirmed');
     const scope = 'gate-candidate:' + digest([initial.ownerId, initial.installation.installationId,
-      initial.installation.revision, initial.consent.revision, initial.rosterRevision, initial.occurrence]);
+      initial.installation.revision, initial.consent.revision, initial.authority.epoch, initial.rosterRevision, initial.occurrence]);
     const decision = await repository.transaction(scope, async record => {
       const current = admitted(await host.read(), clock());
       if (!current || !same(initial, current)) return blocked('context-changed');
