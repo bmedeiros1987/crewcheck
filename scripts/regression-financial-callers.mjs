@@ -138,11 +138,18 @@ try {
   }
   findCompare(compareFunction);
   assert.equal(actualCompareStatements.length, 2);
-  const comparisonCode = ts.transpileModule(actualCompareStatements.join('\n') + '\nglobalThis.comparisonText = perDiemDeltaText;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-  const salary = {production:0,reserve:0,standby:0,chief:0,instructorPay:0,config:{requiresManualFunction:false}};
+  const comparisonCode = ts.transpileModule(actualCompareStatements.join('\n') + '\nglobalThis.comparisonText = perDiemDeltaText;globalThis.financialSubject=financial;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const salary = {production:0,reserve:0,standby:0,chief:0,instructorPay:0,dsr:{inventoryComplete:false},config:{requiresManualFunction:false}};
   for (const [before, after, expected] of [[mixed, foreign, 'Não calculável'], [foreign, invalidRate, 'Não calculável'], [empty, foreign, 'Não calculável'], [foreign, foreign, 'Sem diferença']]) {
     const c = vm.createContext({...periods, useMemo: f=>f(), planned:{roster:'before'},bundle:{roster:'after'},comparison:{summary:{periodMatches:true}},financeSnapshot:r=>({salary,perdiem:r==='before'?before:after}),moneyCurrency:()=>{throw Error('unavailable delta must never be formatted as a monetary total');}});
     vm.runInContext(comparisonCode,c); assert.equal(c.comparisonText,expected);
+  }
+  for(const inventoryComplete of [false,true]){
+    const beforeSalary={...salary,configured:true,production:20,rows:[],dsr:{inventoryComplete}},afterSalary={...beforeSalary,production:10};
+    const c=vm.createContext({...periods,useMemo:f=>f(),planned:{roster:'before'},bundle:{roster:'after'},comparison:{summary:{periodMatches:true}},financeSnapshot:r=>({salary:r==='before'?beforeSalary:afterSalary,perdiem:foreign}),moneyCurrency:()=>{throw Error('same currency delta must not format missing money');}});
+    vm.runInContext(comparisonCode,c);assert.equal(c.financialSubject.salaryReady,inventoryComplete);
+    assert.equal(c.financialSubject.variableDelta,inventoryComplete?-10:null,'incomplete category inventory cannot claim integral variable difference');
+    assert.equal(c.financialSubject.plannedGuaranteeReview,inventoryComplete?true:null,'known work alone cannot prove planned guarantee');
   }
   // Compact roster and detailed view share the completeness-aware display string.
   const rosterFunction = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'Roster');
