@@ -5408,7 +5408,8 @@ export default function Home() {
         if(!watchSession.isCurrent()) { invalidateWatchSnapshot();return; }
         const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now):null;
         const projectedEvents=localStay?.isCurrent()&&localStay.hotelName?events.map(item=>item===stay?{...item,hotel:localStay.hotelName}:item):events;
-        const base = buildCrewCheckWatchSnapshot(projectedEvents, event, null, now, hotelReport);
+        const projectedEvent=projectedEvents.find(item=>item.id===event.id)||event;
+        const base = buildCrewCheckWatchSnapshot(projectedEvents, projectedEvent, null, now, hotelReport);
         // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
         const nextFlightEvent = selectNextFlight(events);
         const gateInfo = nextFlightEvent ? resolveNextFlightGate({
