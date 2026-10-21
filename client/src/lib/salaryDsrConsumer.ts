@@ -1,10 +1,14 @@
+import { decimalToMinor } from '../../../shared/financialMoney.mjs';
 import { composeSalaryWithDsr } from '../../../shared/financialSalaryDsr.mjs';
 import { payrollMonthBounds } from './financialPayrollPeriods';
 import type { confirmedPayrollDsrContext } from './financialStatementLearning';
 export type SalaryComponentKey='base'|'fixedAdditions'|'production'|'reserve'|'standby'|'chief'|'instructor';
 export type SalaryDsrPart={key:SalaryComponentKey;amount:number|null;knownAmount:number|null;complete:boolean};
 const keys:SalaryComponentKey[]=['base','fixedAdditions','production','reserve','standby','chief','instructor'];
-const cents=(value:number|null)=>value!==null&&Number.isFinite(value)&&value>=0&&Number.isSafeInteger(Math.round(value*100))?Math.round(value*100):null;
+// Match existing salary moneyBRL presentation at the final component boundary.
+// This is estimated projection precision, not an ACT rounding rule or a printed value.
+const finalAmountFormat=new Intl.NumberFormat('en-US',{useGrouping:false,minimumFractionDigits:2,maximumFractionDigits:2});
+const cents=(value:number|null)=>value!==null&&Number.isFinite(value)&&value>=0?decimalToMinor(finalAmountFormat.format(value),'BRL'):null;
 /** Sector additions use their own evidence, independently of geographic KM. */
 export function observedSalaryFlightSubtotal(rows:ReadonlyArray<{production:number;chief:number;instructor:number;distanceKnown:boolean;timeKnown:boolean;chiefEligible:boolean;instructorEvidence?:boolean}>,key:'production'|'chief'|'instructor'){
  const known=rows.filter(row=>(key==='production'?row.distanceKnown&&row.timeKnown:key==='chief'?row.chiefEligible===true:row.instructorEvidence===true)&&Number.isFinite(row[key])&&row[key]>=0);

@@ -23,6 +23,14 @@ try{
  value=call({month:'2026-09'});assert.equal(value.composition.reportedDsrMinor,null);
  const complete=parts.map(p=>({...p,amount:p.key==='production'?220:0,knownAmount:p.key==='production'?220:0,complete:true}));
  value=call({parts:complete});assert.equal(value.composition.dsr.amountMinor,8000);assert.equal(value.composition.grossMinor,30000);assert.equal(value.observedSubtotalMinor,22000,'reported DSR is not added');
+ for(const [amount,expected] of [[1.005,101],[10.075,1008],[0,0],[0.1234567891*739,9123],[Number.MAX_SAFE_INTEGER,null]]){
+  const rounded=call({parts:parts.map(p=>p.key==='production'?{...p,amount,knownAmount:amount,complete:true}:p)});
+  assert.equal(rounded.components.find(p=>p.key==='production').amountMinor,expected);
+  assert.equal(rounded.observedSubtotalMinor,expected);
+  if(expected!==null)assert.equal((expected/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),amount.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),'same final display policy');
+ }
+ assert.notEqual(9123,Math.round((Math.round(0.1234567891*100)/100)*739*100),'ten-decimal tariff remains unrounded before total');
+ value=call({parts:parts.map(p=>['production','reserve'].includes(p.key)?{...p,knownAmount:0.005}:p)});assert.equal(value.observedSubtotalMinor,2,'sum finalized component cents, not rounded aggregate');
  current=false;value=call();assert.equal(value.current,false);assert.equal(value.observedSubtotalMinor,null);assert.equal(value.composition.reportedDsrMinor,null);assert.equal(salaryDsrReceipt(ownerId,month,'A',fence),null);
  const reloaded=salaryDsrReceipt(ownerId,month,'actual-inputs-B',{isCurrent:()=>true});assert(reloaded.revision>changed.revision,'new context invalidates prior ephemeral receipt');
  console.log('PASS DSR consumer: unknown versus zero, observed positive subtotal, incomplete inventory, complete model delegation, reported separation, owner/month, NaN and ephemeral session revision');
