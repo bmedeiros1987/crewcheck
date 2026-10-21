@@ -108,9 +108,8 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}, maxReplyCha
     const place = locationCity ? ` em ${locationCity}${locationState ? `/${locationState}` : ''}` : locationState ? ` em ${locationState}` : '';
     return [
       'Academias · plano ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
-      `Não há dados suficientes no catálogo consultado para confirmar uma unidade com seu filtro${place}. Isso não significa que não exista parceria ou acesso.`,
-      'Confira unidades e condições na busca oficial: https://wellhub.com/pt-br/search/',
-      'Não vou sugerir unidade de outra cidade/estado como se fosse próxima. Posso tentar outra cidade, rede ou modalidade.',
+      `Catálogo parcial: unidades não confirmadas${place}.`,
+      'Confira seu plano e as unidades no Wellhub: https://wellhub.com/pt-br/search/',
     ].join('\n');
   }
 
