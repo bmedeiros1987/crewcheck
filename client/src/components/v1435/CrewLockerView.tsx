@@ -1,7 +1,10 @@
+import {crewPdfText} from '@/lib/crewlockerPdf';
+import {parseChtText,mergeChtEntries} from '@/lib/crewlockerChtText';
+import {CrewLocalPreview} from './CrewLocalPreview';
 import { requestBlobDownload } from '@/lib/blobDownload';
 import { CrewValidityEditor } from './CrewValidityEditor';
 import { assessValidity, civilToday, legacyValidity, validityLabel, TEMPORAL_LABELS, dueValidityNotices } from '@/lib/crewlockerValidity';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Eye, FileCheck2, FileLock2, KeyRound, Plane, Plus, RefreshCw, ShieldCheck, Trash2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -21,6 +24,14 @@ import {
 const TYPES = ['CHT', 'CMA', 'Passaporte', 'Visto', 'Certificado de treinamento', 'Vacinação', 'Outro'];
 
 export default function CrewLockerView() {
+  const readerGeneration=useRef(0);
+  const previewGeneration=useRef(0);
+  const [reading,setReading]=useState(false);
+  const [adjustImport,setAdjustImport]=useState(false);
+  const [duplicateFound,setDuplicateFound]=useState(false);
+  const [readNote,setReadNote]=useState('');
+  const [detected,setDetected]=useState<ReturnType<typeof parseChtText>|null>(null);
+  const [preview,setPreview]=useState<{blob:Blob;session:string;id:number}|null>(null);
   const [pin, setPin] = useState('');
   const [key, setKey] = useState<CryptoKey | null>(null);
   const [documents, setDocuments] = useState<CrewDocumentRecord[]>([]);
@@ -51,11 +62,11 @@ export default function CrewLockerView() {
     if (newNotices) toast.info('Há prazos informados para revisar no CreWallet.');
   }
   useEffect(() => {
-    const reset = () => { setKey(null); setUnlockedSession(null); setDocuments([]); setPin(''); setFile(null); setHolderName(''); setDisplayName(''); setIssuer(''); setEditing(null); };
+    const reset = () => { readerGeneration.current++;setReading(false);setDuplicateFound(false);setAdjustImport(false);setDetected(null);setReadNote('');setPreview(null);setKey(null); setUnlockedSession(null); setDocuments([]); setPin(''); setFile(null); setHolderName(''); setDisplayName(''); setIssuer(''); setEditing(null); };
     const storageChanged = (event: StorageEvent) => { if (!event.key || ['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key)) reset(); };
     for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired']) window.addEventListener(name,reset);
     window.addEventListener('storage',storageChanged);
-    return () => { for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired']) window.removeEventListener(name,reset); window.removeEventListener('storage',storageChanged); };
+    return () => { readerGeneration.current++; for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired']) window.removeEventListener(name,reset); window.removeEventListener('storage',storageChanged); };
   },[]);
   useEffect(() => {
     const update = () => { void refresh().catch(()=>{}); };
@@ -97,20 +108,51 @@ export default function CrewLockerView() {
     }
   }
 
-  async function saveDocument() {
-    if (!key || !file || !holderName.trim()) return;
+  async function selectDocument(selected:File|null) {
+    const request=++readerGeneration.current,session=crewLockerSession();
+    setDuplicateFound(false);setAdjustImport(false);setFile(selected);setDetected(null);setReadNote('');setReading(false);
+    if(!selected)return;
+    if(selected.type!=='application/pdf'){setReadNote('Formato sem leitura automática. Cadastro manual disponível.');return;}
+    setReading(true);
+    try {
+      const result=parseChtText(await crewPdfText(selected));
+      if(request!==readerGeneration.current||session!==crewLockerSession())return;
+      setDetected(result);
+      if(result.recognized){setType('CHT');setDisplayName(value=>value||'CHT');setReadNote(result.entries.length?`${result.entries.length} validades lidas${result.conflicts.length?' · conferir conflitos':''}`:'CHT sem validades reconhecidas.');}
+      else setReadNote('Modelo não reconhecido. Cadastre as validades manualmente.');
+    } catch {if(request===readerGeneration.current&&session===crewLockerSession())setReadNote('PDF sem leitura disponível. Cadastro manual preservado.');}
+    finally {if(request===readerGeneration.current&&session===crewLockerSession())setReading(false);}
+  }
+  async function reviewDocument(doc:CrewDocumentRecord) {
+    if(editing?.id===doc.id){readerGeneration.current++;setEditing(null);setReading(false);return;}
+    if(!key||unlockedSession!==crewLockerSession())return;
+    const request=++readerGeneration.current,session=crewLockerSession();setReading(true);
+    try {
+      const blob=await openCrewDocument(key,doc.id);
+      const result=blob.type==='application/pdf'?parseChtText(await crewPdfText(blob)):null;
+      if(request!==readerGeneration.current||session!==crewLockerSession())return;
+      setEditing({...doc,validities:result?.recognized?mergeChtEntries(doc.validities||[],result.entries):doc.validities});
+      if(result?.conflicts.length)toast.info('Há validades diferentes para conferir.');
+    } catch {if(request===readerGeneration.current&&session===crewLockerSession())setEditing(doc);}
+    finally {if(request===readerGeneration.current&&session===crewLockerSession())setReading(false);}
+  }
+  async function saveDocument(keepSeparate=false) {
+    if (!key || !file || !holderName.trim() || reading || adjustImport || unlockedSession!==crewLockerSession()) return;
     try {
       const session = crewLockerSession();
+      const entries=detected?.entries||[];
+      const signature=(values:any[])=>JSON.stringify(values.filter(entry=>!entry.supersededBy).map(entry=>[entry.category,entry.label,entry.expiry]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))));
+      if(!keepSeparate&&entries.length&&documents.some(doc=>doc.type===type&&doc.holderName.trim()===holderName.trim()&&signature(doc.validities||[])===signature(entries))){setDuplicateFound(true);toast.info('Validades já guardadas. Escolha se deseja outra cópia.');return;}
       await storeCrewDocument(key, file, {
         type,
         displayName: displayName.trim() || type,
         holderName: holderName.trim(),
         issuer: issuer.trim() || undefined,
-        validities: [],
+        validities: entries,
         verification: { level: 'declared', result: 'pending' },
       });
       if (session !== crewLockerSession()) return;
-      setFile(null);
+      setFile(null);setDetected(null);setDuplicateFound(false);setReadNote('');
       setDisplayName('');
       setIssuer('');
 
@@ -122,17 +164,16 @@ export default function CrewLockerView() {
   }
 
   async function viewDocument(doc: CrewDocumentRecord, download = false) {
+    const request=++previewGeneration.current;
     if (!key || unlockedSession !== crewLockerSession()) return;
     try {
       const session = crewLockerSession();
       const blob = await openCrewDocument(key, doc.id);
-      if (session !== crewLockerSession()) return;
+      if (session !== crewLockerSession()||request!==previewGeneration.current) return;
       if (download) {
         requestBlobDownload(blob, doc.fileName);
       } else {
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank', 'noopener,noreferrer');
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        if(session)setPreview({blob,session,id:request});
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Falha ao abrir documento.');
@@ -159,6 +200,7 @@ export default function CrewLockerView() {
   return <section className="cc-locker-shell">
     <header className="cc-locker-hero"><span><Plane/></span><div><small>CREWCHECK · CARTEIRA OPERACIONAL</small><h1>CreWallet</h1><p>Documentos protegidos, leitura offline e situação de validade em um único lugar.</p></div><b>{storage.persistent ? 'Offline persistente' : 'Offline local'}</b></header>
 
+    {preview&&<CrewLocalPreview key={preview.id} blob={preview.blob} session={preview.session} onClose={()=>setPreview(null)}/>}
     <section className="cc-locker-summary">
       <article><FileCheck2/><small>Registros de validade</small><strong>{summary.total}</strong></article>
       <article><ShieldCheck/><small>Verificados na fonte</small><strong>{summary.sourceVerified}</strong></article>
@@ -173,10 +215,13 @@ export default function CrewLockerView() {
         <label><span>Nome no cartão</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ex.: CMA 2026"/></label>
         <label><span>Nome do titular</span><input value={holderName} onChange={(event) => setHolderName(event.target.value)} required/></label>
         <label><span>Órgão emissor</span><input value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="Ex.: ANAC"/></label>
-        <p>Após guardar, abra “Revisar validades” para cadastrar vários registros confirmados deste arquivo.</p>
-        <label className="file"><span>Arquivo</span><input type="file" accept="application/pdf,image/*" onChange={(event) => setFile(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
+        <p role="status">{reading?'Lendo PDF neste aparelho…':readNote||'CHT digital: leitura local de validades.'}</p>
+        <label className="file"><span>Arquivo</span><input type="file" accept="application/pdf,image/*" onChange={(event) => void selectDocument(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
       </div>
-      <button className="primary" onClick={saveDocument} disabled={!file || !holderName.trim()}><Plus/> Criptografar e guardar offline</button>
+      {!!detected?.entries.length && <details><summary>{detected.entries.length} validades · conferir ou ajustar</summary><ul>{detected.entries.map(entry=><li key={entry.id}>{entry.label} · {validityLabel(entry.expiry)}</li>)}</ul><button type="button" onClick={()=>setAdjustImport(true)}>Ajustar validades</button></details>}
+      {adjustImport&&detected&&<CrewValidityEditor initial={detected.entries} onCancel={()=>setAdjustImport(false)} onSave={async entries=>{setDetected({...detected,entries});setAdjustImport(false);}}/>}
+      {duplicateFound&&<p role="status">Mesmas validades já guardadas. <button type="button" disabled={reading||adjustImport} onClick={()=>void saveDocument(true)}>Guardar outra cópia</button></p>}
+      <button className="primary" onClick={()=>void saveDocument()} disabled={!file || !holderName.trim() || reading || adjustImport}><Plus/> Criptografar e guardar offline</button>
     </section>
 
     <section className="cc-locker-card">
@@ -187,24 +232,24 @@ export default function CrewLockerView() {
         return <article key={doc.id}>
           <FileLock2/>
           <div className="cc-locker-document"><h3>{doc.displayName}</h3><p>{doc.holderName}{doc.issuer ? ` · ${doc.issuer}` : ''}</p>
-            <small>{doc.verification.level === 'source' && doc.verification.result === 'valid' ? 'Arquivo verificado na fonte' : 'Arquivo aguardando validação na fonte'} · Validades transcritas separadamente</small>
+            <small>{doc.verification.level === 'source' && doc.verification.result === 'valid' ? 'Arquivo verificado na fonte' : 'Arquivo aguardando validação na fonte'} · Validades editáveis</small>
             {!entries.length && <p>Validades não cadastradas · revisar documento.</p>}
             <ul className="cc-validity-list">{entries.filter(e=>!e.supersededBy).map(entry=>{
               const state = assessValidity(entry,today,doc.alertDays);
               return <li key={entry.id}><strong>{entry.label}</strong><span>{validityLabel(entry.expiry)}</span><span>{TEMPORAL_LABELS[state.state]}</span>
-                <small>{entry.confirmed ? 'Transcrição confirmada' : 'Transcrição a conferir'} · Fonte: {entry.sourceCheck === 'verified' ? 'verificada' : entry.sourceCheck === 'invalid' ? 'inválida' : 'pendente'} · Assinatura: {entry.signatureCheck === 'verified' ? 'verificada' : entry.signatureCheck === 'invalid' ? 'inválida' : 'não verificada'} · Aptidão não avaliada</small>
+                <small>{entry.origin==='pdf_text' ? entry.confirmed?'Leitura local do PDF':'Leitura a conferir' : entry.confirmed ? 'Transcrição confirmada' : 'Transcrição a conferir'} · Fonte: {entry.sourceCheck === 'verified' ? 'verificada' : entry.sourceCheck === 'invalid' ? 'inválida' : 'pendente'} · Assinatura: {entry.signatureCheck === 'verified' ? 'verificada' : entry.signatureCheck === 'invalid' ? 'inválida' : 'não verificada'} · Aptidão não avaliada</small>
                 {state.conservative && <small>Marcos conservadores pelo início do mês; dia oficial não informado.</small>}
               </li>;
             })}</ul>
             {notices.length > 0 && <p role="status">{notices.length} prazo(s) para revisão · avisos locais deduplicados por registro, revisão e marco.</p>}
-            <button onClick={()=>setEditing(editing?.id===doc.id ? null : doc)}>Revisar validades</button>
+            <button disabled={reading} onClick={()=>void reviewDocument(doc)}>Revisar validades</button>
             {editing?.id===doc.id && (editing.validityRevision || 1) !== (doc.validityRevision || 1) && <p role="alert">Este documento mudou em outro editor. Sua revisão foi preservada. Cancele e reabra para comparar antes de salvar.</p>}
             {editing?.id===doc.id && <CrewValidityEditor key={doc.id} initial={editing.validities || legacyValidity(editing.expiresAt)} initialDays={editing.alertDays} onCancel={()=>setEditing(null)} onSave={async (next,days)=>{
               const session = crewLockerSession(); await updateCrewValidities(key,doc.id,editing.validityRevision || 1,next,days);
               if (session !== crewLockerSession()) return; setEditing(null); await refresh();
             }}/>}
           </div>
-          <div className="actions"><button onClick={() => viewDocument(doc)} title="Abrir" aria-label="Abrir documento"><Eye/></button><button onClick={() => viewDocument(doc, true)} title="Baixar" aria-label="Baixar documento"><Download/></button><button onClick={() => removeDocument(doc)} title="Remover" aria-label="Remover documento"><Trash2/></button></div>
+          <div className="actions cc-locker-document-actions"><button onClick={() => viewDocument(doc)} title="Abrir" aria-label="Abrir documento"><Eye/></button><button onClick={() => viewDocument(doc, true)} title="Baixar" aria-label="Baixar documento"><Download/></button><button onClick={() => removeDocument(doc)} title="Remover" aria-label="Remover documento"><Trash2/></button></div>
         </article>;
       })}</div>}
       <p>Este acompanhamento não autoriza operação: fonte, assinatura, aptidão, treinamentos e demais requisitos operacionais exigem conferência própria. A licença de comissário é permanente; habilitações e CMA têm condições próprias. <a href="https://www.gov.br/pt-br/servicos/obter-autorizacao-para-trabalhar-como-comissario-de-voo" target="_blank" rel="noreferrer">Consultar ANAC</a>.</p>
