@@ -1,9 +1,9 @@
-import {crewPdfText} from '@/lib/crewlockerPdf';
+import {crewPdfText,isLocalCrewPdf} from '@/lib/crewlockerPdf';
 import {parseChtText,mergeChtEntries} from '@/lib/crewlockerChtText';
 import {CrewLocalPreview} from './CrewLocalPreview';
 import { requestBlobDownload } from '@/lib/blobDownload';
 import { CrewValidityEditor } from './CrewValidityEditor';
-import { assessValidity, civilToday, legacyValidity, validityLabel, TEMPORAL_LABELS, dueValidityNotices } from '@/lib/crewlockerValidity';
+import { DEFAULT_ALERT_DAYS, assessValidity, civilToday, legacyValidity, validityLabel, TEMPORAL_LABELS, dueValidityNotices } from '@/lib/crewlockerValidity';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Eye, FileCheck2, FileLock2, KeyRound, Plane, Plus, RefreshCw, ShieldCheck, Trash2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,6 +28,7 @@ export default function CrewLockerView() {
   const previewGeneration=useRef(0);
   const [reading,setReading]=useState(false);
   const [adjustImport,setAdjustImport]=useState(false);
+  const [importDays,setImportDays]=useState<number[]>(DEFAULT_ALERT_DAYS);
   const [duplicateFound,setDuplicateFound]=useState(false);
   const [readNote,setReadNote]=useState('');
   const [detected,setDetected]=useState<ReturnType<typeof parseChtText>|null>(null);
@@ -62,7 +63,7 @@ export default function CrewLockerView() {
     if (newNotices) toast.info('Há prazos informados para revisar no CreWallet.');
   }
   useEffect(() => {
-    const reset = () => { readerGeneration.current++;setReading(false);setDuplicateFound(false);setAdjustImport(false);setDetected(null);setReadNote('');setPreview(null);setKey(null); setUnlockedSession(null); setDocuments([]); setPin(''); setFile(null); setHolderName(''); setDisplayName(''); setIssuer(''); setEditing(null); };
+    const reset = () => { readerGeneration.current++;setReading(false);setImportDays(DEFAULT_ALERT_DAYS);setDuplicateFound(false);setAdjustImport(false);setDetected(null);setReadNote('');setPreview(null);setKey(null); setUnlockedSession(null); setDocuments([]); setPin(''); setFile(null); setHolderName(''); setDisplayName(''); setIssuer(''); setEditing(null); };
     const storageChanged = (event: StorageEvent) => { if (!event.key || ['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key)) reset(); };
     for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired']) window.addEventListener(name,reset);
     window.addEventListener('storage',storageChanged);
@@ -110,12 +111,16 @@ export default function CrewLockerView() {
 
   async function selectDocument(selected:File|null) {
     const request=++readerGeneration.current,session=crewLockerSession();
-    setDuplicateFound(false);setAdjustImport(false);setFile(selected);setDetected(null);setReadNote('');setReading(false);
+    setImportDays(DEFAULT_ALERT_DAYS);setDuplicateFound(false);setAdjustImport(false);setFile(selected);setDetected(null);setReadNote('');setReading(false);
     if(!selected)return;
-    if(selected.type!=='application/pdf'){setReadNote('Formato sem leitura automática. Cadastro manual disponível.');return;}
     setReading(true);
     try {
-      const result=parseChtText(await crewPdfText(selected));
+      const pdf=await isLocalCrewPdf(selected);
+      if(request!==readerGeneration.current||session!==crewLockerSession())return;
+      if(!pdf){setReadNote('Formato sem leitura automática. Cadastro manual disponível.');return;}
+      const normalized=selected.type==='application/pdf'?selected:new File([selected],selected.name,{type:'application/pdf',lastModified:selected.lastModified});
+      setFile(normalized);
+      const result=parseChtText(await crewPdfText(normalized));
       if(request!==readerGeneration.current||session!==crewLockerSession())return;
       setDetected(result);
       if(result.recognized){setType('CHT');setDisplayName(value=>value||'CHT');setReadNote(result.entries.length?`${result.entries.length} validades lidas${result.conflicts.length?' · conferir conflitos':''}`:'CHT sem validades reconhecidas.');}
@@ -129,7 +134,7 @@ export default function CrewLockerView() {
     const request=++readerGeneration.current,session=crewLockerSession();setReading(true);
     try {
       const blob=await openCrewDocument(key,doc.id);
-      const result=blob.type==='application/pdf'?parseChtText(await crewPdfText(blob)):null;
+      const result=(await isLocalCrewPdf(blob))?parseChtText(await crewPdfText(blob)):null;
       if(request!==readerGeneration.current||session!==crewLockerSession())return;
       setEditing({...doc,validities:result?.recognized?mergeChtEntries(doc.validities||[],result.entries):doc.validities});
       if(result?.conflicts.length)toast.info('Há validades diferentes para conferir.');
@@ -149,6 +154,7 @@ export default function CrewLockerView() {
         holderName: holderName.trim(),
         issuer: issuer.trim() || undefined,
         validities: entries,
+        alertDays: importDays,
         verification: { level: 'declared', result: 'pending' },
       });
       if (session !== crewLockerSession()) return;
@@ -168,7 +174,8 @@ export default function CrewLockerView() {
     if (!key || unlockedSession !== crewLockerSession()) return;
     try {
       const session = crewLockerSession();
-      const blob = await openCrewDocument(key, doc.id);
+      const original = await openCrewDocument(key, doc.id);
+      const blob=!download&&await isLocalCrewPdf(original)&&original.type!=='application/pdf'?new Blob([original],{type:'application/pdf'}):original;
       if (session !== crewLockerSession()||request!==previewGeneration.current) return;
       if (download) {
         requestBlobDownload(blob, doc.fileName);
@@ -216,10 +223,10 @@ export default function CrewLockerView() {
         <label><span>Nome do titular</span><input value={holderName} onChange={(event) => setHolderName(event.target.value)} required/></label>
         <label><span>Órgão emissor</span><input value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="Ex.: ANAC"/></label>
         <p role="status">{reading?'Lendo PDF neste aparelho…':readNote||'CHT digital: leitura local de validades.'}</p>
-        <label className="file"><span>Arquivo</span><input type="file" accept="application/pdf,image/*" onChange={(event) => void selectDocument(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
+        <label className="file"><span>Arquivo</span><input type="file" accept=".pdf,application/pdf,image/*" onChange={(event) => void selectDocument(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
       </div>
       {!!detected?.entries.length && <details><summary>{detected.entries.length} validades · conferir ou ajustar</summary><ul>{detected.entries.map(entry=><li key={entry.id}>{entry.label} · {validityLabel(entry.expiry)}</li>)}</ul><button type="button" onClick={()=>setAdjustImport(true)}>Ajustar validades</button></details>}
-      {adjustImport&&detected&&<CrewValidityEditor initial={detected.entries} onCancel={()=>setAdjustImport(false)} onSave={async entries=>{setDetected({...detected,entries});setAdjustImport(false);}}/>}
+      {adjustImport&&detected&&<CrewValidityEditor initial={detected.entries} initialDays={importDays} onCancel={()=>setAdjustImport(false)} onSave={async (entries,days)=>{setDetected({...detected,entries});setImportDays(days);setAdjustImport(false);}}/>}
       {duplicateFound&&<p role="status">Mesmas validades já guardadas. <button type="button" disabled={reading||adjustImport} onClick={()=>void saveDocument(true)}>Guardar outra cópia</button></p>}
       <button className="primary" onClick={()=>void saveDocument()} disabled={!file || !holderName.trim() || reading || adjustImport}><Plus/> Criptografar e guardar offline</button>
     </section>
