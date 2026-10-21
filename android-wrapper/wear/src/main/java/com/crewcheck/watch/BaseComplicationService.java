@@ -65,11 +65,11 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
     private ComplicationData buildData(ComplicationType type, boolean preview) {
         ComplicationRendering rendering = render(System.currentTimeMillis(), preview);
 
+        Intent intent = tapIntent(this, rendering, preview);
         PendingIntent tapAction = PendingIntent.getActivity(
                 this,
                 tapRequestCode(),
-                new Intent(this, MainActivity.class)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
@@ -107,6 +107,33 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
                 .setMonochromaticImage(icon)
                 .setTapAction(tapAction)
                 .build();
+    }
+
+    static Intent tapIntent(android.content.Context context, ComplicationRendering rendering, boolean preview) {
+        Intent intent = new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (!preview && !rendering.stayContextId.isBlank() && rendering.stayGeneration > 0L) {
+            intent.putExtra("crewcheck_screen", "stay")
+                    .putExtra("crewcheck_stay_context", rendering.stayContextId)
+                    .putExtra("crewcheck_stay_generation", rendering.stayGeneration);
+            // Extras do not participate in PendingIntent identity. Keep an old card's
+            // tap bound to its original occurrence/generation across provider refreshes.
+            intent.setData(android.net.Uri.parse("crewcheck://stay/" + stayTapIdentity(
+                    rendering.stayContextId, rendering.stayGeneration)));
+        }
+        return intent;
+    }
+
+    static String stayTapIdentity(String contextId, long generation) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                    (contextId + "|" + generation).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder();
+            for (byte value : digest) result.append(String.format(java.util.Locale.ROOT, "%02x", value));
+            return result.toString();
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
     }
 
     private MonochromaticImage icon() {

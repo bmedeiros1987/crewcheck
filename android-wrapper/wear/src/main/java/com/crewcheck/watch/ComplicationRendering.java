@@ -19,6 +19,8 @@ final class ComplicationRendering {
      * vazio desenhado a partir de silêncio é um dado de saúde inventado.
      */
     final Integer rangedValue;
+    final String stayContextId;
+    final long stayGeneration;
 
     ComplicationRendering(String shortText, String longText, String title, String description) {
         this(shortText, longText, title, description, null);
@@ -31,10 +33,21 @@ final class ComplicationRendering {
             String description,
             Integer rangedValue
     ) {
+        this(shortText, longText, title, description, rangedValue, "", 0L);
+    }
+
+    private ComplicationRendering(String shortText, String longText, String title,
+            String description, Integer rangedValue, String stayContextId, long stayGeneration) {
+        this.stayContextId = stayContextId;
+        this.stayGeneration = stayGeneration;
         this.shortText = shortText;
         this.longText = longText;
         this.title = title;
         this.description = description;
         this.rangedValue = rangedValue;
+    }
+    ComplicationRendering withStayTarget(String contextId, long generation) {
+        return new ComplicationRendering(shortText, longText, title, description, rangedValue,
+                contextId, generation);
     }
 }

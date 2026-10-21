@@ -374,8 +374,7 @@ public final class WatchContextSnapshot {
                     + (eta.isBlank() ? "" : " • ETA " + eta);
             case "CONNECTION" -> firstNonBlank(nextFlight, headline)
                     + (connection.isBlank() ? "" : " • " + connection);
-            case "OVERNIGHT" -> "Pernoite"
-                    + (hotelPickup.isBlank() ? " • APZ hotel não informada" : " • " + hotelPickup);
+            case "OVERNIGHT" -> StaySummary.from(this).glance();
             default -> headline + (primaryTime.isBlank() ? "" : " • " + primaryTime);
         }, 48);
     }
