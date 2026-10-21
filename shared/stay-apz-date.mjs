@@ -48,7 +48,8 @@ export function inferStayApzDate({ event, events = [], clock, timeZone, now }) {
     for (let day = first; day <= last; day += 86400000) {
       const date = new Date(day).toISOString().slice(0, 10);
       const at = stayLocalInstant(date, clock, timeZone);
-      if (at !== null && at > start && at > now && at <= end) return date;
+      if (at === null) return null; // DST gaps/repetitions require an explicit date, never a silent next day.
+      if (at > start && at > now && at <= end) return date;
     }
   } catch { /* Invalid/missing hotel zone needs an explicit date. */ }
   return null;

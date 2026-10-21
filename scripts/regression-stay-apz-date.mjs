@@ -32,3 +32,5 @@ assert.equal(infer({events:[event,next,{...next,id:'other',canonical:{...next.ca
 
 assert.equal(infer({events:[event,{...event},next]}),null,'Duplicate stay identity is not admitted');
 assert.equal(infer({events:[event,{id:'rest',kind:'rest',canonical:{startDateTime:'2032-10-22T03:00:00Z'}},next]}),null,'An intervening rest prevents attachment to another occurrence');
+
+assert.equal(infer({event:{...dst,canonical:{...dst.canonical,endDateTime:'2032-11-09T12:00:00Z'}},events:[],clock:'01:30',timeZone:'America/New_York',now:Date.parse('2032-11-07T04:00:00Z')}),null,'Repeated local time cannot silently become the next unambiguous day');
