@@ -29,7 +29,7 @@ async function lateChange(change, fail=false) {
   assert.equal(JSON.parse(records.get(originalKey)).status,'checking');
   change();
   const request=requests.shift();
-  if(fail) request.reject(Error('synthetic offline')); else request.resolve({json:async()=>({rows:[]})});
+  if(fail) request.reject(Error('synthetic offline')); else request.resolve({ok:true,json:async()=>({ok:true,rows:[]})});
   assert.equal(await pending,null);
   assert.equal(records.get(originalKey),'','old checking state is cleared after cancellation');
   assert.equal(writes.length,2,'only own initial checking and its cleanup may write');
@@ -41,7 +41,10 @@ await lateChange(()=>{active=false;});
 await lateChange(()=>{account='B';},true);
 account='A';origin='synthetic-origin-1';active=true;records.clear();
 const successful=api.discoverSameDayPositioningFlight(event,'FLN','BSB',()=>active);
-requests.shift().resolve({json:async()=>({rows:[]})}); await successful;
+requests.shift().resolve({ok:true,json:async()=>({ok:true,rows:[]})}); await successful;
 assert.equal(api.readPositioningSearch(event).status,'none','same-context negative result is retained');
 assert.equal(records.has('crewcheck_selected_positioning_flight'),false);
 console.log('PASS real positioning helpers: global provenance rejection, account/origin cache isolation, late success/error/context cleanup, no cross-session events, same-context negative caching');
+
+for (const response of [{ok:false,json:async()=>({ok:false,rows:[]})},{ok:true,json:async()=>({ok:false,rows:[]})},{ok:true,json:async()=>null}]) { records.clear(); const pending=api.discoverSameDayPositioningFlight(event,'FLN','BSB',()=>true); requests.shift().resolve(response); await pending; assert.equal(api.readPositioningSearch(event).status,'error'); assert.match(api.readPositioningSearch(event).message,/indisponível/); }
+console.log('PASS HTTP failure, unavailable and malformed boards never become no-flight evidence');
