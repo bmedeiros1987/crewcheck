@@ -39,7 +39,7 @@ export function parseChtText(text:string):{recognized:boolean;entries:ValidityEn
   // Explicit labels anchor each date; issue dates and unrelated numbers never qualify.
   const expiryToken='(\\d{1,2}[/.\\-]\\d{1,2}[/.\\-]\\d{4}|\\d{1,2}[/.\\-]\\d{4})(?!\\d|[/.\\-]\\d)';
   for(const match of sections.XII.matchAll(new RegExp('\\bA\\s?320[ \t|]*(?:VALIDADE|VALID|UNTIL|ATE|:)?[ \t|]*'+expiryToken,'g')))add('rating','A320',match[1]);
-  const medical=new RegExp('(?:\\bCMA\\s*(?:DE\\s*)?(SEGUNDA|SECOND|2|PRIMEIRA|FIRST|1)(?:[ªA]?\\s*CLASSE)?|\\b(?:MEDICAL(?:\\s+CERTIFICATE)?\\s+CLASS|CLASS)\\s*(1|2)(?:\\s+MEDICAL)?)\\s*(?:[/:,; -]|PLA|ATPL|ATE|UNTIL|VALIDADE|VALIDO|VALID|CLASS|CLASSE)*\\s*'+expiryToken,'g');
+  const medical=new RegExp('(?:\\bCMA\\s*(?:DE\\s*)?(SEGUNDA|SECOND|2|PRIMEIRA|FIRST|1)(?:[ªA]?\\s*CLASSE)?|\\b(?:MEDICAL(?:\\s+CERTIFICATE)?\\s+CLASS|CLASS)\\s*(1|2)(?:\\s+MEDICAL)?)\\s*(?:[\\s/:,;|()-]|PLA|ATPL|ATE|UNTIL|VALIDADE|VALIDO|VALID|CLASS|CLASSE)*\\s*'+expiryToken,'g');
   for(const match of sections.XIV.matchAll(medical)){
     const cls=/^(SEGUNDA|SECOND|2)$/.test(match[1]||match[2])?'2':'1';
     add('medical',`CMA classe ${cls}`,match[3],Boolean(match[2]));
