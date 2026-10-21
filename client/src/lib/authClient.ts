@@ -116,6 +116,10 @@ function persistSession(session: AuthSession) {
  * locais para que um novo login da mesma pessoa possa retomar a escala. Se outra
  * conta entrar, persistSession detecta a troca e limpa os dados operacionais.
  */
+export function persistExternalAuthSession(session: AuthSession) {
+  persistSession(session);
+}
+
 export function expireSession() {
   try { window.dispatchEvent(new Event('crewcheck:auth-will-change')); } catch {}
   localStorage.removeItem(TOKEN_KEY);
