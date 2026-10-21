@@ -1,3 +1,4 @@
+import {CREW_DOCUMENT_TYPES,crewDocumentType} from '@/lib/crewlockerDocumentType';
 import {crewPdfText,isLocalCrewPdf} from '@/lib/crewlockerPdf';
 import {parseChtText,mergeChtEntries} from '@/lib/crewlockerChtText';
 import {CrewLocalPreview} from './CrewLocalPreview';
@@ -21,10 +22,13 @@ import {
   type CrewDocumentRecord,
 } from '@/lib/crewlockerOffline';
 
-const TYPES = ['CHT', 'CMA', 'Passaporte', 'Visto', 'Certificado de treinamento', 'Vacinação', 'Outro'];
+const TYPES = CREW_DOCUMENT_TYPES;
 
 export default function CrewLockerView() {
   const readerGeneration=useRef(0);
+  const typeSource=useRef<'default'|'manual'|'content'>('default');
+  const typeRevision=useRef(0);
+  const nameSource=useRef<'default'|'manual'|'content'>('default');
   const previewGeneration=useRef(0);
   const [reading,setReading]=useState(false);
   const [adjustImport,setAdjustImport]=useState(false);
@@ -37,7 +41,7 @@ export default function CrewLockerView() {
   const [key, setKey] = useState<CryptoKey | null>(null);
   const [documents, setDocuments] = useState<CrewDocumentRecord[]>([]);
   const [file, setFile] = useState<File | null>(null);
-  const [type, setType] = useState('CHT');
+  const [type, setType] = useState('Outro');
   const [displayName, setDisplayName] = useState('');
   const [holderName, setHolderName] = useState('');
   const [issuer, setIssuer] = useState('');
@@ -63,7 +67,7 @@ export default function CrewLockerView() {
     if (newNotices) toast.info('Há prazos informados para revisar no CreWallet.');
   }
   useEffect(() => {
-    const reset = () => { readerGeneration.current++;setReading(false);setImportDays(DEFAULT_ALERT_DAYS);setDuplicateFound(false);setAdjustImport(false);setDetected(null);setReadNote('');setPreview(null);setKey(null); setUnlockedSession(null); setDocuments([]); setPin(''); setFile(null); setHolderName(''); setDisplayName(''); setIssuer(''); setEditing(null); };
+    const reset = () => { readerGeneration.current++;setReading(false);setImportDays(DEFAULT_ALERT_DAYS);setDuplicateFound(false);setAdjustImport(false);setDetected(null);setReadNote('');setPreview(null);setKey(null); setUnlockedSession(null); setDocuments([]); setPin(''); setFile(null); setHolderName(''); setDisplayName(''); setIssuer(''); setEditing(null);typeRevision.current++;typeSource.current='default';nameSource.current='default';setType('Outro'); };
     const storageChanged = (event: StorageEvent) => { if (!event.key || ['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key)) reset(); };
     for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired']) window.addEventListener(name,reset);
     window.addEventListener('storage',storageChanged);
@@ -111,6 +115,9 @@ export default function CrewLockerView() {
 
   async function selectDocument(selected:File|null) {
     const request=++readerGeneration.current,session=crewLockerSession();
+    if(typeSource.current==='content'){setType('Outro');typeSource.current='default';}
+    if(nameSource.current==='content'){setDisplayName('');nameSource.current='default';}
+    const selectedTypeRevision=typeRevision.current;
     setImportDays(DEFAULT_ALERT_DAYS);setDuplicateFound(false);setAdjustImport(false);setFile(selected);setDetected(null);setReadNote('');setReading(false);
     if(!selected)return;
     setReading(true);
@@ -120,11 +127,15 @@ export default function CrewLockerView() {
       if(!pdf){setReadNote('Formato sem leitura automática. Cadastro manual disponível.');return;}
       const normalized=selected.type==='application/pdf'?selected:new File([selected],selected.name,{type:'application/pdf',lastModified:selected.lastModified});
       setFile(normalized);
-      const result=parseChtText(await crewPdfText(normalized));
+      const text=await crewPdfText(normalized),classification=crewDocumentType(text);
+      // Classification is metadata only; preserve every model admitted by the reviewed validity parser.
+      const result=parseChtText(text);
       if(request!==readerGeneration.current||session!==crewLockerSession())return;
       setDetected(result);
-      if(result.recognized){setType('CHT');setDisplayName(value=>value||'CHT');setReadNote(result.entries.length?`${result.entries.length} validades lidas${result.conflicts.length?' · conferir conflitos':''}`:'CHT sem validades reconhecidas.');}
-      else setReadNote('Modelo não reconhecido. Cadastre as validades manualmente.');
+      if(classification.type&&selectedTypeRevision===typeRevision.current&&typeSource.current!=='manual'){setType(classification.type);typeSource.current='content';}
+      if(classification.type&&typeSource.current!=='manual'&&nameSource.current!=='manual'){setDisplayName(classification.type);nameSource.current='content';}
+      if(result.recognized){setReadNote(result.entries.length?`${result.entries.length} validades lidas${result.conflicts.length?' · conferir conflitos':''}`:'CHT sem validades reconhecidas.');}
+      else setReadNote(classification.type?`${classification.type} identificado · campos editáveis.`:classification.ambiguous?'Tipos diferentes · selecione o tipo.':'Tipo não identificado · selecione o tipo.');
     } catch {if(request===readerGeneration.current&&session===crewLockerSession())setReadNote('PDF sem leitura disponível. Cadastro manual preservado.');}
     finally {if(request===readerGeneration.current&&session===crewLockerSession())setReading(false);}
   }
@@ -158,8 +169,8 @@ export default function CrewLockerView() {
         verification: { level: 'declared', result: 'pending' },
       });
       if (session !== crewLockerSession()) return;
-      setFile(null);setDetected(null);setDuplicateFound(false);setReadNote('');
-      setDisplayName('');
+      setFile(null);setDetected(null);setDuplicateFound(false);setReadNote('');typeSource.current='default';setType('Outro');
+      setDisplayName('');nameSource.current='default';
       setIssuer('');
 
       await refresh();
@@ -218,11 +229,11 @@ export default function CrewLockerView() {
     <section className="cc-locker-card">
       <header><div><small>NOVO DOCUMENTO</small><h2>Guardar cópia offline</h2></div><UploadCloud/></header>
       <div className="cc-locker-form">
-        <label><span>Tipo</span><select value={type} onChange={(event) => setType(event.target.value)}>{TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label><span>Nome no cartão</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Ex.: CMA 2026"/></label>
+        <label><span>Tipo</span><select aria-label="Tipo do documento" value={type} onChange={(event) => {typeRevision.current++;typeSource.current='manual';setType(event.target.value);}}>{TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label><span>Nome no cartão</span><input value={displayName} onChange={(event) => {nameSource.current='manual';setDisplayName(event.target.value);}} placeholder="Ex.: CMA 2026"/></label>
         <label><span>Nome do titular</span><input value={holderName} onChange={(event) => setHolderName(event.target.value)} required/></label>
         <label><span>Órgão emissor</span><input value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="Ex.: ANAC"/></label>
-        <p role="status">{reading?'Lendo PDF neste aparelho…':readNote||'CHT digital: leitura local de validades.'}</p>
+        <p role="status">{reading?'Lendo PDF neste aparelho…':readNote||'PDF: identificação local. Campos editáveis.'}</p>
         <label className="file"><span>Arquivo</span><input type="file" onChange={(event) => void selectDocument(event.target.files?.[0] || null)}/><em>{file?.name || 'PDF ou imagem'}</em></label>
       </div>
       {!!detected?.entries.length && <details><summary>{detected.entries.length} validades · conferir ou ajustar</summary><ul>{detected.entries.map(entry=><li key={entry.id}>{entry.label} · {validityLabel(entry.expiry)}</li>)}</ul><button type="button" onClick={()=>setAdjustImport(true)}>Ajustar validades</button></details>}
