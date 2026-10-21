@@ -30,7 +30,7 @@ function positioningFollowCandidate(record: any): FollowedFlight | null {
   return followedFlight({eventId:'positioning:' + String(record.eventId),flight:record.flightNumber,origin:record.origin,destination:record.destination,scheduledDepartureUtc:record.departureAt,date:new Date(Date.parse(record.departureAt) - 3 * 60 * 60_000).toISOString().slice(0,10)});
 }
 function followCandidate(event: ZeroLeg): FollowedFlight | null {
-  return followedFlight({eventId:event.id,flight:String(event.flightNumber || '').replace(/\\s+/g,'').toUpperCase(),origin:event.origin,destination:event.destination,scheduledDepartureUtc:event.canonical?.startDateTime,date:event.day?.date || event.canonical?.date});
+  return followedFlight({eventId:event.id,flight:String(event.flightNumber || '').replace(/\\s+/g,'').toUpperCase(),origin:event.origin,destination:event.destination,scheduledDepartureUtc:event.canonical?.startDateTime,date:publishedGateDate(event.day?.date || event.canonical?.date)});
 }
 `;
  const anchor='function RadarView({ event }: { event: ZeroLeg }) {';

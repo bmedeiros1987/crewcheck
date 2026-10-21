@@ -1,11 +1,13 @@
+import { stayInstant } from './stay-edit-plan.mjs';
+import { publishedGateDate } from './gate-query-day.mjs';
 const airport = x => typeof x === 'string' && /^[A-Z]{3}$/.test(x);
 export function followedFlight(value) {
   if (!value || typeof value.flight !== 'string' || !/^[A-Z0-9]{2,3}\d{1,5}[A-Z]?$/.test(value.flight) || !airport(value.origin) || !airport(value.destination) || value.origin === value.destination) return null;
-  const instant = typeof value.scheduledDepartureUtc === 'string' ? Date.parse(value.scheduledDepartureUtc) : NaN;
-  if (!Number.isFinite(instant) || !/Z$|[+-]\d{2}:\d{2}$/.test(value.scheduledDepartureUtc)) return null;
+  const instant = stayInstant(value.scheduledDepartureUtc);
+  if (instant === null) return null;
   const scheduledDepartureUtc = new Date(instant).toISOString();
-  const date = typeof value.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.date) ? value.date : '';
-  if (!date || new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date) return null;
+  const date = publishedGateDate(value.date);
+  if (!date || new Date(instant - 3 * 60 * 60_000).toISOString().slice(0,10) !== date) return null;
   if (typeof value.eventId !== 'string' || !value.eventId.trim() || value.eventId.length > 500) return null;
   return {eventId:value.eventId,flight:value.flight,origin:value.origin,destination:value.destination,scheduledDepartureUtc,date};
 }

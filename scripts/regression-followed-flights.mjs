@@ -8,8 +8,10 @@ assert.deepEqual(readFollowedFlights(storage,'B'),[]);
 changeFollowedFlights(storage,'A',{...a,eventId:'updated-id'},true);assert.equal(readFollowedFlights(storage,'A').length,1);
 assert.notEqual(followedFlightKey(a),followedFlightKey({...a,scheduledDepartureUtc:'2030-10-22T13:00:00Z'}));
 assert.notEqual(followedFlightKey(a),followedFlightKey({...a,destination:'CWB'}));
-for (const bad of [{...a,date:'2030-02-30'},{...a,scheduledDepartureUtc:'2030-10-21 13:00'},{...a,origin:'ssa'},{...a,eventId:''},null]) assert.equal(followedFlight(bad),null);
+for (const bad of [{...a,date:'2030-13-01'},{...a,date:'2030-10-22'},{...a,scheduledDepartureUtc:'2030-02-30T13:00:00Z'},{...a,date:'2030-02-30'},{...a,scheduledDepartureUtc:'2030-10-21 13:00'},{...a,origin:'ssa'},{...a,eventId:''},null]) assert.equal(followedFlight(bad),null);
 changeFollowedFlights(storage,'A',a,false);assert.deepEqual(readFollowedFlights(storage,'A'),[]);
 assert.equal(changeFollowedFlights(storage,'local',a,true),false);
 assert.equal(changeFollowedFlights({setItem(){throw Error()},getItem(){return null}},'A',a,true),false);
 console.log('PASS account/device isolation, reload, stop, exact flight/date/route/instant dedupe, malformed input, storage failure; no network');
+
+assert.equal(followedFlight({...a,date:'21/10/2030'}).date,'2030-10-21');
