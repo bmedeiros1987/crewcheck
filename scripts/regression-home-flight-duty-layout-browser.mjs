@@ -6,6 +6,7 @@ import http from 'node:http';
 import {createRequire} from 'node:module';
 import {build} from 'esbuild';
 
+const {inspectDutyContrast}=createRequire(import.meta.url)('./fixtures/duty-card-visual-checks.cjs');
 const out=path.resolve('artifacts/home-flight-duty-layout');fs.mkdirSync(out,{recursive:true});
 const code=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
 import {NextFlightGateCard,gateSourceLabel} from '@/components/nextflight/NextFlightGateCard';
@@ -67,7 +68,7 @@ for(const width of [320,360,390,1440])for(const theme of ['light','dark'])for(co
     const details=page.locator('.cc-canonical-duty-details');await details.locator('summary').focus();await details.locator('summary').press('Enter');assert.equal(await details.getAttribute('open'),'');assert.match(await details.innerText(),/Etapas da jornada: ASB/);
     if(state==='incomplete')assert.match(await details.innerText(),/Motivo sintético completo/);
     const dm=await geometry(duty);assert.deepEqual(dm.violations,[]);assert.equal(dm.overflow,false);await details.locator('summary').press('Enter');
-    results.push({width,theme,size,state,synthetic:true});
+    const contrast=await inspectDutyContrast(page);results.push({width,theme,size,state,contrast,synthetic:true});
   }
   await page.evaluate(()=>window.scenario('missing'));await page.evaluate(()=>{document.activeElement?.blur();return document.fonts.ready;});const facts=await card.locator('.cc-next-gate-main').boundingBox(),summaryBox=await summary.boundingBox();assert.ok(facts.width>=summaryBox.width-40,'Facts use the available card width');if(width>=390&&size===100){const fields=await card.locator('.cc-next-gate-main>span').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert.ok(fields[0]<fields[1]&&fields[1]<fields[2],'Normal facts occupy three columns');}
   await card.screenshot({path:path.join(out,`${width}-${theme}-${size}-flight.png`)});await duty.screenshot({path:path.join(out,`${width}-${theme}-${size}-reserve.png`)});

@@ -34,3 +34,27 @@ A fonte200% permite crescimento vertical sem cortar texto. Não houve validaçã
 ![Próximo voo:320px, claro,200%](home-flight-duty-layout-20261022/320-light-200-flight.png)
 
 ![Reserva:320px, claro,200%](home-flight-duty-layout-20261022/320-light-200-reserve.png)
+
+
+## Achado da revisão independente: contraste e prova de acesso
+
+O reviewer encontrou baixo contraste nos novos detalhes em320px/claro/200%. Confirmado: o wrapper usava a variável genérica de superfície e os detalhes herdavam fundo escuro com texto escuro no tema claro. A correção mantém superfície, texto e marcador próprios por tema no escopo de cc-canonical-duty-tools. O footer não foi alterado.
+
+Medição na Home compilada,320px/200%:
+
+| Tema | Fundo dos detalhes | Texto | Contraste texto/marcador/motivos/calculadora |
+| --- | --- | --- | --- |
+| Claro | rgb(244,249,253) | rgb(6,22,44) |17.10 /12.05 /5.12 /12.80 |
+| Escuro | rgb(21,44,67) | rgb(248,251,255) |13.73 /12.85 /13.73 /13.73 |
+
+O helper scripts/fixtures/duty-card-visual-checks.cjs exige4.5:1 para texto/motivos/calculadora e3:1 para marcador. As duas suítes de layout exercitam o helper nos dois temas e tamanhos100/200%. A suíte da Home também usa elementFromPoint para verificar que os controles focados não estão cobertos. Em320px/200%, após rolagem, a calculadora ocupa y305.625–409px e o footer começa em676px; foco3px, alvo103.375px, sem obstrução. Enter/Space/Tab continuam testados.
+
+A imagem de reserva320px/200% acima mostra agora o card completo em fixture isolada com CSS de produção, evitando tratar um recorte coberto pelo footer como prova de visibilidade. A prova adicional abaixo vem da Home real, com Settings200%, após rolagem até a ação:
+
+![Home real: calculadora acessível acima do footer,320px claro200%](home-flight-duty-layout-20261022/320-light-200-reserve-action-viewport.png)
+
+Revalidação local após o achado: TypeScript e build canônicos PASS;6 casos do componente,32 combinações da Home e128 casos de layout/estado PASS. O candidato foi revalidado localmente e autorizado para atualização da mesma draft, sem force. Revisão independente do novo diff remoto permanece pendente; não é aprovação integral.
+
+CI do HEAD publicado a6d3ff2daa8465478af43735e4c0659b80162184: o gate Web falhou no npm audit por DOMPurify<=3.4.16 herdado de main; a correção pertence à#1201 e permanece preservada. No HEAD inicial,15 workflows passaram,1 foi pulado e o Web falhou no audit. A atualização da draft foi autorizada; a CI do novo HEAD deve ser conferida separadamente. Não houve merge/deploy nem alteração de gates.
+
+Revalidação antes da atualização da draft: main e a ref da PR permaneceram em6269b510 e a6d3ff2d. As listas reais de arquivos dos84 outros PRs abertos foram novamente conferidas; apenas a composição histórica#1032 sobrepõe estes paths. Nenhum arquivo de CrewCierge,#1198,#919,#1200 ou#1201 foi alterado.
