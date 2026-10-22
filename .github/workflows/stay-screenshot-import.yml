@@ -1,0 +1,105 @@
+name: Stay screenshot local OCR and privacy
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
+      - 'client/src/components/v1391/StayScreenshotReview.tsx'
+      - 'client/src/components/v1391/stay-editor.css'
+      - 'client/src/lib/stayScreenshotOcr.ts'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'shared/stay-screenshot-*'
+      - 'shared/stay-editor-store.*'
+      - 'shared/stay-edit-plan.*'
+      - 'shared/stay-apz-date.*'
+      - 'scripts/stay-screenshot-*'
+      - 'scripts/regression-stay-screenshot-*'
+      - 'scripts/stay-editor/**'
+      - 'scripts/v139/apply.mjs'
+      - 'docs/stay-screenshot/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'client/public/sw.js'
+      - '.github/workflows/stay-screenshot-import.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-ocr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Current dependency audit, no paid service or lifecycle scripts
+        run: npm audit --audit-level=high
+      - name: Materialize pinned public same-origin assets and verify budget/hashes
+        run: node scripts/stay-screenshot-assets.mjs
+      - name: Raw candidates, worker lifecycle and canonical stay contracts
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/regression-stay-screenshot-candidates.mjs scripts/regression-stay-screenshot-persistence.mjs scripts/regression-stay-screenshot-ocr.mjs scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs
+            TZ="$zone" node scripts/regression-stay-operational-projection.mjs
+            TZ="$zone" node scripts/regression-stay-apz-date.mjs
+            TZ="$zone" node scripts/regression-stay-details.mjs
+          done
+      - name: Preserve real raw editor bundle for pixel tests after production CSS build
+        env:
+          STAY_SCREENSHOT_ARTIFACTS: artifacts/stay-screenshot-raw
+        run: node scripts/regression-stay-screenshot-browser.mjs --bundle-only
+      - run: npm run check
+      - run: npm run build
+      - name: OCR source survives idempotent canonical preparation
+        run: |
+          sha256sum client/src/components/v1391/PresentationStayManagerView.tsx client/src/components/v1391/StayScreenshotReview.tsx client/src/lib/stayScreenshotOcr.ts shared/stay-editor-store.mjs shared/stay-screenshot-candidates.mjs scripts/stay-screenshot-worker.js > "$RUNNER_TEMP/stay-ocr-prepared.sha256"
+          npm run prepare:v139
+          sha256sum --check "$RUNNER_TEMP/stay-ocr-prepared.sha256"
+          node scripts/stay-screenshot-assets.mjs
+          node --input-type=module -e "import fs from 'node:fs'; const m=JSON.parse(fs.readFileSync('docs/stay-screenshot/ocr-assets-manifest.json')); fs.accessSync('dist/ocr/v7/'+m.boundary.name)"
+          test -f dist/ocr/v7/eng.traineddata.gz
+          test -f dist/ocr/v7/por.traineddata.gz
+      - name: Prepared candidates, worker lifecycle and canonical stay contracts
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/regression-stay-screenshot-candidates.mjs scripts/regression-stay-screenshot-persistence.mjs scripts/regression-stay-screenshot-ocr.mjs scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs
+            TZ="$zone" node scripts/regression-stay-operational-projection.mjs
+            TZ="$zone" node scripts/regression-stay-apz-date.mjs
+            TZ="$zone" node scripts/regression-stay-details.mjs
+          done
+      - name: Install isolated Chromium QA tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/stay-ocr-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/stay-ocr-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Raw real pixels to fields, privacy, lifecycle and measured model-only cache
+        env:
+          STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-ocr-browser/package.json
+          STAY_SCREENSHOT_ARTIFACTS: artifacts/stay-screenshot-raw
+        run: node scripts/regression-stay-screenshot-browser.mjs --prebuilt-bundle artifacts/stay-screenshot-raw/fixture.js
+      - name: Prepared real pixels to fields, privacy, lifecycle and measured model-only cache
+        env:
+          STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-ocr-browser/package.json
+          STAY_SCREENSHOT_ARTIFACTS: artifacts/stay-screenshot-prepared
+        run: node scripts/regression-stay-screenshot-browser.mjs
+      - name: Existing editor, date, detail and wakeup propagation browser regressions
+        env:
+          STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-ocr-browser/package.json
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-ocr-browser/package.json
+        run: |
+          node scripts/regression-stay-editor-browser.mjs
+          node scripts/regression-stay-apz-date-browser.mjs
+          node scripts/regression-stay-details-browser.mjs
+          node scripts/regression-stay-wakeup-propagation-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stay-screenshot-synthetic-only
+          path: |
+            artifacts/stay-screenshot-raw/
+            artifacts/stay-screenshot-prepared/
+            artifacts/stay-editor/
+            artifacts/stay-details/
+            client/public/ocr/v7/asset-inventory.json

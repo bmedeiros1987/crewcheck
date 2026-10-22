@@ -14,3 +14,10 @@
 @media(max-height:640px){.cc-stay-editor-header .cc139-head p{display:none}.cc-stay-editor-header .cc139-brand{margin-bottom:6px}}
 .cc-stay-editor-anchor{width:100%;min-width:0}
 .cc-stay-editor{z-index:800;background:var(--cc-review-surface,#0c1d34)}
+.cc-stay-screenshot{margin-block:16px;padding:12px;border:1px solid currentColor;border-radius:12px;min-width:0}
+.cc-stay-screenshot img{display:block;max-width:100%;max-height:320px;object-fit:contain;margin-block:12px}
+.cc-stay-screenshot fieldset{min-width:0;margin-block:12px;padding:12px;border:1px solid currentColor;border-radius:8px}
+.cc-stay-screenshot label,.cc-stay-transport label{display:block;margin-block:8px;overflow-wrap:anywhere}
+.cc-stay-screenshot input:not([type=checkbox]),.cc-stay-transport input{display:block;width:100%;max-width:100%;min-height:40px}
+.cc-stay-screenshot button{min-height:44px;margin:4px;max-width:100%}
+.cc-stay-screenshot p{overflow-wrap:anywhere}
