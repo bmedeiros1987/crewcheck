@@ -367,22 +367,34 @@ function boundedRate(item: LearnedRate): boolean {
     && typeof item.effectiveFrom === 'string' && validDay(item.effectiveFrom)
     && typeof item.effectiveTo === 'string' && validDay(item.effectiveTo) && item.effectiveFrom <= item.effectiveTo;
 }
-export function readConfirmedFinancialRates(): LearnedRate[] {
+export type FinancialRateArchive = {
+  state: 'unauthenticated' | 'missing' | 'ready' | 'invalid' | 'unavailable';
+  rates: LearnedRate[];
+};
+/** Read-only diagnosis. Invalid archives remain intact and are never filtered or repaired. */
+export function readFinancialRateArchive(): FinancialRateArchive {
+  const owner = financialRateOwner();
+  if (!owner) return { state: 'unauthenticated', rates: [] };
+  let raw: string | null;
+  try { raw = localStorage.getItem(OWNER_KEY + encodeURIComponent(owner)); }
+  catch { return { state: 'unavailable', rates: [] }; }
+  if (raw === null) return { state: 'missing', rates: [] };
   try {
-    const owner = financialRateOwner();
-    if (!owner) return [];
-    const envelope = JSON.parse(localStorage.getItem(OWNER_KEY + encodeURIComponent(owner)) || 'null');
-    if (envelope?.version !== 2 || envelope.ownerId !== owner || !Array.isArray(envelope.rates)) return [];
-    if (envelope.rates.some((entry: LearnedRate) => entry?.ownerId !== owner || !boundedRate(entry))) return [];
+    const envelope = JSON.parse(raw);
+    if (envelope?.version !== 2 || envelope.ownerId !== owner || !Array.isArray(envelope.rates)) return { state: 'invalid', rates: [] };
+    if (envelope.rates.some((entry: LearnedRate) => entry?.ownerId !== owner || !boundedRate(entry))) return { state: 'invalid', rates: [] };
     const seen = new Map<string, string>();
     for (const entry of envelope.rates as LearnedRate[]) {
       const key = [entry.key, entry.currency, entry.effectiveFrom, entry.revision || 1].join(':');
       const signature = JSON.stringify([entry.value, entry.unit, entry.effectiveTo, entry.sourceFingerprint, entry.payrollDsrEvidence ?? null]);
-      if (seen.has(key) && seen.get(key) !== signature) return [];
+      if (seen.has(key) && seen.get(key) !== signature) return { state: 'invalid', rates: [] };
       seen.set(key, signature);
     }
-    return envelope.rates;
-  } catch { return []; }
+    return { state: 'ready', rates: envelope.rates };
+  } catch { return { state: 'invalid', rates: [] }; }
+}
+export function readConfirmedFinancialRates(): LearnedRate[] {
+  return readFinancialRateArchive().rates;
 }
 export function saveConfirmedFinancialRates(rates: LearnedRate[], expectedSession = financialRateSession()): boolean {
   try {
@@ -432,8 +444,7 @@ export function applyReviewedPayrollCycle(result: StatementLearningResult): Lear
   }
   return reviewed;
 }
-export function confirmedRateAt(key: string, date: string, currency: LearnedRate['currency'] = 'BRL'): LearnedRate | null {
-  const rates = readConfirmedFinancialRates();
+function confirmedRateIn(rates: LearnedRate[], key: string, date: string, currency: LearnedRate['currency']): LearnedRate | null {
   const review = rateAt(rates.filter(item=>item.valueOrigin==='owner_confirmed'), 'per_diem.lunch', date, currency);
   const quarter = key === 'per_diem.breakfast' ? 'breakfastQuarter' : key === 'per_diem.taxi' ? 'taxiQuarter' : null;
   // Keep the audit archive, but an edited review with an unchecked option must
@@ -442,6 +453,20 @@ export function confirmedRateAt(key: string, date: string, currency: LearnedRate
     ? rates.filter(item => item.key !== key || item.valueOrigin !== 'owner_confirmed') : rates;
   const found = rateAt(eligible, key, date, currency);
   return found && Number.isFinite(Number(found.value)) ? found : null;
+}
+export function confirmedRateAt(key: string, date: string, currency: LearnedRate['currency'] = 'BRL'): LearnedRate | null {
+  return confirmedRateIn(readConfirmedFinancialRates(), key, date, currency);
+}
+/** One validated local snapshot per calculation: diagnosis and values cannot disagree. */
+export function confirmedPerDiemReferencesAt(date: string) {
+  const archive = readFinancialRateArchive();
+  const at = (key: string) => confirmedRateIn(archive.rates, key, date, 'BRL');
+  return {
+    state: archive.state,
+    mainMeal: at('per_diem.lunch') ?? at('per_diem.dinner') ?? at('per_diem.supper'),
+    breakfast: at('per_diem.breakfast')?.value ?? null,
+    taxi: at('per_diem.taxi')?.value ?? null,
+  };
 }
 export function confirmedRateValueAt(key: string, date: string, currency: LearnedRate['currency'] = 'BRL'): number | null {
   return confirmedRateAt(key, date, currency)?.value ?? null;

@@ -22,6 +22,10 @@ try {
   const context=vm.createContext({
     ...modules.load('financialAmounts'),...modules.load('financialJourneyGrouping'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialForecastPeriods'),
     resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'synthetic-v1',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100},{key:'foreign',label:'Synthetic foreign',currency:'USD',mainMeal:65}]}),
+    confirmedPerDiemReferencesAt:date=>{
+      const at=key=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL');};
+      return {state:'ready',mainMeal:at('per_diem.lunch')??at('per_diem.dinner')??at('per_diem.supper'),breakfast:at('per_diem.breakfast')?.value??null,taxi:at('per_diem.taxi')?.value??null};
+    },
     confirmedRateAt:(key,date)=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL');},
     confirmedRateValueAt:(key,date)=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL')?.value??null;},
     readOptionalNumberSetting:()=>null,readNumberSetting:()=>0,loadAirportPerDiemOverrides:()=>({}),

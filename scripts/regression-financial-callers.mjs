@@ -38,6 +38,10 @@ try {
         { key: 'domestic', label: 'Synthetic domestic', currency: 'BRL', mainMeal: 100 },
         { key: 'other_international', label: 'Synthetic foreign', currency: 'USD', mainMeal: 20 },
       ] }),
+    confirmedPerDiemReferencesAt: date => {
+      const at = key => { consultedDates.push(date); return learning.rateAt(learned, key, date); };
+      return { state: 'ready', mainMeal: at('per_diem.lunch') ?? at('per_diem.dinner') ?? at('per_diem.supper'), breakfast: at('per_diem.breakfast')?.value ?? null, taxi: at('per_diem.taxi')?.value ?? null };
+    },
     confirmedRateAt: (key, date) => { consultedDates.push(date); return learning.rateAt(learned, key, date); },
     confirmedRateValueAt: (key, date) => { consultedDates.push(date); return learning.rateAt(learned, key, date)?.value ?? null; },
     readOptionalNumberSetting: () => null,
