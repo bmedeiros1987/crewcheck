@@ -27,7 +27,7 @@ try {
     await context.route('**/*',route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin||url.pathname.startsWith('/api/')||request.method()!=='GET'){requests++;return route.abort();}return route.continue();});
     await context.addInitScript(()=>{if(!localStorage.getItem('crewcheck_auth_user')){localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));localStorage.setItem('crewcheck_auth_token','A');}});
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.clock.install({time:new Date('2032-10-21T19:00:00Z')});await page.goto(origin);
-    const open=async()=>{await page.getByRole('combobox',{name:'Abrir programação publicada'}).selectOption('0');await page.locator('.cc-aims-activity-detail').first().waitFor();};
+    const open=async()=>{await page.getByRole('combobox',{name:'Abrir programação publicada'}).selectOption('0');try{await page.locator('.cc-aims-activity-detail').first().waitFor();}catch(error){console.error({timezoneId,errors,html:await page.locator('#root').innerHTML()});throw error;}};
     await page.evaluate(()=>window.saveStay());await open();
     const detail=page.locator('.cc-aims-activity-detail').first();
     assert.match(await detail.innerText(),/QUARTO-PRIVADO-A/,'actual expanded AIMS stay must read the saved private room, not repeat the published subtitle');
@@ -39,6 +39,7 @@ try {
     await page.evaluate(()=>window.saveStay({timeZone:'Invalid/Zone'}));assert.doesNotMatch(await detail.innerText(),/04:20/);
     await page.evaluate(()=>window.saveStay());await expectSaved();
     for(const kind of ['signature','duplicate','next-flight']){
+      console.log('Stay detail occurrence transition',timezoneId,kind);
       await page.getByRole('button',{name:'← Voltar à escala inteira'}).click();await page.evaluate(kind=>window.changeOccurrence(kind),kind);await open();assert.doesNotMatch(await detail.innerText(),/04:20/);
       if(kind!=='next-flight')assert.doesNotMatch(await detail.innerText(),/QUARTO-PRIVADO-A|Hotel sintético A/);
       await page.getByRole('button',{name:'← Voltar à escala inteira'}).click();await page.evaluate(()=>window.changeOccurrence('original'));await open();await expectSaved();
