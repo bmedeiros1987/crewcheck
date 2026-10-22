@@ -6,6 +6,34 @@ import http from 'node:http';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 
+// The shipped HTML has a pre-existing Google Fonts stylesheet unrelated to OCR.
+// Exclude that one document-only font link BEFORE loading this synthetic fixture;
+// retain every byte of the local production CSS. No network exception is allowed.
+// Layout screenshots consequently use the production stack's local fallback font.
+const legacyDocumentFont='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap';
+function fixtureStylesheets(html){
+  const origin='https://fixture.invalid',local=[],deniedBaseline=[];
+  for(const tag of html.match(/<link\b[^>]*>/gi)||[]){
+    const attribute=name=>new RegExp(`\\b${name}=["']([^"']+)["']`,'i').exec(tag)?.[1];
+    if(attribute('rel')?.toLowerCase()!=='stylesheet')continue;
+    const href=attribute('href');assert(href,'Stylesheet has no explicit href');const url=new URL(href,origin);
+    if(url.origin!==origin){
+      assert.equal(href,legacyDocumentFont,'Unexpected remote stylesheet: no remote dependency may be hidden by this fixture');
+      deniedBaseline.push({url:href,resourceType:'stylesheet',disposition:'excluded-before-browser',reason:'Existing document-only external font; synthetic layout uses local fallback'});continue;
+    }
+    assert(url.pathname.startsWith('/assets/')&&url.pathname.endsWith('.css')&&!url.search&&!url.hash,'Production CSS must use a same-origin build asset without query or fragment');local.push(tag);
+  }
+  assert(local.length,'Real local production CSS is required');return{links:local.join(''),deniedBaseline};
+}
+function verifyFixturePolicy(){
+  const local='<link rel="stylesheet" crossorigin href="/assets/index-synthetic.css">';
+  const result=fixtureStylesheets(`<link href="${legacyDocumentFont}" rel="stylesheet">${local}`);
+  assert.equal(result.links,local,'Local production CSS link is byte-preserved');assert.equal(result.deniedBaseline.length,1);assert.equal(result.deniedBaseline[0].disposition,'excluded-before-browser');
+  for(const href of ['https://fonts.googleapis.com/css2?family=Injected','https://cdn.example/ocr.css','/assets/index.css?raw=payload','/api/style.css'])assert.throws(()=>fixtureStylesheets(`${local}<link rel="stylesheet" href="${href}">`));
+}
+verifyFixturePolicy();
+if(process.argv.includes('--fixture-policy-only')){console.log('PASS fixture font isolation: exact existing document font denied before browser; local CSS preserved; unexpected remote/query dependencies rejected');process.exit(0);}
+
 const artifacts=path.resolve(process.env.STAY_SCREENSHOT_ARTIFACTS||'artifacts/stay-screenshot');
 fs.mkdirSync(artifacts,{recursive:true});
 const entry=`import React,{useEffect,useState} from 'react';
@@ -27,10 +55,12 @@ if(process.argv.includes('--bundle-only')){console.log('PASS actual screenshot e
 const {chromium}=createRequire(process.env.STAY_PLAYWRIGHT_PACKAGE||process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const publicRoot=path.resolve('client/public');
 assert(fs.existsSync(path.join(publicRoot,'ocr/v7/worker.min.js')),'Prepare pinned same-origin OCR assets before this test');
-const prodCss=fs.existsSync('dist/index.html')?[...fs.readFileSync('dist/index.html','utf8').matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(match=>match[0]).join(''):'';
-assert(prodCss,'Real production CSS required: run npm run build first');
+assert(fs.existsSync('dist/index.html'),'Real production CSS required: run npm run build first');
+const {links:prodCss,deniedBaseline}=fixtureStylesheets(fs.readFileSync('dist/index.html','utf8'));
+fs.writeFileSync(path.join(artifacts,'baseline-font-policy.json'),JSON.stringify({scope:'fixture document only; production assets unchanged',deniedBaseline},null,2));
+console.log(`Fixture document policy: ${deniedBaseline.length} existing external font stylesheet excluded before browser; no remote requests permitted`);
 const requests=[];
-const csp="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'";
+const csp="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; style-src-elem 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'";
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,'http://localhost');const incoming={method:req.method,path:url.pathname,sentBodyBytes:0};requests.push(incoming);
   res.setHeader('Content-Security-Policy',csp);
@@ -223,6 +253,6 @@ try{
     const{context,page,verify}=await newPage(origin);await page.evaluate(()=>{window.AndroidCrewCheckNative={};window.fixtureChange('signature');});await page.waitForFunction(()=>document.body.textContent.includes('seletor do app Android ainda não aceita imagens'));assert.equal(await page.getByRole('button',{name:labels.open,exact:true}).count(),0);await verify();await context.close();results.push({case:'honest-native-availability',status:'passed'});
   }
   assert(requests.every(request=>request.method==='GET'),'No server mutation or alarm request across suite');
-  fs.writeFileSync(path.join(artifacts,'results.json'),JSON.stringify({scope:'synthetic web/PWA only; no Android/device claim',results},null,2));
+  fs.writeFileSync(path.join(artifacts,'results.json'),JSON.stringify({scope:'synthetic web/PWA only; no Android/device claim; production local CSS with local fallback fonts',deniedBaseline,results},null,2));
   console.log(`PASS ${results.length} screenshot scenarios: real image OCR, explicit preview/save, lifecycle fences, no persistence/exfil/autoalarm, public model-only cache measured`);
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

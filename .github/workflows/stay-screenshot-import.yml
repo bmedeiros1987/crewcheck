@@ -15,6 +15,8 @@ on:
       - 'scripts/regression-stay-screenshot-*'
       - 'scripts/stay-editor/**'
       - 'scripts/v139/apply.mjs'
+      - 'scripts/v139/preparation-cache.mjs'
+      - 'scripts/regression-source-preparation-cache.mjs'
       - 'docs/stay-screenshot/**'
       - 'package.json'
       - 'package-lock.json'
@@ -37,6 +39,8 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Current dependency audit, no paid service or lifecycle scripts
         run: npm audit --audit-level=high
+      - name: Preparation cache includes OCR source but excludes only generated output
+        run: node scripts/regression-source-preparation-cache.mjs
       - name: Materialize pinned public same-origin assets and verify budget/hashes
         run: node scripts/stay-screenshot-assets.mjs
       - name: Raw candidates, worker lifecycle and canonical stay contracts
