@@ -25,3 +25,5 @@
 .cc-stay-screenshot button{min-height:44px;margin:4px;max-width:100%}
 /* Consent copy must not inherit the legacy globally muted paragraph palette. */
 .cc-stay-editor .cc-stay-editor-content .cc-stay-screenshot p{overflow-wrap:anywhere;color:inherit!important;opacity:1}
+/* Keep new OCR labels readable instead of inheriting legacy muted form labels. */
+.cc-stay-editor .cc-stay-editor-content .cc-stay-screenshot label{color:var(--cc-text,#163047)!important;opacity:1}
