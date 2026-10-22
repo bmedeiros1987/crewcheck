@@ -1,0 +1,30 @@
+name: CrewCheck Continuity foundation
+
+on:
+  push:
+    branches:
+      - feat/crewcheck-continuity-foundation
+  pull_request:
+    paths:
+      - 'shared/continuity.mjs'
+      - 'shared/continuity.d.mts'
+      - 'client/src/lib/continuityClient.ts'
+      - 'scripts/regression-continuity-foundation.mjs'
+      - '.github/workflows/continuity-foundation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  continuity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-continuity-foundation.mjs
+      - run: npx tsc --noEmit
