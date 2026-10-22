@@ -136,3 +136,28 @@ jobs:
         run: node scripts/assert-mycrewcare-debug-release.mjs --compiled
       - name: Compile isolated synthetic real-Profile lab (no APK or device execution)
         run: gradle -p scripts/fixtures/mycrewcare-sso-contract --no-daemon --console=plain compileDebugJavaWithJavac processDebugManifest
+
+  synthetic-instrumentation:
+    name: Synthetic Android WebView (not real login)
+    needs: validate
+    # Standard public-repository runner only; no larger/self-hosted/paid device runner.
+    if: github.event_name == 'pull_request' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Existing isolation and KVM only (fail closed; no host changes)
+        run: bash scripts/fixtures/mycrewcare-sso-contract/run-instrumentation.sh preflight
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-disabled: true
+      - name: Disposable loopback-only real WebView and Profile assertions
+        run: bash scripts/fixtures/mycrewcare-sso-contract/run-instrumentation.sh run

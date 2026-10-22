@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {metrics, verify} from './fixtures/mycrewcare-sso-contract/verify-instrumentation.mjs';
 
 const fixture = 'scripts/fixtures/mycrewcare-sso-contract/';
 const read = path => readFileSync(path, 'utf8');
@@ -76,4 +77,62 @@ test('instrumentation calls real Profile and lets browser own POST redirects', (
   assert.match(source, /server\.close\(\);[\s\S]*server\.assertDrained\(\)/);
   assert.match(source, /suite\.cleanupComplete\(now\(\), cleaned\)/);
   assert.doesNotMatch(source, /https:\/\/|apicrewcare|apihotels|microsoftonline/);
+});
+
+function passingEvidence() {
+  return [
+    'INSTRUMENTATION_RESULT: result=PASS: synthetic real-Profile browser mechanics only',
+    'INSTRUMENTATION_RESULT: terminal=PASSED',
+    'INSTRUMENTATION_RESULT: stage=timeout-late-browser-and-cleanup',
+    'INSTRUMENTATION_RESULT: webview=com.android.webview/150.0.0.0',
+    'INSTRUMENTATION_RESULT: androidApi=36',
+    'INSTRUMENTATION_RESULT: checks=70',
+    `INSTRUMENTATION_RESULT: profileSourceSha256=${digest}`,
+    ...metrics.map(metric => `INSTRUMENTATION_RESULT: ${metric}=PASS`),
+    'INSTRUMENTATION_CODE: -1', '',
+  ].join('\n');
+}
+test('result verifier accepts only complete synthetic evidence (parser fixture, not execution)', () => {
+  assert.equal(verify(passingEvidence(), 0).terminal, 'PASSED');
+  assert.equal(verify(passingEvidence().replaceAll('\n', '\r\n'), 0).androidApi, '36');
+  const source = read(fixture + 'RedirectInstrumentation.java');
+  for (const metric of metrics) assert.ok(source.includes(`result.putString("${metric}", "PASS")`), metric);
+});
+test('result verifier rejects process success without instrument/cleanup/metric success', () => {
+  for (const [evidence, status] of [
+    ['', 0], ['BUILD SUCCESSFUL', 0], [passingEvidence(), 124],
+    [passingEvidence().replace('INSTRUMENTATION_CODE: -1', 'INSTRUMENTATION_CODE: 0'), 0],
+    [passingEvidence() + 'INSTRUMENTATION_CODE: -1\n', 0],
+    [passingEvidence() + 'INSTRUMENTATION_RESULT: terminal=PASSED\n', 0],
+    [passingEvidence() + 'INSTRUMENTATION_FAILED: crashed\n', 0],
+    [passingEvidence().replace(digest, '0'.repeat(64)), 0],
+    ...metrics.flatMap(metric => ['FAIL', 'NOT_EXECUTED', ''].map(state => [passingEvidence().replace(`${metric}=PASS`, `${metric}=${state}`), 0])),
+  ]) assert.throws(() => verify(evidence, status));
+});
+test('runner is isolated, license-refusing and non-publishing; syntax only locally', () => {
+  const script = read(fixture + 'run-instrumentation.sh');
+  execFileSync('bash', ['-n', fixture + 'run-instrumentation.sh']);
+  const executable = script.split('\n').filter(line => !line.trim().startsWith('#')).join('\n');
+  assert.doesNotMatch(executable, /\bsudo\b|\bchmod\b|\bchown\b|\bsysctl\b|\biptables\b|\bufw\b|\byes\b|--licenses|adb connect|adb pair|curl |wget /);
+  assert.match(executable, /unshare --user --map-root-user --net/);
+  assert.match(executable, /ip -o link show \| wc -l/);
+  assert.match(executable, /readlink \/proc\/self\/ns\/net/);
+  assert.match(executable, /-r \/dev\/kvm && -w \/dev\/kvm/);
+  assert.match(executable, /sdkmanager.*<\/dev\/null/);
+  assert.match(executable, /cmp -s "\$WORK\/licenses.before" "\$WORK\/licenses.after"/);
+  assert.match(executable, /-Pandroid.builder.sdkDownload=false assembleDebug/);
+  assert.match(executable, /ADB_SERVER_SOCKET='tcp:127.0.0.1:5037'/);
+  assert.match(executable, /trap cleanup EXIT/);
+  assert.match(executable, /uninstall "\$PACKAGE"/);
+  assert.match(executable, /rm -rf -- "\$WORK"/);
+  assert.match(executable, /-no-snapshot -wipe-data -accel on/);
+  const job = read('.github/workflows/mycrewcare-v3-persistence.yml').split('  synthetic-instrumentation:')[1]
+    .split('\n').filter(line => !line.trim().startsWith('#')).join('\n');
+  assert.match(job, /needs: validate/);
+  assert.match(job, /repository.private == false/);
+  assert.match(job, /runs-on: ubuntu-24.04/);
+  assert.match(job, /persist-credentials: false/);
+  assert.match(job, /cache-disabled: true/);
+  assert.doesNotMatch(job, /secrets|permissions|sudo|upload-artifact|setup-android|larger|self-hosted|continue-on-error/);
+  assert.ok(job.indexOf('run-instrumentation.sh preflight') < job.indexOf('actions/setup-java'));
 });

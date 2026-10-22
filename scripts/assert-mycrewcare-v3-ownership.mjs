@@ -21,6 +21,8 @@ const allowed = [
   'scripts/fixtures/mycrewcare-sso-contract/LabTerminalGate.java',
   'scripts/fixtures/mycrewcare-sso-contract/LoopbackFixture.java',
   'scripts/fixtures/mycrewcare-sso-contract/LabHostHarness.java',
+  'scripts/fixtures/mycrewcare-sso-contract/run-instrumentation.sh',
+  'scripts/fixtures/mycrewcare-sso-contract/verify-instrumentation.mjs',
   'scripts/fixtures/mycrewcare-sso-contract/build.gradle',
   'scripts/fixtures/mycrewcare-sso-contract/settings.gradle',
   'scripts/fixtures/mycrewcare-sso-contract/gradle.properties',

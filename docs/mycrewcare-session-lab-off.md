@@ -1,7 +1,10 @@
 # MyCrewCare: isolated real-Profile session laboratory (OFF)
 
 Status: synthetic test implementation, **not an enabled login integration**. Base reviewed on
-2026-10-22: `342951ffa96771cb94988caf07e426d3f8b7ead9` (main). No production code, route
+2026-10-22: `342951ffa96771cb94988caf07e426d3f8b7ead9` (original base). Before the
+instrumentation-job addition, main `8ed931d1899d84b03276fc0b09c7913abd209523` was
+rechecked: its 12 weather paths do not overlap this lab. Continue existing draft #1196,
+not a competing branch or the historical debug work. No production code, route
 allowlist, bridge, session grant, credential, CrewCheck app manifest or release flag changes.
 The historical #1027/#1035 branches remain untouched.
 
@@ -83,10 +86,92 @@ That step generates no APK, does not install, and does not run instrumentation. 
 CI permissions remain `contents: read`; no new service, runner class, secret, security grant
 or paid device-test provider is introduced. A green compilation is not a login/session pass.
 
+Evidence for the original head `0898d24a8c5ce7f3da5742b986e49ba2f69f77c3`:
+[MCC CI run 39779389902](https://github.com/bmedeiros1987/crewcheck/actions/runs/39779389902)
+compiled the hash-verified lab and CrewCheck debug/release successfully. That run did
+**not** assemble/install an APK or execute instrumentation. It cannot approve a newer head.
+
 Local executor inventory on 2026-10-22: Java/Node present; no Android SDK, adb, emulator,
 Gradle executable or `/dev/kvm`. All existing main workflow sources were searched; no
-emulator/connectedAndroidTest instrumentation executor is configured. Do not bypass the
+emulator/connectedAndroidTest instrumentation executor was configured before this addition. Do not bypass the
 unavailable/blocked device environment by changing its filesystem/network permissions.
+
+## Disposable public-runner instrumentation job
+
+The same workflow adds `synthetic-instrumentation`, dependent on the existing validation
+job, for public-repository PRs only, on standard `ubuntu-24.04` (not a larger/self-hosted
+runner). GitHub documents standard public-repository runner usage as free. There are no
+new secrets/permissions, paid device services, cache uploads or artifact uploads. Checkout
+does not persist credentials; Gradle's action cache is disabled for this job. Its output
+is small text evidence, not an APK download or a release.
+
+`run-instrumentation.sh` checks the already installed official Android SDK tools and
+already accepted license inventory. It checks unprivileged user/network namespaces and
+existing KVM access **before** dependency downloads. No sudo, device chmod/chown, host
+firewall, AppArmor, sysctl or permission workaround is permitted. Any denial is terminal,
+not a retry with stronger privileges and not a green skip.
+
+The existing SDK manager requests stable `emulator` and
+`system-images;android-36;google_apis;x86_64` with stdin at EOF. A new agreement is refused;
+license files must be byte-identical before/after, and missing packages block execution.
+No Play Store image, account, APK sideloaded WebView or separate provider is introduced.
+The image's shipped WebView must actually support both required Profile features; an old
+or incompatible WebView fails. It is not upgraded through a new account or service.
+Gradle SDK auto-download is disabled. The image/downloads are setup only, not a login.
+
+For the runtime, a **new process-local network namespace** has only loopback and no
+IPv4/IPv6 egress routes. The emulator and its dedicated ADB server both start inside it.
+The fixture's HTTP server is Android loopback; even platform/WebView background traffic
+has no host egress path. No host security configuration is weakened. If the stock runner
+cannot create this isolation with its existing rights, stop. This does not authorize a
+retry around the separately denied local browser sandbox.
+
+The AVD is fresh/wiped, no snapshots, no real account or device. Only
+`lab.mcc.syntheticprofile` is installed, with a fixed emulator serial and an isolated ADB
+socket. Standard debug signing/ADB material is ephemeral under the job's temporary home;
+it gives no persistent account/real-device access and is never uploaded/cached. Traps
+uninstall the lab, terminate the emulator/ADB and delete the AVD, temporary home, build
+and Gradle files on success or failure. Abrupt runner teardown also discards the VM.
+
+`verify-instrumentation.mjs` requires process success, exactly one successful
+`INSTRUMENTATION_CODE: -1`, the exact Profile hash, WebView/API metadata, PASSED terminal,
+and every metric PASS. Missing output, unsupported features, timeout, duplicate result,
+partial cleanup or any FAIL/NOT_EXECUTED metric cannot become PASS. Only allowlisted small
+result values are printed; raw browser/HTTP/ADB logs and temporary keys are not published.
+
+**Execution status at source-review time: NOT_EXECUTED.** This job is a reviewed attempt
+path, not proof it has run. Record the exact subsequent commit/run/job and terminal result
+in the PR evidence before changing that status. A preflight refusal is an infrastructure
+blocker with Android metrics NOT_EXECUTED, not a failed real login and not a session pass.
+
+## Acceptance metrics: laboratory versus actual MyCrewCare
+
+Each emitted lab metric starts NOT_EXECUTED, becomes FAIL when attempted, and PASS only
+after its concrete assertion. No approximate score or a successful build substitutes it.
+
+| Metric | Synthetic PASS criterion | Real MyCrewCare status |
+| --- | --- | --- |
+| `redirect302` | Actual browser form POST -> HTTP 302 -> GET, exact body only on POST | NOT_EXECUTED: no real SAML/MFA chain |
+| `redirect307`, `redirect308` | Actual browser retains POST method/body, without `loadUrl` replay | NOT_EXECUTED: provider methods/redirect contract missing |
+| `continuityA` | Destroy/recreate original Profile A WebView; HTTP observes A cookie | NOT_EXECUTED: no authenticated provider session |
+| `isolationB` | Independent B starts without A and only observes its own synthetic cookie | NOT_EXECUTED: no real identity/account switching |
+| `clearAOnly` | Real clear(A) callback succeeds; recreated A empty and B intact | NOT_EXECUTED: no real exit/logout/revocation proof |
+| `viewStorage` | Initial marker exists; recreated A/B and cleared A do not inherit it | NOT_EXECUTED: no presumption provider state is cookie-only |
+| `cancelLate`, `timeoutLate` | Delayed actual WebView/clear callbacks cannot publish through the lab latch | NOT_EXECUTED: production UI/controller not exercised |
+| `finalCleanup` | Every view destroyed, both real profile callbacks succeed before result | NOT_EXECUTED: no retention/privacy guarantee for real provider data |
+
+Bounds are lab failure deadlines, not an invented provider performance SLA: navigation
+15 seconds, JavaScript callback 5 seconds, profile cleanup 10 seconds, suite 120 seconds;
+CI boot 300 seconds and instrumentation process 180 seconds. Unsupported feature/timeouts
+fail closed. Evidence preserves exact Android API/WebView version and source hash.
+
+Actual-login acceptance additionally requires an approved exact SSO route/method contract,
+user-completed login/MFA solely on the official provider page (never credentials in chat),
+correct authenticated identity and arrival at reservations, safe cancellation/expiration,
+and verified cleanup consistent with the user's no-user-data-retention requirement. No
+new persistent grant/OAuth permission, route wildcard or production toggle is implied.
+All actual-login/reservation acceptance remains **NOT_EXECUTED** by this lab. No import,
+hotel/transport/APZ correctness or release-ready claim follows from a synthetic PASS.
 
 ## Reproducible device execution, only when an authorized executor exists
 
@@ -124,3 +209,10 @@ No SSO route or operational import is enabled by this laboratory.
 References: [AndroidX Profile](https://developer.android.com/reference/androidx/webkit/Profile),
 [WebViewBuilder](https://developer.android.com/reference/androidx/webkit/WebViewBuilder),
 [WebViewClient](https://developer.android.com/reference/android/webkit/WebViewClient).
+
+Runner/setup references: [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions),
+[Ubuntu 24.04 runner inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md),
+[Android sdkmanager](https://developer.android.com/tools/sdkmanager),
+[Android avdmanager](https://developer.android.com/tools/avdmanager),
+[Android Emulator command line](https://developer.android.com/studio/run/emulator-commandline),
+[unshare manual](https://man7.org/linux/man-pages/man1/unshare.1.html).

@@ -38,10 +38,17 @@ public final class RedirectInstrumentation extends Instrumentation {
     @Override public void onCreate(Bundle ignored) { super.onCreate(ignored); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
+        for (String metric : new String[] {"redirect302", "continuityA", "isolationB", "redirect307", "redirect308",
+                "clearAOnly", "viewStorage", "cancelLate", "timeoutLate", "finalCleanup"}) result.putString(metric, "NOT_EXECUTED");
         boolean complete = false;
         boolean cleaned = false;
+        boolean profilesSupported = false;
         suite = new LabTerminalGate(now() + 120000);
         try {
+            PackageInfo webview = WebView.getCurrentWebViewPackage();
+            result.putString("webview", webview == null ? "unavailable" : webview.packageName + "/" + webview.versionName);
+            result.putInt("androidApi", Build.VERSION.SDK_INT);
+            result.putString("profileSourceSha256", BuildConfig.PROFILE_SOURCE_SHA256);
             Intent intent = new Intent(getTargetContext(), LabActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity = (LabActivity) startActivitySync(intent);
@@ -49,49 +56,59 @@ public final class RedirectInstrumentation extends Instrumentation {
             AtomicReference<Boolean> supported = new AtomicReference<>(false);
             ui(() -> supported.set(profiles.isSupported()));
             require(supported.get(), "isolated-profile-unavailable"); // Never skip as PASS.
+            profilesSupported = true;
             clear(A); clear(B); // Known empty baseline, real callbacks.
             server = new LoopbackFixture();
-            PackageInfo webview = WebView.getCurrentWebViewPackage();
-            result.putString("webview", webview == null ? "unavailable" : webview.packageName + "/" + webview.versionName);
-            result.putInt("androidApi", Build.VERSION.SDK_INT);
-            result.putString("profileSourceSha256", BuildConfig.PROFILE_SOURCE_SHA256);
-
             stage = "302-browser-chain";
+            result.putString("redirect302", "FAIL"); result.putString("viewStorage", "FAIL");
             WebView a = create(A);
             chain(a, 302, "", "A");
+            result.putString("redirect302", "PASS");
             require("\"synthetic-view-only\"".equals(script(a, "sessionStorage.getItem('fixture')")), "initial-session-storage");
             ui(() -> profiles.flush(A));
             destroy(a);
 
             stage = "profile-a-recreated";
+            result.putString("continuityA", "FAIL");
             a = create(A);
             probe(a, "/recreated-a", "fixture=A", null);
+            result.putString("continuityA", "PASS");
             require("null".equals(script(a, "sessionStorage.getItem('fixture')")), "session-storage-was-not-view-local");
             // Cookie continuity is observed on HTTP, never copied/exported through CookieManager.
 
             stage = "profile-b-isolated";
+            result.putString("isolationB", "FAIL");
             WebView b = create(B);
             probe(b, "/empty-b", "", "B");
             probe(b, "/cookie-b", "fixture=B", null);
+            result.putString("isolationB", "PASS");
             require("null".equals(script(b, "sessionStorage.getItem('fixture')")), "b-session-storage-leak");
             destroy(b);
 
             stage = "307-preserves-post";
+            result.putString("redirect307", "FAIL");
             chain(a, 307, "fixture=A", null);
+            result.putString("redirect307", "PASS");
             stage = "308-preserves-post";
+            result.putString("redirect308", "FAIL");
             chain(a, 308, "fixture=A", null);
+            result.putString("redirect308", "PASS");
             destroy(a);
 
             stage = "real-clear-a-preserves-b";
+            result.putString("clearAOnly", "FAIL");
             clear(A);
             a = create(A);
             probe(a, "/cleared-a", "", null);
             require("null".equals(script(a, "sessionStorage.getItem('fixture')")), "cleared-a-session-storage");
+            result.putString("viewStorage", "PASS");
             b = create(B);
             probe(b, "/preserved-b", "fixture=B", null);
+            result.putString("clearAOnly", "PASS");
             destroy(b);
 
             stage = "cancel-late-browser-and-cleanup";
+            result.putString("cancelLate", "FAIL");
             LabTerminalGate cancelled = new LabTerminalGate(now() + 10000);
             server.expect(exchange("GET", "/cancel-late", "", "", 200, null, null, PAGE, 200));
             Navigation cancelNavigation = begin(a, "/cancel-late", "/cancel-late", cancelled);
@@ -99,15 +116,18 @@ public final class RedirectInstrumentation extends Instrumentation {
             await(cancelNavigation);
             clear(A, cancelled); // Actual cleanup callback is late relative to cancellation.
             require(!cancelled.publish(now()) && cancelled.state() == LabTerminalGate.State.CANCELLED, "cancel-published");
+            result.putString("cancelLate", "PASS");
             destroy(a);
 
             stage = "timeout-late-browser-and-cleanup";
+            result.putString("timeoutLate", "FAIL");
             a = create(A);
             LabTerminalGate timedOut = new LabTerminalGate(now() + 30);
             server.expect(exchange("GET", "/timeout-late", "", "", 200, null, null, PAGE, 200));
             await(begin(a, "/timeout-late", "/timeout-late", timedOut));
             clear(A, timedOut);
             require(!timedOut.publish(now()) && timedOut.state() == LabTerminalGate.State.TIMED_OUT, "timeout-published");
+            result.putString("timeoutLate", "PASS");
             destroy(a);
             server.awaitDrained(5000);
             require(server.received() == 16, "unexpected-exchange-count");
@@ -118,6 +138,7 @@ public final class RedirectInstrumentation extends Instrumentation {
             suite.fail();
             result.putString("failure", failure.getClass().getSimpleName());
         } finally {
+            if (profilesSupported) result.putString("finalCleanup", "FAIL");
             // Best effort for EVERY view/profile; one failure must not skip the other profile.
             Throwable cleanupError = null;
             for (WebView view : new ArrayList<>(views)) {
@@ -141,6 +162,7 @@ public final class RedirectInstrumentation extends Instrumentation {
             } catch (Throwable failure) { suite.fail(); result.putString("serverFailure", failure.getClass().getSimpleName()); }
         }
         suite.cleanupComplete(now(), cleaned);
+        if (cleaned && profilesSupported) result.putString("finalCleanup", "PASS");
         boolean passed = complete && suite.publish(now());
         result.putString("result", passed ? "PASS: synthetic real-Profile browser mechanics only" : "FAIL: no login/session claim");
         result.putString("stage", stage);
