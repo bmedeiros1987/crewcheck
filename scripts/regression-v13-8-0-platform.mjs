@@ -76,7 +76,7 @@ assert.match(home, /Dias mais puxados da escala/);
 assert.match(home, /SalaryReliableView/);
 assert.match(home, /maps\/api\/staticmap\?size=900x520&scale=2/);
 assert.match(home, /images\.kiwi\.com\/airlines/);
-assert.match(home, /Atualizar e exportar ao card/);
+assert.match(home, /aria-label="Atualizar Radar e card"/);
 assert.match(home, /Wellhub é um benefício corporativo que conecta empresas a academias parceiras; não é uma academia/);
 assert.doesNotMatch(home, /Bruno Saraiva/);
 assert.doesNotMatch(home, /TAF tendência operacional:/);
