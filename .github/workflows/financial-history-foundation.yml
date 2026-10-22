@@ -250,6 +250,7 @@ jobs:
           node scripts/regression-financial-changes-browser.mjs
           node scripts/regression-financial-changes-home-compiled.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
+        timeout-minutes: 10
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-financial-ui-browser.cjs

@@ -37,7 +37,9 @@ expect(Boolean(cockpitNode), 'Função Cockpit ativa ausente.');
 const cockpit = cockpitNode.getText(homeAst);
 
 expect(home.includes('data-flydeck-v14353="premium-briefing"'), 'Briefing Premium não foi instalado.');
-expect(home.includes('ATUALIZADO {flyDeckLiveClockV14353(nowMs)}'), 'Indicador de vida não exibe atualização real.');
+expect(home.includes('HORA LOCAL {flyDeckLiveClockV14353(nowMs)}'), 'Relógio deve identificar hora local, sem alegar atualização da fonte.');
+expect(!cockpit.includes('ATUALIZADO {flyDeckLiveClockV14353(nowMs)}'), 'Relógio local não comprova atualização operacional.');
+expect(cockpit.includes('não indica atualização da fonte operacional'), 'Relógio deve distinguir fonte operacional de tempo local de forma acessível.');
 expect(home.includes('Consulte sempre a escala oficial'), 'Aviso de confirmação da escala oficial está ausente.');
 expect(home.includes('em caso de divergência, prevalece a fonte oficial'), 'Regra de prevalência da fonte oficial está ausente.');
 expect(home.includes('<OperationalDayTimeline events={events}'), 'Linha do Dia deixou de aparecer depois do briefing.');

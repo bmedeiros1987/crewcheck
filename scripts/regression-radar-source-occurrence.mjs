@@ -9,6 +9,7 @@ const root=process.env.RADAR_SOURCE_ROOT || process.cwd(),require=createRequire(
 const ts=require('typescript'),{build}=require('esbuild'),React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
 prepareConciergeCanonicalBridge(root);
 const policy=await import(pathToFileURL(path.join(root,'shared/gate-query-day.mjs')).href);
+const {followedFlight}=await import(pathToFileURL(path.join(root,'shared/followedFlights.mjs')).href);
 const injection=await import(pathToFileURL(path.join(root,'server/cirium-radar-injection.mjs')).href);
 const {buildCanonicalRosterEvents}=await import(pathToFileURL(path.join(root,'server/concierge/generated/canonicalRoster.mjs')).href);
 globalThis.fetch=()=>{throw Error('Real network forbidden');};
@@ -32,11 +33,11 @@ const compiled=await build({stdin:{contents:"export {resolveNextFlightGate,canon
 const provenGood={...good,sourceOrigin:'GRU',sourceDestination:'REC',operationalEvidence:{gate:{version:1,value:'99',sourceObservedAt:'2032-10-14T12:00:00Z',provenance:'synthetic-field-observation'}}};
 let cached={...provenGood,updatedAt:now},manual={scheduledDepartureUtc:'2032-10-14T12:00:00Z',gate:'24',terminal:'1',author:'fixture',flight:'LA100',date:'2032-10-14',origin:'GRU',destination:'REC',setAtEpochMs:now};
 const event={id:'fixture-event',kind:'flight',flightNumber:'LA100',origin:'GRU',destination:'REC',day:{date:'14/10/2032'},date:new Date('2032-10-14T12:00:00Z'),canonical:{date:'2032-10-14',startDateTime:'2032-10-14T12:00:00Z'},departure:'09:00',arrival:'11:00'};
-const client=vm.createContext({...policy,...m.exports,resolveNextFlightGate:input=>m.exports.resolveNextFlightGate({...input,now}),React,Date:class extends Date{static now(){return now;}},localStorage:{},getStoredUser:()=>({}),manualGateAccountKey:()=> 'fixture-account',readManualGate:()=>manual,readRadarSnapshot:()=>cached,useRadarSnapshot:()=>cached,
+const client=vm.createContext({...policy,...m.exports,followedFlight,resolveNextFlightGate:input=>m.exports.resolveNextFlightGate({...input,now}),React,Date:class extends Date{static now(){return now;}},localStorage:{},getStoredUser:()=>({}),manualGateAccountKey:()=> 'fixture-account',readManualGate:()=>manual,readRadarSnapshot:()=>cached,useRadarSnapshot:()=>cached,
  useState:v=>[typeof v==='function'?v():v,()=>{}],useEffect:()=>{},useRef:v=>({current:v}),getToken:()=> 'fixture-token',safe:(v,f='')=>v||f,normalizedAirlineCode:()=> 'LA',airlineNameFor:()=> 'LATAM',city:x=>x,flightWorkType:()=>'',workTypeLabel:()=>'',flightWorkClass:()=>'',isHomeStandby:()=>false,rosterEventTitle:()=> 'Voo',dateChip:()=> '14/10',weekday:()=> 'fixture-day',duration:()=> '',time:(v,f)=>v||f,window:{dispatchEvent:()=>{},open:()=>{}}});
 const home=fs.readFileSync(path.join(root,'client/src/pages/Home.tsx'),'utf8'),homeAst=ts.createSourceFile('Home.tsx',home,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 function visit(n){if(ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n)){const name=n.tagName.getText(homeAst);if(/^[A-Z][A-Za-z0-9]*$/.test(name))client[name]=()=>null;}ts.forEachChild(n,visit);}visit(homeAst);
-vm.runInContext(extract('client/src/pages/Home.tsx',['validatedRadarForEvent','radarGateInfo','radarFlightDateLabel','FlightCard','RadarView'],false,true),client);
+vm.runInContext(extract('client/src/pages/Home.tsx',['followCandidate'],true,true)+extract('client/src/pages/Home.tsx',['validatedRadarForEvent','radarGateInfo','radarFlightDateLabel','FlightCard','RadarView'],false,true),client);
 for(const component of ['FlightCard','RadarView']){
  cached={...provenGood,scheduledDepartureUtc:'2032-10-15T12:00:00Z',departure:'2032-10-15T12:00:00Z',updatedAt:now};
  let html=renderToStaticMarkup(client[component]({event}));assert(!html.includes('99'),`${component} cannot display neighboring gate`);assert(html.includes('24'),`${component} retains manual`);assert(html.includes('Escala 14/10/2032'));assert(html.includes('America/Sao_Paulo'));
