@@ -1,0 +1,9 @@
+# Reconciliação do teste de exclusão financeira
+
+O commit 359bdca2 introduziu heads/revisions e duas exclusões por proprietário. O commit 3c13b71d50a76e1ec1b533bc800f51fd3aa3c2ba acrescentou consentimentos de canal e observações de fonte, com migration manual 20261020_021 e as duas exclusões correspondentes no helper. Os testes financeiros desse commit passaram a exigir quatro tabelas, mas o teste de integração de exclusão weather continuou esperando duas. A implementação atual é intencional: exclusão total de conta remove consentimento, observações, revisões e heads; remover escala não o faz. Nenhuma migration/ativação operacional é autorizada por essa correção de testes.
+
+Contrato exato e ordem: crewcheck_financial_channel_consents, crewcheck_financial_source_observations, crewcheck_financial_revisions, crewcheck_financial_heads. Cada comando é `DELETE FROM <tabela> WHERE owner_id=$1`, com um único parâmetro do titular, dentro da transação existente de exclusão de conta. Nenhuma implementação ou tabela de produção foi alterada.
+
+O teste sintético agora semeia as quatro tabelas para duas contas, exige a lista exata uma vez, rejeita SQL sem predicado exato/proprietário errado e verifica exclusão do titular e sobrevivência de todos os registros da outra conta. A fixture SQL existente foi ampliada para executar os comandos rastreados contra as migrations reais em banco descartável: rollback preserva ambas, commit remove somente o titular; a segunda conta compartilha o prefixo para detectar uso indevido de LIKE/prefixo.
+
+As etapas posteriores do workflow weather, antes puladas, continuam obrigatórias: suíte sintética completa, heartbeat, SQL real, preparação canônica e repetição da suíte/SQL preparada. Não reduzir assertions ou marcar gates verdes com SQL pendente. Revisão independente e CI ficam registrados na PR em rascunho, sem merge/publicação.
