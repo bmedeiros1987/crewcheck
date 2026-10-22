@@ -61,11 +61,12 @@ function declaredCssAssets(sources){
 function fixtureRequestPolicy(cssSources,cssPaths,manifest){
   const cssAssets=declaredCssAssets(cssSources),cssQueries=new Set([...cssAssets].filter(asset=>asset.includes('?')));
   for(const asset of cssQueries)assert(baselineCssQueries.has(asset),'Versioned CSS URL outside the four reviewed baseline URLs');
-  return{applicationPaths:new Set(fixtureApplicationPaths),installAssets:new Set(),cssAssets,cssQueries,stylesheets:new Set(cssPaths),ocrPaths:new Set([manifest.boundary.name,...manifest.assets.map(asset=>asset.name)].map(name=>'/ocr/v7/'+name))};
+  return{applicationPaths:new Set(fixtureApplicationPaths),installAssets:new Set(),previewUrls:new Set(),cssAssets,cssQueries,stylesheets:new Set(cssPaths),ocrPaths:new Set([manifest.boundary.name,...manifest.assets.map(asset=>asset.name)].map(name=>'/ocr/v7/'+name))};
 }
 function assertFixtureRequest(request,origin,policy){
   const url=new URL(request.url);assert.equal(url.origin,origin,'No remote CDN/telemetry/upload request');assert(!url.username&&!url.password,'No URL credentials');
   assert.equal(request.method,'GET','No API or scheduler writes');assert.equal(request.bodyBytes,0,'No image/text/request body is uploaded');assert.equal(url.hash,'','No input encoded in URL fragment');
+  if(url.protocol==='blob:'){assert.equal(url.search,'');assert(policy.previewUrls.has(url.href)&&request.resourceType==='image','Only the exact local preview URL observed in the review DOM may be decoded');return;}
   if(url.pathname.startsWith('/ocr/')){assert.equal(url.search,'','OCR assets always have empty query, regardless of CSS');assert(policy.ocrPaths.has(url.pathname),'Only exact pinned OCR manifest paths are allowed');return;}
   if(policy.installAssets.has(url.pathname+url.search)&&request.resourceType==='fetch')return;
   if(url.search){assert(policy.cssQueries.has(url.pathname+url.search)&&['image','font'].includes(request.resourceType),'Only the four reviewed static image/font queries actually declared in production CSS are permitted');return;}
@@ -74,7 +75,7 @@ function assertFixtureRequest(request,origin,policy){
 function auditFixtureRequest(request,origin,policy){
   const url=new URL(request.url),knownPath=policy.applicationPaths.has(url.pathname)||policy.stylesheets.has(url.pathname)||policy.ocrPaths.has(url.pathname)||policy.cssAssets.has(url.pathname+url.search)||policy.installAssets.has(url.pathname+url.search);
   let allowed=true;try{assertFixtureRequest(request,origin,policy);}catch{allowed=false;}
-  return{allowed,origin:url.origin===origin?'same-origin':'[unexpected origin redacted]',path:knownPath?url.pathname:'[unexpected path redacted]',query:policy.cssQueries.has(url.pathname+url.search)||policy.installAssets.has(url.pathname+url.search)?url.search:url.search?'[unexpected query redacted]':'',method:request.method,bodyBytes:request.bodyBytes,resourceType:request.resourceType};
+  return{allowed,protocol:url.protocol,origin:url.origin===origin?'same-origin':'[unexpected origin redacted]',path:url.protocol==='blob:'?(policy.previewUrls.has(url.href)?'[local-preview]':'[unexpected object URL redacted]'):knownPath?url.pathname:'[unexpected path redacted]',query:policy.cssQueries.has(url.pathname+url.search)||policy.installAssets.has(url.pathname+url.search)?url.search:url.search?'[unexpected query redacted]':'',method:request.method,bodyBytes:request.bodyBytes,resourceType:request.resourceType};
 }
 function assertOnlyModelStorageMayChange(state,modelCacheName,publicBaseline=null){
   assert.deepEqual(state.idb,publicBaseline?.idb||[],'OCR never opens or changes IndexedDB; PWA legacy empty database must remain empty');
@@ -98,6 +99,7 @@ function verifyFixturePolicy(){
   assert.equal(servedPwaContract(sw).shell.length,4);assert.throws(()=>servedPwaContract(sw.replace('/icons/crewcheck-icon-v2.png','/icons/crewcheck-icon-v2.png?raw=x')));assert.throws(()=>servedPwaContract(sw.replace('crewcheck-v14.3-offline-shell','arbitrary-cache')));
   const installUrl='/icons/crewcheck-icon-v2.png?brand=936-3656d39df50e',installRequest={...request,url:'https://fixture.invalid'+installUrl,resourceType:'fetch'},pwaPolicy={...policy,installAssets:new Set([installUrl])};assert.throws(()=>assertFixtureRequest(installRequest,'https://fixture.invalid',policy));assertFixtureRequest(installRequest,'https://fixture.invalid',pwaPolicy);assert.throws(()=>assertFixtureRequest({...installRequest,url:installRequest.url+'&raw=x'},'https://fixture.invalid',pwaPolicy));
   const swCssRequest={...request,resourceType:'fetch'},swCssPolicy={...policy,installAssets:new Set(policy.cssAssets)};assert.throws(()=>assertFixtureRequest(swCssRequest,'https://fixture.invalid',policy));assertFixtureRequest(swCssRequest,'https://fixture.invalid',swCssPolicy);assert.throws(()=>assertFixtureRequest({...swCssRequest,url:swCssRequest.url+'&raw=x'},'https://fixture.invalid',swCssPolicy));
+  const previewRequest={...request,url:'blob:https://fixture.invalid/synthetic-preview-id'},previewPolicy={...policy,previewUrls:new Set([previewRequest.url])};assert.throws(()=>assertFixtureRequest(previewRequest,'https://fixture.invalid',policy));assertFixtureRequest(previewRequest,'https://fixture.invalid',previewPolicy);for(const patch of [{url:'blob:https://fixture.invalid/other-id'},{url:'blob:https://remote.invalid/synthetic-preview-id'},{resourceType:'fetch'},{method:'POST'},{bodyBytes:1},{url:previewRequest.url+'?raw=x'},{url:previewRequest.url+'#raw'}])assert.throws(()=>assertFixtureRequest({...previewRequest,...patch},'https://fixture.invalid',previewPolicy));assert(!JSON.stringify(auditFixtureRequest(previewRequest,'https://fixture.invalid',previewPolicy)).includes('synthetic-preview-id'),'Object URL identifiers stay in RAM, never diagnostics');
   for(const pathname of ['/api/platform/hotels/stays','/ocr/v7/eng.traineddata.gz'])assertFixtureRequest({...request,url:'https://fixture.invalid'+pathname,resourceType:'fetch'},'https://fixture.invalid',policy);
   const baseline={idb:[],cacheNames:['public-shell'],cacheEntries:[{name:'public-shell',url:'https://fixture.invalid/',bytes:10,sha256:'public'}]},withModels={...baseline,cacheNames:[...baseline.cacheNames,'models'],cacheEntries:[...baseline.cacheEntries,{name:'models',url:'https://fixture.invalid/ocr/v7/eng.traineddata.gz'}]};assertOnlyModelStorageMayChange(withModels,'models',baseline);assert.throws(()=>assertOnlyModelStorageMayChange(withModels,'models'));
   for(const patch of [{idb:[{name:'new-database'}]},{cacheNames:[...withModels.cacheNames,'unexpected-runtime']},{cacheEntries:[{...baseline.cacheEntries[0],sha256:'changed'}]},{cacheEntries:[...withModels.cacheEntries,{name:'public-shell',url:'https://fixture.invalid/ocr/v7/worker-synthetic.js'}]}])assert.throws(()=>assertOnlyModelStorageMayChange({...withModels,...patch},'models',baseline));
@@ -133,7 +135,8 @@ const pwaContract=servedPwaContract(fs.readFileSync(path.join(publicRoot,'sw.js'
 const{cssQueries}=requestPolicy;
 fs.writeFileSync(path.join(artifacts,'baseline-font-policy.json'),JSON.stringify({scope:'fixture document only; production assets unchanged',deniedBaseline},null,2));
 console.log(`Fixture document policy: ${deniedBaseline.length} existing external font stylesheet excluded before browser; no remote requests permitted`);
-const requests=[],networkAudit=[];
+const requests=[],requestTraceRam=[];
+const networkAuditSnapshot=()=>requestTraceRam.map(({request,origin,policy,pwa})=>({...auditFixtureRequest(request,origin,policy),pwa}));
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; style-src-elem 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'";
 const fixtureHtml='<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+prodCss+'<style>body{margin:8px}'+css+'</style><div id="root"></div><script src="/fixture.js"></script></html>';
 const server=http.createServer((req,res)=>{
@@ -152,7 +155,7 @@ const server=http.createServer((req,res)=>{
   if(url.pathname.startsWith('/ocr/v7/'))res.setHeader('Cache-Control','no-store');
   incoming.sentBodyBytes=fs.statSync(file).size;res.setHeader('Content-Length',incoming.sentBodyBytes);fs.createReadStream(file).pipe(res);
 });
-const results=[];let browser;
+const results=[],pagePolicies=new WeakMap();let browser;
 const labels={open:'Importar print de hotel/transporte',file:'Print de hotel ou transporte',apply:'Usar campos selecionados no editor',cancel:'Cancelar importação',hotel:'Hotel no print',apzTime:'APZ no print',apzDate:'Data da APZ no print',apzZone:'Fuso IANA da APZ no print',transport:'Empresa de transporte no print'};
 const linesPT=['Hotel: Hotel Sintetico Aurora','APZ no hotel: 22/10/2032 04:40 America/Sao_Paulo','Transportadora: Transporte Sintetico Sol','Local de pickup: Hall principal','Pickup: 22/10/2032 05:10 America/Sao_Paulo','Quarto: ROOM-NEVER-IMPORT-638','DO_NOT_STORE_RAW_7X3'];
 const linesEN=['Hotel: Synthetic Harbor Hotel','Hotel report: 22/10/2032 04:40 America/Sao_Paulo','Transport provider: Synthetic Shuttle','Pickup location: Main lobby','Pickup: 22/10/2032 05:10 America/Sao_Paulo','Room: ROOM-NEVER-IMPORT-638','DO_NOT_STORE_RAW_7X3'];
@@ -162,7 +165,11 @@ async function makeImage(page,{mime='image/png',lines=linesPT,dark=false,blur=fa
 }
 async function startImport(page,image){if(!await page.getByLabel(labels.file,{exact:true}).count())await page.getByRole('button',{name:labels.open,exact:true}).click();const input=page.getByLabel(labels.file,{exact:true});if(image.mimeType===''){await input.evaluate((element,{bytes,name})=>{const transfer=new DataTransfer();transfer.items.add(new File([Uint8Array.from(bytes)],name,{type:''}));element.files=transfer.files;element.dispatchEvent(new Event('change',{bubbles:true}));},{bytes:[...image.buffer],name:image.name});}else await input.setInputFiles(image);}
 const review=page=>page.locator('.cc-stay-screenshot');
-async function waitReview(page){await page.getByRole('button',{name:labels.apply,exact:true}).waitFor({timeout:120000});}
+async function waitReview(page){
+  await page.getByRole('button',{name:labels.apply,exact:true}).waitFor({timeout:120000});
+  const src=await review(page).getByRole('img',{name:'Print selecionado para revisão local'}).getAttribute('src'),url=new URL(src);
+  assert.equal(url.protocol,'blob:');assert.equal(url.origin,new URL(page.url()).origin);assert.equal(url.search,'');assert.equal(url.hash,'');pagePolicies.get(page).previewUrls.add(url.href);
+}
 async function saved(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_stay_editor_v2:A')||'null'));}
 async function browserStorageSnapshot(page){
   return page.evaluate(async()=>{
@@ -208,9 +215,9 @@ async function assertReleased(page){await page.waitForFunction(()=>window.ocrAud
 async function newPage(origin,{timezoneId='UTC',width=390,seed=true,pwa=false}={}){
   // Chromium may classify the SW's forwarding of a CSS image/font as fetch.
   // This changes only request classification, never the exact permitted URLs.
-  const policy=pwa?{...requestPolicy,applicationPaths:new Set([...requestPolicy.applicationPaths,'/sw.js','/crewcheck-push-offline.js',...pwaContract.shell.filter(asset=>!asset.includes('?'))]),installAssets:new Set([...pwaContract.shell,...prodCssPaths,'/fixture.js',...requestPolicy.cssAssets])}:requestPolicy;
+  const policy={...requestPolicy,previewUrls:new Set(),...(pwa?{applicationPaths:new Set([...requestPolicy.applicationPaths,'/sw.js','/crewcheck-push-offline.js',...pwaContract.shell.filter(asset=>!asset.includes('?'))]),installAssets:new Set([...pwaContract.shell,...prodCssPaths,'/fixture.js',...requestPolicy.cssAssets])}:{})};
   const context=await browser.newContext({timezoneId,viewport:{width,height:844},serviceWorkers:pwa?'allow':'block'}),observed=[],errors=[];
-  context.on('request',request=>{const item={url:request.url(),method:request.method(),bodyBytes:request.postDataBuffer()?.byteLength||0,resourceType:request.resourceType()};observed.push(item);networkAudit.push({...auditFixtureRequest(item,origin,policy),pwa});});
+  context.on('request',request=>{const item={url:request.url(),method:request.method(),bodyBytes:request.postDataBuffer()?.byteLength||0,resourceType:request.resourceType()};observed.push(item);requestTraceRam.push({request:item,origin,policy,pwa});});
   await context.addInitScript(({seed})=>{
     if(!localStorage.getItem('crewcheck_auth_user')){localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A',base:'CWB'}));localStorage.setItem('crewcheck_auth_token','synthetic-A');}
     if(seed&&!localStorage.getItem('crewcheck_stay_editor_v2:A'))localStorage.setItem('crewcheck_stay_editor_v2:A',JSON.stringify({version:2,accountId:'A',defaultLeadMinutes:90,defaultWithoutBreakfastMinutes:60,timeZonePreference:'local',stays:{'synthetic-stay':{eventId:'synthetic-stay',signature:'synthetic-stay|2032-10-21T03:00:00Z|2032-10-22T02:59:00Z|CWB|CWB',draft:{hotelName:'Hotel manual preservado',airport:'CWB',stayDate:'2032-10-21',room:'407-MANUAL',presentationTime:'04:20',leadMinutes:'45',shareSameHotel:false},timeZone:'America/Sao_Paulo',apzDate:'2032-10-22',apzSource:'manual',apzConfirmed:true,choice:{mode:'relative',leadMinutes:45},breakfastPlan:'with',alarmState:'cancelled'}}}));
@@ -220,8 +227,8 @@ async function newPage(origin,{timezoneId='UTC',width=390,seed=true,pwa=false}={
     const set=Storage.prototype.setItem;Storage.prototype.setItem=function(...args){window.ocrAudit.storageWrites++;return set.apply(this,args);};
     window.addEventListener('securitypolicyviolation',event=>window.ocrAudit.violations.push({directive:event.effectiveDirective,blocked:event.blockedURI}));
   },{seed});
-  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.clock.install({time:new Date('2032-10-21T19:00:00Z')});await page.goto(origin);await page.getByRole('textbox',{name:'Hotel',exact:true}).waitFor();await page.waitForFunction(()=>localStorage.getItem('crewcheck_platform_stays_cache_v1')!==null);
-  const verify=async(publicBaseline=null)=>{fs.writeFileSync(path.join(artifacts,'network-audit.json'),JSON.stringify({scope:'synthetic requests only; no headers or bodies',declaredStaticCssQueries:[...cssQueries],requests:networkAudit},null,2));for(const request of observed)assertFixtureRequest(request,origin,policy);assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.ocrAudit.violations),[],'No attempted CSP-blocked exfil');await assertRawAbsent(page,publicBaseline);};
+  const page=await context.newPage();pagePolicies.set(page,policy);page.on('pageerror',error=>errors.push(error.message));await page.clock.install({time:new Date('2032-10-21T19:00:00Z')});await page.goto(origin);await page.getByRole('textbox',{name:'Hotel',exact:true}).waitFor();await page.waitForFunction(()=>localStorage.getItem('crewcheck_platform_stays_cache_v1')!==null);
+  const verify=async(publicBaseline=null)=>{fs.writeFileSync(path.join(artifacts,'network-audit.json'),JSON.stringify({scope:'synthetic requests only; no headers or bodies',declaredStaticCssQueries:[...cssQueries],requests:networkAuditSnapshot()},null,2));for(const request of observed)assertFixtureRequest(request,origin,policy);assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.ocrAudit.violations),[],'No attempted CSP-blocked exfil');await assertRawAbsent(page,publicBaseline);};
   return{context,page,verify,observed,errors};
 }
 try{
@@ -238,6 +245,8 @@ try{
     assert.equal(await review(page).getByRole('checkbox',{name:'Usar hotel',exact:true}).isChecked(),false,'Import selection is explicit, not prechecked');
     await candidate.fill('Hotel confirmado pelo usuario');await review(page).getByRole('checkbox',{name:'Usar hotel',exact:true}).check();await review(page).getByRole('checkbox',{name:'Usar APZ no hotel',exact:true}).check();await review(page).getByRole('checkbox',{name:'Usar transporte',exact:true}).check();
     await page.evaluate(({dark})=>{window.fixtureTheme(dark?'dark':'light');document.documentElement.style.fontSize=dark?'24px':'16px';},{dark});
+    const explanationColors=await review(page).evaluate(element=>({section:getComputedStyle(element).color,consent:getComputedStyle(element.querySelector(':scope > p')).color}));assert.equal(explanationColors.consent,explanationColors.section,'Screenshot purpose/consent text inherits readable section text in each theme');
+    for(const checkbox of await review(page).getByRole('checkbox').all()){const box=await checkbox.boundingBox();assert(box&&box.width>0&&box.height>0&&box.width<=24&&box.height<=24,'Screenshot selection checkbox stays compact, not stretched by legacy form CSS');}
     const shotPrefix=`preview-${mime.split('/')[1]}-${width}`;
     await captureVisible(page,review(page).getByRole('heading',{level:3}),shotPrefix+'-top',{align:'start'});
     await captureVisible(page,review(page).getByRole('img',{name:'Print selecionado para revisão local'}),shotPrefix+'-image');
@@ -382,4 +391,4 @@ try{
   assert(requests.every(request=>request.method==='GET'),'No server mutation or alarm request across suite');
   fs.writeFileSync(path.join(artifacts,'results.json'),JSON.stringify({scope:'synthetic web/PWA only; no Android/device claim; production local CSS with local fallback fonts',deniedBaseline,results},null,2));
   console.log(`PASS ${results.length} screenshot scenarios: real image OCR, explicit preview/save, lifecycle fences, no persistence/exfil/autoalarm, public model-only cache measured`);
-}finally{fs.writeFileSync(path.join(artifacts,'network-audit.json'),JSON.stringify({scope:'synthetic requests only; no headers or bodies',declaredStaticCssQueries:[...cssQueries],requests:networkAudit},null,2));await browser?.close();await new Promise(resolve=>server.close(resolve));}
+}finally{fs.writeFileSync(path.join(artifacts,'network-audit.json'),JSON.stringify({scope:'synthetic requests only; no headers or bodies',declaredStaticCssQueries:[...cssQueries],requests:networkAuditSnapshot()},null,2));await browser?.close();await new Promise(resolve=>server.close(resolve));}
