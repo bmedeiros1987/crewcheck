@@ -205,14 +205,14 @@ export type MyCrewCareObservedCandidate = {
 
 export function mapMyCrewCareObservedCandidates(options?: {
   observation?: unknown;
-  expected?: { accountId?: string; requestId?: string };
-  observedAt?: string;
+  expected?: { accountId?: string; sessionId?: string; requestId?: string };
   now?: number;
   policy?: { plannedAcceptedAsConfirmed?: boolean } | null;
   freshForMs?: number;
 }): Readonly<{
   operationalImportAllowed: false;
   accountId: string | null;
+  sessionId: string | null;
   requestId: string | null;
   observedAt: string | null;
   dataState: 'fresh' | 'cached' | null;

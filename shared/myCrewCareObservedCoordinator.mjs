@@ -15,7 +15,7 @@ function abortable(operation, signal) {
 /** OFF-only coordinator with an injected trusted same-session acquisition boundary.
  * No provider navigation, native connection or operational import is implemented here.
  */
-export function createMyCrewCareObservedCoordinator({ acquire } = {}) {
+export function createMyCrewCareObservedCoordinator({ acquire, clock = Date.now } = {}) {
   let binding = null;
   let generation = 0;
   let pending = null;
@@ -77,8 +77,11 @@ export function createMyCrewCareObservedCoordinator({ acquire } = {}) {
           document: detail.document, pageUrl: detail.url, card,
           binding: Object.freeze({ ...scope, fresh: true }), profileBefore: before, profileAfter: after,
         }));
-        if (!live()) throw failure();
-        latest = Object.freeze({ accountId: scope.accountId, requestId: scope.requestId,
+        // Stamp completion time and session from this generation, never from page content.
+        const completedAt = clock();
+        if (!live() || !Number.isFinite(completedAt)) throw failure();
+        latest = Object.freeze({ accountId: scope.accountId, sessionId: scope.sessionId, requestId: scope.requestId,
+          observedAt: new Date(completedAt).toISOString(),
           operationalImportAllowed: false, reservations: Object.freeze(reservations) });
         return latest;
       } catch {

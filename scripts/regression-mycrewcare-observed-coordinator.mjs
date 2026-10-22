@@ -252,22 +252,32 @@ function variant(request, edits) {
   for (const [from, to] of edits) html = html.replaceAll(from, to);
   return { ...value, document: new JSDOM(html).window.document };
 }
-async function observe(edits = []) {
-  const coordinator = createMyCrewCareObservedCoordinator({ acquire: async request => variant(request, edits) });
-  coordinator.bind(binding);
+async function observe(edits = [], { clock = () => NOW, scope = binding } = {}) {
+  const coordinator = createMyCrewCareObservedCoordinator({ acquire: async request => variant(request, edits), clock });
+  coordinator.bind(scope);
   return coordinator.read();
 }
-const candidates = (observation, options = {}) => mapMyCrewCareObservedCandidates({
-  observation, expected: { accountId: observation?.accountId ?? binding.accountId, requestId: observation?.requestId ?? 'none' },
-  observedAt: AT, now: NOW, ...options,
-});
+const expectedFor = observation => ({ accountId: binding.accountId, sessionId: binding.sessionId, requestId: observation?.requestId ?? 'none' });
+const candidates = (observation, options = {}) => mapMyCrewCareObservedCandidates({ observation, expected: expectedFor(observation), now: NOW, ...options });
 const ALWAYS_PENDING = ['pickup-date-unavailable', 'stay-binding-unavailable', 'transport-to-hotel-out-of-schema', 'operational-import-vetoed'];
+
+test('coordinator stamps its own session and completion time; a broken clock publishes nothing', async () => {
+  const observation = await observe();
+  assert.equal(observation.sessionId, binding.sessionId);
+  assert.equal(observation.observedAt, AT);
+  assert.equal(Object.isFrozen(observation), true);
+  for (const clock of [() => NaN, () => { throw new Error('synthetic clock failure'); }]) {
+    assert.equal(await observe([], { clock }), null);
+  }
+});
 
 test('raw PLANNED stays separate from user-policy acceptance; the import veto survives every path', async () => {
   const observation = await observe();
   const pendingPolicy = candidates(observation);
   assert.equal(pendingPolicy.error, null);
   assert.equal(pendingPolicy.dataState, 'fresh');
+  assert.equal(pendingPolicy.observedAt, AT);
+  assert.equal(pendingPolicy.sessionId, binding.sessionId);
   const [awaiting] = pendingPolicy.candidates;
   assert.equal(awaiting.rawStatus, 'Planned');
   assert.equal(awaiting.statusDisplay, 'Planejada');
@@ -276,6 +286,13 @@ test('raw PLANNED stays separate from user-policy acceptance; the import veto su
   assert.ok(awaiting.pending.includes('status-awaiting-user-policy'));
   for (const policy of [{ plannedAcceptedAsConfirmed: 'true' }, { plannedAcceptedAsConfirmed: 1 }, {}, null]) {
     assert.equal(candidates(observation, { policy }).candidates[0].acceptance, 'awaiting-user-policy');
+  }
+  // An inherited flag is not the user's explicit policy.
+  Object.prototype.plannedAcceptedAsConfirmed = true;
+  try {
+    assert.equal(candidates(observation, { policy: {} }).candidates[0].acceptance, 'awaiting-user-policy');
+  } finally {
+    delete Object.prototype.plannedAcceptedAsConfirmed;
   }
   const accepted = candidates(observation, { policy: { plannedAcceptedAsConfirmed: true } });
   const [candidate] = accepted.candidates;
@@ -311,7 +328,7 @@ test('raw PLANNED stays separate from user-policy acceptance; the import veto su
   assert.equal(unvetoed.error, 'invalid-record');
 });
 
-test('CANCELLED and unknown confirmations are never accepted, even with the user policy', async () => {
+test('CANCELLED and unknown confirmations are never accepted; display must match the raw status', async () => {
   for (const [raw, acceptance, display, pending] of [
     ['CANCELLED', 'not-accepted-cancelled', 'Cancelada', 'status-cancelled'],
     ['Cancelled', 'not-accepted-cancelled', 'Cancelada', 'status-cancelled'],
@@ -326,6 +343,13 @@ test('CANCELLED and unknown confirmations are never accepted, even with the user
     assert.equal(candidate.acceptanceBasis, null);
     assert.equal(candidate.providerConfirmation, 'not-observed');
     assert.equal(candidate.pending[0], pending);
+  }
+  const observation = await observe();
+  const [reservation] = observation.reservations;
+  for (const status of [{ raw: 'Planned', display: 'Confirmada pelo hotel' }, { raw: 'Cancelled', display: 'Planejada' }, { raw: 'Planned', display: 'Planejada', extra: true }]) {
+    const result = candidates({ ...observation, reservations: [{ ...reservation, status }] }, { policy: { plannedAcceptedAsConfirmed: true } });
+    assert.equal(result.error, 'invalid-observation');
+    assert.equal(result.candidates.length, 0);
   }
 });
 
@@ -399,42 +423,60 @@ test('invalid calendar wall values and DST gaps/overlaps stay unresolved instead
 
 test('scope, session, identity, freshness and contract drift fail closed without partial candidates', async () => {
   const observation = await observe([['AAA', 'MAO']]);
-  const expected = { accountId: observation.accountId, requestId: observation.requestId };
-  const run = options => mapMyCrewCareObservedCandidates({ observation, expected, observedAt: AT, now: NOW, ...options });
+  const expected = expectedFor(observation);
+  const run = options => mapMyCrewCareObservedCandidates({ observation, expected, now: NOW, ...options });
   const empty = result => { assert.equal(result.candidates.length, 0); assert.equal(result.operationalImportAllowed, false); return result.error; };
   assert.equal(empty(run({ expected: null })), 'invalid-scope');
-  assert.equal(empty(run({ expected: { accountId: observation.accountId } })), 'invalid-scope');
+  assert.equal(empty(run({ expected: { accountId: binding.accountId, requestId: observation.requestId } })), 'invalid-scope');
+  assert.equal(empty(run({ freshForMs: Infinity })), 'invalid-scope');
+  assert.equal(empty(run({ now: NaN })), 'invalid-scope');
   assert.equal(empty(run({ expected: { ...expected, accountId: 'synthetic-B' } })), 'identity-mismatch');
+  assert.equal(empty(run({ expected: { ...expected, sessionId: 'synthetic-session-A2' } })), 'identity-mismatch');
   const older = await observe([['AAA', 'MAO']]);
   assert.notEqual(older.requestId, observation.requestId);
   assert.equal(empty(run({ expected: { ...expected, requestId: older.requestId } })), 'identity-mismatch');
+  // Account switch: an observation of A never maps under B's binding.
+  const switched = { accountId: 'synthetic-B', sessionId: 'session-B', requestId: observation.requestId };
+  assert.equal(empty(run({ expected: switched })), 'identity-mismatch');
   // A session mismatch inside the coordinator never yields an observation to map.
-  const mismatched = createMyCrewCareObservedCoordinator({ acquire: async request => ({ ...response(request), sessionId: request.kind === 'detail' ? 'other-session' : request.scope.sessionId }) });
+  const mismatched = createMyCrewCareObservedCoordinator({ acquire: async request => ({ ...response(request), sessionId: request.kind === 'detail' ? 'other-session' : request.scope.sessionId }), clock: () => NOW });
   mismatched.bind(binding);
-  assert.equal(empty(mapMyCrewCareObservedCandidates({ observation: await mismatched.read(), expected, observedAt: AT, now: NOW })), 'invalid-observation');
-  // Freshness uses an explicit observation time, never a default clock.
-  assert.equal(empty(run({ observedAt: undefined })), 'invalid-observed-at');
-  assert.equal(empty(run({ observedAt: '2031-11-19T12:00' })), 'invalid-observed-at');
-  assert.equal(empty(run({ observedAt: new Date(NOW + 30_001).toISOString() })), 'invalid-observed-at');
-  assert.equal(empty(run({ observedAt: new Date(NOW - 7 * 86_400_000 - 1).toISOString() })), 'expired-observation');
-  assert.equal(run({ observedAt: new Date(NOW - 7 * 86_400_000).toISOString() }).dataState, 'cached');
-  assert.equal(run({ observedAt: new Date(NOW - 16 * 60_000).toISOString() }).dataState, 'cached');
-  assert.equal(run({ observedAt: new Date(NOW - 15 * 60_000).toISOString() }).dataState, 'fresh');
-  // Veto removal, supplied zone/date or duplicate identity is contract drift: whole read rejected.
+  assert.equal(empty(mapMyCrewCareObservedCandidates({ observation: await mismatched.read(), expected, now: NOW })), 'invalid-observation');
+  // Freshness uses only the coordinator's completion stamp.
+  const { observedAt: _stamp, sessionId: _session, ...unstamped } = observation;
+  assert.equal(empty(run({ observation: unstamped })), 'invalid-observation');
+  assert.equal(empty(run({ observation: { ...observation, observedAt: undefined } })), 'invalid-observed-at');
+  assert.equal(empty(run({ observation: { ...observation, observedAt: '2031-11-19T12:00' } })), 'invalid-observed-at');
+  assert.equal(empty(run({ now: NOW - 30_001 })), 'invalid-observed-at');
+  assert.equal(empty(run({ now: NOW + 7 * 86_400_000 + 1 })), 'expired-observation');
+  assert.equal(run({ now: NOW + 7 * 86_400_000 }).dataState, 'cached');
+  assert.equal(run({ now: NOW + 16 * 60_000 }).dataState, 'cached');
+  assert.equal(run({ now: NOW + 15 * 60_000 }).dataState, 'fresh');
+  // Veto removal, supplied zone/date, extra keys, coercible or throwing values: whole read rejected.
   const [reservation] = observation.reservations;
+  const throwing = { ...reservation };
+  Object.defineProperty(throwing, 'hotelName', { enumerable: true, get() { throw new Error('synthetic getter'); } });
   for (const reservations of [
     [{ ...reservation, timeZone: 'America/Sao_Paulo' }],
     [{ ...reservation, operationalImportAllowed: true }],
+    [{ ...reservation, reservationStartAt: '2031-11-20T02:30:00Z' }],
     [{ ...reservation, transportToAirport: { ...reservation.transportToAirport, explicitPickupDate: '2031-11-20' } }],
+    [{ ...reservation, transportToAirport: { ...reservation.transportToAirport, pickupAt: '2031-11-20T11:05:00Z' } }],
+    [{ ...reservation, transportToAirport: { ...reservation.transportToAirport, pickupWallTime: ['07:05'] } }],
     [{ ...reservation, transportToHotel: null }],
     [{ ...reservation, status: { raw: '', display: '' } }],
+    [{ ...reservation, checkInWallDateTime: [reservation.checkInWallDateTime] }],
+    [{ ...reservation, checkInWallDateTime: { toString: () => reservation.checkInWallDateTime } }],
+    [{ ...reservation, airport: ' MAO' }],
     [{ ...reservation, checkOutWallDateTime: reservation.checkInWallDateTime }],
+    [throwing],
     [reservation, { ...reservation, providerReservationId: '900000002' }, reservation],
     [],
   ]) {
-    assert.equal(empty(mapMyCrewCareObservedCandidates({ observation: { ...observation, reservations }, expected, observedAt: AT, now: NOW })), 'invalid-observation');
+    assert.equal(empty(run({ observation: { ...observation, reservations } })), 'invalid-observation');
   }
-  assert.equal(empty(mapMyCrewCareObservedCandidates({ observation: { ...observation, operationalImportAllowed: true }, expected, observedAt: AT, now: NOW })), 'invalid-observation');
-  const two = mapMyCrewCareObservedCandidates({ observation: { ...observation, reservations: [{ ...reservation, providerReservationId: '900000002' }, reservation] }, expected, observedAt: AT, now: NOW });
-  assert.deepEqual(two.candidates.map(candidate => candidate.providerReservationId), ['900000001', '900000002']);
+  assert.equal(empty(run({ observation: { ...observation, operationalImportAllowed: true } })), 'invalid-observation');
+  assert.equal(empty(run({ observation: { ...observation, pickupDate: '2031-11-20' } })), 'invalid-observation');
+  const ordered = run({ observation: { ...observation, reservations: [{ ...reservation, providerReservationId: '10' }, { ...reservation, providerReservationId: '9' }] } });
+  assert.deepEqual(ordered.candidates.map(candidate => candidate.providerReservationId), ['9', '10']);
 });
