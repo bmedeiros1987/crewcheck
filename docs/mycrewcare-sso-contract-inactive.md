@@ -31,15 +31,26 @@ A API recebe apenas origem/caminho/método sanitizados e enums de fase/estrutura
 
 PASS: 2 testes Node; harness Java com 40 casos. Cobertura: fatos sanitizados; origem com sufixo, userinfo, porta explícita, HTTP; caminho codificado, variante, query/fragmento embutidos; método ausente/desconhecido/incorreto; fase e estrutura inconsistentes; ACS POST convertido em GET; calendário indevidamente usado como destino; IdP sem contrato; todas as classificações permanecem sem acesso. Segundo teste confere o patch contra a fonte fixture. git apply --check do patch: PASS. Não prova a política ativa nem WebView.
 
-RedirectInstrumentation.java e AndroidManifest.synthetic.xml são um ensaio separado, pacote lab.mcc, fora de sourceSets do app. Servidor em 127.0.0.1 com porta efêmera, formulário e corpo literais sintéticos; asserções de POST real → 302 → GET sem corpo, cookie HttpOnly no mesmo contexto e limpeza assíncrona. Usa loadUrl só para o GET inicial. Não instrumenta a Activity CrewCheck, não testa seu filtro de rotas, não prova SSO e não executa cleanup do Profile real.
+### Atualização do laboratório em 2026-10-22
 
-Compilação executada contra android-36/android.jar com javac -source 17 -target 17: PASS, warning de system modules path. --release 17 não é suportado no JDK reduzido deste ambiente; não alegamos compilação com essa opção. Execução instrumental: NÃO EXECUTADA.
+O ensaio original usava CookieManager global e não provava o Profile real. Foi substituído
+por projeto Android isolado, com Activity própria e fonte original inalterada de
+CrewCheckMyCrewCareProfile incluída por source-set e hash verificado. O plano cobre
+cookies A/B, destruir/recriar views, clear real com callback, sessionStorage sem cópia,
+302/307/308 e resultado conservador após cancelamento/timeout/callback tardio.
 
-Bloqueio: sem SDK/emulator, SDK/system-images ou /dev/kvm; adb aborta ao criar /home/agent/.android read-only, inclusive com ANDROID_USER_HOME e ANDROID_PREFS_ROOT locais. Não foi possível enumerar dispositivos. Sem escalada ou contorno. Main não possui workflow com emulator/connectedAndroidTest/instrumentation; AndroidJUnitRunner declarado em Wear não fornece execução instrumental. Nenhuma nova configuração CI, serviço, permissão ou custo foi criada.
+Veja [laboratório de sessão OFF](mycrewcare-session-lab-off.md) para fontes/proveniência,
+asserções, comandos e limites. Os testes JVM dos helpers não são execução Android.
+O workflow MCC existente recebe compilação isolada sem APK/instalação; instrumentação
+continua NÃO EXECUTADA enquanto não houver executor descartável autorizado com rede
+já isolada. Nenhuma permissão/custo/serviço/contrato SSO foi criado ou ampliado.
 
 ## Mínimo que falta e obtenção prática
 
-1. Ambiente Android descartável, sem contas reais, com API26+ (preferir36), WebView instalado/ativo, adb funcional e diretório Android provisionado gravável. Um operador autorizado deve provisionar esse ambiente; não mudar permissões do ambiente bloqueado como atalho. Empacotar somente lab.mcc em projeto Android isolado com as duas fontes fornecidas, instalar nesse ambiente e rodar `adb shell am instrument -w lab.mcc/lab.mcc.RedirectInstrumentation`. Guardar somente saída PASS/FAIL, API Android e versão WebView. O manifest cleartext é só para loopback desse teste, jamais para CrewCheck. Não exige provedor, credenciais ou rede externa.
+1. Executar o laboratório real-Profile conforme o documento ligado acima, somente em
+executor descartável autorizado já provisionado e isolado. Compilação e testes JVM não
+substituem essa evidência; não instalar no dispositivo real do usuário nem mudar
+permissões/rede de um ambiente bloqueado para contornar a ausência de executor.
 2. Contrato confiável do tenant IdP, caminhos/métodos e subrecursos necessários, e contrato do identificador de parceiro. Solicitar ao responsável técnico do provedor uma especificação estática sanitizada dos endpoints e regras de validação/correlação. Não pedir URL da barra, HAR, cookies, tenant/PartnerIdpId copiados da autenticação, assertions ou valores de query. Se as regras não puderem ser fornecidas por fonte aprovada, manter essa parte bloqueada. Não adivinhar tenant nem aceitar qualquer UUID/host.
 3. Revisão da arquitetura de validação de retorno: como conferir a rota e o nome da chave sem copiar, registrar ou entregar seu valor opaco ao código nativo. Não alegar que a API sanitizada resolve sozinha a criação segura desses campos no Android. SAML permanece validado pelo broker/IdP, não pelo app.
 4. Depois de contrato completo e revisão específica: testes da política efetiva e do WebView real para POST (shouldOverrideUrlLoading não cobre POST), redirects 302/307/308 distintos, origens externas e métodos inesperados, cookies/contexto, cancelamento, timeout e limpeza sem sucesso tardio. Não usar callbacks como firewall de rede nem converter POST em loadUrl/GET.
