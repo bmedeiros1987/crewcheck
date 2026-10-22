@@ -123,19 +123,22 @@ const served=[];
 const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://localhost'),p=u.pathname;const base=p==='/'||p==='/fixture.js'?output:dist,file=path.resolve(base,'.'+(p==='/'?'/index.html':p));if(req.method!=='GET'||!allowed.has(p+u.search)||!file.startsWith(base+path.sep)||!fs.existsSync(file)){res.writeHead(403).end();return}served.push({path:p+u.search,method:req.method});res.setHeader('Content-Type',p.endsWith('.js')?'text/javascript':p.endsWith('.css')?'text/css':p.endsWith('.png')?'image/png':p.endsWith('.jpg')?'image/jpeg':p.endsWith('.svg')?'image/svg+xml':'text/html');res.setHeader('Cache-Control','no-store');fs.createReadStream(file).pipe(res)});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${server.address().port}`;
 const require=createRequire(process.env.RADAR_PLAYWRIGHT_PACKAGE||import.meta.url);
-let browser;const results=[],network=[];let activePage;
+let browser;const results=[],network=[];let activePage,activeResult;
 const intersects=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
 try{
   browser=await require('playwright').chromium.launch({headless:true});
   const scenarios=[...([320,390,430,1440].flatMap(width=>['light','dark'].map(theme=>({width,theme,text:100})))),...([320,390].flatMap(width=>['light','dark'].map(theme=>({width,theme,text:200}))))];
   for(const s of scenarios){
     const name=`${s.width}-${s.theme}-${s.text}`,ctx=await browser.newContext({viewport:{width:s.width,height:844},deviceScaleFactor:1,serviceWorkers:'block',timezoneId:'UTC',colorScheme:s.theme,reducedMotion:'reduce'});
+    activeResult={scenario:name,status:'running',stage:'initial render'};results.push(activeResult);
     const denied=[],errors=[];
+    activeResult.browserErrors=errors;activeResult.deniedRequests=denied;
+    try{
     await ctx.route('**/*',async route=>{const req=route.request(),entry={scenario:name,url:req.url(),method:req.method(),type:req.resourceType(),body:req.postData()};const policy=requestPolicy(entry,origin,allowed);network.push({...entry,body:entry.body?'[rejected payload]':null,...policy});if(!policy.allow){if(!policy.baseline)denied.push(entry.url);return route.abort()}return route.continue()});
     await ctx.addInitScript(({theme,text})=>{if(!localStorage.getItem('radar-fixture-initialized')){localStorage.setItem('radar-fixture-initialized','1');localStorage.setItem('crewcheck_auth_token','synthetic-radar-token-a');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-radar-a',name:'Synthetic QA',email:'synthetic@example.invalid'}));localStorage.setItem('crewcheck_followed_flights:v1:synthetic-radar-a',JSON.stringify([{eventId:'synthetic-followed-existing',flight:'ZZ98765A',origin:'SSA',destination:'GRU',scheduledDepartureUtc:'2030-10-21T13:00:00.000Z',date:'2030-10-21'}]));localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);localStorage.setItem('crewcheck:text-size:v1:synthetic-radar-a',String(text))}},s);
     const page=await ctx.newPage();activePage=page;page.setDefaultTimeout(12000);page.on('pageerror',e=>errors.push(e.message));await page.clock.setFixedTime(new Date('2030-10-21T12:00:00Z'));await page.goto(origin);await page.locator('.cc-followed-add').waitFor();await page.locator('.cc-manual-gate').waitFor();await page.waitForFunction(()=>document.querySelector('.cz-radar-screen')?.textContent.includes('Nenhuma fonte confirmou'));await page.waitForLoadState('networkidle');
     const panel=page.locator('[data-followed-flights]');assert.match(await panel.innerText(),/Sem dados operacionais válidos no cache/);
-    const addTarget=await page.locator('.cc-followed-add').evaluate(e=>{const r=e.getBoundingClientRect(),style=getComputedStyle(e);return {width:r.width,height:r.height,border:parseFloat(style.borderTopWidth)}});assert(addTarget.width>=43.9&&addTarget.height>=43.9,`${name}: follow target below 44px`);assert(addTarget.border<=1.5,`${name}: excessive follow-selection border`);
+    const addTarget=await page.locator('.cc-followed-add').evaluate(e=>{const r=e.getBoundingClientRect(),style=getComputedStyle(e);return {width:r.width,height:r.height,border:parseFloat(style.borderTopWidth)}});activeResult.addTarget=addTarget;activeResult.stage='follow target';assert(addTarget.width>=43.9&&addTarget.height>=43.9,`${name}: follow target below 44px`);assert(addTarget.border<=1.5,`${name}: excessive follow-selection border`);
     const refresh=page.getByRole('button',{name:'Atualizar Radar e card',exact:true});
     const beforeRefresh=await page.evaluate(()=>window.__radarCalls.length);await refresh.click();await refresh.click();
     assert.equal(await page.evaluate(()=>window.__radarCalls.length),beforeRefresh+2,'repeated refresh uses the unchanged mock transport boundary');assert.equal(await page.evaluate(()=>window.__radarCalls.slice(-2).every(call=>call.force===true)),true);
@@ -146,15 +149,22 @@ try{
       const targets=[...document.querySelectorAll('.cz-radar-screen summary,.cc-radar-actions button,.cc-followed-list button,.cc-followed-list summary,.cc-manual-gate input,.cc-manual-gate button,.cz-bottom-nav button')].map(e=>({label:e.getAttribute('aria-label')||e.textContent||e.getAttribute('id'),...rect(e)}));
       const textSelectors=['.cz-panel-head h1','.cz-panel-head p','.cz-radar-screen h2','.cz-radar-screen p','.cz-radar-screen strong','.cz-radar-screen span','.cc-radar-sources summary','.cc-radar-actions button','.cc-followed-list h2','.cc-followed-identity strong','.cc-followed-date','.cc-followed-row p','.cc-followed-meta small','.cc-followed-stop','.cc-followed-list summary','.cc-manual-gate h2','.cc-manual-gate>p','.cc-manual-gate label','.cc-manual-gate input','.cc-manual-gate button'];
       const textSizes=Object.fromEntries(textSelectors.map(selector=>[selector,parseFloat(getComputedStyle(document.querySelector(selector)).fontSize)]));
-      return {scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth,rows,targets,textSizes,actions:[...document.querySelectorAll('.cc-radar-actions button')].map(e=>e.textContent.trim()),textScale:getComputedStyle(document.documentElement).getPropertyValue('--cc-text-scale')};
+      const actionLabels=[...document.querySelectorAll('.cc-radar-actions button')].map(button=>{const ranges=[],walker=document.createTreeWalker(button,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){const text=node.textContent,first=text.search(/\S/);if(first<0)continue;const range=document.createRange();range.setStart(node,first);range.setEnd(node,text.trimEnd().length);for(const r of range.getClientRects())ranges.push({left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height})}return {label:button.textContent.trim(),button:rect(button),ranges}});
+      return {scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth,rootFontSize:parseFloat(getComputedStyle(document.documentElement).fontSize),rows,targets,textSizes,actionLabels,actions:actionLabels.map(e=>e.label),textScale:getComputedStyle(document.documentElement).getPropertyValue('--cc-text-scale')};
     });
+    // Persist the current measurements before asserting so even a first-scenario
+    // failure leaves computed-font and geometry evidence, not an empty results file.
+    activeResult.layout=layout;activeResult.stage='layout assertions';
     assert(layout.scrollWidth<=layout.viewport+1,`${name}: horizontal document overflow`);assert.equal(Number(layout.textScale),s.text/100);
-    const normal=results.find(result=>result.scenario===`${s.width}-${s.theme}-100`);
+    const normal=results.find(result=>result.scenario===`${s.width}-${s.theme}-100`&&result.layout);
+    if(s.text===200)assert(normal,`${name}: missing measured 100% baseline; cannot validate text scaling`);
     for(const row of layout.rows){assert(row.dateFontSize>=13.9,`${name}: date below readable baseline`);if(s.text===200)assert(row.dateFontSize>=normal.layout.rows[0].dateFontSize*2-.1,`${name}: time element must respect 200% reading preference`)}
     if(s.text===200)for(const [selector,size] of Object.entries(layout.textSizes))assert(size>=normal.layout.textSizes[selector]*2-.1,`${name}: ${selector} did not respect 200% text (${normal.layout.textSizes[selector]} -> ${size})`);
     assert.deepEqual(layout.actions,['Atualizar','Consultar','Meteo']);
+    for(const label of layout.actionLabels){assert.equal(new Set(label.ranges.map(r=>Math.round(r.top))).size,1,`${name}: short action label broke across lines: ${label.label}`);for(const r of label.ranges)assert(r.left>=label.button.left-1&&r.right<=label.button.right+1,`${name}: action label exceeds button: ${label.label}`)}
     for(const row of layout.rows){assert(!intersects(row.identity,row.date),`${name}: route/date collide`);assert(!intersects(row.metadata,row.stop),`${name}: cache/Parar collide`);assert(row.date.top>=row.identity.bottom+2||row.date.left>=row.identity.right+6,`${name}: route/date need visible separation`);for(const box of [row.identity,row.date,row.metadata,row.stop])assert(box.left>=row.row.left-1&&box.right<=row.row.right+1,`${name}: followed content outside card`)}
     for(const target of layout.targets)assert(target.width>=43.9&&target.height>=43.9,`${name}: target below 44px ${target.label}: ${target.width}x${target.height}`);
+    activeResult.stage='keyboard disclosure and focus';
     for(const selector of ['.cc-radar-sources summary','.cc-followed-list summary']){
       const summary=page.locator(selector);await summary.focus();await page.keyboard.press('Space');assert.equal(await summary.evaluate(e=>e.parentElement.open),true);
       const focus=await summary.evaluate(e=>({active:document.activeElement===e,style:getComputedStyle(e).outlineStyle,width:parseFloat(getComputedStyle(e).outlineWidth)}));assert(focus.active&&focus.style!=='none'&&focus.width>=2,`${name}: visible keyboard focus required`);
@@ -163,8 +173,10 @@ try{
     await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(output,`${name}-radar.png`),fullPage:true});
     const last=page.locator('.cc-manual-gate form').last().locator('button[type=submit]');await last.focus();await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
     const clearance=await page.evaluate(()=>{const b=document.querySelector('.cc-manual-gate form:last-of-type button[type=submit]').getBoundingClientRect(),n=document.querySelector('.cz-bottom-nav').getBoundingClientRect();return {buttonTop:b.top,buttonBottom:b.bottom,navTop:n.top,navBottom:n.bottom,viewport:innerHeight}});
+    activeResult.clearance=clearance;activeResult.stage='manual footer clearance';
     assert(clearance.buttonTop>=0&&clearance.buttonBottom<=clearance.navTop-7,`${name}: last manual action obscured by footer ${JSON.stringify(clearance)}`);
     await page.screenshot({path:path.join(output,`${name}-manual-footer.png`)});
+    activeResult.stage='follow persistence and account fence';
     await page.reload();await page.locator('.cc-followed-row').first().waitFor();assert.equal(await page.locator('.cc-followed-row').count(),2,'following survives reload');
     // An old button cannot write under a different account or token.
     const aKey='crewcheck_followed_flights:v1:synthetic-radar-a',bKey='crewcheck_followed_flights:v1:synthetic-radar-b';
@@ -175,15 +187,23 @@ try{
     await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-radar-token-a');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-radar-a',name:'Synthetic QA'}))});await page.reload();await page.locator('.cc-followed-row').first().waitFor();
     const stop=page.getByRole('button',{name:'Parar acompanhamento de ZZ123 BSB para GIG',exact:true});await stop.click();await page.locator('.cc-followed-add').waitFor();assert.equal(await page.locator('.cc-followed-row').count(),1);await page.reload();await page.locator('.cc-followed-add').waitFor();assert.equal(await page.locator('.cc-followed-row').count(),1,'stopped candidate stays stopped after reload');
     // Same missing operational evidence must remain visibly missing after manual editing.
+    activeResult.stage='manual no-data honesty and navigation';
     await page.getByLabel('Status informado por você',{exact:true}).fill('Aguardando confirmação sintética');assert.match(await panel.innerText(),/Status sem dados/);assert.equal(await page.getByText('Fonte operacional com evidência válida',{exact:true}).count(),0);
     await page.evaluate(()=>window.__radarFixtureSetContext({sourceView:'cockpit',targetView:'radar',dateEpochMs:Date.parse(window.__radarFixtureEvent.canonical.startDateTime),programId:window.__radarFixtureEvent.id,flightKey:'ZZ123',airportCode:'BSB',returnView:'cockpit',returnLabel:'Voltar ao FlightDeck',policy:'persistent-until-return'}));
     await page.getByRole('button',{name:'Meteorologia',exact:true}).click();await page.getByRole('heading',{name:'Destino sintético: weather'}).waitFor();
     const handoff=await page.evaluate(()=>window.__radarFixtureContext('weather'));assert.equal(handoff?.programId,'synthetic-radar-current');assert.equal(handoff?.returnView,'cockpit');
     await page.getByRole('button',{name:'Voltar ao Radar',exact:true}).click();await page.locator('.cc-followed-add').waitFor();assert.equal(await page.getByLabel('Status informado por você',{exact:true}).inputValue(),'','unsaved draft does not leak after navigation');
     assert.deepEqual(errors,[],`${name}: browser errors`);assert.deepEqual(denied,[],`${name}: unexpected request attempted`);
-    results.push({scenario:name,layout,clearance,addTarget,checks:['no overflow','route/date separation','cache/stop separation','44px targets including footer','subtle follow border','short actions','keyboard disclosure/focus','footer clearance','repeated refresh','follow/reload/stop','stale account/session fence','manual no-data honesty','canonical weather context handoff','navigation clears unsaved draft']});
-    await ctx.close();activePage=null;console.log(`PASS Radar ${name}: layout, keyboard, 44px targets, footer, follow persistence and account fence`);
+    activeResult.checks=['no overflow','route/date separation','cache/stop separation','44px targets including footer','subtle follow border','short unbroken actions','keyboard disclosure/focus','footer clearance','repeated refresh','follow/reload/stop','stale account/session fence','manual no-data honesty','canonical weather context handoff','navigation clears unsaved draft'];activeResult.status='passed';activeResult.stage='complete';
+    console.log(`PASS Radar ${name}: layout, keyboard, 44px targets, footer, follow persistence and account fence`);
+    }catch(error){
+      activeResult.status='failed';activeResult.error={name:error.name,message:error.message};
+      if(activePage)await activePage.screenshot({path:path.join(output,`${name}-failure.png`),fullPage:true}).catch(()=>{});
+      console.log(`FAIL Radar ${name} (${activeResult.stage}): ${error.message}`);
+    }finally{await ctx.close();activePage=null;activeResult=null}
   }
-}catch(error){if(activePage)await activePage.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});throw error}
+  assert.equal(results.length,scenarios.length,'Every declared scenario must produce a result');
+  assert.deepEqual(results.filter(result=>result.status!=='passed').map(result=>({scenario:result.scenario,stage:result.stage,error:result.error})),[],'Radar scenario failures (all scenarios collected; no failure suppressed)');
+}catch(error){if(activeResult){activeResult.status='failed';activeResult.error={name:error.name,message:error.message}}if(activePage)await activePage.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});throw error}
 finally{fs.writeFileSync(path.join(output,'source.json'),JSON.stringify(evidence,null,2));fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));fs.writeFileSync(path.join(output,'network-audit.json'),JSON.stringify({requests:network,served},null,2));if(browser)await browser.close();await new Promise(resolve=>server.close(resolve))}
 console.log(`PASS ${results.length} actual prepared Radar scenarios; synthetic data, mocked unavailable provider boundary, zero external network sent`);
