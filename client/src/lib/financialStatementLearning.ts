@@ -314,10 +314,20 @@ export function mergeConfirmedRates(current: LearnedRate[], incoming: LearnedRat
   return result.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.key.localeCompare(b.key) || (a.revision || 1) - (b.revision || 1));
 }
 export function rateAt(rates: LearnedRate[], key: string, date: string, currency?: LearnedRate['currency']): LearnedRate | null {
-  // Select the revision first. A shortened correction must not resurrect a superseded tariff.
-  const latest = rates.filter(entry => entry.confirmed && entry.key === key && (currency === undefined || entry.currency === currency) && entry.effectiveFrom <= date)
-    .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom) || (b.revision || 1) - (a.revision || 1))[0];
-  return latest?.effectiveTo && latest.effectiveTo >= date ? latest : null;
+  // Select the revision first: only the latest revision of each scope (key, currency,
+  // start — exactly what mergeConfirmedRates revises) is eligible, so a shortened
+  // correction never resurrects its superseded tariff. Scopes with different starts
+  // then compete by most recent start among those still in force on `date`.
+  // The stored model has no source identity: two documents with the same start are
+  // revisions of one scope (latest governs, earlier never resumes), never merged.
+  const latestByScope = new Map<string, LearnedRate>();
+  for (const entry of rates) {
+    if (!entry.confirmed || entry.key !== key || (currency !== undefined && entry.currency !== currency) || entry.effectiveFrom > date) continue;
+    const scope = entry.currency + '|' + entry.effectiveFrom, current = latestByScope.get(scope);
+    if (!current || (entry.revision || 1) > (current.revision || 1)) latestByScope.set(scope, entry);
+  }
+  return [...latestByScope.values()].filter(entry => entry.effectiveTo && entry.effectiveTo >= date)
+    .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom) || (b.revision || 1) - (a.revision || 1))[0] ?? null;
 }
 
 // Legacy values remain untouched, but their unknown owner is never inferred or migrated.
