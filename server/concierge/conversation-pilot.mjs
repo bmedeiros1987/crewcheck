@@ -1,38 +1,19 @@
+import { classifyConversation, containsConversationInstruction } from "../../shared/concierge-conversation-intent.mjs";
+export { conversationIntent } from "../../shared/concierge-conversation-intent.mjs";
 import { createHash } from 'node:crypto';
 import { buildDutyFacts } from './duty-facts.mjs';
 import { PROVIDER_LIMITS, READ_TOOLS } from './conversation-provider.mjs';
 
 const unavailable = () => ({ state: 'unavailable', mode: 'deterministic', facts: [], reply: 'Não há fatos autorizados e atuais para esta consulta. Consulte a escala publicada.' });
-const injection = /ignore\s+(?:(?:all|as|todas|previous|prior|anteriores)\s+)*(?:instructions|instru[çc][õo]es)|(?:system|developer)\s*(?:prompt|message)|<\/?(?:system|assistant|tool)>|\b(?:execute|exfiltrate)\b/i;
 const digest = value => createHash('sha256').update(value).digest('hex');
 const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 160;
 const instant = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(value) && Number.isFinite(Date.parse(value));
 
-const clarification = 'Você quer a apresentação no aeroporto, a APZ do hotel ou a saída da van? São horários diferentes. Hotel e van dependem de uma fonte autorizada, ainda indisponível neste piloto.';
-function classify(text) {
-  if (typeof text !== 'string' || text.length > 500 || injection.test(text)) return { kind: 'unsupported' };
-  const value = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/[?!.]+$/, '').trim()
-    .replace(/\b(?:proxma|proximaa|prx|prox)\b/g, 'proxima').replace(/\bjoranda\b/g, 'jornada').replace(/\bescalla\b/g, 'escala');
-  if (/\b(?:financeiro|diarias|salario|receber|radar|metar|conformidade|legal|amanha|hoje|ontem|depois|conta|email|usuario)\b/.test(value)) return { kind: 'unsupported' };
-  if (/\b(?:hotel|van|pickup|apz|apresentacao)\b/.test(value)) {
-    if (!/\baeroporto\b/.test(value) || /\b(?:hotel|van|pickup)\b/.test(value)) return { kind: 'clarify', reply: clarification };
-    if (/^(?:e |e a |e o )/.test(value)) return { kind: 'continuation' };
-    if (/\b(?:proxima|proximo|seguinte)\b/.test(value)) return { kind: 'read', intent: 'nextDuty.read' };
-    return { kind: 'clarify', reply: 'Qual programação você quer consultar? Informe se é a próxima jornada. Apresentação no aeroporto não é APZ do hotel nem saída da van.' };
-  }
-  if (/^(?:e (?:o horario|a jornada|essa programacao))$/.test(value)) return { kind: 'continuation' };
-  if (value === '/proximo' || (/\b(?:proxima|proximo|seguinte)\b/.test(value) && /\b(?:jornada|escala|programacao)\b/.test(value))) return { kind: 'read', intent: 'nextDuty.read' };
-  if (value === '/escala' || (/\bescala\b/.test(value) && /\b(?:minha|ver|mostra|mostre|resumo|resume)\b/.test(value))) return { kind: 'read', intent: 'schedule.read' };
-  return { kind: 'unsupported' };
-}
-export function conversationIntent(text) {
-  return classify(text).intent || null;
-}
 
 function hasInjection(value) {
-  if (typeof value === 'string') return injection.test(value);
+  if (typeof value === 'string') return containsConversationInstruction(value);
   if (!value || typeof value !== 'object') return false;
-  return Object.entries(value).some(([key, child]) => injection.test(key) || hasInjection(child));
+  return Object.entries(value).some(([key, child]) => containsConversationInstruction(key) || hasInjection(child));
 }
 
 function render(facts, source, now, intent, more) {
@@ -55,7 +36,7 @@ function render(facts, source, now, intent, more) {
  */
 export function createConversationPilot({ readContext, isCurrent, provider = null, clock = Date.now } = {}) {
   return async function answer(text) {
-    const request = classify(text);
+    const request = classifyConversation(text);
     if (request.kind === 'unsupported') return null; // Existing CrewCierge retains unsupported intents.
     if (request.kind === 'clarify') return { state: 'clarification', mode: 'deterministic', facts: [], reply: request.reply };
     let intent = request.intent;
@@ -87,7 +68,9 @@ export function createConversationPilot({ readContext, isCurrent, provider = nul
       // any non-confirmed status blocks this pilot rather than inventing it.
       const days = snapshot.roster?.days;
       if (!Array.isArray(days) || days.length > 370 || days.some(day => !day || !Array.isArray(day.legs) || day.legs.length > 12
-        || [day, ...day.legs].some(row => !row || (row.status != null && String(row.status).trim().toLowerCase() !== 'confirmed')))) return unavailable();
+        || [day, ...day.legs].some(row => !row || (row.status != null && String(row.status).trim().toLowerCase() !== 'confirmed')
+          || (row.isNextDay != null && typeof row.isNextDay !== 'boolean')
+          || ['presentationTimeSource', 'departureTimeSource', 'arrivalTimeSource'].some(key => row[key] != null && row[key] !== 'published')))) return unavailable();
       const result = buildDutyFacts({ profile: context.profile, snapshot, accessAllowed: true });
       if (!['available', 'no_data'].includes(result.state)) return unavailable();
       const duties = result.items.filter(row => row.kind === 'duty');

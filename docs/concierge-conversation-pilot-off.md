@@ -1,6 +1,6 @@
 # CrewCierge: piloto de contrato conversacional, sem ativação
 
-Base exata: main `6269b5100a5db25fbcd90696747cd95829221795` (reconfirmada após a recuperação do executor). Branch: `codex/concierge-conversation-offline-20261022`. Este incremento acrescenta somente dois módulos, uma regressão e este documento. Não cria outro chat, endpoint, conta, chave, OAuth, dependência, infraestrutura, gravação, notificação, configuração ou integração operacional.
+Base exata: main `6269b5100a5db25fbcd90696747cd95829221795` (reconfirmada após a recuperação do executor). Branch: `codex/concierge-conversation-offline-20261022`. Este incremento acrescenta contratos isolados de servidor/cliente, um classificador compartilhado, regressões e CI de fixtures. Não cria outro chat, endpoint, conta, chave, OAuth, dependência de aplicação, infraestrutura de produção, gravação, notificação ou integração operacional.
 
 ## Entrega e limites
 
@@ -30,7 +30,13 @@ Bloqueio de composição comprovado: #1135 permanece aberta no HEAD `373b2bb2839
 
 O endpoint `POST /api/telegram/concierge/ask` não é uma ferramenta read-only: o código atual pode salvar localização e despachar handlers com rede/gravação. Ele não é chamado pelo piloto. A #864 continua sendo trabalho distinto de canal OpenClaw; #909/#910 pertencem à preparação/autenticação de briefing; #656 ao regulatório; #938 a transporte; #1154 a consentimento financeiro. Segurança #1201 e MyCrewCare #1202 permanecem com seus responsáveis.
 
-## Offline no cliente: etapa pendente, sem alegação de entrega completa
+## Offline no cliente: módulo testado; ligação à tela ainda pendente
+
+`client/src/lib/crewCiergeLocal.ts` é um leitor real de navegador, sem provider, import de servidor, rede, timer ou gravação. Reutiliza `canonicalRoster.ts`, `measureCanonicalDuty` e `publishedDutyEndpoints`. O mesmo classificador de intenção é compartilhado com o servidor em `shared/concierge-conversation-intent.mjs`. Seu host fornece `identity`, `readSnapshot(owner)` e `isCurrent(binding)` a partir da seleção local existente. O envelope de entrada é uma projeção em memória, não uma nova chave de cache: `{version:1,kind:'locally-selected-roster',owner,revision,capturedAt,roster}`. `sessionEpoch` é uma geração opaca do host, nunca o token de login. SHA256 do conteúdo é calculado pelo WebCrypto local e revalidado com conta/sessão/revisão após o await.
+
+O módulo rotula fonte salva, captura, consulta e fuso; limita idade a sete dias e exige evidência canônica disponível. Datas completas inválidas, duplicatas de dia/perna, indicadores de injection, status não confirmado, fontes de relógio explicitamente estimadas, rollover inválido, offsets textuais e registros preservados que esta fatia não certifica ficam indisponíveis. É uma política conservadora de aceitação, sem novos cálculos ou reparos. Ausência não vira zero. Contexto de continuação vale por até dois minutos e inclui a seleção: atravessar o fim de uma jornada não troca silenciosamente para outra. Portão/status/meteo não são expostos como ao vivo.
+
+A regressão `scripts/regression-crewcierge-local-browser.mjs` empacota o módulo real com o esbuild já existente e usa um Playwright externo de teste. Depois de carregar somente a página local de fixture, desativa a rede do Chromium, exige `navigator.onLine === false`, bloqueia fetch/XHR/WebSocket, recusa todas as gravações em Storage e verifica duas contas, dados ausentes/corruptos, contexto, APZ e mudanças de sessão/revisão. São 40 verificações por fuso. Isso prova o módulo isolado em navegador, não a tela existente completa.
 
 O app atual tem `askTelegramConcierge` em `client/src/pages/Home.tsx`, que faz POST em `/api/telegram/concierge/ask`; `TelegramConciergeView.ask` chama essa função. `refresh` também busca vínculo e snapshot no servidor. Portanto o fallback determinístico deste módulo de servidor **não permite conversar com o app sem rede**. Módulos Node (`node:crypto` e a ponte canônica gerada) não devem ser importados diretamente no navegador.
 
@@ -41,7 +47,7 @@ Próxima fatia, com coordenação do owner de Home/#1135:
 3. Não tratar portão, status ou meteo salvos como ao vivo. Nenhum desses domínios está exposto neste piloto. Sem fonte atual, manter dado salvo rotulado ou indisponível segundo o contrato do domínio.
 4. Executar a tela real em navegador com rede desabilitada, dados fictícios já locais, fetch/XHR/WebSocket proibidos e IA ausente. Provar paráfrases, contexto, desconhecidos, APZ ambígua, ausência/corrupção do cache, duas contas, logout e troca de escala, sem gravação cruzada. Nenhum service worker global deve ser alterado sem coordenação.
 
-Essa validação de navegador offline não foi executada e não é substituída por bloquear `fetch` em testes Node. WhatsApp é etapa posterior e não foi conectado.
+A validação do módulo em navegador offline foi executada; a da tela existente sem rede permanece pendente. Bloquear apenas `fetch` em Node não a substituiria. WhatsApp é etapa posterior e não foi conectado. A auditoria com trechos, contratos ausentes e proposta de ligação está em [concierge-conversation-integration-audit.md](concierge-conversation-integration-audit.md).
 
 ## Verificação e ativação futura
 
@@ -52,8 +58,14 @@ node scripts/regression-conversation-pilot.mjs
 node scripts/regression-concierge-journey-programs.mjs
 node --check server/concierge/conversation-pilot.mjs
 node --check server/concierge/conversation-provider.mjs
+# Playwright/Chromium já instalados, selecionados por ambiente de teste:
+node scripts/regression-crewcierge-local-browser.mjs
 ```
 
 A regressão gera apenas os artefatos descartáveis da ponte canônica existente; não incluir `server/concierge/generated` no commit. As fixtures usam identidades `.example.test`, escala inventada, relógio injetado e transporte de memória. O primeiro teste negativo de proveniência foi corrigido: uma APZ explícita da perna continuava sendo prova válida apesar da fonte estimada do dia; o negativo agora remove essa prova antes de exigir indisponível. Não se mudou o motor para satisfazer um oracle incorreto.
 
-Não executados: build/TypeScript completos (npm/compilador de projeto indisponíveis neste executor), preparação global, navegador offline, aparelho, CI remoto, autenticação real e qualidade/compatibilidade de modelo real. Os testes deste contrato não aprovam #1135 ou qualquer PR paralela. Qualquer ativação futura exige composição revisada com os owners, leitura autenticada e read-only real, cliente offline validado, política de privacidade/minimização, limites reais do modelo/transportes e autorização específica para uso de dados e chamadas. Não configurar conta/chave/secrets agora. Manter DRAFT; sem merge, deploy ou loja.
+TypeScript completo nas fontes originais e preparadas e build canônico foram executados em cópia temporária. O runtime Node embutido do app recusou a assinatura do addon Rollup; o build passou com Node oficial 24.19.0, obtido em /tmp e conferido pelo SHASUMS oficial, sem alterar dependências. O executor sandbox também bloqueou leituras de arquivos; os processos identificados desta verificação foram encerrados antes da repetição com leitura normal. Alterar fontes depois da preparação reproduziu a falha herdada v1396; a cópia final é congelada antes de check/build. Nenhum materializador/gate foi alterado para contornar essas condições.
+
+A CI do primeiro HEAD `631f80420bba5784de2d438b897e5173160e4e86` terminou com oito workflows success, um skipped e Web validation failure no audit: DOMPurify <=3.4.16, com dois achados críticos agregados incluindo o dependente jsPDF. É o pacote herdado da base, correção pertencente à #1201, que permanece aberta. Não se copiou seu fix, não se rodou audit fix e não se enfraqueceu o audit. O workflow novo executa fixtures raw/prepared em três fusos e build; o gate de segurança compartilhado continua independente e obrigatório.
+
+Não executados: tela CrewCierge real offline, aparelho, autenticação real e qualidade/compatibilidade de modelo real. Os testes deste contrato não aprovam #1135 ou qualquer PR paralela. Qualquer ativação futura exige composição revisada com os owners, leitura autenticada e read-only real, tela offline validada, política de privacidade/minimização, limites reais do modelo/transportes e autorização específica para uso de dados e chamadas. Não configurar conta/chave/secrets agora. Manter DRAFT; sem merge, deploy ou loja.

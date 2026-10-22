@@ -128,7 +128,7 @@ await test('status and invalid publication evidence fail closed', async () => {
     const snap = snapshot(); snap.roster.days[0].legs[0].status = status;
     assert.equal((await pilot({ snap })(question)).state, 'unavailable');
   }
-  for (const mutate of [d => { d.date = '2032-10-10'; }, d => { d.dutyReportSource = 'estimated'; d.legs[0].presentationTime = null; }, d => { d.dutyDebriefSource = 'absent'; }]) {
+  for (const mutate of [d => { d.date = '2032-10-10'; }, d => { d.dutyReportSource = 'estimated'; d.legs[0].presentationTime = null; }, d => { d.dutyDebriefSource = 'absent'; }, d => { d.legs[0].presentationTimeSource = 'estimated'; }, d => { d.isNextDay = 'false'; }]) {
     const snap = snapshot(); mutate(snap.roster.days[0]); assert.equal((await pilot({ snap })(question)).state, 'unavailable');
   }
 });
