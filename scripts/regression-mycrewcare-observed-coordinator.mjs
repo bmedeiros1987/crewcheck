@@ -261,13 +261,26 @@ const expectedFor = observation => ({ accountId: binding.accountId, sessionId: b
 const candidates = (observation, options = {}) => mapMyCrewCareObservedCandidates({ observation, expected: expectedFor(observation), now: NOW, ...options });
 const ALWAYS_PENDING = ['pickup-date-unavailable', 'stay-binding-unavailable', 'transport-to-hotel-out-of-schema', 'operational-import-vetoed'];
 
-test('coordinator stamps its own session and completion time; a broken clock publishes nothing', async () => {
-  const observation = await observe();
+test('coordinator stamps its own session and the read start; a broken or reentrant clock publishes nothing stale', async () => {
+  let ticks = 0;
+  const observation = await observe([], { clock: () => NOW + 600_000 * ticks++ });
+  assert.equal(ticks, 1);
   assert.equal(observation.sessionId, binding.sessionId);
-  assert.equal(observation.observedAt, AT);
+  assert.equal(observation.observedAt, AT); // start of the read, never its completion
   assert.equal(Object.isFrozen(observation), true);
-  for (const clock of [() => NaN, () => { throw new Error('synthetic clock failure'); }]) {
+  for (const clock of [() => NaN, () => 8.64e15 + 1, () => { throw new Error('synthetic clock failure'); }]) {
     assert.equal(await observe([], { clock }), null);
+  }
+  for (const action of ['cancel', 'disconnect', 'bind']) {
+    let coordinator;
+    coordinator = createMyCrewCareObservedCoordinator({ acquire: async request => variant(request, []), clock: () => {
+      if (action === 'bind') coordinator.bind({ ...binding, accountId: 'synthetic-B', sessionId: 'session-B' });
+      else coordinator[action]();
+      return NOW;
+    } });
+    coordinator.bind(binding);
+    assert.equal(await coordinator.read(), null);
+    assert.equal(coordinator.observation(), null);
   }
 });
 
@@ -476,6 +489,24 @@ test('scope, session, identity, freshness and contract drift fail closed without
     assert.equal(empty(run({ observation: { ...observation, reservations } })), 'invalid-observation');
   }
   assert.equal(empty(run({ observation: { ...observation, operationalImportAllowed: true } })), 'invalid-observation');
+  // Accessors could answer the check and the copy differently; only data properties are read, once.
+  let reads = 0;
+  const shifting = { ...reservation, status: { raw: 'Planned', get display() { return reads++ < 2 ? 'Planejada' : 'Confirmada pelo hotel'; } } };
+  assert.equal(empty(run({ observation: { ...observation, reservations: [shifting] }, policy: { plannedAcceptedAsConfirmed: true } })), 'invalid-observation');
+  const growing = { ...observation };
+  let listReads = 0;
+  Object.defineProperty(growing, 'reservations', { enumerable: true, get() { return listReads++ < 3 ? [reservation] : Array(80).fill(reservation); } });
+  assert.equal(empty(run({ observation: growing })), 'invalid-observation');
+  // The reservation list is copied once; a shifting length cannot exceed what was validated.
+  let lengthReads = 0;
+  const shiftingList = new Proxy([reservation], { get(target, key, receiver) {
+    return key === 'length' ? (lengthReads++ < 1 ? 1 : 80) : Reflect.get(target, key, receiver);
+  } });
+  const single = run({ observation: { ...observation, reservations: shiftingList } });
+  assert.equal(single.error, null);
+  assert.equal(single.candidates.length, 1);
+  const getterPolicy = { get plannedAcceptedAsConfirmed() { return true; } };
+  assert.equal(run({ policy: getterPolicy }).candidates[0].acceptance, 'awaiting-user-policy');
   assert.equal(empty(run({ observation: { ...observation, pickupDate: '2031-11-20' } })), 'invalid-observation');
   const ordered = run({ observation: { ...observation, reservations: [{ ...reservation, providerReservationId: '10' }, { ...reservation, providerReservationId: '9' }] } });
   assert.deepEqual(ordered.candidates.map(candidate => candidate.providerReservationId), ['9', '10']);

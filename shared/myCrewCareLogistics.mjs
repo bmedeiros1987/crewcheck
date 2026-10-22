@@ -277,18 +277,28 @@ const RESERVATION_KEYS = ['airport', 'checkInWallDateTime', 'checkOutWallDateTim
 const TRANSPORT_KEYS = ['explicitPickupDate', 'pickupWallTime', 'providerName', 'transitMinutes'];
 const STATUS_KEYS = ['display', 'raw'];
 
-/** Exact own keys of a plain object; anything else is not the observed contract. */
-function exactKeys(value, keys) {
+/**
+ * Plain copy of exactly these own data properties, each read once; anything
+ * else (extra/missing keys, accessors, other prototypes) is not the observed contract.
+ */
+function exactCopy(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.getPrototypeOf(value) !== Object.prototype) return false;
-  const own = Reflect.ownKeys(value);
-  return own.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+    || Object.getPrototypeOf(value) !== Object.prototype
+    || Reflect.ownKeys(value).length !== keys.length) return null;
+  const copy = {};
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !('value' in descriptor)) return null;
+    copy[key] = descriptor.value;
+  }
+  return copy;
 }
 const exactText = (value, max = TEXT_LIMIT) => typeof value === 'string' && opaque(value, max) === value ? value : '';
 const numericOrder = (left, right) => left.length - right.length || (left < right ? -1 : left > right ? 1 : 0);
 
-function observedTransport(value) {
-  if (!exactKeys(value, TRANSPORT_KEYS)) return null;
+function observedTransport(input) {
+  const value = exactCopy(input, TRANSPORT_KEYS);
+  if (!value) return null;
   const providerName = opaque(value.providerName);
   return providerName
     && typeof value.pickupWallTime === 'string'
@@ -309,8 +319,9 @@ function observedTransport(value) {
 }
 
 /** Display must be exactly what the observed decoder derives from the raw text. */
-function observedStatus(value) {
-  if (!exactKeys(value, STATUS_KEYS)) return null;
+function observedStatus(input) {
+  const value = exactCopy(input, STATUS_KEYS);
+  if (!value) return null;
   const raw = exactText(value.raw, 80);
   return raw && typeof value.display === 'string' && value.display === myCrewCareObservedStatus(raw).display
     ? { raw, display: value.display }
@@ -320,7 +331,8 @@ function observedStatus(value) {
 function observedAcceptance(rawStatus, policy) {
   // User policy may accept PLANNED; it is never external/provider confirmation.
   if (/^planned$/i.test(rawStatus)) {
-    return policy && Object.hasOwn(policy, 'plannedAcceptedAsConfirmed') && policy.plannedAcceptedAsConfirmed === true
+    return policy && typeof policy === 'object'
+      && Object.getOwnPropertyDescriptor(policy, 'plannedAcceptedAsConfirmed')?.value === true
       ? { acceptance: 'accepted-by-user-policy', acceptanceBasis: 'user-policy-planned-as-confirmed', pending: [] }
       : { acceptance: 'awaiting-user-policy', acceptanceBasis: null, pending: ['status-awaiting-user-policy'] };
   }
@@ -363,8 +375,9 @@ function brasiliaView(epoch, localZone) {
     : null;
 }
 
-function observedCandidate(value, scope, policy) {
-  if (!exactKeys(value, RESERVATION_KEYS)) return null;
+function observedCandidate(input, scope, policy) {
+  const value = exactCopy(input, RESERVATION_KEYS);
+  if (!value) return null;
   const providerReservationId = exactText(value.providerReservationId, 40);
   const dutyPeriodNumber = exactText(value.dutyPeriodNumber, 40);
   const airport = exactText(value.airport, 3);
@@ -444,7 +457,7 @@ function observedCandidate(value, scope, policy) {
  * this pure function cannot prove the observation is still the latest one.
  */
 export function mapMyCrewCareObservedCandidates({
-  observation,
+  observation: observationValue,
   expected,
   now = Date.now(),
   policy = null,
@@ -469,21 +482,27 @@ export function mapMyCrewCareObservedCandidates({
     };
     if (!scope.accountId || !scope.sessionId || !scope.requestId
       || !Number.isFinite(now) || !Number.isFinite(freshForMs) || freshForMs < 0) return failed('invalid-scope');
-    if (!exactKeys(observation, OBSERVATION_KEYS)
+    const observation = exactCopy(observationValue, OBSERVATION_KEYS);
+    // Read the list length once and each element once; later reads cannot grow it.
+    const list = observation && Array.isArray(observation.reservations) ? observation.reservations : null;
+    const count = list ? list.length : 0;
+    if (!observation
       || observation.operationalImportAllowed !== false
-      || !Array.isArray(observation.reservations)
-      || observation.reservations.length === 0
-      || observation.reservations.length > MYCREWCARE_MAX_RECORDS) return failed('invalid-observation');
+      || !list
+      || !Number.isSafeInteger(count)
+      || count === 0
+      || count > MYCREWCARE_MAX_RECORDS) return failed('invalid-observation');
+    const reservations = Array.from({ length: count }, (_, index) => list[index]);
     if (observation.accountId !== scope.accountId
       || observation.sessionId !== scope.sessionId
       || observation.requestId !== scope.requestId) return failed('identity-mismatch');
-    // Freshness comes only from the coordinator's own completion stamp.
+    // Freshness comes only from the coordinator's own read-start stamp.
     const observedAt = myCrewCareInstant(observation.observedAt);
     if (!Number.isFinite(observedAt) || observedAt > now + 30_000) return failed('invalid-observed-at');
     if (now - observedAt > MYCREWCARE_CACHE_MAX_AGE_MS) return failed('expired-observation');
     const keys = new Set();
     const candidates = [];
-    for (const value of observation.reservations) {
+    for (const value of reservations) {
       const candidate = observedCandidate(value, scope, policy);
       const key = candidate && `${candidate.providerReservationId}:${candidate.dutyPeriodNumber}`;
       if (!candidate || keys.has(key)) return failed('invalid-observation');

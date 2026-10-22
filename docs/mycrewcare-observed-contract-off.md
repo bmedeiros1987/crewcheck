@@ -60,7 +60,7 @@ Native navigation invalidation revokes the pending receipt synchronously at the 
 
 `mapMyCrewCareObservedCandidates` in `shared/myCrewCareLogistics.mjs` turns one coordinator observation into frozen candidates plus explicit pending codes. It never creates provider records or facts. It never feeds `reconcileMyCrewCareLogistics` and has no caller, UI or native wiring. `operationalImportAllowed:false` stays on the result and on every candidate. The reconciler still rejects the vetoed snapshot, and a candidate is not a valid provider record.
 
-The coordinator now stamps its own `sessionId` and completion `observedAt` (injected `clock`, default `Date.now`) into the published observation. A non-finite or throwing clock publishes nothing. The mapper requires the caller's own binding `accountId`/`sessionId`/`requestId` to match. Freshness comes only from that stamp: `fresh` up to 15 minutes, `cached` up to 7 days, expired or >30 s in the future rejected, mirroring the fact selector.
+The coordinator now stamps its own `sessionId` and an `observedAt` taken at the **start** of the read (injected `clock`, default `Date.now`; conservative for freshness) into the published observation. A non-finite, out-of-range or throwing clock publishes nothing, and a reentrant clock that cancels/rebinds cannot publish stale data. The mapper requires the caller's own binding `accountId`/`sessionId`/`requestId` to match. Freshness comes only from that stamp: `fresh` up to 15 minutes, `cached` up to 7 days, expired or >30 s in the future rejected, mirroring the fact selector.
 
 The whole read fails with no partial candidates on any of these:
 
@@ -70,11 +70,11 @@ The whole read fails with no partial candidates on any of these:
 - non-string or untrimmed values;
 - a status display that is not exactly the decoder's display for the raw text;
 - a duplicate reservation or a bad wall order;
-- a throwing getter.
+- accessor properties (including a throwing or value-shifting getter): each field must be an own data property and is read once into a plain copy, and a policy flag counts only as an own data property.
 
 This pure function cannot prove that the observation is still the coordinator's latest one. Callers must pass `coordinator.observation()`.
 
-Status: `rawStatus`/`statusDisplay` are preserved. Under Bruno's explicit user policy ("pode entender planejado como confirmado"), PLANNED becomes `accepted-by-user-policy` only with an own `policy.plannedAcceptedAsConfirmed === true`. Otherwise it stays `awaiting-user-policy`. `providerConfirmation` is always `not-observed`: the policy is never a hotel/provider confirmation. CANCELLED is never accepted. Any other text, including an unobserved "Confirmed", is `not-accepted-unknown-status`. The policy applies only to MCC hotel candidates, not to flights/gates. It does not remove identity, period, session, date/zone or freshness requirements.
+Status: `rawStatus`/`statusDisplay` are preserved. Under Bruno's explicit user policy ("pode entender planejado como confirmado"), PLANNED becomes `accepted-by-user-policy` only with an own data property `policy.plannedAcceptedAsConfirmed === true`. Otherwise it stays `awaiting-user-policy`. `providerConfirmation` is always `not-observed`: the policy is never a hotel/provider confirmation. CANCELLED is never accepted. Any other text, including an unobserved "Confirmed", is `not-accepted-unknown-status`. The policy applies only to MCC hotel candidates, not to flights/gates. It does not remove identity, period, session, date/zone or freshness requirements.
 
 Timezone: the observed `timeZone` stays `null`. A `derivedTimeZone` is set only when the card's airport code is in the existing reviewed catalog `shared/airport-timezones.mjs` (`airportTimeZone`, read-only reuse). It is labelled `origin:'derived'`, `providerStated:false`, with its basis (`reviewed-airport-evidence` with ICAO/region/review date, or `base-airport-catalog`). There is no device/UTC fallback, fixed offset, geocoding or network. Unknown airports keep everything null with `time-zone-unavailable`. The catalog maps a code to an IANA zone, and DST rules for the wall date come from the runtime tz database. Neither proves the hotel's zone with certainty.
 
@@ -84,7 +84,7 @@ Always pending: `pickup-date-unavailable`, `stay-binding-unavailable` (no persis
 
 Tests (appended to `scripts/regression-mycrewcare-observed-coordinator.mjs`, composed through the real coordinator with the synthetic DOM) cover:
 
-- the coordinator stamp and clock failure;
+- the coordinator start stamp, clock failure and reentrant clock;
 - raw PLANNED vs policy acceptance, including non-true and inherited policy values;
 - CANCELLED and unknown status, and display/raw mismatch;
 - Manaus, Rio Branco, Fortaleza (reviewed) and Guarulhos with day, year and leap-day rollover into Brasília;
@@ -93,7 +93,7 @@ Tests (appended to `scripts/regression-mycrewcare-observed-coordinator.mjs`, com
 - Auckland/New York DST gaps and overlaps in the conversion used;
 - account/session/request/account-switch mismatch;
 - freshness bounds;
-- contract drift and type coercion;
+- contract drift, type coercion and value-shifting accessors;
 - numeric ordering;
 - reconciler veto.
 

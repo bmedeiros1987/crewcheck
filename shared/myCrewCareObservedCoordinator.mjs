@@ -66,6 +66,10 @@ export function createMyCrewCareObservedCoordinator({ acquire, clock = Date.now 
         return Object.freeze({ ...profile, accountId: scope.accountId, sessionId: scope.sessionId, requestId: scope.requestId });
       }
       try {
+        // Conservative freshness: the stamp is the start of the read, before any page.
+        const startedAt = clock();
+        if (!Number.isFinite(startedAt)) throw failure();
+        const observedAt = new Date(startedAt).toISOString();
         const before = identity(await page('profile-before'));
         const travel = await page('cards');
         const cards = observeMyCrewCareCards(travel.document, travel.url);
@@ -77,11 +81,10 @@ export function createMyCrewCareObservedCoordinator({ acquire, clock = Date.now 
           document: detail.document, pageUrl: detail.url, card,
           binding: Object.freeze({ ...scope, fresh: true }), profileBefore: before, profileAfter: after,
         }));
-        // Stamp completion time and session from this generation, never from page content.
-        const completedAt = clock();
-        if (!live() || !Number.isFinite(completedAt)) throw failure();
+        if (!live()) throw failure();
+        // Session and start stamp come from this generation, never from page content.
         latest = Object.freeze({ accountId: scope.accountId, sessionId: scope.sessionId, requestId: scope.requestId,
-          observedAt: new Date(completedAt).toISOString(),
+          observedAt,
           operationalImportAllowed: false, reservations: Object.freeze(reservations) });
         return latest;
       } catch {
