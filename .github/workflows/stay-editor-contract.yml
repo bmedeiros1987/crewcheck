@@ -27,6 +27,12 @@ on:
       - 'client/src/pages/Home.tsx'
       - 'scripts/bids-default/wakeup-layout.mjs'
       - 'client/src/lib/stayOperationalProjection.ts'
+      - 'client/src/components/v1391/StayOperationalDetails.tsx'
+      - 'client/src/components/v1391/AimsRosterTable.tsx'
+      - 'client/src/components/v1391/AimsDocumentView.tsx'
+      - 'client/src/components/v1391/CalendarRosterView.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'scripts/regression-stay-details*.mjs'
       - 'scripts/regression-stay-operational-projection.mjs'
       - 'scripts/regression-stay-wakeup-propagation-browser.mjs'
       - 'client/src/lib/stayEditorStore.ts'
@@ -66,6 +72,7 @@ jobs:
       - run: node --test scripts/regression-stay-editor-persistence.mjs
       - run: node scripts/regression-stay-operational-projection.mjs
       - run: node scripts/regression-stay-apz-date.mjs
+      - run: node scripts/regression-stay-details.mjs
       - name: Raw composed host, lease, editor and timezone contracts
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
@@ -92,6 +99,7 @@ jobs:
           done
           node scripts/regression-stay-alarm-native.mjs
           node scripts/regression-stay-alarm-api.mjs
+          node scripts/regression-stay-details.mjs
         env:
           STAY_ANDROID_API_JAR: ${{ runner.temp }}/stay-android-all.jar
           STAY_WEBKIT_JAR: ${{ runner.temp }}/stay-webkit.jar
@@ -111,6 +119,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
         run: node scripts/regression-stay-apz-date-browser.mjs
+      - name: Saved stay details, occurrence privacy and next-day APZ
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-details-browser.mjs
       - name: Saved stay to wakeup reference, preserve existing job
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
@@ -119,4 +131,6 @@ jobs:
         if: always()
         with:
           name: stay-editor-synthetic
-          path: artifacts/stay-editor/
+          path: |
+            artifacts/stay-editor/
+            artifacts/stay-details/
