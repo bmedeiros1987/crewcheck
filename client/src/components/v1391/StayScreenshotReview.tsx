@@ -68,23 +68,26 @@ export default function StayScreenshotReview({ targetLabel, currentValues, isCur
   }
   if(native) return <p className="cc-stay-screenshot-availability">Importar print está disponível no navegador/PWA. O seletor do app Android ainda não aceita imagens.</p>;
   return <section className="cc-stay-screenshot" aria-label="Importação opcional de print">
-    {!open ? <button type="button" onClick={() => { if(isCurrent()) setOpen(true); }}>Importar print de hotel/transporte</button> : <>
+    {!open ? <button type="button" onClick={() => { if(isCurrent()) setOpen(true); }}>Importar print</button> : <>
       <h3>Revisar print · {targetLabel}</h3>
-      <p>A imagem é lida neste aparelho, sem upload. Confira os campos: a origem é um print, não uma confirmação do MyCrewCare. O quarto continua manual.</p>
-      <p>Importar não salva, não programa despertador e não altera compartilhamento. Só os campos escolhidos serão levados ao editor; salve lá se desejar.</p>
+      <p>Leitura no aparelho, sem upload. Revise antes de usar.</p>
+      <p>Print não verificado pelo MyCrewCare. Escolha os campos; salve no editor.</p>
+      <details><summary>Como funciona</summary>
+        <p>Importar não salva, não programa despertador e não altera compartilhamento. O quarto continua manual.</p>
+        <p>Campos incertos ficam vazios. Não completamos data, ano ou fuso automaticamente. Você pode cancelar sem importar.</p>
+      </details>
       <label>Print de hotel ou transporte<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void choose(file); }}/></label>
       {phase === 'reading' && <p role="status">Lendo no aparelho… Na primeira vez, baixamos apenas o leitor e os modelos públicos (cerca de 7 MB). Você pode cancelar.</p>}
       {preview && <img src={preview} alt="Print selecionado para revisão local"/>}
       {phase === 'review' && <>
-        <p>Campos incertos ficam vazios. Não completamos data, ano ou fuso automaticamente.</p>
         {warnings.length > 0 && <p role="status">A leitura tem campos ausentes ou ambíguos. Revise a imagem e preencha somente o que conseguir confirmar.</p>}
         {(Object.keys(fields) as Group[]).map(group => <fieldset key={group}>
           <legend><label><input type="checkbox" checked={chosen[group] && !conflict(group)} disabled={conflict(group)} onChange={event => setChosen({...chosen,[group]:event.target.checked})}/>{group === 'hotel' ? 'Usar hotel' : group === 'apz' ? 'Usar APZ no hotel' : 'Usar transporte'}</label></legend>
           {conflict(group) && <p role="status">Você editou estes campos depois de escolher o print. Seus ajustes foram preservados; selecione o print de novo se quiser substituí-los.</p>}
           {fields[group].map(key => <label key={key}>{labels[key]}<input type={key.endsWith('Date') ? 'date' : key === 'apzTime' || key === 'pickupTime' ? 'time' : 'text'} value={values[key]} maxLength={key.includes('TimeZone') ? 80 : 160} onChange={event => setValues({...values,[key]:event.target.value})}/></label>)}
-          {group === 'apz' && <p>APZ é a apresentação no hall do hotel, nunca pickup, check-in ou decolagem. Data/fuso vazios substituem os anteriores; a confirmação operacional será separada no editor.</p>}
+          {group === 'apz' && <p>APZ no hall, não pickup, check-in ou voo. Não confirmada: confirme no editor. Data/fuso vazios substituem os anteriores.</p>}
         </fieldset>)}
-        <button type="button" onClick={apply}>Usar campos selecionados no editor</button>
+        <button type="button" onClick={apply}>Usar campos</button>
       </>}
       {message && <p role="alert">{message}</p>}
       <button type="button" onClick={() => discard()}>Cancelar importação</button>
