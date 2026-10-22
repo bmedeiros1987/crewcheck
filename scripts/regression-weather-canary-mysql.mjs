@@ -5,6 +5,7 @@ import mysql from 'mysql2/promise';
 import { financialLedgerErasureStatements } from '../server/financial-ledger-erasure.mjs';
 import * as policy from '../server/weather/monitor-readiness.mjs';
 import { evaluateCriticalWeatherDelivery } from '../server/weather/critical-observation.mjs';
+import { formatWeatherNoticeDetails } from '../shared/weatherNoticeDetails.mjs';
 
 // Deliberately no URL/host/password option: this script may only use the named
 // disposable CI socket. It cannot consume DATABASE_URL or reach production TCP.
@@ -274,7 +275,7 @@ try {
       weatherAlertStateKey: () => 'weather-alert:synthetic',
       fetchAviationWeatherReport: async () => ({ ok: true, official: true, provider: 'redemet', source: 'Synthetic', station: 'SBGR', observedAt: observed.toISOString(), raw: `SBGR ${group}Z 09015KT 2000 TSRA BKN008 18/17 Q1013` }),
       criticalWeatherChange: () => ({ critical: false, severity: 2, reasons: ['synthetic severe weather'], fingerprint: 'synthetic-risk' }),
-      evaluateCriticalWeatherDelivery, criticalWeatherMonitorMemory: new Map(),
+      evaluateCriticalWeatherDelivery, formatWeatherNoticeDetails, criticalWeatherMonitorMemory: new Map(),
       sendTelegramMessage: async (chatId, text) => { sent.push({ chatId, text }); return { ok: true }; }, Date, Map,
     };
     vm.createContext(context);
