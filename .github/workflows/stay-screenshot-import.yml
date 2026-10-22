@@ -40,7 +40,9 @@ jobs:
       - name: Current dependency audit, no paid service or lifecycle scripts
         run: npm audit --audit-level=high
       - name: Preparation cache includes OCR source but excludes only generated output
-        run: node scripts/regression-source-preparation-cache.mjs
+        run: |
+          node scripts/regression-source-preparation-cache.mjs
+          node scripts/regression-stay-screenshot-service-worker.mjs
       - name: Materialize pinned public same-origin assets and verify budget/hashes
         run: node scripts/stay-screenshot-assets.mjs
       - name: Raw candidates, worker lifecycle and canonical stay contracts
@@ -62,6 +64,7 @@ jobs:
           sha256sum client/src/components/v1391/PresentationStayManagerView.tsx client/src/components/v1391/StayScreenshotReview.tsx client/src/lib/stayScreenshotOcr.ts shared/stay-editor-store.mjs shared/stay-screenshot-candidates.mjs scripts/stay-screenshot-worker.js > "$RUNNER_TEMP/stay-ocr-prepared.sha256"
           npm run prepare:v139
           sha256sum --check "$RUNNER_TEMP/stay-ocr-prepared.sha256"
+          node scripts/regression-stay-screenshot-service-worker.mjs
           node scripts/stay-screenshot-assets.mjs
           node --input-type=module -e "import fs from 'node:fs'; const m=JSON.parse(fs.readFileSync('docs/stay-screenshot/ocr-assets-manifest.json')); fs.accessSync('dist/ocr/v7/'+m.boundary.name)"
           test -f dist/ocr/v7/eng.traineddata.gz

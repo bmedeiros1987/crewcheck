@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 
@@ -12,7 +13,7 @@ import { build } from 'esbuild';
 // Layout screenshots consequently use the production stack's local fallback font.
 const legacyDocumentFont='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap';
 function fixtureStylesheets(html){
-  const origin='https://fixture.invalid',local=[],deniedBaseline=[];
+  const origin='https://fixture.invalid',local=[],hrefs=[],deniedBaseline=[];
   for(const tag of html.match(/<link\b[^>]*>/gi)||[]){
     const attribute=name=>new RegExp(`\\b${name}=["']([^"']+)["']`,'i').exec(tag)?.[1];
     if(attribute('rel')?.toLowerCase()!=='stylesheet')continue;
@@ -21,18 +22,88 @@ function fixtureStylesheets(html){
       assert.equal(href,legacyDocumentFont,'Unexpected remote stylesheet: no remote dependency may be hidden by this fixture');
       deniedBaseline.push({url:href,resourceType:'stylesheet',disposition:'excluded-before-browser',reason:'Existing document-only external font; synthetic layout uses local fallback'});continue;
     }
-    assert(url.pathname.startsWith('/assets/')&&url.pathname.endsWith('.css')&&!url.search&&!url.hash,'Production CSS must use a same-origin build asset without query or fragment');local.push(tag);
+    assert(url.pathname.startsWith('/assets/')&&url.pathname.endsWith('.css')&&!url.search&&!url.hash,'Production CSS must use a same-origin build asset without query or fragment');local.push(tag);hrefs.push(url.pathname);
   }
-  assert(local.length,'Real local production CSS is required');return{links:local.join(''),deniedBaseline};
+  assert(local.length,'Real local production CSS is required');return{links:local.join(''),hrefs,deniedBaseline};
+}
+// These four existing, non-user URLs are a frozen ceiling, not an expanding CSS
+// exception. A fifth/mutated query requires explicit review even if CSS declares it.
+const baselineCssQueries=new Set([
+  '/assets/brand/crewcheck-wallpaper-v1264.jpg?v=12.5.65',
+  '/assets/brand/crewcheck-wallpaper-v1264.jpg?v=12.5.65-hard-reset',
+  '/assets/brand/crewcheck-wallpaper-v1267.png?v=12.5.68',
+  '/icons/crewcheck-icon-v3.png?brand=936-3656d39df50e',
+]);
+const fixtureApplicationPaths=new Set(['/','/fixture.js','/api/platform/hotels/stays','/api/platform/home-address','/fault/ocr-silent.js','/fault/ocr-error.js']);
+const pwaShellCeiling=new Set(['/','/index.html','/manifest.json','/icons/crewcheck-icon-v2.png','/icons/crewcheck-icon-v2.png?brand=936-3656d39df50e','/icons/crewcheck-icon-v3.png?v=14340&brand=936-3656d39df50e','/icons/crewcheck-icon-v3.png?brand=936-3656d39df50e','/icons/crewcheck-icon-v3.png?v=14411&brand=936-3656d39df50e']);
+function servedPwaContract(source){
+  const value=name=>new RegExp(`const ${name}\\s*=\\s*['"]([^'"]+)['"]`).exec(source)?.[1];
+  assert.equal(value('CREWCHECK_UPDATE_BUILD_ID'),'__CREWCHECK_UPDATE_BUILD_ID__','PWA fixture tests raw SW fetch/cache, not prepared-build activation integrity');
+  assert(/const CREWCHECK_UPDATE_ASSETS\s*=\s*\[\s*\]/.test(source),'PWA fixture must not silently import prepared build assets');
+  const shell=JSON.parse(/const APP_SHELL\s*=\s*(\[[^;]*\])/.exec(source)?.[1].replace(/'/g,'"')||'null');assert(Array.isArray(shell));for(const asset of shell)assert(pwaShellCeiling.has(asset),'PWA shell asset outside the reviewed raw/prepared ceiling');
+  const names=[value('CACHE_NAME'),value('RUNTIME_CACHE')];assert(['crewcheck-v14.3-offline-shell','crewcheck-v14.4.11-shell-brand936-3656d39df50e'].includes(names[0]));assert(['crewcheck-v14.3-offline-runtime','crewcheck-v14.4.11-runtime-brand936-3656d39df50e'].includes(names[1]));
+  return{shell,cacheNames:names};
+}
+// Static paths are extracted before browsing from the exact CSS served, never
+// learned from observed traffic. CSS cannot grant any API, OCR or upload path.
+function declaredCssAssets(sources){
+  const origin='https://fixture.invalid',allowed=new Set();
+  for(const source of sources){
+    const css=source.text.replace(/\/\*[\s\S]*?\*\//g,'');
+    for(const match of css.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^\s)]*))\s*\)/gi)){
+      const value=match[1]??match[2]??match[3];if(!value||value.startsWith('data:')||value.startsWith('#'))continue;
+      const url=new URL(value,new URL(source.path,origin));
+      if(url.origin===origin&&!url.hash&&/^\/(?:assets|icons|fonts)\//.test(url.pathname)&&/\.(?:png|jpe?g|webp|gif|svg|ico|woff2?|ttf|otf)$/i.test(url.pathname))allowed.add(url.pathname+url.search);
+    }
+  }
+  return allowed;
+}
+function fixtureRequestPolicy(cssSources,cssPaths,manifest){
+  const cssAssets=declaredCssAssets(cssSources),cssQueries=new Set([...cssAssets].filter(asset=>asset.includes('?')));
+  for(const asset of cssQueries)assert(baselineCssQueries.has(asset),'Versioned CSS URL outside the four reviewed baseline URLs');
+  return{applicationPaths:new Set(fixtureApplicationPaths),installAssets:new Set(),cssAssets,cssQueries,stylesheets:new Set(cssPaths),ocrPaths:new Set([manifest.boundary.name,...manifest.assets.map(asset=>asset.name)].map(name=>'/ocr/v7/'+name))};
+}
+function assertFixtureRequest(request,origin,policy){
+  const url=new URL(request.url);assert.equal(url.origin,origin,'No remote CDN/telemetry/upload request');assert(!url.username&&!url.password,'No URL credentials');
+  assert.equal(request.method,'GET','No API or scheduler writes');assert.equal(request.bodyBytes,0,'No image/text/request body is uploaded');assert.equal(url.hash,'','No input encoded in URL fragment');
+  if(url.pathname.startsWith('/ocr/')){assert.equal(url.search,'','OCR assets always have empty query, regardless of CSS');assert(policy.ocrPaths.has(url.pathname),'Only exact pinned OCR manifest paths are allowed');return;}
+  if(policy.installAssets.has(url.pathname+url.search)&&request.resourceType==='fetch')return;
+  if(url.search){assert(policy.cssQueries.has(url.pathname+url.search)&&['image','font'].includes(request.resourceType),'Only the four reviewed static image/font queries actually declared in production CSS are permitted');return;}
+  assert(policy.applicationPaths.has(url.pathname)||(policy.stylesheets.has(url.pathname)&&request.resourceType==='stylesheet')||(policy.cssAssets.has(url.pathname)&&['image','font'].includes(request.resourceType)),'Unexpected request path: no dynamic/raw values in same-origin URLs');
+}
+function auditFixtureRequest(request,origin,policy){
+  const url=new URL(request.url),knownPath=policy.applicationPaths.has(url.pathname)||policy.stylesheets.has(url.pathname)||policy.ocrPaths.has(url.pathname)||policy.cssAssets.has(url.pathname+url.search)||policy.installAssets.has(url.pathname+url.search);
+  let allowed=true;try{assertFixtureRequest(request,origin,policy);}catch{allowed=false;}
+  return{allowed,origin:url.origin===origin?'same-origin':'[unexpected origin redacted]',path:knownPath?url.pathname:'[unexpected path redacted]',query:policy.cssQueries.has(url.pathname+url.search)||policy.installAssets.has(url.pathname+url.search)?url.search:url.search?'[unexpected query redacted]':'',method:request.method,bodyBytes:request.bodyBytes,resourceType:request.resourceType};
+}
+function assertOnlyModelStorageMayChange(state,modelCacheName,publicBaseline=null){
+  assert.deepEqual(state.idb,publicBaseline?.idb||[],'OCR never opens or changes IndexedDB; PWA legacy empty database must remain empty');
+  assert.deepEqual(state.cacheNames.filter(name=>name!==modelCacheName),publicBaseline?.cacheNames||[],'No generic cache may be added by OCR');
+  assert.deepEqual(state.cacheEntries.filter(entry=>entry.name!==modelCacheName),publicBaseline?.cacheEntries||[],'Every pre-existing public cache entry must retain exact URL, size and SHA256; OCR never enters generic caches');
 }
 function verifyFixturePolicy(){
   const local='<link rel="stylesheet" crossorigin href="/assets/index-synthetic.css">';
   const result=fixtureStylesheets(`<link href="${legacyDocumentFont}" rel="stylesheet">${local}`);
   assert.equal(result.links,local,'Local production CSS link is byte-preserved');assert.equal(result.deniedBaseline.length,1);assert.equal(result.deniedBaseline[0].disposition,'excluded-before-browser');
   for(const href of ['https://fonts.googleapis.com/css2?family=Injected','https://cdn.example/ocr.css','/assets/index.css?raw=payload','/api/style.css'])assert.throws(()=>fixtureStylesheets(`${local}<link rel="stylesheet" href="${href}">`));
+  const sources=[{path:'/assets/main.css',text:`.a{background:url('/icons/crewcheck-icon-v3.png?brand=936-3656d39df50e')} .b{src:url(/fonts/font.woff2)} /* url('/icons/not-rendered.png?raw=hidden') */ .c{background:url('https://remote.invalid/x.png?raw=payload')} .d{background:url('/ocr/v7/eng.traineddata.gz?raw=payload')}`}];
+  const manifest={boundary:{name:'worker-synthetic.js'},assets:[{name:'eng.traineddata.gz'}]},policy=fixtureRequestPolicy(sources,['/assets/main.css'],manifest);
+  assert.deepEqual([...policy.cssAssets],['/icons/crewcheck-icon-v3.png?brand=936-3656d39df50e','/fonts/font.woff2']);
+  assert.throws(()=>fixtureRequestPolicy([...sources,{path:'/assets/extra.css',text:'.new{background:url(/icons/fifth.png?v=5)}'}],[],manifest),'CSS cannot silently expand the frozen query policy');
+  const request={url:'https://fixture.invalid/icons/crewcheck-icon-v3.png?brand=936-3656d39df50e',method:'GET',bodyBytes:0,resourceType:'image'};
+  assertFixtureRequest(request,'https://fixture.invalid',policy);
+  for(const patch of [{url:request.url+'&raw=x'},{url:'https://fixture.invalid/icons/crewcheck-icon-v3.png?brand=secret'},{url:'https://fixture.invalid/api/platform/DO_NOT_STORE_RAW_7X3'},{url:'https://fixture.invalid/icons/DO_NOT_STORE_RAW_7X3.png'},{resourceType:'fetch'},{url:'https://fixture.invalid/ocr/v7/eng.traineddata.gz?brand=fixed'},{url:'https://fixture.invalid/ocr/v7/unpinned.js'},{url:'https://remote.invalid/icons/crewcheck-icon-v3.png?brand=936-3656d39df50e'},{method:'POST'},{bodyBytes:1},{url:'https://fixture.invalid/ocr/v7/eng.traineddata.gz#secret'}])assert.throws(()=>assertFixtureRequest({...request,...patch},'https://fixture.invalid',policy));
+  const denied=auditFixtureRequest({...request,url:'https://fixture.invalid/api/DO_NOT_STORE_RAW_7X3?raw=secret'},'https://fixture.invalid',policy);assert.equal(denied.allowed,false);assert(!JSON.stringify(denied).includes('DO_NOT_STORE_RAW_7X3'));assert(!JSON.stringify(denied).includes('secret'),'Unknown URL content is not copied to diagnostics');
+  const sw="const CREWCHECK_UPDATE_BUILD_ID='__CREWCHECK_UPDATE_BUILD_ID__';const CREWCHECK_UPDATE_ASSETS=[];const CACHE_NAME='crewcheck-v14.3-offline-shell';const RUNTIME_CACHE='crewcheck-v14.3-offline-runtime';const APP_SHELL=['/','/index.html','/manifest.json','/icons/crewcheck-icon-v2.png'];";
+  assert.equal(servedPwaContract(sw).shell.length,4);assert.throws(()=>servedPwaContract(sw.replace('/icons/crewcheck-icon-v2.png','/icons/crewcheck-icon-v2.png?raw=x')));assert.throws(()=>servedPwaContract(sw.replace('crewcheck-v14.3-offline-shell','arbitrary-cache')));
+  const installUrl='/icons/crewcheck-icon-v2.png?brand=936-3656d39df50e',installRequest={...request,url:'https://fixture.invalid'+installUrl,resourceType:'fetch'},pwaPolicy={...policy,installAssets:new Set([installUrl])};assert.throws(()=>assertFixtureRequest(installRequest,'https://fixture.invalid',policy));assertFixtureRequest(installRequest,'https://fixture.invalid',pwaPolicy);assert.throws(()=>assertFixtureRequest({...installRequest,url:installRequest.url+'&raw=x'},'https://fixture.invalid',pwaPolicy));
+  const swCssRequest={...request,resourceType:'fetch'},swCssPolicy={...policy,installAssets:new Set(policy.cssAssets)};assert.throws(()=>assertFixtureRequest(swCssRequest,'https://fixture.invalid',policy));assertFixtureRequest(swCssRequest,'https://fixture.invalid',swCssPolicy);assert.throws(()=>assertFixtureRequest({...swCssRequest,url:swCssRequest.url+'&raw=x'},'https://fixture.invalid',swCssPolicy));
+  for(const pathname of ['/api/platform/hotels/stays','/ocr/v7/eng.traineddata.gz'])assertFixtureRequest({...request,url:'https://fixture.invalid'+pathname,resourceType:'fetch'},'https://fixture.invalid',policy);
+  const baseline={idb:[],cacheNames:['public-shell'],cacheEntries:[{name:'public-shell',url:'https://fixture.invalid/',bytes:10,sha256:'public'}]},withModels={...baseline,cacheNames:[...baseline.cacheNames,'models'],cacheEntries:[...baseline.cacheEntries,{name:'models',url:'https://fixture.invalid/ocr/v7/eng.traineddata.gz'}]};assertOnlyModelStorageMayChange(withModels,'models',baseline);assert.throws(()=>assertOnlyModelStorageMayChange(withModels,'models'));
+  for(const patch of [{idb:[{name:'new-database'}]},{cacheNames:[...withModels.cacheNames,'unexpected-runtime']},{cacheEntries:[{...baseline.cacheEntries[0],sha256:'changed'}]},{cacheEntries:[...withModels.cacheEntries,{name:'public-shell',url:'https://fixture.invalid/ocr/v7/worker-synthetic.js'}]}])assert.throws(()=>assertOnlyModelStorageMayChange({...withModels,...patch},'models',baseline));
 }
 verifyFixturePolicy();
-if(process.argv.includes('--fixture-policy-only')){console.log('PASS fixture font isolation: exact existing document font denied before browser; local CSS preserved; unexpected remote/query dependencies rejected');process.exit(0);}
+if(process.argv.includes('--fixture-policy-only')){console.log('PASS fixture font isolation: exact existing document font denied before browser; local CSS preserved; unexpected remote/query/body dependencies rejected; OCR query exceptions remain impossible');process.exit(0);}
 
 const artifacts=path.resolve(process.env.STAY_SCREENSHOT_ARTIFACTS||'artifacts/stay-screenshot');
 fs.mkdirSync(artifacts,{recursive:true});
@@ -56,17 +127,21 @@ const {chromium}=createRequire(process.env.STAY_PLAYWRIGHT_PACKAGE||process.env.
 const publicRoot=path.resolve('client/public');
 assert(fs.existsSync(path.join(publicRoot,'ocr/v7/worker.min.js')),'Prepare pinned same-origin OCR assets before this test');
 assert(fs.existsSync('dist/index.html'),'Real production CSS required: run npm run build first');
-const {links:prodCss,deniedBaseline}=fixtureStylesheets(fs.readFileSync('dist/index.html','utf8'));
+const {links:prodCss,hrefs:prodCssPaths,deniedBaseline}=fixtureStylesheets(fs.readFileSync('dist/index.html','utf8'));
+const requestPolicy=fixtureRequestPolicy([{path:'/',text:css},...prodCssPaths.map(href=>({path:href,text:fs.readFileSync(path.resolve('dist','.'+href),'utf8')}))],prodCssPaths,JSON.parse(fs.readFileSync('docs/stay-screenshot/ocr-assets-manifest.json','utf8')));
+const pwaContract=servedPwaContract(fs.readFileSync(path.join(publicRoot,'sw.js'),'utf8'));
+const{cssQueries}=requestPolicy;
 fs.writeFileSync(path.join(artifacts,'baseline-font-policy.json'),JSON.stringify({scope:'fixture document only; production assets unchanged',deniedBaseline},null,2));
 console.log(`Fixture document policy: ${deniedBaseline.length} existing external font stylesheet excluded before browser; no remote requests permitted`);
-const requests=[];
+const requests=[],networkAudit=[];
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; style-src-elem 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'";
+const fixtureHtml='<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+prodCss+'<style>body{margin:8px}'+css+'</style><div id="root"></div><script src="/fixture.js"></script></html>';
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,'http://localhost');const incoming={method:req.method,path:url.pathname,sentBodyBytes:0};requests.push(incoming);
   res.setHeader('Content-Security-Policy',csp);
   if(req.method!=='GET'){res.writeHead(405).end();return;}
   if(url.pathname.startsWith('/api/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true,stays:[],address:null}));return;}
-  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+prodCss+'<style>body{margin:8px}'+css+'</style><div id="root"></div><script src="/fixture.js"></script></html>');return;}
+  if(url.pathname==='/'||url.pathname==='/index.html'){res.setHeader('Content-Type','text/html');res.end(fixtureHtml);return;}
   if(url.pathname==='/fixture.js'){res.setHeader('Content-Type','application/javascript');res.end(js);return;}
   if(url.pathname==='/fault/ocr-silent.js'){res.setHeader('Content-Type','application/javascript');res.end('self.onmessage=()=>undefined;');return;}
   if(url.pathname==='/fault/ocr-error.js'){res.setHeader('Content-Type','application/javascript');res.end('throw new Error("Synthetic worker startup failure");');return;}
@@ -89,24 +164,53 @@ async function startImport(page,image){if(!await page.getByLabel(labels.file,{ex
 const review=page=>page.locator('.cc-stay-screenshot');
 async function waitReview(page){await page.getByRole('button',{name:labels.apply,exact:true}).waitFor({timeout:120000});}
 async function saved(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_stay_editor_v2:A')||'null'));}
-async function assertRawAbsent(page){
-  const state=await page.evaluate(async()=>{
+async function browserStorageSnapshot(page){
+  return page.evaluate(async()=>{
     const cacheNames=await caches.keys(),cacheEntries=[];
-    for(const name of cacheNames){const cache=await caches.open(name);for(const request of await cache.keys()){const response=await cache.match(request),bytes=await response.arrayBuffer();const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(byte=>byte.toString(16).padStart(2,'0')).join('');cacheEntries.push({name,url:request.url,method:request.method,bytes:bytes.byteLength,sha256:digest});}}
-    return{origin:location.origin,local:Object.fromEntries(Object.entries(localStorage)),session:Object.fromEntries(Object.entries(sessionStorage)),idb:await indexedDB.databases(),cacheNames,cacheEntries};
+    for(const name of cacheNames){const cache=await caches.open(name);for(const request of await cache.keys()){const response=await cache.match(request),bytes=await response.arrayBuffer();const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(byte=>byte.toString(16).padStart(2,'0')).join('');cacheEntries.push({name,url:request.url,method:request.method,bytes:bytes.byteLength,sha256:digest,...(new URL(request.url).pathname==='/__crewcheck_update_ready__'?{ready:JSON.parse(new TextDecoder().decode(bytes))}:{})});}}
+    const idb=[];
+    for(const item of await indexedDB.databases()){
+      if(item.name!=='crewcheck-notification-installation-v1'){idb.push(item);continue;}
+      const database=await new Promise((resolve,reject)=>{const open=indexedDB.open(item.name);open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error);open.onupgradeneeded=()=>{open.transaction.abort();reject(new Error('Snapshot may not create a database'));};}),stores=[];
+      for(const name of [...database.objectStoreNames]){const records=await new Promise((resolve,reject)=>{const tx=database.transaction(name,'readonly'),store=tx.objectStore(name),keys=store.getAllKeys(),values=store.getAll();tx.oncomplete=()=>resolve({keys:keys.result,values:values.result});tx.onerror=()=>reject(tx.error);});stores.push({name,...records});}
+      database.close();idb.push({...item,stores});
+    }
+    return{origin:location.origin,local:Object.fromEntries(Object.entries(localStorage)),session:Object.fromEntries(Object.entries(sessionStorage)),idb:idb.sort((a,b)=>a.name.localeCompare(b.name)),cacheNames:cacheNames.sort(),cacheEntries:cacheEntries.sort((a,b)=>(a.name+a.url).localeCompare(b.name+b.url))};
   });
+}
+async function assertRawAbsent(page,publicBaseline=null){
+  const state=await browserStorageSnapshot(page);
   const encoded=JSON.stringify({local:state.local,session:state.session});for(const forbidden of ['DO_NOT_STORE_RAW_7X3','ROOM-NEVER-IMPORT-638','synthetic-private-filename','data:image','blob:http','<image','traineddata'])assert(!encoded.includes(forbidden),'No raw image, OCR text/evidence, filename or model database in local/session storage');
   const record=state.local['crewcheck_stay_editor_v2:A'];if(record){const check=value=>{if(!value||typeof value!=='object')return;for(const[key,child]of Object.entries(value)){assert(!/^(?:image|ocr|raw|text|evidence|filename|blob|dataurl)$/i.test(key),'No source payload keys in persisted record');check(child);}};check(JSON.parse(record));}
-  assert.deepEqual(state.idb,[],'OCR never opens IndexedDB');
   const manifest=JSON.parse(fs.readFileSync('docs/stay-screenshot/ocr-assets-manifest.json','utf8'));
-  assert(state.cacheNames.length<=1,'No unrelated cache is created');for(const name of state.cacheNames)assert.equal(name,manifest.modelCacheName,'Only the dedicated version/hash-scoped public model cache is permitted');
-  for(const cached of state.cacheEntries){const url=new URL(cached.url),filename=url.pathname.split('/').pop(),asset=manifest.assets.find(item=>item.name===filename);assert.equal(url.origin,state.origin,'Cached models remain same-origin');assert(['/ocr/v7/eng.traineddata.gz','/ocr/v7/por.traineddata.gz'].includes(url.pathname));assert.equal(url.search,'');assert.equal(cached.method,'GET');assert(asset);assert.equal(cached.bytes,asset.bytes);assert.equal(cached.sha256,asset.sha256,'Cached bytes must be pinned public language models, never source pixels/text');}
+  assertOnlyModelStorageMayChange(state,manifest.modelCacheName,publicBaseline);
+  for(const cached of state.cacheEntries.filter(entry=>entry.name===manifest.modelCacheName)){const url=new URL(cached.url),filename=url.pathname.split('/').pop(),asset=manifest.assets.find(item=>item.name===filename);assert.equal(url.origin,state.origin,'Cached models remain same-origin');assert(['/ocr/v7/eng.traineddata.gz','/ocr/v7/por.traineddata.gz'].includes(url.pathname));assert.equal(url.search,'');assert.equal(cached.method,'GET');assert(asset);assert.equal(cached.bytes,asset.bytes);assert.equal(cached.sha256,asset.sha256,'Cached bytes must be pinned public language models, never source pixels/text');}
 }
 
+function assertPublicPwaBaseline(state){
+  assert.deepEqual(state.idb,[{name:'crewcheck-notification-installation-v1',version:1,stores:[{name:'state',keys:[],values:[]}]}],'Real legacy push worker opens only an empty database; no subscription, binding or messages');
+  assert(state.cacheNames.includes(pwaContract.cacheNames[0]),'Real worker install must populate its shell cache');for(const name of state.cacheNames)assert(pwaContract.cacheNames.includes(name),'No arbitrary baseline cache exemption');
+  for(const cached of state.cacheEntries){
+    const url=new URL(cached.url);assert.equal(url.origin,state.origin);assert.equal(cached.method,'GET');assert(!url.pathname.startsWith('/ocr/'),'OCR must be lazy, not in install shell');
+    if(url.pathname==='/__crewcheck_update_ready__'){assert.equal(cached.ready.buildId,'__CREWCHECK_UPDATE_BUILD_ID__');assert.deepEqual([...cached.ready.urls].sort(),[...new Set([...pwaContract.shell,...prodCssPaths,'/fixture.js'])].sort());continue;}
+    assert(pwaContract.shell.includes(url.pathname+url.search)||prodCssPaths.includes(url.pathname)||requestPolicy.cssAssets.has(url.pathname+url.search)||url.pathname==='/fixture.js','Baseline holds only exact declared public assets');
+    const bytes=url.pathname==='/'||url.pathname==='/index.html'?Buffer.from(fixtureHtml):url.pathname==='/fixture.js'?Buffer.from(js):fs.readFileSync(path.resolve(url.pathname.startsWith('/assets/')?'dist':publicRoot,'.'+url.pathname));
+    assert.equal(cached.bytes,bytes.length);assert.equal(cached.sha256,createHash('sha256').update(bytes).digest('hex'),'Baseline cached bytes must equal the public fixture asset, not private state');
+  }
+}
+
+async function captureVisible(page,target,name,{align='center'}={}){
+  await target.evaluate((element,align)=>element.scrollIntoView({block:align,inline:'nearest',behavior:'instant'}),align);
+  assert(await target.evaluate(element=>{const content=element.closest('.cc-stay-editor-content'),clip=content?.getBoundingClientRect(),rect=element.getBoundingClientRect();if(!clip)return false;const x=rect.left+rect.width/2,y=rect.top+rect.height/2;const hit=document.elementFromPoint(x,y);return x>=clip.left&&x<=clip.right&&y>=clip.top&&y<=clip.bottom&&(hit===element||element.contains(hit));}),'Artifact target must be visible within the actual scroll owner, not covered by header');
+  await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:false});
+}
 async function assertReleased(page){await page.waitForFunction(()=>window.ocrAudit.active===0&&window.ocrAudit.urlsActive===0,{},{timeout:5000});const audit=await page.evaluate(()=>window.ocrAudit);assert.equal(audit.created,audit.terminated,'Every worker handle is terminated including failed initialization');assert.equal(audit.urlsCreated,audit.urlsRevoked,'Every preview object URL revoked');}
-async function newPage(origin,{timezoneId='UTC',width=390,seed=true}={}){
-  const context=await browser.newContext({timezoneId,viewport:{width,height:844},serviceWorkers:'block'}),observed=[],errors=[];
-  context.on('request',request=>observed.push({url:request.url(),method:request.method()}));
+async function newPage(origin,{timezoneId='UTC',width=390,seed=true,pwa=false}={}){
+  // Chromium may classify the SW's forwarding of a CSS image/font as fetch.
+  // This changes only request classification, never the exact permitted URLs.
+  const policy=pwa?{...requestPolicy,applicationPaths:new Set([...requestPolicy.applicationPaths,'/sw.js','/crewcheck-push-offline.js',...pwaContract.shell.filter(asset=>!asset.includes('?'))]),installAssets:new Set([...pwaContract.shell,...prodCssPaths,'/fixture.js',...requestPolicy.cssAssets])}:requestPolicy;
+  const context=await browser.newContext({timezoneId,viewport:{width,height:844},serviceWorkers:pwa?'allow':'block'}),observed=[],errors=[];
+  context.on('request',request=>{const item={url:request.url(),method:request.method(),bodyBytes:request.postDataBuffer()?.byteLength||0,resourceType:request.resourceType()};observed.push(item);networkAudit.push({...auditFixtureRequest(item,origin,policy),pwa});});
   await context.addInitScript(({seed})=>{
     if(!localStorage.getItem('crewcheck_auth_user')){localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A',base:'CWB'}));localStorage.setItem('crewcheck_auth_token','synthetic-A');}
     if(seed&&!localStorage.getItem('crewcheck_stay_editor_v2:A'))localStorage.setItem('crewcheck_stay_editor_v2:A',JSON.stringify({version:2,accountId:'A',defaultLeadMinutes:90,defaultWithoutBreakfastMinutes:60,timeZonePreference:'local',stays:{'synthetic-stay':{eventId:'synthetic-stay',signature:'synthetic-stay|2032-10-21T03:00:00Z|2032-10-22T02:59:00Z|CWB|CWB',draft:{hotelName:'Hotel manual preservado',airport:'CWB',stayDate:'2032-10-21',room:'407-MANUAL',presentationTime:'04:20',leadMinutes:'45',shareSameHotel:false},timeZone:'America/Sao_Paulo',apzDate:'2032-10-22',apzSource:'manual',apzConfirmed:true,choice:{mode:'relative',leadMinutes:45},breakfastPlan:'with',alarmState:'cancelled'}}}));
@@ -117,7 +221,7 @@ async function newPage(origin,{timezoneId='UTC',width=390,seed=true}={}){
     window.addEventListener('securitypolicyviolation',event=>window.ocrAudit.violations.push({directive:event.effectiveDirective,blocked:event.blockedURI}));
   },{seed});
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.clock.install({time:new Date('2032-10-21T19:00:00Z')});await page.goto(origin);await page.getByRole('textbox',{name:'Hotel',exact:true}).waitFor();await page.waitForFunction(()=>localStorage.getItem('crewcheck_platform_stays_cache_v1')!==null);
-  const verify=async()=>{for(const request of observed){const url=new URL(request.url);assert.equal(url.origin,origin,'No remote CDN/telemetry/upload request');assert.equal(request.method,'GET','No API or scheduler writes');assert(!url.search,'No raw values in asset URL query');}assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.ocrAudit.violations),[],'No attempted CSP-blocked exfil');await assertRawAbsent(page);};
+  const verify=async(publicBaseline=null)=>{fs.writeFileSync(path.join(artifacts,'network-audit.json'),JSON.stringify({scope:'synthetic requests only; no headers or bodies',declaredStaticCssQueries:[...cssQueries],requests:networkAudit},null,2));for(const request of observed)assertFixtureRequest(request,origin,policy);assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.ocrAudit.violations),[],'No attempted CSP-blocked exfil');await assertRawAbsent(page,publicBaseline);};
   return{context,page,verify,observed,errors};
 }
 try{
@@ -134,8 +238,14 @@ try{
     assert.equal(await review(page).getByRole('checkbox',{name:'Usar hotel',exact:true}).isChecked(),false,'Import selection is explicit, not prechecked');
     await candidate.fill('Hotel confirmado pelo usuario');await review(page).getByRole('checkbox',{name:'Usar hotel',exact:true}).check();await review(page).getByRole('checkbox',{name:'Usar APZ no hotel',exact:true}).check();await review(page).getByRole('checkbox',{name:'Usar transporte',exact:true}).check();
     await page.evaluate(({dark})=>{window.fixtureTheme(dark?'dark':'light');document.documentElement.style.fontSize=dark?'24px':'16px';},{dark});
-    await review(page).evaluate(element=>element.scrollIntoView({block:'center'}));assert(await review(page).evaluate(element=>element.scrollWidth<=element.clientWidth+1),'Review wraps at actual production CSS and enlarged font');await page.screenshot({path:path.join(artifacts,`preview-${mime.split('/')[1]}-${width}.png`),fullPage:true});
+    const shotPrefix=`preview-${mime.split('/')[1]}-${width}`;
+    await captureVisible(page,review(page).getByRole('heading',{level:3}),shotPrefix+'-top',{align:'start'});
+    await captureVisible(page,review(page).getByRole('img',{name:'Print selecionado para revisão local'}),shotPrefix+'-image');
+    await captureVisible(page,page.getByLabel(labels.apzTime,{exact:true}),shotPrefix+'-fields');assert(await review(page).evaluate(element=>element.scrollWidth<=element.clientWidth+1),'Review wraps at actual production CSS and enlarged font');
+    await captureVisible(page,page.getByRole('button',{name:labels.apply,exact:true}),shotPrefix+'-actions');
     await page.getByRole('button',{name:labels.apply,exact:true}).click();await assertReleased(page);
+    await captureVisible(page,page.getByRole('textbox',{name:'Hotel',exact:true}),shotPrefix+'-editor');
+    await captureVisible(page,page.getByRole('checkbox',{name:'Confirmo esta data, horário e fuso como APZ no hotel',exact:true}),shotPrefix+'-confirmation');
     assert.equal(await page.getByRole('textbox',{name:'Hotel',exact:true}).inputValue(),'Hotel confirmado pelo usuario');assert.equal(await page.getByLabel('Número do quarto',{exact:true}).inputValue(),'407-MANUAL','MCC screenshot never overwrites manual room');
     assert.equal(await page.getByRole('checkbox',{name:'Confirmo esta data, horário e fuso como APZ no hotel',exact:true}).isChecked(),false,'Import cannot confirm APZ provenance');assert.deepEqual(await saved(page),before,'Applying chosen fields is draft-only');
     await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();let record=(await saved(page)).stays['synthetic-stay'];assert.equal(record.apzConfirmed,false);assert.equal(record.draft.hotelName,'Hotel confirmado pelo usuario');assert.equal(record.draft.room,'407-MANUAL');assert.equal(record.alarmState,'cancelled');assert.deepEqual(record.choice,before.stays['synthetic-stay'].choice);assert.equal(record.draft.shareSameHotel,false);assert.match(record.transport.transportProvider,mime==='image/webp'?/Synthetic Shuttle/i:/Transporte Sintetico Sol/i);assert.equal(record.transport.pickupTime,'05:10');assert.equal(record.transport.pickupDate,'2032-10-22');assert.match(JSON.stringify(record),/screenshot/,'Input origin is separate from authenticated MCC');
@@ -144,6 +254,23 @@ try{
     await assertRawAbsent(page);await page.reload();await page.getByRole('textbox',{name:'Hotel',exact:true}).waitFor();assert.equal(await page.getByRole('textbox',{name:'Hotel',exact:true}).inputValue(),'Hotel confirmado pelo usuario');assert.equal(await page.getByLabel('Número do quarto',{exact:true}).inputValue(),'407-MANUAL');const savedBeforeRemoval=await saved(page);if(mime==='image/jpeg')await page.getByRole('textbox',{name:'Hotel',exact:true}).fill('Hotel editado depois do print');await page.getByRole('button',{name:'Remover campos importados do print',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'Hotel',exact:true}).inputValue(),mime==='image/jpeg'?'Hotel editado depois do print':'Hotel manual preservado','Removing imported fields restores prior manual values but preserves later edits');assert.deepEqual(await saved(page),savedBeforeRemoval,'Removal requires explicit Save');await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();assert.equal((await saved(page)).stays['synthetic-stay'].screenshotImport,undefined);await verify();await context.close();
   }
   console.log('PASS real PNG/JPEG/WebP screenshot pipeline, edit/selection/explicit save, manual APZ, preserved room/alarm/sharing and 3 device zones');
+  // Real PWA controller and fetch/cache path. This serves the actual public SW
+  // with raw update placeholders; build-integrity/update activation is NOT tested.
+  {
+    const{context,page,verify}=await newPage(origin,{pwa:true});
+    await page.evaluate(()=>{window.pwaRegistrationStatus='pending';navigator.serviceWorker.register('/sw.js',{scope:'/'}).then(()=>navigator.serviceWorker.ready).then(()=>{window.pwaRegistrationStatus='ready';},()=>{window.pwaRegistrationStatus='failed';});});
+    await page.waitForFunction(()=>window.pwaRegistrationStatus==='failed'||(window.pwaRegistrationStatus==='ready'&&Boolean(navigator.serviceWorker.controller)),{},{timeout:20_000});assert.equal(await page.evaluate(()=>window.pwaRegistrationStatus),'ready','Real PWA registration must succeed; no fallback to an uncontrolled page');
+    await page.reload();await page.getByRole('textbox',{name:'Hotel',exact:true}).waitFor();await page.waitForLoadState('networkidle');
+    await page.waitForFunction(async()=>Boolean(navigator.serviceWorker.controller)&&(await indexedDB.databases()).some(database=>database.name==='crewcheck-notification-installation-v1'));
+    assert.equal(await page.evaluate(()=>new URL(navigator.serviceWorker.controller.scriptURL).pathname),'/sw.js');
+    const baseline=await browserStorageSnapshot(page);assertPublicPwaBaseline(baseline);await verify(baseline);
+    const before=await saved(page),writes=await page.evaluate(()=>window.ocrAudit.storageWrites);await startImport(page,await makeImage(page));await waitReview(page);
+    assert.match(await page.getByLabel(labels.hotel,{exact:true}).inputValue(),/Hotel Sintetico Aurora/i,'Controlled PWA performs real pixels-to-fields OCR');assert.equal(await page.getByLabel(labels.apzTime,{exact:true}).inputValue(),'04:40');assert.equal(await page.evaluate(()=>window.ocrAudit.storageWrites),writes,'PWA OCR has no local/session write');
+    await review(page).getByRole('checkbox',{name:'Usar hotel',exact:true}).check();await review(page).getByRole('checkbox',{name:'Usar APZ no hotel',exact:true}).check();await captureVisible(page,page.getByRole('button',{name:labels.apply,exact:true}),'pwa-real-ocr-review-actions');await page.getByRole('button',{name:labels.apply,exact:true}).click();await assertReleased(page);
+    assert.match(await page.getByRole('textbox',{name:'Hotel',exact:true}).inputValue(),/Hotel Sintetico Aurora/i);assert.deepEqual(await saved(page),before,'PWA apply is draft-only');assert.equal(await page.getByRole('checkbox',{name:'Confirmo esta data, horário e fuso como APZ no hotel',exact:true}).isChecked(),false);await verify(baseline);
+    const after=await browserStorageSnapshot(page),manifest=JSON.parse(fs.readFileSync('docs/stay-screenshot/ocr-assets-manifest.json','utf8'));assert.equal(after.cacheEntries.filter(entry=>entry.name===manifest.modelCacheName).length,2,'PWA caches only two pinned public models, never worker/core or private pixels');
+    results.push({case:'real-pwa-controller-ocr-cache-isolation',status:'passed-real-pixels',scope:'actual public raw-placeholder SW fetch/cache only; not update build-integrity or activation',baselineCaches:baseline.cacheNames,baselineEntries:baseline.cacheEntries.map(({name,url,bytes,sha256})=>({name,path:new URL(url).pathname,bytes,sha256})),genericCachesUnchanged:true,legacyPushDatabaseEmptyAndUnchanged:true});await context.close();
+  }
   // Production serves OCR resources no-store. Measure actual public-model CacheStorage reuse;
   // core/worker may download again. CSP guards page AND worker, and every request is audited.
   {
@@ -255,4 +382,4 @@ try{
   assert(requests.every(request=>request.method==='GET'),'No server mutation or alarm request across suite');
   fs.writeFileSync(path.join(artifacts,'results.json'),JSON.stringify({scope:'synthetic web/PWA only; no Android/device claim; production local CSS with local fallback fonts',deniedBaseline,results},null,2));
   console.log(`PASS ${results.length} screenshot scenarios: real image OCR, explicit preview/save, lifecycle fences, no persistence/exfil/autoalarm, public model-only cache measured`);
-}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
+}finally{fs.writeFileSync(path.join(artifacts,'network-audit.json'),JSON.stringify({scope:'synthetic requests only; no headers or bodies',declaredStaticCssQueries:[...cssQueries],requests:networkAudit},null,2));await browser?.close();await new Promise(resolve=>server.close(resolve));}
