@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import FinancialChannelConsent from './FinancialChannelConsent';
+import { useEffect, useState } from 'react';
 import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/authClient';
 import { canonicalAllowanceCapture, canonicalBrlCycleKeys, canonicalBrlCycleThursday } from '@shared/financialCanonicalCapture.mjs';
 
@@ -8,9 +9,11 @@ type Props={rows:any[];coveredDays:string[];range:{start:string;end:string};comp
 export default function CanonicalForecastCapture(props:Props){
  const [reference,setReference]=useState(''),[confirmed,setConfirmed]=useState(false),[brl,setBrl]=useState(false),[cycle,setCycle]=useState('');
  const [foreign,setForeign]=useState(false),[flightLinks,setFlightLinks]=useState<Record<string,string>>({});
+ const [sourceNotice,setSourceNotice]=useState('');
  const [review,setReview]=useState<any>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const brlCycleCount=canonicalBrlCycleKeys(props.rows).length, brlThursday=canonicalBrlCycleThursday(props.rows);
- const clear=()=>{setReview(null);setMessage('');};
+ const clear=()=>{setReview(null);setMessage('');setSourceNotice('');};
+ useEffect(()=>{const clearNotice=()=>setSourceNotice('');const events=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];events.forEach(e=>window.addEventListener(e,clearNotice));return()=>events.forEach(e=>window.removeEventListener(e,clearNotice));},[]);
  const preview=async()=>{
   const session=captureAuthSession(),user=getStoredUser(),ownerId=String(user?.email||'').trim().toLowerCase();
   setBusy(true);setReview(null);setMessage('');
@@ -28,7 +31,7 @@ export default function CanonicalForecastCapture(props:Props){
   setBusy(true);
   try{
    const result=await authFetch<any>('/api/platform/finance/capture',{method:'POST',body:JSON.stringify({action:'capture',source:review.source,reviewDigest:review.reviewDigest,confirmed:true})});
-   if(review.session.isCurrent()&&result?.ok===true){setReview(null);setMessage('Previsão salva. Isso não confirma recebimento.');}
+   if(review.session.isCurrent()&&result?.ok===true){setReview(null);setMessage('Previsão salva. Isso não confirma recebimento.');setSourceNotice(result.sourceFreshness?.state==='available'?`Publicação original verificada: ${result.sourceFreshness.sourceAsOf}.`:'Atualização da fonte não comprovada; horário de consulta não é publicação.');}
   }catch{if(review.session.isCurrent())setMessage('Gravação não confirmada. Tente novamente a mesma revisão; se houver conflito, prepare uma nova revisão.');}
   finally{if(review.session.isCurrent())setBusy(false);}
  };
@@ -50,6 +53,10 @@ export default function CanonicalForecastCapture(props:Props){
   <p>Salário exige crédito líquido e ciclo comprovado: “até dia 5” é prazo, não dia exato. Férias e 13º continuam sem data sem dados da empresa.</p>
   </fieldset><button type="button" disabled={busy||!props.complete||!confirmed||!reference} onClick={preview}>Preparar revisão sem gravar</button>
   {review&&review.session.isCurrent()&&<div role="status"><p>{review.count} itens revisados; {review.pendingDates} datas pendentes; {review.pendingAmounts} valores pendentes. Nenhum recebimento será confirmado.</p><button type="button" disabled={busy} onClick={save}>Confirmar gravação da previsão revisada</button><button type="button" disabled={busy} onClick={clear}>Cancelar revisão</button></div>}
+  {review?.sourceFreshness?.state==='unavailable'&&<p>Atualização da fonte não comprovada. A data da consulta não substitui a publicação original.</p>}
+  {review?.sourceFreshness?.state==='available'&&<p>Publicação original verificada: {review.sourceFreshness.sourceAsOf}. Não confirma recebimento.</p>}
   {message&&<p role="status">{message}</p>}
+  {sourceNotice&&<p>{sourceNotice}</p>}
+  <FinancialChannelConsent/>
  </details>;
 }

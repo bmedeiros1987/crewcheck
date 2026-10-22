@@ -4,6 +4,8 @@ on:
     paths:
       - 'server.mjs'
       - 'server/platform.mjs'
+      - 'server/financial-ledger-erasure.mjs'
+      - 'migrations/20261020_021_financial_channel_preparation_mysql.sql'
       - 'server/weather/**'
       - 'scripts/tests/*weather*.test.mjs'
       - 'scripts/regression-weather-canary-mysql.mjs'

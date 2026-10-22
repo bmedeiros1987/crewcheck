@@ -80,6 +80,10 @@ export function createFinancialChannelSqlService(db, { now = () => new Date(), m
         return {binding:financialConversationBinding({ownerId,conversationId,...profile}),revision:existing?.revision || 0,consent:existing};
       });
     },
+    async inspectConsent(identity, conversationId) {
+      const ownerId=ledgerOwner(identity);if(!chat(conversationId))fail('FINANCIAL_INVALID_CONVERSATION');
+      return transaction(async c=>{await account(c,ownerId);const existing=await consent(c,ownerId,conversationId);return {revision:existing?.revision||0,consent:existing};});
+    },
     async changeConsent(identity, request) {
       const ownerId = ledgerOwner(identity), input = structuredClone(request);
       if (!input || !chat(input.conversationId) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.expectedRevision >= 2147483647
