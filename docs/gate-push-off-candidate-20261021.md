@@ -1,6 +1,11 @@
 # Gate-change notification candidate — isolated, OFF
 
-Base main 792fd649. This is an independent offline producer/receiver component, not an
+Bases: first prepared on main 792fd649 (historical). The branch later merged main up to
+161a66b1, which is the base of the externally audited freeze 2ee344f2 and remains the
+branch merge-base with main (main itself has advanced since).
+Commits after 2ee344f2 (the receipt fence below) were not part of that audit.
+
+This is an independent offline producer/receiver component, not an
 Android delivery implementation, auth proof, deployment or activation request.
 No AGENTS.md or checkout skills were present. Existing #1146 remains the
 observational diagnostic, #1172/#1173 remain blocked, and no duplicate diagnostic,
@@ -257,3 +262,9 @@ None is replaced by a JS epoch or by these fixtures.
 Review counterproof: a captured installation-v1 confirmation is rejected after the actual existing registry rotates to v2; only a fresh v2 confirmation can write topic consent. The disposable SQL test executes mutateInstallation itself, not a fake registry callback.
 
 Consent API errors: only the consent fence's own GateConsentConflictError (revision, installation, authority or input refusal, before or inside the rolled-back transaction) answers 409 GATE_CONSENT_CONFLICT with a generic body. Any other failure, including a driver error that carries status 409, answers 500 GATE_CONSENT_UNAVAILABLE without detail and logs only its sanitized code. The host remains OFF; only the literal code switch true reaches storage.
+
+Receipt fence (after the 2ee344f2 freeze): `reconcilePushReceipts` now also compares
+`authorityEpoch` and `topicRevision` with the stored envelope. A gate receipt with a
+divergent epoch or topic revision, or without those fields, reconciles nothing; a stored
+gate job lacking them never reconciles; non-gate jobs, which carry neither field on
+either side, are unchanged. Receipts remain telemetry of an API/click attempt only.

@@ -1,5 +1,6 @@
 import { changeGateConsent, createGateOutboxConnection, gateConsentKey } from '../server/web-push/gateHost.mjs';
 import { handleCrewCheckPush } from '../server/web-push/api.mjs';
+import { reconcilePushReceipts } from '../server/web-push/outbox.mjs';
 import crypto from 'node:crypto';
 import { installationStateKey,mutateInstallation } from '../server/web-push/installationRegistry.mjs';
 import assert from 'node:assert/strict';
@@ -107,6 +108,22 @@ try {
   let providerCalls=0;const configuration={enabled:true,configured:true,encryptionKey:Buffer.alloc(32)};
   assert.equal((await connected.dispatch(db,queued[0],configuration,async(sub,envelope)=>{providerCalls++;assert.equal(sub.endpoint,subscription.endpoint);assert.equal(envelope.authorityEpoch,epoch);return{status:'accepted_unconfirmed',received:null};})).status,'accepted_unconfirmed');assert.equal(providerCalls,1);
   assert.equal((await connected.dispatch(db,queued[0],configuration,async()=>{throw Error('duplicate');})).status,'accepted_unconfirmed');providerCalls=0;
+  // Device receipts for a gate job must carry its exact authority epoch and topic revision.
+  const receiptOwner={email,ownerId},gateJob=async()=>{const [rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[queued[0].state_key]);return typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;};
+  const {authorityEpoch:_epoch,topicRevision:_topic,...withoutGateFields}=gateEnvelope;
+  for(const [label,envelope] of [['authority epoch mismatch',{...gateEnvelope,authorityEpoch:'x'.repeat(64)}],['topic revision mismatch',{...gateEnvelope,topicRevision:gateEnvelope.topicRevision+1}],['gate fields absent',withoutGateFields],['epoch only',{...withoutGateFields,authorityEpoch:epoch}]]){
+   assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope,status:'clicked'}])).reconciled,0,label);assert.equal((await gateJob()).deviceReport,undefined,label);
+  }
+  assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope:{...gateEnvelope,authorityEpoch:'y'.repeat(64)},status:'clicked'},{envelope:gateEnvelope,status:'display_api_resolved'}])).reconciled,1,'mixed batch counts only the matching receipt');
+  assert.deepEqual((await gateJob()).deviceReport,{status:'display_api_resolved',received:null});
+  assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope:gateEnvelope,status:'clicked'}])).reconciled,1);
+  assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope:{...gateEnvelope,authorityEpoch:'z'.repeat(64)},status:'uncertain'},{envelope:gateEnvelope,status:'uncertain'}])).reconciled,0,'clicked never regresses; mismatched receipt ignored');
+  assert.deepEqual((await gateJob()).deviceReport,{status:'clicked',received:null});
+  // Legacy stored gate job without epoch/topic: conservative, no receipt can reconcile it.
+  const legacyKey=queued[0].state_key,stored=await gateJob(),{authorityEpoch:_e,topicRevision:_t,...legacyEnvelope}=stored.envelope;
+  await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify({...stored,envelope:legacyEnvelope,deviceReport:undefined}),legacyKey]);
+  for(const envelope of [gateEnvelope,withoutGateFields])assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope,status:'clicked'}])).reconciled,0,'legacy gate job stays unreconciled');
+  await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(stored),legacyKey]);
   const revokedInput={...jobInput,envelope:{...gateEnvelope,eventKey:'gate-change-v1:'+ 'e'.repeat(64)}};assert.equal((await connected.enqueue(db,identityContext,revokedInput)).status,'queued');
   const [revocationJobs]=await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey'))=?",[revokedInput.envelope.eventKey]);assert.equal(revocationJobs.length,1);
   // Revoked canonical session blocks existing persistent outbox before opening subscription/provider.
