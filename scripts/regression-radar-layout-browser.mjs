@@ -165,10 +165,17 @@ try{
     for(const row of layout.rows){assert(!intersects(row.identity,row.date),`${name}: route/date collide`);assert(!intersects(row.metadata,row.stop),`${name}: cache/Parar collide`);assert(row.date.top>=row.identity.bottom+2||row.date.left>=row.identity.right+6,`${name}: route/date need visible separation`);for(const box of [row.identity,row.date,row.metadata,row.stop])assert(box.left>=row.row.left-1&&box.right<=row.row.right+1,`${name}: followed content outside card`)}
     for(const target of layout.targets)assert(target.width>=43.9&&target.height>=43.9,`${name}: target below 44px ${target.label}: ${target.width}x${target.height}`);
     activeResult.stage='keyboard disclosure and focus';
+    activeResult.disclosureFocus=[];
     for(const selector of ['.cc-radar-sources summary','.cc-followed-list summary']){
-      const summary=page.locator(selector);await summary.focus();await page.keyboard.press('Space');assert.equal(await summary.evaluate(e=>e.parentElement.open),true);
-      const focus=await summary.evaluate(e=>({active:document.activeElement===e,style:getComputedStyle(e).outlineStyle,width:parseFloat(getComputedStyle(e).outlineWidth)}));assert(focus.active&&focus.style!=='none'&&focus.width>=2,`${name}: visible keyboard focus required`);
-      await page.keyboard.press('Space');assert.equal(await summary.evaluate(e=>e.parentElement.open),false);
+      const summary=page.locator(selector),readFocus=()=>summary.evaluate(e=>{const s=getComputedStyle(e);return {active:document.activeElement===e,focusVisible:e.matches(':focus-visible'),style:s.outlineStyle,width:parseFloat(s.outlineWidth),color:s.outlineColor,activeTag:document.activeElement?.tagName}});
+      const focusRecord={selector,beforeTab:await readFocus(),tabPresses:0};activeResult.disclosureFocus.push(focusRecord);
+      // Real Tab navigation establishes keyboard modality. A programmatic focus
+      // following a pointer click is not evidence of the keyboard focus contract.
+      while(focusRecord.tabPresses<50){await page.keyboard.press('Tab');focusRecord.tabPresses++;if(await summary.evaluate(e=>document.activeElement===e))break}
+      focusRecord.afterTab=await readFocus();assert(focusRecord.afterTab.active,`${name}: disclosure not reachable within 50 Tab presses: ${selector}`);
+      const requireVisibleFocus=async phase=>{focusRecord[phase+'BeforeWait']=await readFocus();try{await page.waitForFunction(sel=>{const e=document.querySelector(sel);if(!e)return false;const s=getComputedStyle(e);return document.activeElement===e&&e.matches(':focus-visible')&&s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>=2},selector,{timeout:2000})}finally{focusRecord[phase]=await readFocus()}const focus=focusRecord[phase];assert(focus.active&&focus.focusVisible&&focus.style!=='none'&&focus.width>=2,`${name}: visible keyboard focus required: ${selector} (${phase})`)};
+      await requireVisibleFocus('beforeOpen');await page.keyboard.press('Space');assert.equal(await summary.evaluate(e=>e.parentElement.open),true);await requireVisibleFocus('afterOpen');
+      await page.keyboard.press('Space');assert.equal(await summary.evaluate(e=>e.parentElement.open),false);await requireVisibleFocus('afterClose');
     }
     await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(output,`${name}-radar.png`),fullPage:true});
     const last=page.locator('.cc-manual-gate form').last().locator('button[type=submit]');await last.focus();await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
