@@ -55,3 +55,32 @@ Platform limitation: Android documents that `shouldInterceptRequest` sees only t
 Next gate: independent review of this prepared source and a separately authorized physical test of existing isolated-profile/session behavior. No source default, SSO, Home/MainActivity mount, operational date/timezone import, real activation or store publication is included.
 
 Native navigation invalidation revokes the pending receipt synchronously at the event boundary. Callback delivery and WebView cleanup remain queued on the main looper. A repeated main-frame start (including the same URL), main-frame HTTP error, or renderer loss before terminal delivery rejects even a valid receipt already queued. The actual AndroidDriver regression adds 4 phases ×3 events ×2 callback orders (24 cases); the pre-fix HEAD `2d405a83` fails all 12 receipt-first negative cases while rejecting the 12 event-first cases. The terminal commit rechecks revocation before relinquishing the source monitor.
+
+## Observed candidates and pending items (OFF, diagnostic only)
+
+`mapMyCrewCareObservedCandidates` in `shared/myCrewCareLogistics.mjs` turns one coordinator observation into frozen candidates plus explicit pending codes. It never creates provider records or facts, never feeds `reconcileMyCrewCareLogistics`, and has no caller, UI or native wiring. `operationalImportAllowed:false` stays on the result and on every candidate. The reconciler still rejects the vetoed snapshot, and a candidate is not a valid provider record.
+
+The whole read fails with no partial candidates on any of these: scope missing, account/request different from the caller's expected read, or a missing, future or expired (>7 days) explicit `observedAt`. Contract drift has the same effect: veto removed, supplied timezone or pickup date, duplicate reservation, empty status or bad wall order. Freshness mirrors the existing fact selector: `fresh` up to 15 minutes, otherwise `cached`.
+
+Status: `rawStatus`/`statusDisplay` are preserved. Under Bruno's explicit user policy ("pode entender planejado como confirmado"), PLANNED becomes `accepted-by-user-policy` only when the caller passes `policy.plannedAcceptedAsConfirmed === true`. Otherwise it stays `awaiting-user-policy`. `providerConfirmation` is always `not-observed`: the policy is never a hotel/provider confirmation. CANCELLED is never accepted. Any other text, including an unobserved "Confirmed", is `not-accepted-unknown-status`. The policy applies only to MCC hotel candidates, not to flights/gates. It does not remove identity, period, session, date/zone or freshness requirements.
+
+Timezone: the observed `timeZone` stays `null`. A `derivedTimeZone` is set only when the card's airport code is in the existing reviewed catalog `shared/airport-timezones.mjs` (`airportTimeZone`, read-only reuse). It is labelled `origin:'derived'`, `providerStated:false`, with its basis (`reviewed-airport-evidence` with ICAO/region/review date, or `base-airport-catalog`). There is no device/UTC fallback, fixed offset, geocoding or network. Unknown airports keep everything null with `time-zone-unavailable`. The catalog maps a code to an IANA zone, and DST rules for the wall date come from the runtime tz database. Neither proves the hotel's zone with certainty.
+
+Instants: check-in/out wall values (which carry a date) are resolved with the existing `myCrewCareLocalInstant` only when date and zone are valid. Nonexistent or repeated DST minutes and invalid calendar dates stay null with `reservation-local-time-invalid-or-ambiguous`. A round trip through the existing `presentStayInstant` must reproduce the source wall. When both resolve, a derived `brasilia` view (`America/Sao_Paulo`, via `resolveStayDisplayZone` manual preference + `presentStayInstant`) shows date, clock and offset, including day/year rollover. The original wall strings are kept. Pickups stay time-only: `pickupDate`/`pickupAt` remain null and HH:mm is never read as Brasília or local time.
+
+Always pending: `pickup-date-unavailable`, `stay-binding-unavailable` (no persisted-stay match in this lot), `transport-to-hotel-out-of-schema` (schema 1 has no to-hotel slot; its data is not exposed) and `operational-import-vetoed`. Manual stay fields, APZ, alarms and `stay-edit-plan` are untouched.
+
+Tests (appended to `scripts/regression-mycrewcare-observed-coordinator.mjs`, composed through the real coordinator with the synthetic DOM) cover:
+
+- raw PLANNED vs policy acceptance, including non-true policy values;
+- CANCELLED and unknown status under the policy;
+- Manaus, Rio Branco, Fortaleza (reviewed) and Guarulhos with day, year and leap-day rollover into Brasília;
+- uncatalogued airport nulls;
+- invalid calendar/out-of-range wall dates;
+- Auckland/New York DST gaps and overlaps in the conversion used;
+- scope/account/request/session mismatch, freshness bounds and contract drift;
+- reconciler veto.
+
+The reviewed catalog currently has no DST zone, so DST is exercised at the conversion function, not end-to-end through a catalogued airport.
+
+No new path, allowlist or workflow change. Not validated: real provider data, timezone of real hotels, login/SSO/MFA, physical device and operational import.

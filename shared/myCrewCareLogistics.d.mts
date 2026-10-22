@@ -143,3 +143,79 @@ export function selectMyCrewCarePickup(
   stayId: string,
   options?: { now?: number; freshForMs?: number; includeCancelled?: boolean },
 ): Readonly<MyCrewCarePickupFact & { dataState: 'fresh' | 'cached' }> | null;
+
+export type MyCrewCareObservedPending =
+  | 'status-awaiting-user-policy'
+  | 'status-cancelled'
+  | 'status-unknown'
+  | 'time-zone-unavailable'
+  | 'reservation-local-time-invalid-or-ambiguous'
+  | 'reservation-instants-unavailable'
+  | 'pickup-date-unavailable'
+  | 'stay-binding-unavailable'
+  | 'transport-to-hotel-out-of-schema'
+  | 'operational-import-vetoed';
+
+export type MyCrewCareBrasiliaClock = { instant: string; date: string; clock: string; offset: string };
+
+export type MyCrewCareObservedCandidate = {
+  source: 'mycrewcare';
+  provenance: 'observed-dom';
+  requestId: string;
+  providerReservationId: string;
+  dutyPeriodNumber: string;
+  airport: string;
+  pairingId: string;
+  hotelName: string;
+  rawStatus: string;
+  statusDisplay: string;
+  acceptance: 'accepted-by-user-policy' | 'awaiting-user-policy' | 'not-accepted-cancelled' | 'not-accepted-unknown-status';
+  acceptanceBasis: 'user-policy-planned-as-confirmed' | null;
+  providerConfirmation: 'not-observed';
+  checkInWallDateTime: string;
+  checkOutWallDateTime: string;
+  timeZone: null;
+  derivedTimeZone: Readonly<{
+    zone: string;
+    origin: 'derived';
+    providerStated: false;
+    basis: 'reviewed-airport-evidence' | 'base-airport-catalog';
+    airport: string;
+    evidence: Readonly<{ icao: string; region: string; reviewedOn: string }> | null;
+  }> | null;
+  reservationStartAt: string | null;
+  reservationEndAt: string | null;
+  brasilia: Readonly<{
+    label: 'Brasília';
+    timeZone: 'America/Sao_Paulo';
+    origin: 'derived';
+    checkIn: Readonly<MyCrewCareBrasiliaClock>;
+    checkOut: Readonly<MyCrewCareBrasiliaClock>;
+  }> | null;
+  transportToAirport: Readonly<{
+    providerName: string;
+    pickupWallTime: string;
+    pickupDate: null;
+    pickupAt: null;
+    transitMinutes: number;
+  }>;
+  pending: readonly MyCrewCareObservedPending[];
+  operationalImportAllowed: false;
+};
+
+export function mapMyCrewCareObservedCandidates(options?: {
+  observation?: unknown;
+  expected?: { accountId?: string; requestId?: string };
+  observedAt?: string;
+  now?: number;
+  policy?: { plannedAcceptedAsConfirmed?: boolean } | null;
+  freshForMs?: number;
+}): Readonly<{
+  operationalImportAllowed: false;
+  accountId: string | null;
+  requestId: string | null;
+  observedAt: string | null;
+  dataState: 'fresh' | 'cached' | null;
+  candidates: readonly Readonly<MyCrewCareObservedCandidate>[];
+  error: null | 'invalid-scope' | 'invalid-observation' | 'identity-mismatch' | 'invalid-observed-at' | 'expired-observation';
+}>;

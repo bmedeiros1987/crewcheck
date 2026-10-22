@@ -4,6 +4,9 @@
  * This module never mutates roster, APZ, presentation, duty/rest or alarms. It
  * validates provider observations against an authenticated persisted-stay registry.
  */
+import { airportTimeZone, reviewedAirportTimeZones } from './airport-timezones.mjs';
+import { presentStayInstant, resolveStayDisplayZone } from './stay-time-presentation.mjs';
+
 export const MYCREWCARE_LOGISTICS_SCHEMA = 1;
 export const MYCREWCARE_SOURCE = 'mycrewcare';
 export const MYCREWCARE_MAX_RECORDS = 50;
@@ -260,6 +263,197 @@ export function normalizeMyCrewCareRecord(value) {
     transportPhone,
     transitMinutes,
     status,
+  });
+}
+
+const OBSERVED_WALL = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/;
+const OBSERVED_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const BRASILIA_ZONE = 'America/Sao_Paulo';
+
+function observedTransport(value) {
+  const providerName = opaque(value?.providerName);
+  return providerName
+    && OBSERVED_TIME.test(value.pickupWallTime)
+    && value.explicitPickupDate === null
+    && Number.isInteger(value.transitMinutes)
+    && value.transitMinutes >= 0
+    && value.transitMinutes <= 360
+    ? Object.freeze({
+      providerName,
+      pickupWallTime: value.pickupWallTime,
+      // A time-only pickup never borrows a date or zone from the hotel period.
+      pickupDate: null,
+      pickupAt: null,
+      transitMinutes: value.transitMinutes,
+    })
+    : null;
+}
+
+function observedAcceptance(rawStatus, policy) {
+  // User policy may accept PLANNED; it is never external/provider confirmation.
+  if (/^planned$/i.test(rawStatus)) {
+    return policy?.plannedAcceptedAsConfirmed === true
+      ? { acceptance: 'accepted-by-user-policy', acceptanceBasis: 'user-policy-planned-as-confirmed', pending: [] }
+      : { acceptance: 'awaiting-user-policy', acceptanceBasis: null, pending: ['status-awaiting-user-policy'] };
+  }
+  if (/^cancelled$/i.test(rawStatus)) {
+    return { acceptance: 'not-accepted-cancelled', acceptanceBasis: null, pending: ['status-cancelled'] };
+  }
+  return { acceptance: 'not-accepted-unknown-status', acceptanceBasis: null, pending: ['status-unknown'] };
+}
+
+/** Zone from the existing reviewed airport catalog only; never device, UTC or a fixed offset. */
+function derivedAirportTimeZone(airport) {
+  const zone = airportTimeZone(airport);
+  if (!zone || !formatter(zone)) return null;
+  const reviewed = reviewedAirportTimeZones[airport];
+  return Object.freeze({
+    zone,
+    origin: 'derived',
+    providerStated: false,
+    basis: reviewed ? 'reviewed-airport-evidence' : 'base-airport-catalog',
+    airport,
+    evidence: reviewed ? Object.freeze({ icao: reviewed.icao, region: reviewed.region, reviewedOn: reviewed.reviewedOn }) : null,
+  });
+}
+
+function observedWallInstant(wall, zone) {
+  const epoch = myCrewCareLocalInstant(wall.slice(0, 10), wall.slice(11, 16), zone);
+  if (epoch === null) return null;
+  // Round trip through the existing presenter must reproduce the source wall clock.
+  const local = presentStayInstant(new Date(epoch).toISOString(), zone);
+  return local.status === 'available' && `${local.date}T${local.clock}` === wall ? epoch : null;
+}
+
+function brasiliaView(epoch, localZone) {
+  const instant = new Date(epoch).toISOString();
+  const display = resolveStayDisplayZone({ source: 'manual', manualZone: BRASILIA_ZONE }, { localZone });
+  const shown = display.zone === BRASILIA_ZONE ? presentStayInstant(instant, BRASILIA_ZONE) : null;
+  return shown?.status === 'available'
+    ? Object.freeze({ instant, date: shown.date, clock: shown.clock, offset: shown.offset })
+    : null;
+}
+
+/**
+ * OFF-only diagnostic view of one observed same-session read. It never creates
+ * provider records or facts and always keeps the operational import veto.
+ * Observed values are preserved; a derived zone/instant is labelled as derived.
+ */
+export function mapMyCrewCareObservedCandidates({
+  observation,
+  expected,
+  observedAt: observedAtValue,
+  now = Date.now(),
+  policy = null,
+  freshForMs = 15 * 60_000,
+} = {}) {
+  const observedAt = myCrewCareInstant(observedAtValue);
+  const base = {
+    operationalImportAllowed: false,
+    accountId: null,
+    requestId: null,
+    observedAt: null,
+    dataState: null,
+    candidates: Object.freeze([]),
+    error: null,
+  };
+  const failed = (error) => Object.freeze({ ...base, error });
+  const accountId = opaque(expected?.accountId);
+  const requestId = opaque(expected?.requestId);
+  if (!accountId || !requestId) return failed('invalid-scope');
+  if (!observation || observation.operationalImportAllowed !== false
+    || !Array.isArray(observation.reservations)
+    || observation.reservations.length === 0
+    || observation.reservations.length > MYCREWCARE_MAX_RECORDS) return failed('invalid-observation');
+  if (observation.accountId !== accountId || observation.requestId !== requestId) return failed('identity-mismatch');
+  if (!Number.isFinite(now) || !Number.isFinite(observedAt) || observedAt > now + 30_000) return failed('invalid-observed-at');
+  if (now - observedAt > MYCREWCARE_CACHE_MAX_AGE_MS) return failed('expired-observation');
+
+  const keys = new Set();
+  const candidates = [];
+  for (const value of observation.reservations) {
+    const providerReservationId = text(value?.providerReservationId, 40);
+    const dutyPeriodNumber = text(value?.dutyPeriodNumber, 40);
+    const airport = text(value?.airport, 3);
+    const pairingId = opaque(value?.pairingId);
+    const hotelName = opaque(value?.hotelName);
+    const rawStatus = opaque(value?.status?.raw, 80);
+    const statusDisplay = opaque(value?.status?.display, 80);
+    const transportToHotel = observedTransport(value?.transportToHotel);
+    const transportToAirport = observedTransport(value?.transportToAirport);
+    const key = JSON.stringify([providerReservationId, dutyPeriodNumber]);
+    // Anything outside the observed contract (including a supplied timezone or
+    // pickup date) is not this decoder's output and fails the whole read.
+    if (value?.schemaVersion !== 1
+      || value.operationalImportAllowed !== false
+      || value.timeZone !== null
+      || !/^\d+$/.test(providerReservationId)
+      || !/^\d+$/.test(dutyPeriodNumber)
+      || keys.has(key)
+      || !/^[A-Z]{3}$/.test(airport)
+      || !pairingId
+      || !hotelName
+      || !rawStatus
+      || !statusDisplay
+      || !OBSERVED_WALL.test(value.checkInWallDateTime)
+      || !OBSERVED_WALL.test(value.checkOutWallDateTime)
+      || value.checkOutWallDateTime <= value.checkInWallDateTime
+      || !transportToHotel
+      || !transportToAirport) return failed('invalid-observation');
+    keys.add(key);
+    const status = observedAcceptance(rawStatus, policy);
+    const derivedTimeZone = derivedAirportTimeZone(airport);
+    const start = derivedTimeZone && observedWallInstant(value.checkInWallDateTime, derivedTimeZone.zone);
+    const end = derivedTimeZone && observedWallInstant(value.checkOutWallDateTime, derivedTimeZone.zone);
+    const resolved = Number.isFinite(start) && Number.isFinite(end) && end > start;
+    const checkIn = resolved ? brasiliaView(start, derivedTimeZone.zone) : null;
+    const checkOut = resolved ? brasiliaView(end, derivedTimeZone.zone) : null;
+    const anchored = Boolean(checkIn && checkOut);
+    candidates.push(Object.freeze({
+      source: MYCREWCARE_SOURCE,
+      provenance: 'observed-dom',
+      requestId,
+      providerReservationId,
+      dutyPeriodNumber,
+      airport,
+      pairingId,
+      hotelName,
+      rawStatus,
+      statusDisplay,
+      acceptance: status.acceptance,
+      acceptanceBasis: status.acceptanceBasis,
+      providerConfirmation: 'not-observed',
+      checkInWallDateTime: value.checkInWallDateTime,
+      checkOutWallDateTime: value.checkOutWallDateTime,
+      timeZone: null,
+      derivedTimeZone,
+      reservationStartAt: anchored ? checkIn.instant : null,
+      reservationEndAt: anchored ? checkOut.instant : null,
+      brasilia: anchored
+        ? Object.freeze({ label: 'Brasília', timeZone: BRASILIA_ZONE, origin: 'derived', checkIn, checkOut })
+        : null,
+      transportToAirport,
+      pending: Object.freeze([
+        ...status.pending,
+        ...(derivedTimeZone ? [] : ['time-zone-unavailable']),
+        ...(derivedTimeZone && !anchored ? ['reservation-local-time-invalid-or-ambiguous'] : []),
+        ...(anchored ? [] : ['reservation-instants-unavailable']),
+        'pickup-date-unavailable',
+        'stay-binding-unavailable',
+        'transport-to-hotel-out-of-schema',
+        'operational-import-vetoed',
+      ]),
+      operationalImportAllowed: false,
+    }));
+  }
+  return Object.freeze({
+    ...base,
+    accountId,
+    requestId,
+    observedAt: new Date(observedAt).toISOString(),
+    dataState: Math.max(0, now - observedAt) <= freshForMs ? 'fresh' : 'cached',
+    candidates: Object.freeze(candidates.sort((left, right) => left.providerReservationId.localeCompare(right.providerReservationId)
+      || left.dutyPeriodNumber.localeCompare(right.dutyPeriodNumber))),
   });
 }
 
