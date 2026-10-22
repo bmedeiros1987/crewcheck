@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "engine": "tesseract.js",
+  "version": "7.0.0",
+  "modelsRevision": "806cd9adc8c6e8abc11c782db1818c990576bebc",
+  "modelsDirectory": "4.0.0_fast",
+  "assets": [
+    {
+      "name": "worker.min.js",
+      "bytes": 111307,
+      "sha256": "576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d",
+      "gitBlobSha1": "de4a93b57987867b5dd42d8b6a5d222644aeab88",
+      "gzipBytes": 33805
+    },
+    {
+      "name": "tesseract-core-lstm.wasm.js",
+      "bytes": 3896484,
+      "sha256": "eef5f8b2f8e20e150680b20adaec4a60babafee3adbe8a94583c81fee46e8680",
+      "gitBlobSha1": "57d52b25a1438b086ba0ae8c49e9105957f306b3",
+      "gzipBytes": 1453570
+    },
+    {
+      "name": "tesseract-core-simd-lstm.wasm.js",
+      "bytes": 3899472,
+      "sha256": "c58b46a4c796c0b8afccf77591d5b875b6896b45d402bbce8caa6f5362447b38",
+      "gitBlobSha1": "c831ffec0db84e022ec5be2cdf1d4e4ae797d593",
+      "gzipBytes": 1454316
+    },
+    {
+      "name": "tesseract-core-relaxedsimd-lstm.wasm.js",
+      "bytes": 3905767,
+      "sha256": "861a536cf9ef8e63cb644d57bab39c388f37f7d6b6f60024b741c5f6b39a59b3",
+      "gitBlobSha1": "dbc88c372a923875187d611d527774f169d47561",
+      "gzipBytes": 1455779
+    },
+    {
+      "name": "eng.traineddata.gz",
+      "bytes": 1984273,
+      "sha256": "18c1ac52b75e35d44735fb6c2a60acfaf23033524653200738e98f0243edb75b",
+      "gitBlobSha1": "1760dd17b82cb60eb574332001de306e2a0b4368",
+      "gzipBytes": 1984273
+    },
+    {
+      "name": "por.traineddata.gz",
+      "bytes": 1009185,
+      "sha256": "7b0f1749aa255a593b14160c75f74690be740edcae94c5a45efc24ab50235f4d",
+      "gitBlobSha1": "81fbaee9d1f884d1428217bb29eb664fed16ac1f",
+      "gzipBytes": 1009185
+    }
+  ],
+  "boundary": {
+    "name": "worker-f7266295819b4f8f.js",
+    "bytes": 3647,
+    "sha256": "f7266295819b4f8ffae678aa23a403dd6d632b57da434171bc5a4b258be297c1"
+  },
+  "modelCacheName": "crewcheck-ocr-models-v7-18c1ac52-7b0f1749"
+}
