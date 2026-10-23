@@ -141,7 +141,7 @@ export default function FinancialStatementImporter({ mode, prepared }: { mode: '
       <div className="finance-learning-actions"><button type="button" onClick={() => setResult(null)}><X size={16}/>Descartar</button><button type="button" className="primary" disabled={payrollTotalsMismatch || !sourceConfirmed || (mode === 'payroll' && !cycleConfirmed) || !result.rates.length || result.warnings.some((item) => item.includes('obrigatória'))} onClick={confirm}><Check size={16}/>Confirmar valores</button></div>
     </div>}
 
-    {mode === 'per_diem' && <PersonalAllowanceReference onSaved={() => setRates(readConfirmedFinancialRates())}/>}
+    {mode === 'per_diem' && prepared && <PersonalAllowanceReference onSaved={() => setRates(readConfirmedFinancialRates())}/>}
     {mode === 'per_diem' && <OwnerPerDiemConfirmation key={financialRateSession() || 'signed-out'} onSaved={() => setRates(readConfirmedFinancialRates())}/>}
     <details className="finance-learning-history" open={visibleRates.length > 0}>
       <summary><History size={16}/> Histórico de tarifas revisadas ({visibleRates.length})</summary>

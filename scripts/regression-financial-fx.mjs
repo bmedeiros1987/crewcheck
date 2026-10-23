@@ -166,7 +166,7 @@ try {
   '@/lib/financialHistoryPeriods':reconciliationModules.load('financialHistoryPeriods'),
   '@/lib/financialForecastPeriods':reconciliationModules.load('financialForecastPeriods'),
   '@shared/financialFx.mjs':fxMath,
-  './FinancialStatementImporter':{extractPdfText:()=>{throw Error('no real PDF in fixture');}},
+  './FinancialStatementImporter':{default:()=>null,extractPdfText:()=>{throw Error('no real PDF in fixture');}},
  }).default;
  const base=Object.freeze({eventId:'synthetic-paid-period',iso:'2032-02-08',label:'Meal',value:20,currency:'USD',source:'synthetic historical entitlement'});
  const view=(rows,quotes)=>{stateIndex=0;return renderToStaticMarkup(Reconciliation({rows,quotes,today:'2032-02-09',unclassified:[],coveredMonths:['2032-02'],requestRange:()=>{}}));};
