@@ -1,3 +1,4 @@
+import { rosterActivityLabel } from './rosterActivityLabel';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
@@ -161,6 +162,8 @@ function workMode(event: RosterEvent): ProgramMode {
 }
 
 function cardTitle(event: RosterEvent, mode: ProgramMode) {
+  const compactLabel = rosterActivityLabel(String(event.day?.pairingCode || event.day?.type || ''));
+  if (compactLabel === 'Descanso' || (mode === 'stay' && compactLabel === 'Pernoite')) return compactLabel;
   const code = String(event.day?.type || event.day?.pairingCode || '').toUpperCase();
   if (mode === 'rest') {
     if (/(DO|DOF|DOP|OFF)/.test(code)) return `Folga publicada${code ? ` · ${code}` : ''}`;

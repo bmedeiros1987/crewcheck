@@ -5,6 +5,7 @@ import { currentPublicationReview, publicationOwner, publicationReviewStatus, su
 import { publication, type PublishedEvent } from '@/lib/rosterPublicationReview';
 import { PublicationChangeDetail } from './PublicationChangeDetail';
 import './aims-vertical.css';
+import { rosterActivityLabel } from './rosterActivityLabel';
 type AimsRosterEvent = {
   id: string;
   operationalTimeZone?: string;
@@ -42,7 +43,7 @@ function publishedClock(value?: string | null) {
 }
 
 function activityCode(event: AimsRosterEvent) {
-  return String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação');
+  return rosterActivityLabel(String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação'));
 }
 
 function details(event: AimsRosterEvent) {
