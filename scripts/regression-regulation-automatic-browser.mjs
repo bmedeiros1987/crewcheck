@@ -28,7 +28,7 @@ let browser;try{
   const result=page.getByLabel('Resultado automático condicional',{exact:true});
   assert.match(await result.innerText(),/REFERÊNCIA AUTOMÁTICA/);assert.match(await result.innerText(),/Simples\*/);
   assert.equal(await page.locator('input[type=checkbox]').count(),0);
-  const deadlines=await page.locator('.cc-reg-deadlines').innerText();
+  assert.deepEqual((await page.locator('.cc-reg-deadlines h2').allTextContents()).map(s=>s.trim()),['Corte dos motores','Fim da jornada'],'Chronological labels');const deadlines=await page.locator('.cc-reg-deadlines').innerText();
   if(zone==='UTC')await page.screenshot({path:'/tmp/regulation-automatic-closed-390.png',fullPage:true});
   await page.getByLabel('Atraso previsto em minutos',{exact:true}).fill('60');
   await page.getByRole('button',{name:'Ajustar dados',exact:true}).click();
@@ -46,7 +46,7 @@ let browser;try{
   await page.evaluate(()=>{window.hostCurrent=true;window.fixtureNow+=16*60000;});
   await page.waitForFunction(()=>!document.querySelector('[aria-label="Atraso previsto em minutos"]').disabled);
   await page.getByLabel('Composição da tripulação',{exact:true}).selectOption('augmented');
-  assert.match(await result.innerText(),/—/);assert.doesNotMatch(await result.innerText(),/Margem\*/);
+  assert.equal(await result.locator('.cc-reg-deadlines strong').first().innerText(),'-');assert.doesNotMatch(await result.innerText(),/Margem\*/);
   await page.getByRole('button',{name:'Restaurar dados da escala'}).click();
   await page.getByLabel('Apresentação da jornada',{exact:true}).fill('2032-10-20T23:00');assert.match(await page.locator('.cc-reg-deadlines').innerText(),/2032-10-21/,'overnight deadlines retain local date in every device zone');
   await page.getByRole('button',{name:'Restaurar dados da escala'}).click();

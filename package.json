@@ -160,7 +160,7 @@
   },
   "overrides": {
     "browserslist": "4.28.7",
-    "dompurify": "3.4.16"
+    "dompurify": "3.4.17"
   },
   "engines": {
     "node": ">=22.13.0"
