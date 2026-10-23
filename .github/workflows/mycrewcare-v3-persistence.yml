@@ -118,19 +118,97 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: MCC Gradle contract before canonical preparation
+      - name: Prepare effective MCC Gradle contract
+        run: |
+          cat > "$RUNNER_TEMP/mcc-effective-contract.gradle" <<'GRADLE'
+          gradle.projectsEvaluated {
+              def app = gradle.rootProject.project(':app')
+              app.tasks.register('assertMccEffectiveContract') {
+                  doLast {
+                      def android = app.extensions.findByName('android')
+                      if (android == null) throw new GradleException('MCC Android extension unavailable')
+                      def suffix = android.buildTypes.getByName('debug').applicationIdSuffix
+                      if (suffix != '.mcctest') {
+                          throw new GradleException("MCC debug applicationIdSuffix effective value is ${suffix}")
+                      }
+                      def cfg = app.configurations.findByName('debugRuntimeClasspath')
+                      if (cfg == null) throw new GradleException('MCC debugRuntimeClasspath unavailable')
+                      def versions = cfg.resolvedConfiguration.resolvedArtifacts
+                          .findAll { artifact ->
+                              artifact.moduleVersion.id.group == 'androidx.webkit'
+                                  && artifact.moduleVersion.id.name == 'webkit'
+                          }
+                          .collect { artifact -> artifact.moduleVersion.id.version }
+                          .unique()
+                          .sort()
+                      if (versions != ['1.17.1']) {
+                          throw new GradleException("MCC WebView effective dependency is ${versions}")
+                      }
+                  }
+              }
+          }
+          GRADLE
+      - name: MCC routing/equivalence regressions (always)
+        run: node --test scripts/regression-mcc-comparison.mjs
+      - name: Prove Gradle-only delta is unrelated to MCC (fail closed)
+        if: env.CREWCHECK_MCC_FULL_AUDIT != 'true'
         run: |
           node --input-type=module <<'NODE'
-          // mcc-gradle-contract:js:start
+          // mcc-gradle-delta-proof:js:start
           import assert from 'node:assert/strict';
-          import fs from 'node:fs';
-          const build = fs.readFileSync('android-wrapper/app/build.gradle', 'utf8');
-          const webkit = [...build.matchAll(/implementation\s+['"]androidx\.webkit:webkit:([^'"]+)['"]/g)];
-          assert.equal(webkit.length, 1, 'MCC WebView dependency must remain singular');
-          assert.equal(webkit[0][1], '1.17.1', 'MCC WebView dependency changed without MCC review');
-          assert.match(build, /debug\s*\{[\s\S]*?applicationIdSuffix\s+["']\.mcctest["']/, 'MCC debug applicationIdSuffix must remain isolated');
-          // mcc-gradle-contract:js:end
+          import { execFileSync } from 'node:child_process';
+          const base = process.env.CREWCHECK_MCC_BASE_SHA;
+          const head = process.env.CREWCHECK_MCC_HEAD_SHA;
+          const diff = execFileSync(
+            'git',
+            ['diff', '--unified=0', base, head, '--', 'android-wrapper/app/build.gradle'],
+            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+          );
+          const changed = diff.split('\n')
+            .filter((line) => (line.startsWith('+') || line.startsWith('-')) && !line.startsWith('+++') && !line.startsWith('---'))
+            .map((line) => line.slice(1).trim())
+            .filter(Boolean);
+          assert.ok(changed.length > 0, 'Gradle-only routing requires an explicit shared Gradle delta');
+          const allowed = new Set([
+            "implementation 'com.google.firebase:firebase-messaging:25.1.3'",
+          ]);
+          const unexpected = changed.filter((line) => !allowed.has(line));
+          assert.deepEqual(
+            unexpected,
+            [],
+            'Unproven shared Gradle delta requires MCC ownership audit: ' + unexpected.join(' | '),
+          );
+          // mcc-gradle-delta-proof:js:end
           NODE
+      - name: MCC effective Gradle contract before canonical preparation
+        run: gradle -p android-wrapper --no-daemon --console=plain -I "$RUNNER_TEMP/mcc-effective-contract.gradle" :app:assertMccEffectiveContract
+      - name: Counterprove Gradle-only tampering (always)
+        run: |
+          set -euo pipefail
+          build="android-wrapper/app/build.gradle"
+          original="$RUNNER_TEMP/mcc-build.gradle.original"
+          cp "$build" "$original"
+          restore() { cp "$original" "$build"; }
+          trap restore EXIT
+          run_contract() {
+            gradle -p android-wrapper --no-daemon --console=plain -I "$RUNNER_TEMP/mcc-effective-contract.gradle" :app:assertMccEffectiveContract
+          }
+
+          printf '\nconfigurations.configureEach { resolutionStrategy.force "androidx.webkit:webkit:1.16.0" }\n' >> "$build"
+          if run_contract >"$RUNNER_TEMP/mcc-force-counterproof.log" 2>&1; then
+            echo "resolutionStrategy.force counterproof unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -q "MCC WebView effective dependency" "$RUNNER_TEMP/mcc-force-counterproof.log"
+          restore
+
+          printf '\n// applicationIdSuffix ".mcctest" decoy; effective override follows\nandroid.buildTypes.debug.applicationIdSuffix = ".shared"\n' >> "$build"
+          if run_contract >"$RUNNER_TEMP/mcc-suffix-counterproof.log" 2>&1; then
+            echo "late applicationIdSuffix override counterproof unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -q "MCC debug applicationIdSuffix effective value" "$RUNNER_TEMP/mcc-suffix-counterproof.log"
+          restore
       - name: Isolated synthetic DOM test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/mycrewcare-dom" --no-package-lock --ignore-scripts jsdom@22.1.0
@@ -139,7 +217,6 @@ jobs:
         if: env.CREWCHECK_MCC_FULL_AUDIT == 'true'
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
-          node --test scripts/regression-mcc-comparison.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs
@@ -147,22 +224,12 @@ jobs:
           done
       - name: Complete canonical preparation
         run: node scripts/v139/apply.mjs
-      - name: MCC Gradle contract after canonical preparation
-        run: |
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import fs from 'node:fs';
-          const build = fs.readFileSync('android-wrapper/app/build.gradle', 'utf8');
-          const webkit = [...build.matchAll(/implementation\s+['"]androidx\.webkit:webkit:([^'"]+)['"]/g)];
-          assert.equal(webkit.length, 1, 'MCC WebView dependency must remain singular after canonical preparation');
-          assert.equal(webkit[0][1], '1.17.1', 'MCC WebView dependency changed during canonical preparation');
-          assert.match(build, /debug\s*\{[\s\S]*?applicationIdSuffix\s+["']\.mcctest["']/, 'MCC debug applicationIdSuffix must remain isolated after canonical preparation');
-          NODE
+      - name: MCC effective Gradle contract after canonical preparation
+        run: gradle -p android-wrapper --no-daemon --console=plain -I "$RUNNER_TEMP/mcc-effective-contract.gradle" :app:assertMccEffectiveContract
       - name: Focused contracts after canonical preparation
         if: env.CREWCHECK_MCC_FULL_AUDIT == 'true'
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
-          node --test scripts/regression-mcc-comparison.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs

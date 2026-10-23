@@ -86,6 +86,7 @@ test('actual CLI emits pinned plan and fails before emitting environment on Git 
 test('workflow retains all gates and broad unknown namespace discovery',()=>{
  assert.match(workflow,/types: \[opened, synchronize, reopened, edited\]/);assert.match(workflow,/ref: \$\{\{ github.sha \}\}/);
  assert.match(workflow,/Resolve immutable MCC comparison/);assert.match(workflow,/node scripts\/ci\/mcc-comparison.mjs/);
+ assert.equal(workflow.split('node scripts/assert-mycrewcare-v3-ownership.mjs').length-1,2,'full auditor must remain raw + prepared');
  const broad="**/*[mM][yY][cC][rR][eE][wW][cC][aA][rR][eE]";
  assert.ok(workflow.includes(broad+"*'"));assert.ok(workflow.includes(broad+"*/**'"));
  for(const marker of ['UTC America/Sao_Paulo Pacific/Auckland','node scripts/assert-mycrewcare-v3-ownership.mjs','Complete canonical preparation','TypeScript','Web build',':app:compileDebugJavaWithJavac',':app:compileReleaseJavaWithJavac','scripts/assert-mycrewcare-debug-release.mjs --compiled'])assert.ok(workflow.includes(marker),marker);
@@ -94,8 +95,16 @@ test('workflow retains all gates and broad unknown namespace discovery',()=>{
  assert.match(workflow,/- name: Resolve immutable MCC comparison \(fail closed\)\n        run: node scripts\/ci\/mcc-comparison.mjs/);
  assert.match(workflow,/- name: Classify MCC ownership scope without weakening the auditor/);
  assert.equal((workflow.match(/if: env\.CREWCHECK_MCC_FULL_AUDIT == 'true'/g)||[]).length,2,'raw/prepared ownership audit must share the same scope fence');
- assert.equal((workflow.match(/MCC Gradle contract (?:before|after) canonical preparation/g)||[]).length,2,'Gradle MCC contract must run raw and prepared');
+ assert.equal((workflow.match(/MCC effective Gradle contract (?:before|after) canonical preparation/g)||[]).length,2,'effective Gradle MCC contract must run raw and prepared');
+ assert.match(workflow,/- name: MCC routing\/equivalence regressions \(always\)\n        run: node --test scripts\/regression-mcc-comparison\.mjs/,'equivalence regression must execute even when full MCC audit is skipped');
+ assert.match(workflow,/- name: Counterprove Gradle-only tampering \(always\)\n        run: \|/,'effective Gradle counterproofs must execute outside the full-audit condition');
+ assert.match(workflow,/- name: Prove Gradle-only delta is unrelated to MCC \(fail closed\)\n        if: env\.CREWCHECK_MCC_FULL_AUDIT != 'true'/,'Gradle-only path must prove its delta rather than bypass ownership');
  assert.ok(workflow.includes("- 'android-wrapper/app/build.gradle'"),'shared Gradle remains a discovery trigger for the equivalent gate');
+ assert.match(workflow,/resolvedConfiguration\.resolvedArtifacts/,'effective dependency resolution must be inspected');
+ assert.match(workflow,/buildTypes\.getByName\('debug'\)\.applicationIdSuffix/,'effective debug applicationIdSuffix must be inspected');
+ assert.match(workflow,/resolutionStrategy\.force "androidx\.webkit:webkit:1\.16\.0"/,'forced dependency downgrade counterproof must execute');
+ assert.match(workflow,/applicationIdSuffix "\.mcctest" decoy; effective override follows/,'comment decoy counterproof must be explicit');
+ assert.match(workflow,/android\.buildTypes\.debug\.applicationIdSuffix = "\.shared"/,'late applicationIdSuffix override counterproof must execute');
  // Do not prohibit the independent PR1035 diagnostic APK branch condition.
  // Only comparison/ownership may not have an author-controlled opt-out.
  assert.doesNotMatch(fs.readFileSync(helper,'utf8'),/head_ref|labels|skip.ownership/);
@@ -122,27 +131,36 @@ test('scope routing keeps FCM-only Gradle changes out of the MCC ownership audit
  assert.equal(['android-wrapper/app/src/debug/AndroidManifest.xml'].some(isMccSignal),true,'MCC debug overlay must force the full ownership auditor');
 });
 
-test('actual workflow Gradle contract accepts unrelated Firebase SDK addition and rejects MCC-only Gradle tampering',()=>{
- const body=workflow.match(/\/\/ mcc-gradle-contract:js:start\n([\s\S]*?)\n          \/\/ mcc-gradle-contract:js:end/)?.[1];
- assert.ok(body,'Gradle contract body must remain extractable from the workflow');
- const baseline=fs.readFileSync('android-wrapper/app/build.gradle','utf8');
- const run=source=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'mcc-gradle-contract-'));
+test('actual Gradle-only proof executes the workflow code and fails closed on unproven deltas',()=>{
+ const body=workflow.match(/\/\/ mcc-gradle-delta-proof:js:start\n([\s\S]*?)\n          \/\/ mcc-gradle-delta-proof:js:end/)?.[1];
+ assert.ok(body,'Gradle-only proof body must remain extractable from the workflow');
+ const script=body.replace(/^          /gm,'');
+ const run=(mutate)=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'mcc-gradle-delta-proof-'));
+  const git=args=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
   try{
+   git(['init','-q']);
+   git(['config','user.name','Synthetic Gate Test']);
+   git(['config','user.email','synthetic@example.invalid']);
    fs.mkdirSync(path.join(root,'android-wrapper/app'),{recursive:true});
-   fs.writeFileSync(path.join(root,'android-wrapper/app/build.gradle'),source);
-   const script=body.replace(/^          /gm,'');
-   return spawnSync(process.execPath,['--input-type=module','--eval',script],{cwd:root,encoding:'utf8'});
+   const file=path.join(root,'android-wrapper/app/build.gradle');
+   fs.writeFileSync(file,"dependencies {\n    implementation 'androidx.webkit:webkit:1.17.1'\n}\n");
+   git(['add','.']);git(['commit','-qm','base']);const base=git(['rev-parse','HEAD']);
+   mutate(file);
+   git(['add','.']);git(['commit','-qm','head']);const head=git(['rev-parse','HEAD']);
+   return spawnSync(process.execPath,['--input-type=module','--eval',script],{
+    cwd:root,encoding:'utf8',env:{...process.env,CREWCHECK_MCC_BASE_SHA:base,CREWCHECK_MCC_HEAD_SHA:head},
+   });
   }finally{fs.rmSync(root,{recursive:true,force:true});}
  };
- let result=run(baseline.replace("implementation 'androidx.webkit:webkit:1.17.1'","implementation 'com.google.firebase:firebase-messaging:25.1.3'\n    implementation 'androidx.webkit:webkit:1.17.1'"));
+ let result=run(file=>fs.appendFileSync(file,"    implementation 'com.google.firebase:firebase-messaging:25.1.3'\n"));
  assert.equal(result.status,0,result.stderr);
- result=run(baseline.replace('androidx.webkit:webkit:1.17.1','androidx.webkit:webkit:1.16.0'));
- assert.notEqual(result.status,0,'MCC WebView dependency tamper must fail even when Gradle is the only changed file');
- assert.match(result.stderr,/MCC WebView dependency changed/);
- result=run(baseline.replace('applicationIdSuffix ".mcctest"','applicationIdSuffix ".shared"'));
- assert.notEqual(result.status,0,'MCC debug configuration tamper must fail even when Gradle is the only changed file');
- assert.match(result.stderr,/MCC debug applicationIdSuffix/);
+ result=run(file=>fs.appendFileSync(file,"configurations.configureEach { resolutionStrategy.force 'androidx.webkit:webkit:1.16.0' }\n"));
+ assert.notEqual(result.status,0,'resolutionStrategy.force must fail the no-MCC Gradle proof');
+ assert.match(result.stderr,/Unproven shared Gradle delta/);
+ result=run(file=>fs.appendFileSync(file,'// applicationIdSuffix ".mcctest" decoy\nandroid.buildTypes.debug.applicationIdSuffix = ".shared"\n'));
+ assert.notEqual(result.status,0,'comment decoy plus late applicationIdSuffix override must fail the no-MCC Gradle proof');
+ assert.match(result.stderr,/Unproven shared Gradle delta/);
 });
 
  test('criss-cross merge bases are rejected instead of selecting an arbitrary ancestor',()=>fixture(({root,git,write,commit,base})=>{
