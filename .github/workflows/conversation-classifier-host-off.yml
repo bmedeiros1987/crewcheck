@@ -1,0 +1,41 @@
+name: CrewCierge classifier and read host OFF
+on:
+  pull_request:
+    paths:
+      - 'server/concierge/conversation-classifier.mjs'
+      - 'server/concierge/conversation-read-host.mjs'
+      - 'server/concierge/groq-transport.mjs'
+      - 'scripts/regression-conversation-classifier-host.mjs'
+      - 'docs/concierge-classifier-host-off.md'
+      - '.github/workflows/conversation-classifier-host-off.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Raw classifiers, host and transport; no real HTTP
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/regression-conversation-classifier-host.mjs
+          done
+          node --test scripts/regression-groq-transport-off.mjs
+      - name: Canonical TypeScript and complete build
+        run: |
+          npm run check
+          npm run build
+      - name: Prepared source preserves the same guards
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/regression-conversation-classifier-host.mjs
+          done
+          node --test scripts/regression-groq-transport-off.mjs
