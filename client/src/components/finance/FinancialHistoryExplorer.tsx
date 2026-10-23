@@ -3,6 +3,7 @@ import { useFinancialPrivacy } from './FinancialPrivacy';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/authClient';
+import { financialRateOwner } from '@/lib/financialStatementLearning';
 import { listSavedRosters, openSavedRoster, financialRosterCrewIdentity, type SavedRosterSummary } from '@/lib/databaseClient';
 import type { CrewRoster } from '@/lib/pdfParser';
 import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
@@ -51,11 +52,21 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const snapshots = useMemo(()=>[...(!conflicts.includes(initialMonth)&&!inventory.some(item=>`${item.year}-${String(item.month).padStart(2,'0')}`===initialMonth)?[current]:[]),...loaded.filter(item=>!conflicts.includes(monthOf(item.roster))).map(item=>({...item,snapshot:calculate(item.roster)}))],[current,loaded,initialMonth,calculate,authRevision,calculationRevision,inventory,conflicts]);
   const months = [...new Set([initialMonth,...inventory.map(item=>`${item.year}-${String(item.month).padStart(2,'0')}`)])].filter(value=>validFinancialDay(value+'-01')).sort();
   const missing = financialMonths(range).filter(period=>!snapshots.some(item=>monthOf(item.roster)===period));
-  useEffect(()=>{const refresh=()=>setCalculationRevision(value=>value+1);window.addEventListener('crewcheck:financial-config-changed',refresh);return()=>window.removeEventListener('crewcheck:financial-config-changed',refresh);},[]);
+  useEffect(()=>{
+    const refresh=()=>setCalculationRevision(value=>value+1);
+    const storage=(event:StorageEvent)=>{
+      if(event.storageArea!==localStorage)return;
+      const owner=financialRateOwner();if(!owner)return;
+      const scope=encodeURIComponent(owner);
+      if(event.key===`crewcheck_financial_learned_rates_v2:${scope}`||event.key?.startsWith(`crewcheck_financial_settings_v1:${scope}:`))refresh();
+    };
+    window.addEventListener('crewcheck:financial-config-changed',refresh);window.addEventListener('storage',storage);
+    return()=>{window.removeEventListener('crewcheck:financial-config-changed',refresh);window.removeEventListener('storage',storage);};
+  },[]);
   useEffect(()=>{
     const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
     window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);
-    const storage=(event:StorageEvent)=>{if(['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key || ''))changed();};window.addEventListener('storage',storage);
+    const storage=(event:StorageEvent)=>{if((event.key===null&&event.storageArea===localStorage)||['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key || ''))changed();};window.addEventListener('storage',storage);
     return ()=>{epoch.current++;window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
