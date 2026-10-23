@@ -631,7 +631,8 @@ async function handleUnlink(req, res) {
     [identity.email],
   );
   await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?', [identity.email]);
-  await eraseWhatsAppAccountState(identity.email);
+  try {await eraseWhatsAppAccountState(identity.email,{db});}
+  catch {return sendJson(res,503,{ok:false,linked:false,code:'WHATSAPP_REVOCATION_PENDING',message:'Novas respostas foram bloqueadas; a conclusão da desvinculação está pendente.'});}
   return sendJson(res, 200, { ok: true, linked: false, message: 'WhatsApp desvinculado da sua conta.' });
 }
 

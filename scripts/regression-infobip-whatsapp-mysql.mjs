@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,fork} from 'node:child_process';
 import {createHash,createHmac} from 'node:crypto';
 import {createInfobipSendAdmission} from '../server/infobip-whatsapp-admission.mjs';
 import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
@@ -13,7 +13,7 @@ import {runMysqlScenarios} from './infobip-whatsapp-mysql-scenarios.mjs';
 import {verifyNamespaceIsolation} from './infobip-whatsapp-mysql-scenarios.mjs';
 const HEAD=process.argv[6];assert(/^[a-f0-9]{40}$/.test(HEAD));
 const [mode,checkoutArg,socketArg,rootArg]=process.argv.slice(2);
-assert(['preflight','suite','restart'].includes(mode));
+assert(['preflight','suite','restart','engine-worker'].includes(mode));
 const checkout=fs.realpathSync(checkoutArg);
 assert.equal(execFileSync('git',['-C',checkout,'rev-parse','HEAD'],{encoding:'utf8'}).trim(),HEAD);
 assert.equal(execFileSync('git',['-C',checkout,'status','--porcelain'],{encoding:'utf8'}).trim(),'');
@@ -60,6 +60,17 @@ const reportsPacket=items=>({...packet(),rawBody:Buffer.from(JSON.stringify({res
 const receiveReports=kind=>createOfflineInfobipDeliveryReceiver({kind,username:'synthetic',password,store:make().store,now:()=>epoch+3000});
 const restartAdmission=()=>createInfobipSendAdmission({id:'synthetic-engine-restart-approval',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+60000},{sender,now:()=>epoch});
 const reserveRestart=()=>createInfobipSqlBudget(db)(c=>restartAdmission().reserve(c,{sender,recipient}));
+if(mode==='engine-worker'){
+ const {configureWhatsAppConcierge,invokeConfiguredWhatsAppConcierge}=await load('server/whatsapp.mjs');
+ let effects=0,release;const hold=new Promise(r=>release=r);
+ process.once('message',message=>{assert.equal(message,'release');release();});
+ configureWhatsAppConcierge(async()=>{process.send({phase:'entered'});await hold;
+   await db.query('UPDATE crewcheck_platform_profiles SET created_at=NOW(3) WHERE email=?',[email]);effects++;return 'SYNTHETIC';});
+ const store=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},
+  {concierge:invokeConfiguredWhatsAppConcierge,send:async()=>assert.fail('revoked worker must not send'),
+   admission:createInfobipSendAdmission({id:'synthetic-multiprocess',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+60000},{sender,now:()=>epoch})});
+ const result=await store.dispatch(eventKey);await db.end();process.send({phase:'done',status:result.status,effects});process.disconnect();process.exit(0);
+}
 const passed=[];const run=async(name,fn)=>{await fn();passed.push(name);};
 const timeout=setTimeout(()=>{console.error('FAIL bounded synthetic SQL suite');process.exit(1);},45000);
 try{
@@ -77,7 +88,13 @@ try{
    const production=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},
      {admission:restartAdmission(),concierge:async()=>assert.fail('NO_ENGINE_RETRY'),send:async()=>assert.fail('NO_PROVIDER_RETRY')});
    assert.equal((await production.dispatch(preparingKey)).status,'preparing','preparing marker survives restart without retry');
-   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart'],externalCalls:0}));
+   const {eraseWhatsAppAccountState}=await load('server/whatsapp-lifecycle.mjs');
+   await assert.rejects(eraseWhatsAppAccountState(email,{db}));
+   clock=epoch+12*24*3600000;await make().store.maintain();await make().store.maintain();
+   const [[fence]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[preparingStateKey]);
+   const active=typeof fence.payload==='string'?JSON.parse(fence.payload):fence.payload;assert.equal(active.engineActive,true);assert.equal(active.sealed,null);
+   await assert.rejects(eraseWhatsAppAccountState(email,{db}));
+   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart','active engine fence survives restart and expired-content cleanup without permitting erasure'],externalCalls:0}));
  }else{
    await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
    await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64),created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
@@ -125,6 +142,32 @@ try{
      const first=times.find(t=>t>=60);assert.equal(first,61);clock=epoch+first*60000;const {receive}=make();assert.equal((await receive(packet())).denied,1);assert.equal((await read()).status,'denied');assert.equal((await read()).sealed,null);assert.equal((await receive(packet())).duplicates,1);
    });
    await runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock:value=>{clock=value;}});
+   await run('separate process engine blocks OFF-host erasure and retains unknown fence after crash',async()=>{
+     const {eraseWhatsAppAccountState}=await load('server/whatsapp-lifecycle.mjs');
+     for(const crash of [false,true]){
+       await reset();await make().receive(packet());
+       const child=fork(new URL(import.meta.url),['engine-worker',checkout,socket,root,HEAD],{stdio:['ignore','pipe','pipe','ipc']});
+       let diagnostics='';child.stderr.on('data',b=>{diagnostics=(diagnostics+b).slice(-2000);});
+       const exit=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})));
+       const waitMessage=phase=>new Promise((resolve,reject)=>{const onMessage=m=>{if(m.phase===phase){child.off('message',onMessage);resolve(m);}};child.on('message',onMessage);exit.then(r=>reject(Error('worker exited '+JSON.stringify(r)+diagnostics)));});
+       try{
+         await waitMessage('entered');
+         assert.equal((await read()).engineActive,true);
+         assert.equal((await make().receive(packet())).duplicates,1);
+         await Promise.all(Array.from({length:4},async()=>assert.equal((await make().store.exerciseDispatch(eventKey,{concierge:async()=>assert.fail(),send:async()=>assert.fail()})).status,'preparing')));
+         await db.query('UPDATE crewcheck_whatsapp_links SET revoked_at=NOW(3),consent_concierge=0 WHERE email=?',[email]);
+         await assert.rejects(eraseWhatsAppAccountState(email,{db}));
+         const {mysqlAdapter}=await load('server/mysql-platform-adapter.mjs');const client=await mysqlAdapter(db).connect();
+         try{await client.query('BEGIN');await assert.rejects(eraseWhatsAppAccountState(email,{client}));await client.query('ROLLBACK');}finally{client.release();}
+         clock=epoch+12*24*3600000;await make().store.maintain({forgetAccountId:owner});
+         assert.equal((await read()).engineActive,true);assert.equal((await read()).sealed,null);
+         if(crash){child.kill('SIGKILL');await exit;await assert.rejects(eraseWhatsAppAccountState(email,{db}));await make().store.maintain();assert.equal((await read()).engineActive,true);}
+         else {const done=waitMessage('done');child.send('release');assert.equal((await done).effects,1);assert.equal((await exit).code,0);assert.equal((await read()).engineActive,false);await eraseWhatsAppAccountState(email,{db});}
+         const [[quota]]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%'");
+         assert.equal((typeof quota.payload==='string'?JSON.parse(quota.payload):quota.payload).used,1);
+       }finally{if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await exit;}}
+     }
+   });
    await verifyNamespaceIsolation({run,db,reset,make,event,sender,key,salt,email});
    // Leave exactly one held synthetic claim to verify an actual engine restart.
    await reset();assert.equal((await make().receive(packet())).accepted,1);
@@ -137,7 +180,7 @@ try{
      assert.equal(await restartAdmission().reserve(c,{sender,recipient}),true);
      const [[row]]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[preparingStateKey]);
      const state=typeof row.payload==='string'?JSON.parse(row.payload):row.payload;
-     await c.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify({...state,status:'preparing',preparationId:'synthetic-preparation'}),preparingStateKey]);
+     await c.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify({...state,status:'preparing',preparationId:'synthetic-preparation',engineActive:true,engineOwner:createHash('sha256').update(JSON.stringify(['infobip-engine-owner-v1',owner])).digest('hex')}),preparingStateKey]);
    });
    console.log(JSON.stringify({head:HEAD,phase:'suite',engine:server[0].version,passed,externalCalls:0,retryContract:'synthetic ten-day ACK horizon; no account verification'}));
  }
