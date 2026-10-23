@@ -108,7 +108,7 @@ try {
   assert.equal(outside.weekly, 100);
   assert.equal(outside.weeklySummary.convertedComplete, true);
   fxUSD = 2;
-  assert.equal(calculatePerDiem([event('2032-01-31', 'INT'), event('2032-02-01')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weekly, 140);
+  assert.equal(calculatePerDiem([event('2032-01-31', 'INT'), event('2032-02-01')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weekly, null,'an undated raw setting cannot convert native entitlements; use the shared validated FX projection');
   fxUSD = 0;
   assert.equal(calculatePerDiem([event('2032-02-01', 'UNKNOWN')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weeklySummary.state, 'unclassified');
   const empty = calculatePerDiem([], roster(2032, 2), new Date('2032-02-02T12:00:00'));

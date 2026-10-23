@@ -76,3 +76,56 @@ fx=first;assert.match(markup(),/1\.000,00/);assert.match(markup(),/SYNTHETIC ref
 draft={...draft,from:'BRL',to:'USD',amount:'10'};assert.match(markup(),/2,00/);
 draft={...draft,from:'USD',to:'BRL',rate:'0',asOf:'2032-02-08'};assert.match(markup(),/Cotação\/data indisponível/);
 console.log('PASS actual FX loader/calculator: explicit OFF/access vs temporary, timeout, original-age bounded stale cache, session race, invalid/zero/future/inverse payloads, USD200, visible manual shortcut and source/date');
+
+// The allowance statement consumes the same quote set without changing native
+// entitlements, saved history, provider mode, or original statement metadata.
+const originalRows=Object.freeze([
+ Object.freeze({eventId:'synthetic-foreign',iso:'2032-02-08',label:'Meal',value:20.01,currency:'USD',convertedBRL:999,source:'synthetic original',exchangeRate:999}),
+ Object.freeze({eventId:'synthetic-domestic',iso:'2032-02-08',label:'Meal',value:100,currency:'BRL',convertedBRL:100,source:'synthetic original',exchangeRate:1}),
+]);
+const projected=fxMath.projectAllowanceFxRows(originalRows,first.quotes,'2032-02-09');
+assert.equal(projected[0].convertedBRL,100.05);
+assert.equal(projected[0].exchangeRate,5,'the audit rate keeps the explicit BRL/base inverse direction');
+assert.equal(projected[1].convertedBRL,100,'national allowance is never converted');
+assert.equal(projected[0].value,20.01);assert.equal(projected[0].source,'synthetic original');
+assert.equal(projected[0].fxReferences[0].asOf,'2032-02-08');
+assert.equal(projected[0].fxReferences[0].retrievedAt,first.quotes.USD.retrievedAt);
+assert.equal(originalRows[0].convertedBRL,999,'projection is ephemeral, never rewrites the source row');
+for(const refs of [{},{USD:{...first.quotes.USD,rate:'0'}},{USD:{...first.quotes.USD,asOf:'2032-02-10'}},{USD:{...first.quotes.USD,asOf:'2032-02-01'}}]) {
+ const unavailable=fxMath.projectAllowanceFxRows(originalRows,refs,'2032-02-09');
+ assert.equal(unavailable[0].convertedBRL,null);assert.equal(unavailable[0].value,20.01);assert.equal(unavailable[1].convertedBRL,100);
+}
+const mixed=fxMath.projectAllowanceFxRows([...originalRows,{...originalRows[0],currency:'EUR'}],{...first.quotes,EUR:{...first.quotes.USD,quote:'EUR',asOf:'2032-02-07'}},'2032-02-09');
+assert.equal(mixed[0].convertedBRL,null);assert.equal(mixed[2].convertedBRL,null,'dates are coherent across the selected projection');
+const manualQuote={base:'USD',quote:'BRL',rate:'5',asOf:'2032-02-08',source:'synthetic reviewed manual',method:'account_manual'};
+assert.equal(fxMath.projectAllowanceFxRows(originalRows,{USD:manualQuote},'2032-02-09')[0].convertedBRL,100.05);
+
+const {loadClientModules}=await import('./lib/ts-module-harness.mjs');
+const allowanceModules=loadClientModules({files:['client/src/lib/financialForecastPeriods.ts','client/src/lib/financialHistoryPeriods.ts']});
+try {
+ const homeSource=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',homeSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ const functions=ast.statements.filter(node=>ts.isFunctionDeclaration(node)&&['scopedFinancialForecast','PerDiemView'].includes(node.name?.text));assert.equal(functions.length,2);
+ const ownerFx={quotes:first.quotes,setMode:()=>{}},roster={year:2032,month:2,days:[]},snapshot={roster,perdiem:{monthlyRows:originalRows,monthlyUnclassifiedItems:[]}},range={start:'2032-02-01',end:'2032-02-29',valid:true,kind:'month'};
+ const context=vm.createContext({...allowanceModules.load('financialForecastPeriods'),...allowanceModules.load('financialHistoryPeriods'),...fxMath,React,
+  useFinancialFx:()=>ownerFx,financeSnapshot:()=>snapshot,moneyCurrency:(value,currency)=>currency+value,
+  FinancialHistoryExplorer:()=>null,FinancialFreeDayDetails:()=>null,FinancialFxSourceControl:()=>null,
+  financialWeeks:()=>[],nextAllowancePayment:()=>null,buildLegs:()=>[],getStoredUser:()=>({email:'synthetic@example.invalid'}),
+  CanonicalForecastCapture:()=>null,PerDiemMonthView:()=>null,NextPaymentCard:()=>null,FinancialStatementReconciliation:()=>null});
+ vm.runInContext(ts.transpileModule(functions.map(node=>node.getText(ast)).join('\n')+'\nglobalThis.subject={scopedFinancialForecast,PerDiemView};',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,context);
+ const scoped=context.subject.scopedFinancialForecast([snapshot],range,[],first.quotes,'2032-02-09');
+ assert.equal(scoped.monthly,200.05);assert.equal(scoped.pendingCurrencies.length,0);
+ const blocked=context.subject.scopedFinancialForecast([snapshot],range,[],{},'2032-02-09');assert.equal(blocked.monthly,null);assert.deepEqual(Array.from(blocked.pendingCurrencies),['USD']);
+ // Verify the public component passes the live provider quotes to its actual
+ // scoped caller, not only that the pure helper works in isolation.
+ ownerFx.quotes={USD:{...manualQuote,asOf:'2001-01-01'}};
+ const root=context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}});
+ const render=root.props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
+ const monthView=render.props.children.find(child=>child?.props?.forecastOverride);
+ assert.equal(monthView.props.forecastOverride.monthly,200.05);
+ assert.equal(monthView.props.forecastOverride.monthlyRows[0].fxReferences[0].source,'synthetic reviewed manual');
+ assert.ok(monthView.props.fxControl,'shared source control reaches the allowance screen');
+ assert.equal(monthView.props.graph.props.children.props.rows[0].convertedBRL,100.05,'reconciliation receives the same FX projection');
+ assert.equal(monthView.props.graph.props.children.props.rows[0].exchangeRate,5);
+ assert.equal(context.subject.scopedFinancialForecast([snapshot],range,['2032-03'],first.quotes,'2032-02-09').monthly,null,'missing roster scope still blocks a complete total');
+}finally{allowanceModules.cleanup();}
+console.log('PASS shared FX -> actual allowance scope/view: no undated setting fallback, immutable native amounts, national BRL unchanged, source/date, inverse/manual, OFF/expiry/mixed dates and incomplete scope');
