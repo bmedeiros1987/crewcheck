@@ -125,6 +125,8 @@ try {
   assert(worker.CrewCheckGateReceiverOffline.matchesAck(localRevoke.ack,revokeRequest));assert.equal(localRevoke.ack.received,null);
   assert(!worker.CrewCheckGateReceiverOffline.matchesAck(localRevoke.ack,{...revokeRequest,authorityEpoch:'z'.repeat(64)}));
   assert(notifications.every(item=>item.closed));assert.equal((await receiver.receive(gateEnvelope)).status,'revoked');assert.equal(displayCount,1);
+  assert.equal((await receiver.receive({...gateEnvelope,eventKey:'gate-change-v1:'+'f'.repeat(64)})).status,'revoked');assert.equal(displayCount,1,'revoked binding blocks a different late event too');
+  console.log('PASS admitted source/history -> canonical SQL host -> existing persistent outbox -> real guarded receiver: one mocked display, dedup, matching revoke ACK, stale ACK rejected and late events blocked');
   // Device receipts for a gate job must carry its exact authority epoch and topic revision.
   const receiptOwner={email,ownerId},gateJob=async()=>{const [rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[queued[0].state_key]);return typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;};
   const {authorityEpoch:_epoch,topicRevision:_topic,...withoutGateFields}=gateEnvelope;

@@ -314,9 +314,9 @@ receipts, observation-after-receipt, backwards receipts and Cirium provenance
 through the REAL gateHost -> existing persistent outbox. Its existing duplicate,
 authority revocation, exact receipt, transaction and engine restart assertions
 are preserved. Pure admission fixtures cover both samples and all above states
-in UTC/Sao Paulo/Auckland, raw and prepared. No local MySQL/Docker executable
-was available; disposable real-SQL durability is delegated to the existing CI
-job, not claimed by the pure fixtures.
+in UTC/Sao Paulo/Auckland, raw and prepared. Initially no local MySQL/Docker executable was available. The continuation below
+adds author-run disposable real-MySQL verification, separately from the pure
+fixtures and the existing isolated CI job.
 
 ### NOTAM mapping only
 
@@ -340,3 +340,55 @@ host/enrollment, canonical authority issuance/logout/schema, trusted clock,
 external transport admission and physical closed-app receipt/revocation remain
 HOLD. Nothing here makes notifications work on a closed phone. All switches
 remain OFF; no credentials, paid query, enrollment or real notification.
+
+
+## SQL-to-receiver extension validation — 2026-10-23
+
+The local1815d61f extension was resumed after #1191's P2 follow-up. This change
+leaves #1191 at1b644548 and does not import it. Remote #1179 was checked at
+ffa476c6 on main71f18784, still draft; no competing branch update was found.
+Only the existing SQL fixture and this evidence record change in the final
+extension. Host runtime, provider OFF switches, native receiver, API surface,
+source storage and authority lifecycle are unchanged.
+
+The actual trusted-history inspector and gateHost enqueue/dispatch now run
+through the existing persistent SQL outbox into the real guarded receiver in
+the SAME synthetic test. The sender callback invokes the existing receiver
+module, not a second implementation. Receiver storage, origin-lock scheduling,
+notification tray and display remain in-memory fixtures; separate Chromium
+checks use actual IndexedDB and Web Locks with mocked platform display.
+
+Assertions require one display API resolution, SQL and receiver dedup, a
+correlated local revoke ACK after the persisted synthetic fence and tray close,
+rejection of a stale-epoch ACK, and refusal of BOTH the old event and a different
+late event after revoke. Existing SQL receipt correlation, server session
+revocation before sender, eight-consumer concurrency, owner deletion, claim
+commit/uncertain hold and actual engine-restart assertions are retained.
+There is still no wire/host for remote revoke or external device receipt.
+
+Local real SQL used the official MySQL Community8.4.13 macOS ARM64 compressed
+archive in /tmp only, checksum73926da59774274b5cdfe78cd2150840 matching the
+[official download page](https://dev.mysql.com/downloads/mysql/8.4.html?os=33).
+No package installer, global service or login was used. Each run created its own
+0700 /tmp/crewcheck-gate-sql-qa-<random>/data and private Unix socket with
+--no-defaults, --skip-networking and --mysqlx=OFF. SELECT @@skip_networking
+returned1. Only synthetic example.test fixtures and the guarded fixture database
+were used. Each run stops mysqld, restarts the SAME datadir, verifies no resend,
+stops the engine again and removes its created datadir/socket in finally.
+Raw and prepared runs passed, including final raw late-event assertions;
+cleanup confirmed removed roots and stopped processes. This does not certify
+production database schema, migrations, authority or delivery.
+
+Author validation also passed:64 history assertions in UTC/Sao Paulo/Auckland
+raw/prepared;42 producer cases;15 receiver fence cases;27 cancellation cases;
+existing offline push lifecycle; actual Chromium receiver with IndexedDB/Web
+Locks; TypeScript raw/prepared and canonical build. CI of the final pushed SHA
+is a separate gate and must be read before integration. Re-review remains with
+the parent; no claim of independent approval is made by this author record.
+
+Still HOLD/OFF: approved real source's field contract and authorized capture/
+history reader, canonical authority issuance/logout/schema, trusted native
+clock/admission, installed host/enrollment, external transport and correlated
+remote revoke/ACK, physical closed-app validation. A source name or these
+synthetic tests cannot establish real provenance, gate correctness, delivery or
+read. No credential, permission, real notification, paid lookup, merge or deploy.
