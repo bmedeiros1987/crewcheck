@@ -1,10 +1,10 @@
 import { useFinancialPrivacy } from './FinancialPrivacy';
 import { useEffect, useRef, useState } from 'react';
 import { getStoredUser, getToken } from '@/lib/authClient';
-import { learnFinancialStatement, type StatementLearningResult } from '@/lib/financialStatementLearning';
+import { financialRateSession, learnFinancialStatement, type StatementLearningResult } from '@/lib/financialStatementLearning';
 import { financialMonths, financialRowsInRange, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { summarizeForecastRows } from '@/lib/financialForecastPeriods';
-import { extractPdfText } from './FinancialStatementImporter';
+import FinancialStatementImporter, { extractPdfText } from './FinancialStatementImporter';
 import { projectAllowanceFxRows } from '@shared/financialFx.mjs';
 import type { FxQuote } from '@/lib/financialFxReference';
 
@@ -14,12 +14,12 @@ const formatMoney = (value:number,currency='BRL')=>new Intl.NumberFormat('pt-BR'
 export default function FinancialStatementReconciliation({ rows, unclassified, coveredMonths, requestRange, quotes, today }: { quotes?:Record<string,FxQuote>; today?:string; rows: Row[]; unclassified: Array<{iso:string;airport:string}>; coveredMonths: string[]; requestRange: (range:FinancialRange)=>void }) {
   const privacy = useFinancialPrivacy();
   const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
-  const [document,setDocument]=useState<{owner:string; result:StatementLearningResult}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [document,setDocument]=useState<{owner:string; session:string; result:StatementLearningResult}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const identityNow=owner(), epoch=useRef(0);
   useEffect(()=>{epoch.current++;setDocument(null);setBusy(false);setError('');return()=>{epoch.current++;};},[identityNow]);
   async function read(file?:File) {
-    if(!file)return; const identity=owner(), version=++epoch.current;setBusy(true);setError('');setDocument(null);
-    try {const text=await extractPdfText(file);if(owner()===identity&&version===epoch.current){const result=learnFinancialStatement(text,file.name);if(result.kind!=='per_diem')throw new Error('wrong document');setDocument({owner:identity,result});};}
+    if(!file)return; const identity=owner(), session=financialRateSession(), version=++epoch.current;setBusy(true);setError('');setDocument(null);
+    try {const text=await extractPdfText(file);if(owner()===identity&&version===epoch.current){const result=learnFinancialStatement(text,file.name);if(result.kind!=='per_diem')throw new Error('wrong document');if(session && session===financialRateSession())setDocument({owner:identity,session,result});};}
     catch {if(owner()===identity&&version===epoch.current)setError('Não foi possível ler o demonstrativo. Nenhum valor foi alterado.');}
     finally {if(owner()===identity&&version===epoch.current)setBusy(false);}
   }
@@ -46,6 +46,7 @@ export default function FinancialStatementReconciliation({ rows, unclassified, c
       <p>Conciliação ainda depende de verificar escala executada, revisões e todos os itens do documento. Igualdade de totais não comprova igualdade de itens nem recebimento.</p>
       {result.warnings.map(warning=><p key={warning}>{privacy.text(warning)}</p>)}
       <h3>Tarifas observadas no documento</h3>{result.rates.map(rate=><p key={rate.key}>{rate.label}: {money(rate.value,rate.currency)} · {rate.effectiveFrom} até {rate.effectiveTo || 'fim não informado'} · sem alteração da previsão</p>)}
+      {document && <FinancialStatementImporter mode="per_diem" prepared={document}/>}
       <h3>Itens usados pela previsão ({items.length})</h3>{items.map((row,index)=><article className="cc-financial-audit-item" key={row.eventId+'-'+row.iso+'-'+row.label+'-'+index}><strong>{row.iso} · {row.label} · {money(row.value,row.currency)}</strong><p>{privacy.text(row.source)}</p><p>Fonte da tarifa: {row.rateSource || 'não informada'} · versão {row.rateVersion || 'não informada'}. Instantes usados pelo app (UTC): {row.calculationStart || 'não informado'} até {row.calculationEnd || 'não informado'}. Cotação configurada: {row.exchangeRate == null ? 'pendente' : privacy.amount(String(row.exchangeRate))}; não é cotação histórica oficial.</p><small>Origem operacional: {row.eventId || 'não informada'}. Conversão: {row.convertedBRL===null?'câmbio pendente':money(row.convertedBRL)}.</small></article>)}
       {!items.length&&<p>Nenhum item da escala está disponível no intervalo declarado.</p>}
     </section>}

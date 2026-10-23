@@ -30,6 +30,7 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails, s
   }
   return <div ref={root} className="cc-payment-overview" data-financial-screen={screen} data-financial-item-count={payment.lines.length}>
     {screen!=='changes'&&payment.kind==='payroll'&&salaryDisplay?.control}
+    {screen==='statement'&&payment.kind==='payroll'&&salaryDisplay?.amount}
     {screen!=='overview'&&<header className="cc-financial-screen-head"><button type="button" onClick={()=>back?back():navigate('overview')}>← Voltar</button><h2 tabIndex={-1} data-financial-screen-heading>{screen==='statement'?'Extrato':screen==='charts'?'Gráficos':screen==='changes'?'Alterações':'Detalhes do pagamento'}</h2></header>}
     {(screen==='statement'||screen==='charts'||screen==='changes')&&controls}
     {screen==='changes'&&<>{changesDetails}<FinancialChangesScreen range={range}/></>}
