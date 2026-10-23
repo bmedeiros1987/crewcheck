@@ -177,7 +177,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   }
   const actualSave = context.conciergeSaveSnapshotAsync;
   context.conciergeSaveSnapshotAsync = (...args) => { trace.saves.push(clone(args[2] || {})); return actualSave(...args); };
-  const binding = source.match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);/);
+  const binding = source.match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);/);
   assert.ok(binding, 'real WhatsApp binding is present');
   vm.runInContext(binding[0], context);
   vm.runInContext(extract(whatsapp, 'handleInboundMessage'), context);

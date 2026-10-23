@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { createInfobipWebhookAuthenticator } from './infobip-whatsapp-auth.mjs';
 export { verifyInfobipBasic, verifyInfobipHmac } from './infobip-whatsapp-auth.mjs';
 
-// Review candidate only. No production router imports this module. Environment
-// variables cannot enable it; no transport, credentials, DDL or logs live here.
+// Shared event/reply validation. Existing production bootstrap remains OFF;
+// this module discovers no configuration, credentials, transport, DDL or logs.
 export const INFOBIP_WHATSAPP_RELEASE_ENABLED = false;
 // Nine-day provider retry horizon plus one day of clock/operational margin.
 export const INFOBIP_INBOUND_MAX_AGE_MS = 10 * 24 * 60 * 60_000;
@@ -56,11 +56,11 @@ function linkStamp(link, event) {
   return JSON.stringify([link.accountId, link.revision, link.provider, link.sender, link.recipient]);
 }
 
-// OFFLINE entrypoint. The injected store MUST supply serializable transactions:
+// Receiver core. The injected store MUST supply serializable transactions:
 // claim+enqueue commit together, unique claims survive restarts, failures roll
-// back, and lookupLink uses the same transaction. No production store is supplied.
+// back, and lookupLink uses the same transaction. Stores are explicitly supplied.
 // Retry ACK horizon is independent of reply authorization. Content expires at 15m.
-export function createOfflineInfobipReceiver({ sender, username, password, authentication, store, now = Date.now }) {
+export function createInfobipInboundReceiver({ sender, username, password, authentication, store, now = Date.now }) {
   if (!phone(sender) ||
       typeof store?.transaction !== 'function' || typeof now !== 'function') fail('CONFIGURATION');
   const auth = createInfobipWebhookAuthenticator(authentication === undefined ? {mode: 'basic', username, password} : authentication);
@@ -124,24 +124,35 @@ export function createOfflineInfobipReceiver({ sender, username, password, authe
 // Produces an offline proposal, never sends it. The eventual sender must recheck
 // binding+consent under its send lock; this return value is not an authorization
 // token and must never be passed directly to Meta's existing transport.
-export async function prepareOfflineInfobipReply(job, { lookupLink, concierge, now = Date.now }) {
+export async function prepareInfobipReply(job, { lookupLink, concierge, now = Date.now, signal }) {
   try {
-    if (!job || job.provider !== 'infobip' || !phone(job.sender) || !phone(job.recipient) ||
+    if (signal?.aborted || !job || job.provider !== 'infobip' || !phone(job.sender) || !phone(job.recipient) ||
         !id(job.messageId) || typeof job.text !== 'string' || !job.text.trim() ||
         !Number.isFinite(job.receivedAt) || now() - job.receivedAt > INFOBIP_REPLY_MAX_AGE_MS ||
         job.receivedAt > now() + 30_000) return null;
     const initial = await lookupLink(job);
     const stamp = linkStamp(initial, job);
-    if (!stamp || stamp !== job.bindingStamp) return null;
-    let timer; const controller = new AbortController();
+    if (signal?.aborted || !stamp || stamp !== job.bindingStamp) return null;
+    let timer,abortListener; const controller = new AbortController();
+    const work=Promise.resolve().then(() => concierge({accountId: initial.accountId, email: initial.email,
+      text: job.text, messageId: job.messageId, signal: signal?AbortSignal.any([controller.signal,signal]):controller.signal}));
     const reply = await Promise.race([
-      Promise.resolve().then(() => concierge({accountId: initial.accountId, email: initial.email,
-        text: job.text, messageId: job.messageId, signal: controller.signal})),
+      work,
       new Promise(resolve => {timer = setTimeout(() => {controller.abort(); resolve(null);}, 5_000);}),
-    ]).finally(() => clearTimeout(timer));
-    if (typeof reply !== 'string' || !reply.trim() || reply.length > 4_000 ||
+      ...(signal?[new Promise(resolve=>{abortListener=()=>{controller.abort();resolve(null);};if(signal.aborted)abortListener();else signal.addEventListener('abort',abortListener,{once:true});})]:[]),
+    ]).finally(async () => {
+      clearTimeout(timer);if(abortListener)signal.removeEventListener('abort',abortListener);
+      // Abort/timeout requests cancellation; it cannot detach a legacy handler.
+      // Completion and lifecycle ownership remain pending until actual settle.
+      await work.catch(()=>{});
+    });
+    if (signal?.aborted || typeof reply !== 'string' || !reply.trim() || reply.length > 4_000 ||
         linkStamp(await lookupLink(job), job) !== stamp || now() - job.receivedAt > INFOBIP_REPLY_MAX_AGE_MS) return null;
     return Object.freeze({ provider: 'infobip', sender: job.sender, recipient: job.recipient,
       replyToMessageId: job.messageId, bindingStamp: stamp, text: reply });
   } catch { return null; }
 }
+
+// Compatibility aliases for the existing synthetic candidate suites.
+export const createOfflineInfobipReceiver=createInfobipInboundReceiver;
+export const prepareOfflineInfobipReply=prepareInfobipReply;

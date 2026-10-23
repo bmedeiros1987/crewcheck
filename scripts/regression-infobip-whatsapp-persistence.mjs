@@ -188,7 +188,7 @@ for(const mode of ['revoke','relink','account','consent','expire','failure','unc
   // Execute the CURRENT canonical configure callback with synthetic snapshot and
   // reply-builder dependencies; then reach it through the real shared invoker.
   const source=fs.readFileSync('server.mjs','utf8');
-  const binding=source.match(/configureWhatsAppConcierge\(async \(\{ email, text, location \}\) => \{[\s\S]*?\n\}\);(?=\n\nhttp\.createServer)/)?.[0];
+  const binding=source.match(/configureWhatsAppConcierge\(async \(\{ email, text, location, signal \}\) => \{[\s\S]*?\n\}\);(?=\n\nhttp\.createServer)/)?.[0];
   assert(binding,'prepare canonical server before this regression');
   const {s,db}=fixture();let engineCalls=0,requests=0;
   vm.runInNewContext(binding,{configureWhatsAppConcierge,conciergeLoadSnapshot:async profile=>{assert.equal(profile.email,baseLink.email);return {name:'Synthetic'};},

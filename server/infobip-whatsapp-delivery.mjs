@@ -4,7 +4,7 @@ import {infobipDeliveryState} from './infobip-whatsapp-candidate.mjs';
 // OFF candidate for the classic WhatsApp delivery-report results[] contract.
 // Account subscription payload/auth/routing still requires verification. SEEN is
 // a different contract and is never coerced into delivery. No public route here.
-export function createOfflineInfobipDeliveryReceiver({username, password, authentication, store, kind = 'delivery', now = Date.now}) {
+export function createInfobipReportReceiver({username, password, authentication, store, kind = 'delivery', now = Date.now}) {
   if (!['delivery','seen'].includes(kind)) throw Error('INFOBIP_REPORT_KIND');
   if (typeof store?.recordDelivery !== 'function') throw Error('INFOBIP_DLR_CONFIGURATION');
   const auth = createInfobipWebhookAuthenticator(authentication === undefined ? {mode:'basic', username, password} : authentication);
@@ -51,3 +51,5 @@ export function createOfflineInfobipDeliveryReceiver({username, password, authen
     } catch {return {status: 503, code: 'STORE_UNAVAILABLE'};}
   };
 }
+
+export const createOfflineInfobipDeliveryReceiver=createInfobipReportReceiver;

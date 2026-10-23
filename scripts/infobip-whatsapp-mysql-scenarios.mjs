@@ -1,10 +1,12 @@
+import {createInfobipWhatsAppProduction} from '../server/infobip-whatsapp-production.mjs';
+import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
 import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 // Invoked only AFTER the owned-socket/clean-HEAD checks in the SQL harness.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {createHmac} from 'node:crypto';
+import {createHmac,createHash} from 'node:crypto';
 import {Readable} from 'node:stream';
 import {createInfobipWhatsAppRuntime,INFOBIP_WHATSAPP_CALLBACK_PATH} from '../server/infobip-whatsapp-runtime.mjs';
 import {eraseWhatsAppAccountState} from '../server/whatsapp-lifecycle.mjs';
@@ -115,6 +117,25 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
      setClock(epoch+(hours+12*24)*3600_000);await make().store.maintain();assert.equal(await raw(),undefined);
      assert.equal((await make().receive(packet(event))).status,400);
    }
+ });
+ await run('production composition admits only durable quantity under actual InnoDB concurrency and recreation',async()=>{
+   await reset();let attempts=0,engineCalls=0;
+   configureWhatsAppConcierge(async()=> {engineCalls++;return 'SYNTHETIC PRODUCTION REPLY';});
+   const publicOrigin='https://crewcheck.example.invalid';
+   const options={enabled:true,db,now:()=>epoch,configuration:{sender,baseUrl:'https://synthetic.api.infobip.com',allowedSenders:[sender],allowedBaseUrls:['https://synthetic.api.infobip.com'],authentication:'hmac-sha256',
+     credentialReferences:{apiKey:'fixture/api',encryptionKey:'fixture/encryption',linkHashKey:'fixture/link',webhookSecret:'fixture/webhook'},
+     deploymentBinding:{profileId:'synthetic-profile',subscriptionIds:['synthetic-subscription'],sender,baseUrl:'https://synthetic.api.infobip.com',publicOrigin,linkHashKeyReference:'fixture/link'}},
+     credentials:{resolve:async(_ref,{purpose})=>({apiKey:'synthetic-outbound-api-key-not-real',encryptionKey:key,linkHashKey:salt,webhookSecret:'synthetic-production-hmac-key-not-real'})[purpose]},
+     ingress:{mode:'direct-tls',publicOrigin},admission:{id:'synthetic-mysql-approval',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+60000},scheduler:{set:()=>1,clear(){}},
+     request:async(_url,{body})=>{attempts++;const message=JSON.parse(body);return new Response(JSON.stringify({to:message.to,messageId:message.messageId,status:{groupId:1,groupName:'PENDING',id:26,name:'PENDING_ACCEPTED'}}));}};
+   const enqueue=async prefix=>{for(let i=0;i<4;i++)assert.equal((await make().receive(packet({...event,messageId:prefix+i}))).accepted,1);};
+   const eventKeys=prefix=>Array.from({length:4},(_,i)=>createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,prefix+i])).digest('hex'));
+   let runtime;
+   try {await enqueue('synthetic-production-');runtime=await createInfobipWhatsAppProduction(options);
+     await Promise.all(eventKeys('synthetic-production-').map(id=>runtime.dispatch(id)));assert.equal(attempts,1);assert.equal(engineCalls,1);
+     const [rows]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%'");assert.equal(rows.length,1);const row=typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;assert.equal(row.used,1);
+     await runtime.dispose();runtime=await createInfobipWhatsAppProduction(options);await enqueue('synthetic-production-recreated-');await Promise.all(eventKeys('synthetic-production-recreated-').map(id=>runtime.dispatch(id)));assert.equal(attempts,1);
+   } finally {await runtime?.dispose();configureWhatsAppConcierge(null);}
  });
  await run('account erase joins actual platform transaction and rolls back atomically',async()=>{
    await reset();await make().receive(packet(event));
