@@ -1,0 +1,50 @@
+name: Infobip WhatsApp authenticated OFF candidate
+on:
+  pull_request:
+    paths:
+      - 'server/infobip-whatsapp-*.mjs'
+      - 'scripts/regression-infobip-whatsapp-*.mjs'
+      - 'scripts/regression-infobip-whatsapp-mysql-ci.sh'
+      - 'scripts/infobip-whatsapp-mysql-scenarios.mjs'
+      - 'docs/infobip-whatsapp-hmac-contract-20261021.md'
+      - 'docs/infobip-whatsapp-events-20261023.md'
+      - '.github/workflows/infobip-whatsapp-offline.yml'
+permissions:
+  contents: read
+jobs:
+  offline-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Raw authentication and signing vector, synthetic dependencies only
+        run: |
+          node scripts/regression-infobip-whatsapp-hmac.mjs
+          node scripts/regression-infobip-whatsapp-candidate.mjs
+      - name: Prepare existing canonical OFF wiring
+        run: node scripts/v139/apply.mjs
+      - name: Prepared authentication, persistence and sealed runtime
+        run: |
+          node scripts/regression-infobip-whatsapp-hmac.mjs
+          node scripts/regression-infobip-whatsapp-persistence.mjs
+          node scripts/regression-infobip-whatsapp-runtime.mjs
+
+  isolated-mysql-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Owned MySQL 8.4 without network, concurrency and actual restart
+        run: bash scripts/regression-infobip-whatsapp-mysql-ci.sh

@@ -1,5 +1,7 @@
 # Infobip: candidato completo, produção OFF
 
+> Complemento posterior: [contrato HMAC offline de 21/10/2026](infobip-whatsapp-hmac-contract-20261021.md). A extensão não ativa a conta nem transforma o vetor criptográfico em schema real.
+
 Base desta etapa: a4ea665f8e891abddfa4b50a7ad331f678ea356b.
 Esta nota substitui as lacunas de implementação da preparação v4.
 
