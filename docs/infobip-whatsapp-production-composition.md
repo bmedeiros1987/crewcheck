@@ -99,8 +99,14 @@ receipts remain. Preparing content expires through the same maintenance path.
 The HTTP implementation makes one injected request, forbids redirects, bounds
 response bytes to 16 KiB and the whole operation to five seconds, and propagates
 cancellation. 401/429/5xx, invalid responses, timeout or lost ACK become uncertain,
-never automatic retries or provider fallback. Cancellation cannot retract a
-message already accepted remotely; uncertainty remains non-retryable. Independent
+never automatic retries or provider fallback. The injected HTTP adapter is a
+trusted dependency: it MUST honor the AbortSignal, reject redirects (including
+not forwarding credentials), and perform no internal retries, fallback, replay
+or deferred background submission. The wrapper invokes it once and bounds its
+own wait; it cannot prove that a dishonest/noncompliant adapter stopped remote
+work or did not retry internally. Real adapter implementation and compliance
+must be reviewed before wiring. Cancellation cannot retract a message already
+accepted remotely; uncertainty remains non-retryable. Independent
 upstream/manual campaigns, templates, multipart charging, other apps, or account
 charges are outside this quantity fence. No absolute financial ceiling is claimed.
 
