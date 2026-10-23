@@ -128,8 +128,11 @@ const cycleTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-scheduler-
 const cycleTempFile = path.join(cycleTempDir, 'run-scheduler-cycle.mjs');
 try {
   const harness = `
-import { runTelegramBriefingCycle } from ${JSON.stringify(pathToFileURL(path.resolve('server/concierge/telegram-briefing.mjs')).href)};
+import { runTelegramBriefingCycle as actualTelegramBriefingCycle } from ${JSON.stringify(pathToFileURL(path.resolve('server/concierge/telegram-briefing.mjs')).href)};
 import { runCrewCheckPushQueue as actualCrewCheckPushQueue } from ${JSON.stringify(pathToFileURL(path.resolve('server/web-push/bidsProducer.mjs')).href)};
+let briefingThrows = false;
+export function setBriefingThrows(value) { briefingThrows = value; }
+async function runTelegramBriefingCycle(db) { if (briefingThrows) throw Error('Synthetic briefing failure'); return actualTelegramBriefingCycle(db); }
 async function runCrewCheckPushQueue(db) { return actualCrewCheckPushQueue(db, { configuration: () => ({ enabled: false, configured: false }) }); }
 export let schedulerRunning = false;
 export let lastCycle = null;
@@ -185,6 +188,12 @@ export { runSchedulerCycle };
   assert.equal(mod.lastCycle.crewCheckPush.selected, 0);
   assert.equal(mod.lastCycle?.error, undefined, 'ciclo bem-sucedido não deve registrar summary.error');
   assert.equal(mod.heartbeatCalls.length, 2, 'ciclo bem-sucedido deve gravar heartbeat de início e de fim (db existe)');
+  mod.setBriefingThrows(true);
+  await mod.runSchedulerCycle();
+  assert.equal(mod.lastCycle.operationalBriefing.status, 'unavailable');
+  assert.equal(mod.lastCycle.crewCheckPush.enabled, false, 'Briefing outage must not stop the existing queue');
+  assert.equal(mod.lastCycle.error, undefined);
+  mod.setBriefingThrows(false);
   assert.equal(mod.heartbeatCalls[0].lastFinishedAt, null, 'heartbeat de início deve marcar lastFinishedAt=null');
   assert.equal(mod.heartbeatCalls[1].lastStatus, 'ok', 'heartbeat de fim de ciclo bem-sucedido deve ter lastStatus=ok');
 

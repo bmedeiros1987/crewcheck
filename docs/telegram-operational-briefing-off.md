@@ -10,7 +10,7 @@ This is a new composition on current main, not a merge/overwrite of those old dr
 
 ## Connected, but inert
 
-TELEGRAM_OPERATIONAL_BRIEFING_ENABLED is literal false. No environment flag enables it. The existing scheduler calls runTelegramBriefingCycle, which returns before DB access while OFF. The new existing-runtime host at /api/notifications/operational-briefing returns503 before auth/body while OFF. The existing dispatcher recognizes the reserved operational-briefing namespace; forged or disabled jobs cannot fall through to arbitrary-message delivery. Public alarm enqueue rejects the prefix case-insensitively.
+TELEGRAM_OPERATIONAL_BRIEFING_ENABLED is literal false. No environment flag enables it. The existing scheduler calls runTelegramBriefingCycle, which returns before DB access while OFF. A producer failure is reported as unavailable without stopping the existing alarm/push/commute cycle; the real extracted scheduler regression injects that failure. The new existing-runtime host at /api/notifications/operational-briefing returns503 before auth/body while OFF. The existing dispatcher recognizes the reserved operational-briefing namespace; forged or disabled jobs cannot fall through to arbitrary-message delivery. Public alarm enqueue rejects the prefix case-insensitively.
 
 When explicitly enabled only in synthetic fixtures, the path is canonical primary active roster -> topic consent/binding -> existing crewcheck_notification_jobs -> existing dispatchClaimedJob -> fake Telegram. There is no new queue, scheduler, broker, provider, AI, weather lookup, external trigger or schema migration. Source/weather unsupported states remain explicit.
 

@@ -367,7 +367,8 @@ async function runSchedulerCycle() {
     if (!db) throw new Error('Banco indisponível para notificações.');
     await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
     await ensureNotificationTable(db);
-    summary.operationalBriefing = await runTelegramBriefingCycle(db);
+    try { summary.operationalBriefing = await runTelegramBriefingCycle(db); }
+    catch { summary.operationalBriefing = { status: 'unavailable', planned: 0 }; }
     await db.query("UPDATE crewcheck_notification_jobs SET status='uncertain',locked_at=NULL WHERE status IN ('processing','dispatching') AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
     await db.query("UPDATE crewcheck_notification_jobs SET status='expired' WHERE status='pending' AND scheduled_at < DATE_SUB(NOW(3), INTERVAL 120 SECOND)");
     const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 120 SECOND) ORDER BY scheduled_at ASC LIMIT 50");
