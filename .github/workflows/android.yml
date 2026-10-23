@@ -93,6 +93,9 @@ jobs:
         run: |
           node scripts/regression-android-alarm-acceptance.mjs
           node scripts/regression-native-reminder-cancellation.mjs
+          node scripts/regression-android-native-push-off.mjs
+          javac -d "$RUNNER_TEMP/notification-timing" android-wrapper/app/src/main/java/com/crewcheck/app/NativePushPolicy.java android-wrapper/app/src/main/java/com/crewcheck/app/NativePushSession.java scripts/fixtures/NativePushSessionFixture.java
+          java -cp "$RUNNER_TEMP/notification-timing" NativePushSessionFixture
           node scripts/regression-play-catalog-recovery.mjs
       - name: Web and privacy validation
         run: |
@@ -122,7 +125,9 @@ jobs:
       - name: Download pinned official bundletool
         run: curl --fail --location --retry 3 https://github.com/google/bundletool/releases/download/1.18.2/bundletool-all-1.18.2.jar -o "$RUNNER_TEMP/bundletool.jar"
       - name: Verify actual bundle manifests, signing and destinations
-        run: python3 scripts/android-play/validate.py --bundletool "$RUNNER_TEMP/bundletool.jar" --output "$RUNNER_TEMP/play-bundles"
+        run: |
+          python3 scripts/android-play/validate.py --bundletool "$RUNNER_TEMP/bundletool.jar" --output "$RUNNER_TEMP/play-bundles"
+          python3 scripts/assert-android-native-push-off-manifest.py "$RUNNER_TEMP/play-bundles/app-manifest.xml"
       - name: Upload mobile AAB
         uses: actions/upload-artifact@v4
         with:
