@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'client/src/lib/crewCiergeLocal.ts'
+      - 'client/src/lib/crewCiergeCapture.ts'
+      - 'client/src/lib/useCrewciergeConversation.ts'
+      - 'client/src/pages/Home.tsx'
       - 'client/src/lib/canonicalRoster.ts'
       - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'client/src/lib/rosterContinuity.ts'
@@ -11,6 +14,7 @@ on:
       - 'server/concierge/duty-facts.mjs'
       - 'scripts/regression-conversation-pilot.mjs'
       - 'scripts/regression-crewcierge-local-browser.mjs'
+      - 'scripts/regression-crewcierge-screen-browser.mjs'
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/v139/**'
       - 'package.json'
@@ -44,6 +48,7 @@ jobs:
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node scripts/regression-conversation-pilot.mjs
             TZ="$zone" node scripts/regression-crewcierge-local-browser.mjs
+            TZ="$zone" node scripts/regression-crewcierge-screen-browser.mjs
           done
       - name: Canonical preparation and complete build
         run: |
@@ -57,5 +62,6 @@ jobs:
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node scripts/regression-conversation-pilot.mjs
             TZ="$zone" node scripts/regression-crewcierge-local-browser.mjs
+            TZ="$zone" node scripts/regression-crewcierge-screen-browser.mjs
           done
           node scripts/regression-concierge-journey-programs.mjs

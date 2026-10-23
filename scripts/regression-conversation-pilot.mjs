@@ -86,7 +86,7 @@ await test('scope mismatch, revoked permission and session change deny', async (
   }
   let current = true;
   const result = await pilot({ current: binding => { assert.equal(binding.accountId, 'account-a'); assert(binding.snapshotHash); return current; }, provider: { select: async () => { current = false; return { tool: 'nextDuty.read', arguments: {} }; } } })(question);
-  assert.equal(result.state, 'unavailable'); assert.deepEqual(result.facts, []);
+  assert.equal(result.state, 'clarification'); assert.deepEqual(result.facts, []);
 });
 await test('concurrent accounts have no shared result/cache/history', async () => {
   const b = snapshot(); b.email = 'synthetic-b@example.test'; b.chatId = 'synthetic-b'; b.roster.days[0].dutyReport = '06:25'; b.roster.days[0].legs[0].presentationTime = '06:25';
@@ -103,7 +103,7 @@ await test('source injection is rejected before provider; source is immutable', 
 });
 await test('follow-up requires same account, session, snapshot hash, revision and unexpired context', async () => {
   const ctx = context();
-  const conversation = { accountId: ctx.accountId, sessionId: ctx.sessionId, revision: ctx.revision, snapshotHash: createHash('sha256').update(ctx.snapshotJSON).digest('hex'), intent: 'nextDuty.read', expiresAt: now + 60_000 };
+  const conversation = { accountId: ctx.accountId, sessionId: ctx.sessionId, revision: ctx.revision, snapshotHash: createHash('sha256').update(ctx.snapshotJSON).digest('hex'), selectionKey: baseline.selectionKey, intent: 'nextDuty.read', expiresAt: now + 60_000 };
   assert.equal((await pilot({ ctx: { ...ctx, conversation } })('e a apresentação no aeroporto?')).reply, baseline.reply);
   for (const update of [{ accountId: 'b' }, { sessionId: 'b' }, { revision: 'b' }, { snapshotHash: 'b' }, { expiresAt: now }, { intent: 'schedule.read' }]) {
     const result = await pilot({ ctx: { ...ctx, conversation: { ...conversation, ...update } } })('e o horário?');
@@ -162,5 +162,36 @@ await test('CrewCierge seam uses same reader for app/channel and retains other i
   assert.equal(await wrapper(question, profile, snapshot()), baseline.reply);
   assert.equal(await wrapper('minha escala', profile, snapshot()), (await pilot()('minha escala')).reply);
   assert.equal(calls, 0); assert.equal(await wrapper('/metar SBGR'), 'existing unrelated handler'); assert.equal(calls, 1);
+});
+await test('canonical occurrence ends during provider or isCurrent: ask again rather than deliver stale next', async () => {
+  const end = baseline.facts[0].end;
+  for (const boundary of ['provider', 'isCurrent']) {
+    let time = end - 10, checks = 0;
+    const snap = snapshot(); snap.updatedAt = new Date(time).toISOString();
+    const result = await pilot({ snap, clock: () => time, current: async () => { if (boundary === 'isCurrent' && ++checks === 2) time = end + 10; return true; },
+      provider: boundary === 'provider' ? { select: async () => { time = end + 10; return { tool: 'nextDuty.read', arguments: {} }; } } : null })(question);
+    assert.equal(result.state, 'clarification', boundary); assert.deepEqual(result.facts, []); assert.match(result.reply, /nova consulta/);
+  }
+});
+await test('canonical continuation cannot adopt next day in same roster revision', async () => {
+  const end = baseline.facts[0].end; let time = end - 10;
+  const snap = snapshot(); snap.updatedAt = new Date(time).toISOString();
+  const tomorrow = structuredClone(day); tomorrow.date = '11/10/2032'; tomorrow.dayNumber = 11; snap.roster.days.push(tomorrow);
+  const ctx = context(snap);
+  const first = await pilot({ ctx, clock: () => time })(question);
+  ctx.conversation = { accountId: ctx.accountId, sessionId: ctx.sessionId, revision: ctx.revision, snapshotHash: createHash('sha256').update(ctx.snapshotJSON).digest('hex'), selectionKey: first.selectionKey, intent: 'nextDuty.read', expiresAt: time + 120_000 };
+  time = end + 10;
+  const next = await pilot({ ctx, clock: () => time })('e o horário?');
+  assert.equal(next.state, 'clarification'); assert.deepEqual(next.facts, []);
+});
+await test('overlap and tied canonical occurrences do not select the first row', async () => {
+  for (const delta of [0, 30]) {
+    const snap = snapshot();
+    const second = structuredClone(day); second.type = 'ASB'; second.pairingCode = 'ASB'; second.legs = [];
+    second.dutyReport = delta ? '07:55' : '07:25'; second.dutyDebrief = '15:00';
+    snap.roster.days.push(second);
+    const result = await pilot({ snap })(question);
+    assert.notEqual(result.state, 'available'); assert.deepEqual(result.facts, []);
+  }
 });
 console.log(`PASS ${passed} synthetic groups; no external calls. Server-only seam: does not prove browser offline or real model quality.`);

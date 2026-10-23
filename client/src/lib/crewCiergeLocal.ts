@@ -94,13 +94,13 @@ export function createLocalCrewcierge(options: LocalCrewciergeOptions) {
         const measured = measureCanonicalDuty(events, id);
         const endpoints = publishedDutyEndpoints(events, id);
         if (measured?.state !== 'available' || measured.minutes === null || endpoints.start === null || endpoints.end === null) return unavailable();
-        if (endpoints.end >= now) facts.push({ start: endpoints.start, end: endpoints.end, minutes: measured.minutes });
+        if (endpoints.end > now) facts.push({ start: endpoints.start, end: endpoints.end, minutes: measured.minutes });
       }
       facts.sort((a, b) => a.start - b.start);
       const deliveredAt = (options.now || Date.now)();
       if (!current() || !Number.isFinite(deliveredAt) || deliveredAt < now || deliveredAt - capturedAt > 7 * 24 * 60 * 60_000
         || (request.kind === 'continuation' && deliveredAt >= previous!.expiresAt)) return unavailable();
-      const selected = facts.filter(fact => fact.end >= deliveredAt).slice(0, intent === 'nextDuty.read' ? 1 : 3);
+      const selected = facts.filter(fact => fact.end > deliveredAt).slice(0, intent === 'nextDuty.read' ? 1 : 3);
       const selectionKey = JSON.stringify(selected);
       if (request.kind === 'continuation' && previous!.selectionKey !== selectionKey) return { state: 'clarification' as const, facts: [] as Fact[], reply: 'A programação pertinente mudou com o horário. Pergunte novamente pela próxima jornada.' };
       const format = (time: number) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(time);

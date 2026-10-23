@@ -5,9 +5,18 @@ import { buildDutyFacts } from './duty-facts.mjs';
 import { PROVIDER_LIMITS, READ_TOOLS } from './conversation-provider.mjs';
 
 const unavailable = () => ({ state: 'unavailable', mode: 'deterministic', facts: [], reply: 'Não há fatos autorizados e atuais para esta consulta. Consulte a escala publicada.' });
+const changed = () => ({ state: 'clarification', mode: 'deterministic', facts: [], reply: 'A conta, revisão ou programação mudou ou está ambígua. Faça uma nova consulta.' });
 const digest = value => createHash('sha256').update(value).digest('hex');
 const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 160;
 const instant = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(value) && Number.isFinite(Date.parse(value));
+function select(duties, at, intent) {
+  const remaining = duties.filter(row => row.end > at).sort((a, b) => a.start - b.start);
+  const active = remaining.filter(row => row.start <= at);
+  const first = active[0] || remaining[0];
+  if (active.length > 1 || remaining.some((row, i) => i > 0 && (row.start === remaining[i - 1].start || row.start < remaining[i - 1].end))) return null;
+  return intent === 'nextDuty.read' ? (first ? [first] : []) : remaining.slice(0, 3);
+}
+const selectionKey = rows => digest(JSON.stringify(rows.map(row => [row.journeyId, row.date, row.start, row.end])));
 
 
 function hasInjection(value) {
@@ -51,7 +60,8 @@ export function createConversationPilot({ readContext, isCurrent, provider = nul
       const snapshot = JSON.parse(context.snapshotJSON);
       const binding = Object.freeze({ accountId: context.accountId, sessionId: context.sessionId, revision: context.revision, snapshotHash: digest(context.snapshotJSON) });
       const current = async () => (await isCurrent(binding)) === true;
-      if (!await current() || !snapshot || !instant(snapshot.updatedAt)
+      if (!await current()) return changed();
+      if (!snapshot || !instant(snapshot.updatedAt)
         || now - Date.parse(snapshot.updatedAt) < 0 || now - Date.parse(snapshot.updatedAt) > 15 * 60_000
         || !['app', 'telegram-pdf'].includes(snapshot.source) || hasInjection(snapshot)) return unavailable();
       if (request.kind === 'continuation') {
@@ -75,10 +85,13 @@ export function createConversationPilot({ readContext, isCurrent, provider = nul
       if (!['available', 'no_data'].includes(result.state)) return unavailable();
       const duties = result.items.filter(row => row.kind === 'duty');
       if (duties.some(row => row.start === null || !Number.isFinite(row.start))) return unavailable();
-      const remaining = duties.filter(row => row.end === null || row.end >= now);
+      const remaining = duties.filter(row => row.end === null || row.end > now);
       // Missing end cannot establish whether an old program is still active.
       if (remaining.some(row => row.start < now && row.end === null)) return unavailable();
-      const selected = intent === 'nextDuty.read' ? remaining.slice(0, 1) : remaining.slice(0, 3);
+      const selected = select(duties, now, intent);
+      if (!selected) return changed();
+      const selectedKey = selectionKey(selected);
+      if (request.kind === 'continuation' && context.conversation.selectionKey !== selectedKey) return changed();
       const facts = selected.map(({ date, start, end, minutes }) => ({ date, start, end, minutes }));
       const source = { origin: snapshot.source === 'app' ? 'snapshot sincronizado do app' : 'snapshot PDF recebido no Telegram', revision: result.revision, updatedAt: snapshot.updatedAt };
       let mode = 'deterministic';
@@ -100,11 +113,13 @@ export function createConversationPilot({ readContext, isCurrent, provider = nul
         } catch { /* Fail to the same deterministic facts, never model prose. */ }
         finally { clearTimeout(timer); abort.abort(); }
       }
-      if (!await current()) return unavailable();
+      if (!await current()) return changed();
       const deliveredAt = clock();
       if (!Number.isFinite(deliveredAt) || deliveredAt < now || deliveredAt >= conversationDeadline
         || deliveredAt - Date.parse(snapshot.updatedAt) > 15 * 60_000) return unavailable();
-      return { state: facts.length ? 'available' : 'no_data', mode, facts, source, reply: render(facts, source, deliveredAt, intent, remaining.length > selected.length) };
+      const deliveredSelection = select(duties, deliveredAt, intent);
+      if (!deliveredSelection || selectionKey(deliveredSelection) !== selectedKey) return changed();
+      return { state: facts.length ? 'available' : 'no_data', mode, facts, source, selectionKey: selectedKey, reply: render(facts, source, deliveredAt, intent, remaining.length > selected.length) };
     } catch { return unavailable(); }
   };
 }

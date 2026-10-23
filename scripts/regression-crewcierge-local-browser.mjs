@@ -108,7 +108,7 @@ try {
     return { checks: checks.length, offline: !navigator.onLine, writes, networkAttempts, snapshot: result.facts[0] };
   });
   assert.equal(unexpectedRequests, 0);
-  console.log(JSON.stringify({ result: 'PASS', ...report, unexpectedRequests, scope: 'isolated real browser module; existing CrewCierge screen wiring still pending' }));
+  console.log(JSON.stringify({ result: 'PASS', ...report, unexpectedRequests, scope: 'isolated real browser module; real screen has its own separate regression' }));
   await context.close();
 } finally {
   await browser?.close();

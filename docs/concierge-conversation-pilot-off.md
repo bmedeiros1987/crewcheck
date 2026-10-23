@@ -1,5 +1,7 @@
 # CrewCierge: piloto de contrato conversacional, sem ativação
 
+**Atualização:** a continuação agora liga o leitor à tela existente quando offline e registra captura verdadeira em saves legítimos. A descrição atual e a prova de ownership estão em [concierge-client-wiring.md](concierge-client-wiring.md). As seções abaixo preservam o estágio isolado do HEAD22e4d7bf e suas fronteiras naquela revisão; não representam uma pendência atual de wiring cliente. Provider/canais externos continuam OFF.
+
 Base exata: main `6269b5100a5db25fbcd90696747cd95829221795` (reconfirmada após a recuperação do executor). Branch: `codex/concierge-conversation-offline-20261022`. Este incremento acrescenta contratos isolados de servidor/cliente, um classificador compartilhado, regressões e CI de fixtures. Não cria outro chat, endpoint, conta, chave, OAuth, dependência de aplicação, infraestrutura de produção, gravação, notificação ou integração operacional.
 
 ## Entrega e limites

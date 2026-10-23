@@ -1,5 +1,7 @@
 # Auditoria concreta de ligação CrewCierge
 
+**Continuação entregue:** [concierge-client-wiring.md](concierge-client-wiring.md) registra a ligação cliente, metadata legítima, guard temporal e comparação mecânica dos hunks de Home. Esta auditoria preserva o estágio anterior isolado, HEAD22e4d7bf. O ponto de servidor da #1135 permanece intocado.
+
 ## Referências e responsável verificável
 
 Base desta fatia: main `6269b5100a5db25fbcd90696747cd95829221795`. #1135 é a PR aberta `fix/concierge-temporal-dialogue`, HEAD `373b2bb28397a804802341e99f419099db885fd9`, sobre `fix/canonical-asb-selected-block` `965a48c44e6e4cbc451bd86fc5d77d242f1b64ef` (#1128). O autor/responsável publicamente identificável pelo GitHub é `bmedeiros1987`. Não há outro owner pessoal ou thread identificável nos comentários retornados (lista vazia); não se inventa um nome nem se presume transferência de ownership. A instrução desta tarefa preserva o trabalho paralelo.
