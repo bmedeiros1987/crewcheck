@@ -18,7 +18,10 @@ export async function readCrewCheckPushDevice(){
  if(!state.registered&&!state.renewalRequired)return{...state,needsRenewal:false,subscriptionStatus:'not_registered'};
  if(!('serviceWorker'in navigator)||!('PushManager'in window))return{...state,needsRenewal:true,subscriptionStatus:'unsupported'};
  try{
-  const registration=await navigator.serviceWorker.ready,subscription=await registration.pushManager.getSubscription();
+  const registration=await navigator.serviceWorker.ready,local=await worker(registration,'status',{ownerId:identity});
+  if(owner()!==identity||getToken()!==session)throw Error('Conta mudou.');
+  if(local.cancelled===true)return{...state,serverRegistered:state.registered,registered:false,needsRenewal:false,subscriptionStatus:'locally_cancelled'};
+  const subscription=await registration.pushManager.getSubscription();
   const expired=subscription?.expirationTime!==null&&subscription?.expirationTime!==undefined&&subscription.expirationTime<=Date.now();
   const matches=!!subscription&&!expired&&keyMatches(subscription,state.publicKey)&&!!state.subscriptionHash&&await endpointHash(subscription.endpoint)===state.subscriptionHash;
   if(owner()!==identity||getToken()!==session)throw Error('Conta mudou.');
@@ -29,14 +32,14 @@ export async function readCrewCheckPushDevice(){
   return{...state,needsRenewal:true,subscriptionStatus:'unconfirmed'};
  }
 }
-async function dependencies(enabled:boolean,revision:number,renew=false):Promise<PushDependencies>{const bindingOwner=owner(),registration=await navigator.serviceWorker.ready;return{
+async function dependencies(enabled:boolean,revision:number,renew=false,cancelIntent=false):Promise<PushDependencies>{const bindingOwner=owner(),registration=await navigator.serviceWorker.ready;return{
  enabled,ownerId:bindingOwner,currentOwner:owner,registration,withSubscriptionLock,permission:()=>Notification.requestPermission(),
  subscribe:async(registration,key)=>{const decoded=atob(key.replace(/-/g,'+').replace(/_/g,'/'));const bytes=Uint8Array.from(decoded,c=>c.charCodeAt(0));const prior=await registration.pushManager.getSubscription();if(prior&&(renew||prior.expirationTime!==null&&prior.expirationTime!==undefined&&prior.expirationTime<=Date.now()||!keyMatches(prior,key))){if(!await prior.unsubscribe())throw Error('Assinatura anterior não foi cancelada.');return registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes});}return prior||registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes});},
  save:async(subscription,currentOwner)=>{if(owner()!==currentOwner)throw Error('Conta mudou.');return authFetch<PushBinding>(path,{method:'POST',body:JSON.stringify({action:'subscribe',consent:true,installationId:installationId(),expectedRevision:revision,subscription})});},
  revokeInstallation:async currentOwner=>{if(owner()!==currentOwner)throw Error('Conta mudou.');await authFetch(path,{method:'POST',body:JSON.stringify({action:'revoke',installationId:installationId()})});},
- beginWorker:async()=>{const result=await worker(registration,'begin',{ownerId:bindingOwner});if(!result.ok)throw Error('Vínculo não confirmado.');return result.generation;},
- bindWorker:async(binding,generation)=>(await worker(registration,'bind',{binding,generation})).ok===true,
- cancelWorker:async generation=>(await worker(registration,'cancel',generation===undefined?{ownerId:bindingOwner}:{generation,ownerId:bindingOwner})).ok===true,
+ beginWorker:async()=>{const result=await worker(registration,'begin',{ownerId:bindingOwner,confirmed:true});if(!result.ok)throw Error('Vínculo não confirmado.');return result.generation;},
+ bindWorker:async(binding,generation)=>(await worker(registration,'bind',{binding,generation,confirmed:true})).ok===true,
+ cancelWorker:async generation=>(await worker(registration,'cancel',generation===undefined?{ownerId:bindingOwner,cancelled:cancelIntent}:{generation,ownerId:bindingOwner,cancelled:cancelIntent})).ok===true,
 };}
 export async function activateCrewCheckPushDevice(state:{enabled:boolean;revision:number;publicKey:string|null;needsRenewal?:boolean}){
  if(!state.enabled||!state.publicKey||!window.isSecureContext||!('Notification'in window)||!('PushManager'in window)||!('serviceWorker'in navigator)||!navigator.locks?.request)return{status:'unsupported_or_disabled',received:null};
@@ -52,7 +55,7 @@ export async function activateCrewCheckPushDevice(state:{enabled:boolean;revisio
  if(!current()||ready.ownerId!==activationOwner)return{status:'account_changed',received:null};
  return activateCrewCheckPush({...ready,permission:async()=>permission},state.publicKey,true);
 }
-export async function cancelCrewCheckPushDevice(){if(!navigator.locks?.request)return{status:'local_cancellation_unconfirmed',serverRevocationConfirmed:false};return revokeCrewCheckPush(await dependencies(false,0));}
+export async function cancelCrewCheckPushDevice(){if(!navigator.locks?.request)return{status:'local_cancellation_unconfirmed',serverRevocationConfirmed:false};return revokeCrewCheckPush(await dependencies(false,0,false,true));}
 export async function reconcileCrewCheckPushDevice(){if(navigator.onLine===false||!owner()||!('serviceWorker'in navigator))return;const currentOwner=owner(),registration=await navigator.serviceWorker.ready,result=await worker(registration,'reports');const reports=(result.reports||[]).filter((v:any)=>v.envelope?.ownerId===currentOwner&&v.envelope?.installationId===installationId());if(!reports.length)return;await authFetch(path,{method:'POST',body:JSON.stringify({action:'receipts',installationId:installationId(),reports:reports.map((v:any)=>({envelope:v.envelope,status:v.status}))})});if(owner()===currentOwner)await worker(registration,'acknowledge',{keys:reports.map((v:any)=>v.key)});}
 // Foreground authenticated reconciliation only. Never request permission, subscribe,
 // auto-enroll a revoked account or pretend the worker can renew without a session.
@@ -65,6 +68,7 @@ export async function reconcileCrewCheckPushSubscription(){
   if(!current())return{status:'account_changed'};
   const state=await readCrewCheckPushDevice();if(!current())return{status:'account_changed'};
   if(!state.enabled||state.subscriptionStatus==='native_unavailable')return{status:'disabled'};
+  if(state.subscriptionStatus==='locally_cancelled')return{status:'locally_cancelled'};
   const registration=await navigator.serviceWorker.ready;if(!current())return{status:'account_changed'};
   if(!state.registered||state.needsRenewal){
    await worker(registration,'cancel',{ownerId:identity});

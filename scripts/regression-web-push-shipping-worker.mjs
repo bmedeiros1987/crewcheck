@@ -40,5 +40,12 @@ try{
  page=await context.newPage();await setup();const after=await rpc({crewcheckPush:true,action:'status'});assert.equal(after.binding,null);assert.equal(after.renewal.reason,'subscription_changed');assert.equal((await rpc({action:'stats'})).external,0,'closed worker cannot renew via auth or subscribe');
  const b={...binding,ownerId:'owner_fixture_B',subscriptionHash:createHash('sha256').update('https://fcm.googleapis.com/fixture-new').digest('hex')};const second=await rpc({crewcheckPush:true,action:'begin',ownerId:b.ownerId});assert((await rpc({crewcheckPush:true,action:'bind',binding:b,generation:second.generation})).ok);
  await rpc({action:'change',endpoint});assert.equal((await rpc({crewcheckPush:true,action:'status'})).binding.ownerId,b.ownerId,'late old subscription event cannot erase B');assert.equal((await rpc({crewcheckPush:true,action:'gate-sync',binding,generation:begin.generation,gateBinding:next})).ok,false);
+ assert((await rpc({crewcheckPush:true,action:'cancel',ownerId:b.ownerId,cancelled:true})).ok);
+ await page.close();page=await context.newPage();await setup();assert.equal((await rpc({crewcheckPush:true,action:'status',ownerId:b.ownerId})).cancelled,true,'owner tombstone persists after page closure');
+ assert.equal((await rpc({crewcheckPush:true,action:'status',ownerId:binding.ownerId})).cancelled,false,'cancellation does not leak to another owner');
+ assert.equal((await rpc({crewcheckPush:true,action:'begin',ownerId:b.ownerId})).ok,false,'automatic begin cannot clear explicit cancellation');
+ const explicit=await rpc({crewcheckPush:true,action:'begin',ownerId:b.ownerId,confirmed:true});assert(explicit.ok);assert.equal((await rpc({crewcheckPush:true,action:'status',ownerId:b.ownerId})).cancelled,true,'failed/incomplete activation retains cancellation');
+ assert.equal((await rpc({crewcheckPush:true,action:'bind',binding:b,generation:explicit.generation})).ok,false);
+ assert((await rpc({crewcheckPush:true,action:'bind',binding:b,generation:explicit.generation,confirmed:true})).ok);assert.equal((await rpc({crewcheckPush:true,action:'status',ownerId:b.ownerId})).cancelled,false,'only confirmed current binding clears cancellation');
  assert.equal(external,0);await context.close();console.log('PASS shipping worker listeners + actual IndexedDB/Web Locks: topic bind, stale revision/generation/account, revoke during display, tombstone, subscription change with page closed, no worker renewal/auth/network; display mocked.');
 }finally{await browser?.close();await new Promise(r=>server.close(r));}
