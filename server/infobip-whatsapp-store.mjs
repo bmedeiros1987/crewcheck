@@ -108,12 +108,8 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
         let proposal,finishLocal,localWork;
         if(admission){localWork=new Promise(resolve=>finishLocal=resolve);
           const pending=localPreparations.get(preparationOwner)||new Set();pending.add(localWork);localPreparations.set(preparationOwner,pending);}
-        try {proposal = await prepareInfobipReply(job, {
-          lookupLink: event => transaction(c => lookupLink(c, event)),
-          concierge: job.kind === 'link_confirmation' ? async () => job.text : concierge, now: clock, signal,
-        });} finally {
-          // prepareInfobipReply tracks the actual handler until settle, even on
-          // abort/timeout. Lost cleanup ACK leaves the durable fence fail-closed.
+        let cleanup;
+        const finishEngine=()=>cleanup??=(async()=>{
           try {if(admission)await transaction(async c=>{
             const state=await lockState(c,stateKey);
             if(state?.preparationId!==preparationId||state.engineActive!==true)error();
@@ -121,6 +117,18 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
           });} finally {
             if(finishLocal){finishLocal();const pending=localPreparations.get(preparationOwner);pending.delete(localWork);if(!pending.size)localPreparations.delete(preparationOwner);}
           }
+        })();
+        try {proposal = await prepareInfobipReply(job, {
+          lookupLink: event => transaction(c => lookupLink(c, event)),
+          concierge: async input=>{
+            try {return job.kind==='link_confirmation'?job.text:await concierge(input);}
+            finally {await finishEngine();}
+          },now: clock,signal,
+        });} finally {
+          // Also clear when validation/abort prevents engine invocation. The
+          // wrapper clears at actual settle, before the post-engine SQL lookup,
+          // so an account transaction holding its profile lock can progress.
+          await finishEngine();
         }
         // Phase one commits a durable no-retry marker BEFORE provider I/O.
         const attemptId = await transaction(async c => {

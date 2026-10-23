@@ -1,8 +1,10 @@
+import {createInfobipSendAdmission} from '../server/infobip-whatsapp-admission.mjs';
+import {preflightInfobipWhatsAppStorage} from '../server/infobip-whatsapp-preflight.mjs';
 import {EventEmitter} from 'node:events';
 import {createInfobipWhatsAppApplicationHost,createInfobipRenderHttpServer} from '../server/infobip-whatsapp-application.mjs';
 import {createInfobipWhatsAppHost,createInfobipDirectTlsListener} from '../server/infobip-whatsapp-host.mjs';
 import {createInfobipWhatsAppProduction} from '../server/infobip-whatsapp-production.mjs';
-import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
+import {configureWhatsAppConcierge,invokeConfiguredWhatsAppConcierge,withWhatsAppConciergeQuiesced} from '../server/whatsapp.mjs';
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
 import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 // Invoked only AFTER the owned-socket/clean-HEAD checks in the SQL harness.
@@ -12,9 +14,9 @@ import vm from 'node:vm';
 import {createHmac,createHash} from 'node:crypto';
 import {Readable} from 'node:stream';
 import {createInfobipWhatsAppRuntime,INFOBIP_WHATSAPP_CALLBACK_PATH} from '../server/infobip-whatsapp-runtime.mjs';
-import {eraseWhatsAppAccountState} from '../server/whatsapp-lifecycle.mjs';
+import {eraseWhatsAppAccountState,installWhatsAppLifecycle} from '../server/whatsapp-lifecycle.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
-import {createInfobipSqlStore} from '../server/infobip-whatsapp-store.mjs';
+import {createInfobipSqlStore,createInfobipProductionStore} from '../server/infobip-whatsapp-store.mjs';
 
 export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock}) {
  const packet=item=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
@@ -159,6 +161,22 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
 
 
    } finally {await runtime?.dispose();configureWhatsAppConcierge(null);}
+ });
+ await run('local completion fence clears before post-engine lookup while deletion owns profile lock',async()=>{
+   await reset();await preflightInfobipWhatsAppStorage(db);await make().receive(packet(event));
+   let enter,release;const entered=new Promise(r=>enter=r),hold=new Promise(r=>release=r);
+   configureWhatsAppConcierge(async()=>{enter();await hold;return 'SYNTHETIC';});
+   const store=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},
+     {concierge:invokeConfiguredWhatsAppConcierge,send:async()=>assert.fail('no send during erasure'),
+      admission:createInfobipSendAdmission({id:'synthetic-local-erasure',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+60000},{sender,now:()=>epoch})});
+   const uninstall=installWhatsAppLifecycle((target,context)=>withWhatsAppConciergeQuiesced(target,async()=>{await store.waitForLocalPreparations(target);return store.eraseAccount(target,context);}));
+   const dispatch=store.dispatch(eventKey);const client=await mysqlAdapter(db).connect();let erasing;
+   try{
+     await entered;await client.query('BEGIN');await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE',[email]);
+     let completed=false;erasing=eraseWhatsAppAccountState(email,{client}).then(()=>{completed=true;});
+     await new Promise(r=>setTimeout(r,0));assert.equal(completed,false);release();await erasing;
+     await client.query('COMMIT');await dispatch;assert.equal((await raw()).engineActive,false);assert.equal((await raw()).sealed,null);
+   }finally{release();await erasing?.catch(()=>{});await client.query('ROLLBACK').catch(()=>{});client.release();await dispatch;uninstall();configureWhatsAppConcierge(null);}
  });
  await run('account erase joins actual platform transaction and rolls back atomically',async()=>{
    await reset();await make().receive(packet(event));
