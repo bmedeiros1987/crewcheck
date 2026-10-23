@@ -14,7 +14,14 @@ export function personalAllowanceSources(rates:readonly LearnedRate[],ownerId:st
   const scope=JSON.stringify([rate.key,rate.currency,rate.effectiveFrom]),prior=latest.get(scope);
   if(!prior||(rate.revision||1)>(prior.revision||1))latest.set(scope,rate);
  }
- return [...latest.values()].filter(rate=>(rate.valueOrigin===undefined||['printed','owner_confirmed'].includes(rate.valueOrigin))&&Number.isFinite(rate.value)&&rate.value>0);
+ return [...latest.values()].filter(rate=>{
+  const quarter=rate.key==='per_diem.breakfast'?'breakfastQuarter':rate.key==='per_diem.taxi'?'taxiQuarter':null;
+  // Monthly reviews preserve withdrawn quarter rows for audit. Their latest
+  // principal-meal review controls whether those derived owner sources survive.
+  const review=latest.get(JSON.stringify(['per_diem.lunch',rate.currency,rate.effectiveFrom]));
+  if(quarter&&rate.valueOrigin==='owner_confirmed'&&review?.valueOrigin==='owner_confirmed'&&review.perDiemReview?.[quarter]===false)return false;
+  return (rate.valueOrigin===undefined||['printed','owner_confirmed'].includes(rate.valueOrigin))&&Number.isFinite(rate.value)&&rate.value>0;
+ });
 }
 export function parsePersonalAllowanceHistory(raw:string,ownerId:string):PersonalAllowanceHistory|null {
  try{
