@@ -46,7 +46,7 @@ try {
  const view=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='PerDiemMonthView');assert(view);
  const {build}=await import('esbuild');const http=await import('node:http');const {createRequire}=await import('node:module');
  const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
- const entry=`import FinancialStatementImporter from './client/src/components/finance/FinancialStatementImporter';import React,{useState,useMemo} from 'react';import{createRoot}from'react-dom/client';
+ const entry=`import PersonalAllowanceReference from './client/src/components/finance/PersonalAllowanceReference';import * as learning from './client/src/lib/financialStatementLearning';window.learning=learning;import FinancialStatementImporter from './client/src/components/finance/FinancialStatementImporter';import React,{useState,useMemo} from 'react';import{createRoot}from'react-dom/client';
  const buildLegs=()=>[], calculatePerDiem=()=>window.forecast;
  const useFinancialPrivacy=()=>({hidden:window.hidden,amount:v=>window.hidden?'••••':v,text:v=>window.hidden?'••••':v});
  const isAdmin=()=>window.admin;const Brand=()=>null,BriefcaseBusiness=()=>null,CalendarDays=()=>null,Plane=()=>null,DollarSign=()=>null;
@@ -56,7 +56,7 @@ try {
  ${view.getText(ast)}
  const root=createRoot(document.getElementById('root'));window.render=(forecast,admin=false,hidden=false)=>{window.forecast=forecast;window.admin=admin;window.hidden=hidden;root.render(<PerDiemMonthView key={Math.random()} bundle={{roster:{year:2032,month:10}}} forecastOverride={forecast}/>);};`;
  const js=(await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'pdf-worker-asset',setup(b){b.onResolve({filter:/\?url$/},()=>({path:'offline-worker',namespace:'asset'}));b.onLoad({filter:/.*/,namespace:'asset'},()=>({contents:'export default "offline-worker"',loader:'js'}));}}]})).outputFiles[0].text;
- const server=http.createServer((req,res)=>{res.setHeader('content-type','text/html');res.end('<div id="root"></div><script>'+js.replaceAll('</script>','<\\/script>')+'</script>');});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const server=http.createServer((req,res)=>{res.setHeader('content-type','text/html; charset=utf-8');res.end('<div id="root"></div><script>'+js.replaceAll('</script>','<\\/script>')+'</script>');});await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await chromium.launch({headless:true,...process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}});
  try{const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-taxi-owner',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-offline-token');});await page.goto('http://127.0.0.1:'+server.address().port);
  const render=async(f,a=false,h=false)=>{await page.evaluate(([f,a,h])=>window.render(f,a,h),[JSON.parse(JSON.stringify(f)),a,h]);await page.waitForTimeout(50);};
@@ -67,6 +67,11 @@ try {
  await render(confirmed);assert.equal(await pending.count(),0);assert.equal(await page.locator('[data-financial-currency="BRL"]').filter({hasText:'Táxi'}).count(),1);
  await render(ineligible);assert.equal(await pending.count(),0);
  await render(missing,false,true);assert.equal(await pending.locator('b').innerText(),'—');await pending.locator('summary').click();assert.equal(await pending.locator('small').innerText(),'••••');assert.equal(await page.locator('.cc-per-diem-items').innerText().then(t=>t.includes('31,50')),false);assert.deepEqual(errors,[]);assert.equal(JSON.stringify(missing),unchanged,'rendering does not add pending taxi to rows or totals');
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-taxi-owner',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-offline-token');const draft=learning.learnPerDiemStatement('DEMONSTRATIVO DE DIARIAS\nDe 2032-09-01 ate 2032-09-07\nTAXI R$ 31,50','synthetic-reference.pdf');if(!learning.saveConfirmedFinancialRates(learning.mergeConfirmedRates([],draft.rates.map(rate=>({...rate,confirmed:true})))))throw Error('synthetic archive setup failed');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+ await render(missing);
+ await page.getByText('Reutilizar referência arquivada nas diárias',{exact:true}).click();
+ const select=page.getByLabel('Referência arquivada'),taxiOption=await select.locator('option').filter({hasText:'Táxi'}).getAttribute('value');await select.selectOption(taxiOption);await page.getByLabel('Usar na previsão desde').fill('2032-10-01');await page.getByRole('button',{name:'Confirmar uso nas previsões',exact:true}).click();await page.getByRole('status').filter({hasText:'Referência pessoal ativada'}).waitFor();
+ await render(confirmed);assert.equal(await pending.count(),0);await page.getByText('Reutilizar referência arquivada nas diárias',{exact:true}).click();await page.getByRole('button',{name:'Revogar Táxi',exact:true}).click();await page.getByRole('status').filter({hasText:'Referência pessoal revogada'}).waitFor();assert.equal(await page.evaluate(()=>learning.confirmedPerDiemReferencesAt('2032-10-05').taxi),null);assert.deepEqual(errors,[]);
  console.log('PASS actual Home calculator + extracted PerDiemMonthView: missing taxi is pending dash outside numeric rows, confirmed taxi unchanged, ineligible absent, existing actual importer review, explicit zero, privacy masking; offline synthetic UI.');
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 }finally{modules.cleanup();}
