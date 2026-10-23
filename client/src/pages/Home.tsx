@@ -131,6 +131,7 @@ import FinancialScreen, {useFinancialScreen} from '@/components/finance/Financia
 import { nextAllowancePayment } from '@/lib/nextFinancialPayment';
 import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
 import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
+import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceReference';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
@@ -4182,6 +4183,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     <section className="cz-finance-table cc-per-diem-items">
       <header><h2>Extrato previsto de diárias</h2><span>{itemLabel}</span></header>
       <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
+      <PersonalAllowanceReference/>
       {pendingTaxiRows.map(row => <div className="cz-finance-row" data-financial-iso={row.iso} data-taxi-rate-pending="true" key={'taxi-pending-'+row.iso}>
         <span>{dateChip(new Date(row.iso+'T12:00:00'))}</span><strong>Táxi · tarifa pendente · {row.airport}</strong><b aria-label="Valor não calculável">—</b>
         <details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{privacy.text(row.reason || '')}</small></details>

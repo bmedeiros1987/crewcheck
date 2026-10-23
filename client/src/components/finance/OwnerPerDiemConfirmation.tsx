@@ -3,7 +3,6 @@ import { ownerPerDiemReview } from '@/lib/ownerPerDiemReview';
 import { financialRateOwner, financialRateSession, mergeConfirmedRates, readConfirmedFinancialRates, saveConfirmedFinancialRates, type LearnedRate } from '@/lib/financialStatementLearning';
 import { useFinancialPrivacy, hiddenValue } from './FinancialPrivacy';
 import { readFinancialSetting } from '@/lib/financialSettingStore';
-import PersonalAllowanceReference from './PersonalAllowanceReference';
 
 export default function OwnerPerDiemConfirmation({ onSaved }: { onSaved?: () => void }) {
   const privacy = useFinancialPrivacy();
@@ -26,7 +25,7 @@ export default function OwnerPerDiemConfirmation({ onSaved }: { onSaved?: () => 
     onSaved?.();
     window.dispatchEvent(new CustomEvent('crewcheck:finance-calibrated', { detail: { mode: 'per_diem' } }));
   }
-  return <><PersonalAllowanceReference onSaved={onSaved}/><details><summary>Confirmar tarifa informada pelo titular</summary>
+  return <><details><summary>Confirmar tarifa informada pelo titular</summary>
     <p>Aplicação somente nesta conta e no mês escolhido. A tarifa de táxi não comprova elegibilidade, corrida ou pagamento.</p>
     <fieldset disabled={!!review}>
       <label>Mês de vigência <input type="month" value={month} onChange={e => setMonth(e.target.value)}/></label>
