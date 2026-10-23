@@ -36,7 +36,8 @@ await test('OFF does not read dependency getters; no lock means no enabled recei
   const forbidden = new Proxy({}, { get() { throw Error('OFF touched dependency'); } });
   assert.equal((await api.create({ store: forbidden, locks: forbidden }).revoke(request)).ack, null);
   assert.throws(() => api.create({ enabled: true }));
-  assert(!fs.readFileSync('client/public/sw.js', 'utf8').includes('crewcheck-gate-receiver-offline'), 'candidate is not activated by worker startup');
+  assert(fs.readFileSync('client/public/sw.js', 'utf8').includes('crewcheck-gate-receiver-offline'), 'shipping worker reuses existing fence; server host remains OFF');
+  assert.match(fs.readFileSync('server/web-push/gateHost.mjs','utf8'), /CREWCHECK_GATE_HOST_ENABLED = false/);
 });
 await test('revocation ACK cannot overtake pending display; late in-flight notice is blocked after ACK', async () => {
   const f = fixture(), receiver = f.create(); f.faults.displayGate = deferred(); f.faults.displayEntered = deferred();

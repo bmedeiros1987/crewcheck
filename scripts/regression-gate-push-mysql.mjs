@@ -1,4 +1,4 @@
-import { changeGateConsent, createGateOutboxConnection, gateConsentKey } from '../server/web-push/gateHost.mjs';
+import { changeGateConsent, readGateBinding, createGateOutboxConnection, gateConsentKey } from '../server/web-push/gateHost.mjs';
 import { handleCrewCheckPush } from '../server/web-push/api.mjs';
 import { reconcilePushReceipts } from '../server/web-push/outbox.mjs';
 import crypto from 'node:crypto';
@@ -93,6 +93,8 @@ try {
   const [staleConsent]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);assert.equal(staleConsent.length,0);
   consentInput.expectedInstallationRevision=2;
   const ack=await changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW});assert.equal(ack.authorityEpoch,epoch);assert.equal(ack.localFenceConfirmed,false);assert(!('sessionId' in ack));
+  assert.equal(await readGateBinding(db,identityContext,installId),null,'default OFF projection reads no topic');
+  const projected=await readGateBinding(db,identityContext,installId,{enabled:true,clock:()=>NOW});assert.deepEqual(projected,{ownerId,installationId:installId,consentRevision:2,topicRevision:1,authorityEpoch:epoch,active:true});assert(!('sessionId' in projected));assert(!('email' in projected));
   await assert.rejects(changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW}),/não confirmados/);
   const obs=observation('25'),sourceContext={rosterRevision:'roster_fixture_v1',identity,gate:'25',sourceUpdatedAt:obs.departureGateUpdate.updatedAt};
   let source={ownerId,rosterRevision:'roster_fixture_v1',observation:obs,previousObservation:observation('24')};
@@ -165,6 +167,7 @@ try {
   // Revoked canonical session blocks existing persistent outbox before opening subscription/provider.
   await db.query('UPDATE crewcheck_watch_sessions SET revoked=1,epoch=NULL,version=version+1 WHERE owner_id=? AND session_id=?',[ownerId,sessionId]);
   assert.equal((await connected.dispatch(db,revocationJobs[0],configuration,async()=>{providerCalls++;throw Error('forbidden real transport');})).status,'cancelled');assert.equal(providerCalls,0);
+  assert.equal(await readGateBinding(db,identityContext,installId,{enabled:true,clock:()=>NOW}),null,'revoked canonical session cannot synchronize a worker topic');
   const [topicRows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);assert.equal((typeof topicRows[0].payload==='string'?JSON.parse(topicRows[0].payload):topicRows[0].payload).active,true,'session invalidation blocks independently of topic row');
   await assert.rejects(changeGateConsent(db,identityContext,{...consentInput,expectedRevision:1},{enabled:true,clock:()=>NOW}));
   assert.equal((await callApi({action:'gate-consent',...consentInput,enabled:false,confirmed:false,expectedRevision:1})).status,409,'revoked session cannot write consent');

@@ -1,4 +1,4 @@
-importScripts('/crewcheck-push-offline.js');
+importScripts('/crewcheck-gate-receiver-offline.js','/crewcheck-push-offline.js');
 const CREWCHECK_UPDATE_BUILD_ID='__CREWCHECK_UPDATE_BUILD_ID__';
 const CREWCHECK_UPDATE_ENTRY='__CREWCHECK_UPDATE_ENTRY__';
 const CREWCHECK_UPDATE_ASSETS=[];

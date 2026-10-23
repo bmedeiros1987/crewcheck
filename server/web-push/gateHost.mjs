@@ -77,6 +77,20 @@ export async function changeGateConsent(db, identity, input, { enabled = false, 
     return { status: input.enabled ? 'consent_recorded' : 'server_consent_revoked', ownerId:record.ownerId,installationId:record.installationId,authorityEpoch:record.authorityEpoch,consentRevision:record.installationRevision,topicRevision:record.revision,enabled:record.active, localFenceConfirmed: false, received: null };
   });
 }
+// Observational projection for the existing worker binding, never a grant.
+export async function readGateBinding(db, identity, installationId, {enabled=false,clock=Date.now}={}) {
+  if(enabled!==true)return null;
+  const p=principal(identity,clock());if(!p||!id(installationId))return null;
+  const scope={...p,installationId};
+  return transaction(db,async c=>{
+    const installed=await installation(c,scope),consent=await state(c,gateConsentKey(p.ownerId,installationId));
+    if(!installed||!sameInstallation(consent,scope)||consent.topic!=='departure-gate-change'||consent.sessionId!==p.sessionId
+      ||consent.installationRevision!==installed.binding.revision||!Number.isSafeInteger(consent.revision)||consent.revision<1)return null;
+    const authority=await currentAuthority(c,scope,clock);
+    if(!authority||authority.epoch!==consent.authorityEpoch||authority.expiresAt>p.expiresAt)return null;
+    return {ownerId:p.ownerId,installationId,consentRevision:installed.binding.revision,topicRevision:consent.revision,authorityEpoch:authority.epoch,active:true};
+  });
+}
 export function createGateOutboxConnection({ enabled = false, readSource = async () => null, clock = Date.now } = {}) {
   if (enabled !== true) return Object.freeze({ enqueue: async () => ({ status: 'disabled', received: null }), dispatch: async () => ({ status: 'disabled', received: null }) });
   const verifyContext = async (c, job, now) => {

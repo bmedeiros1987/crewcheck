@@ -1,4 +1,4 @@
-import {CREWCHECK_GATE_HOST_ENABLED,changeGateConsent,GateConsentConflictError} from './gateHost.mjs';
+import {CREWCHECK_GATE_HOST_ENABLED,changeGateConsent,readGateBinding,GateConsentConflictError} from './gateHost.mjs';
 import { requireExistingIdentity, readBody, sendJson, parseJsonColumn } from '../v139/common.mjs';
 import { mutateInstallation, revokeAccountInstallations, installationBindingKey } from './installationRegistry.mjs';
 import { reconcilePushReceipts } from './outbox.mjs';
@@ -15,7 +15,7 @@ export async function handleCrewCheckPush(req,res,url,{identify=requireExistingI
   let state=null;if(binding?.email===identity.email&&binding.ownerId===ownerId&&binding.installationId===installationId&&binding.endpointKey){const[endpoints]=await identity.db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[binding.endpointKey]);const record=parseJsonColumn(endpoints[0]?.payload,null);if(record?.email===identity.email&&record.ownerId===ownerId&&record.installationId===installationId)state=record;}
   const[events]=await identity.db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-push-outbox:%' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.email'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerId'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.installationId'))=? ORDER BY updated_at DESC LIMIT 10",[identity.email,ownerId,installationId]);
   const eventStates=events.map(row=>parseJsonColumn(row.payload,null)).filter(row=>row?.email===identity.email&&row.ownerId===ownerId&&row.envelope?.installationId===installationId).map(row=>({eventKey:row.envelope.eventKey,status:row.status,deviceReport:row.deviceReport?.status||null,received:null}));
-  sendJson(res,200,{ok:true,events:eventStates,enabled:config.enabled===true&&config.configured===true,ownerId,installationId,revision:binding?.revision||0,registered:binding?.active===true&&state?.active===true,publicKey:config.enabled===true&&config.configured===true?config.publicKey:null,received:null});return true;
+  sendJson(res,200,{ok:true,events:eventStates,enabled:config.enabled===true&&config.configured===true,ownerId,installationId,revision:binding?.revision||0,registered:binding?.active===true&&state?.active===true,publicKey:config.enabled===true&&config.configured===true?config.publicKey:null,subscriptionHash:state&&typeof binding?.endpointKey==='string'&&/^crewcheck-push-installation:[a-f0-9]{64}$/.test(binding.endpointKey)?binding.endpointKey.slice('crewcheck-push-installation:'.length):null,renewalRequired:binding?.active===true&&state?.active===false&&state?.inactiveReason==='expired_subscription',gateBinding:await readGateBinding(identity.db,identity,installationId,{enabled:gateHostEnabled(),clock}),received:null});return true;
  }
  if(req.method!=='POST'){sendJson(res,405,{ok:false,message:'Método não permitido.'});return true;}
  // Cookie authentication cannot authorize a cross-origin subscription/revoke/report.
@@ -42,5 +42,5 @@ export async function handleCrewCheckPush(req,res,url,{identify=requireExistingI
  }
  if(body.action!=='subscribe'||config.enabled!==true||config.configured!==true){sendJson(res,503,{ok:false,message:'Avisos neste aparelho ainda não estão disponíveis.'});return true;}
  const result=await mutateInstallation(identity.db,{identity:own,installationId:body.installationId,expectedRevision:body.expectedRevision,action:'subscribe',consent:body.consent,subscription:body.subscription,key:config.encryptionKey,now:clock()});
- sendJson(res,200,{ok:true,ownerId,installationId:result.installationId,consentRevision:result.revision,registered:result.active,received:null});return true;
+ sendJson(res,200,{ok:true,ownerId,installationId:result.installationId,consentRevision:result.revision,subscriptionHash:result.subscriptionHash,registered:result.active,received:null});return true;
 }
