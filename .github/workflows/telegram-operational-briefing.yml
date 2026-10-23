@@ -10,6 +10,7 @@ on:
       - 'scripts/tests/*briefing*.mjs'
       - 'scripts/regression-telegram-briefing-mysql.mjs'
       - 'scripts/regression-operational-briefing-browser.mjs'
+      - 'scripts/regression-briefing-concierge-composition.mjs'
       - 'client/src/components/notifications/**'
       - '.github/workflows/telegram-operational-briefing.yml'
 permissions:
@@ -69,13 +70,21 @@ jobs:
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+      - name: Read-only pinned Concierge lifecycle source for composition
+        uses: actions/checkout@v6
+        with:
+          ref: 661d27318ff6146e358492422f3249b424c318cf
+          path: .ci-concierge-1203
+          persist-credentials: false
       - name: Existing isolated browser fixture pattern
         run: |
           npm install --prefix "$RUNNER_TEMP/briefing-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/briefing-browser/node_modules/playwright/cli.js" install --with-deps chromium
           node scripts/regression-operational-briefing-browser.mjs
+          node scripts/regression-briefing-concierge-composition.mjs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
+          CREWCHECK_CONCIERGE_COMPOSITION_SOURCE: ${{ github.workspace }}/.ci-concierge-1203
       - name: Canonical preparation and existing safeguards
         run: |
           node scripts/v139/apply.mjs
@@ -85,8 +94,10 @@ jobs:
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
+          node scripts/regression-briefing-concierge-composition.mjs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
+          CREWCHECK_CONCIERGE_COMPOSITION_SOURCE: ${{ github.workspace }}/.ci-concierge-1203
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
       - name: Remove only disposable fixture container
