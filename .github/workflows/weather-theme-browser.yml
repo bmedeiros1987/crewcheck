@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/v1430/trust-and-conversion.css'
       - 'client/src/styles/**'
       - 'client/src/theme-v14-3-17.css'
@@ -61,6 +62,7 @@ jobs:
       - name: Prefer Ubuntu archive for browser system dependencies
         run: |
           python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
             sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
