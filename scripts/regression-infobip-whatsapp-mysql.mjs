@@ -6,6 +6,8 @@ import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {createHash,createHmac} from 'node:crypto';
+import {createInfobipSendAdmission} from '../server/infobip-whatsapp-admission.mjs';
+import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
 import {runMysqlScenarios} from './infobip-whatsapp-mysql-scenarios.mjs';
 import {verifyNamespaceIsolation} from './infobip-whatsapp-mysql-scenarios.mjs';
@@ -33,7 +35,7 @@ if(mode==='suite')await admin.query('CREATE DATABASE crewcheck_infobip_qa');
 await admin.end();
 const db=mysql.createPool({socketPath:socket,user:'root',password:'',database,connectionLimit:12,dateStrings:true,timezone:'Z',connectTimeout:2000});
 const load=relative=>import(pathToFileURL(path.join(checkout,relative)).href);
-const {createInfobipSqlStore}=await load('server/infobip-whatsapp-store.mjs');
+const {createInfobipSqlStore,createInfobipProductionStore}=await load('server/infobip-whatsapp-store.mjs');
 const {createOfflineInfobipReceiver}=await load('server/infobip-whatsapp-candidate.mjs');
 const {sealSubscription:seal}=await load('server/web-push/installationRegistry.mjs');
 const sender='12025550100',recipient='12025550101',email='sql-synthetic@example.invalid',owner='synthetic-owner';
@@ -49,10 +51,15 @@ const read=async()=>{const [r]=await db.query('SELECT payload FROM crewcheck_tel
 const reportEvent={...event,messageId:'synthetic-restart-reports'};
 const reportKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,reportEvent.messageId])).digest('hex');
 const reportStateKey='crewcheck-infobip-inbound-v1:'+reportKey;
+const preparingEvent={...event,messageId:'synthetic-restart-preparing'};
+const preparingKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,preparingEvent.messageId])).digest('hex');
+const preparingStateKey='crewcheck-infobip-inbound-v1:'+preparingKey;
 const report={messageId:'cc-'+reportKey,to:recipient,sentAt:new Date(epoch).toISOString(),doneAt:new Date(epoch+1000).toISOString(),status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
 const seen={messageId:report.messageId,from:sender,to:recipient,sentAt:report.sentAt,seenAt:new Date(epoch+2000).toISOString()};
 const reportsPacket=items=>({...packet(),rawBody:Buffer.from(JSON.stringify({results:items}))});
 const receiveReports=kind=>createOfflineInfobipDeliveryReceiver({kind,username:'synthetic',password,store:make().store,now:()=>epoch+3000});
+const restartAdmission=()=>createInfobipSendAdmission({id:'synthetic-engine-restart-approval',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+60000},{sender,now:()=>epoch});
+const reserveRestart=()=>createInfobipSqlBudget(db)(c=>restartAdmission().reserve(c,{sender,recipient}));
 const passed=[];const run=async(name,fn)=>{await fn();passed.push(name);};
 const timeout=setTimeout(()=>{console.error('FAIL bounded synthetic SQL suite');process.exit(1);},45000);
 try{
@@ -66,7 +73,11 @@ try{
    assert.equal(projected.status,'delivered');assert.equal(projected.report.seenAt,epoch+2000);
    assert.equal((await receiveReports('delivery')(reportsPacket([report]))).duplicates,1);
    assert.equal((await receiveReports('seen')(reportsPacket([seen]))).duplicates,1);
-   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart'],externalCalls:0}));
+   assert.equal(await reserveRestart(),false,'actual engine restart never resets quantity admission');
+   const production=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},
+     {admission:restartAdmission(),concierge:async()=>assert.fail('NO_ENGINE_RETRY'),send:async()=>assert.fail('NO_PROVIDER_RETRY')});
+   assert.equal((await production.dispatch(preparingKey)).status,'preparing','preparing marker survives restart without retry');
+   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart'],externalCalls:0}));
  }else{
    await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
    await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64),created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
@@ -121,6 +132,13 @@ try{
    assert.equal((await make().store.exerciseDispatch(reportKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})})).status,'accepted_unconfirmed');
    assert.equal((await receiveReports('delivery')(reportsPacket([report]))).recorded,1);
    assert.equal((await receiveReports('seen')(reportsPacket([seen]))).seen,1);
+   assert.equal((await make().receive(packet(preparingEvent))).accepted,1);
+   await createInfobipSqlBudget(db)(async c=>{
+     assert.equal(await restartAdmission().reserve(c,{sender,recipient}),true);
+     const [[row]]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[preparingStateKey]);
+     const state=typeof row.payload==='string'?JSON.parse(row.payload):row.payload;
+     await c.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify({...state,status:'preparing',preparationId:'synthetic-preparation'}),preparingStateKey]);
+   });
    console.log(JSON.stringify({head:HEAD,phase:'suite',engine:server[0].version,passed,externalCalls:0,retryContract:'synthetic ten-day ACK horizon; no account verification'}));
  }
 }finally{clearTimeout(timeout);await db.end();}

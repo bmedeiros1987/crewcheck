@@ -80,10 +80,13 @@ function patchServer(source) {
       'gym request precedence over pending name capture');
   }
 
-  const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);\n(?=\nhttp\.createServer)/;
-  const whatsappBinding = `configureWhatsAppConcierge(async ({ email, text, location }) => {
+  const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);\n(?=\nhttp\.createServer)/;
+  const whatsappBinding = `configureWhatsAppConcierge(async ({ email, text, location, signal }) => {
+  const ensureActive = () => { if (signal?.aborted) throw Error('WHATSAPP_ENGINE_UNAVAILABLE'); };
+  ensureActive();
   const profile = { email: String(email || '').trim().toLowerCase(), name: '', linked: true, channel: 'whatsapp' };
   let snapshot = await conciergeLoadSnapshot(profile);
+  ensureActive();
   profile.name = snapshot?.name || 'Tripulante';
 
   if (location && Number.isFinite(Number(location.latitude)) && Number.isFinite(Number(location.longitude))) {
@@ -95,10 +98,12 @@ function patchServer(source) {
       source: 'whatsapp',
       updatedAt: receivedAt.toISOString(),
     };
+    ensureActive();
     const resolved = await resolveConciergeLocationLabelV14335(rawLocation, {
       apiKey: mapsServerKey(),
       airportPoints: WEATHER_AIRPORT_POINTS,
     });
+    ensureActive();
     const normalized = normalizeConciergeLocationV14335({
       ...rawLocation,
       label: resolved.label,
@@ -107,7 +112,9 @@ function patchServer(source) {
       nearestAirport: resolved.airport || '',
     }, { now: receivedAt, airportPoints: WEATHER_AIRPORT_POINTS });
     if (!normalized) return 'Não consegui validar estas coordenadas. Compartilhe novamente sua localização atual pelo WhatsApp.';
+    ensureActive();
     snapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: normalized } });
+    ensureActive();
     if (!String(text || '').trim()) {
       return [
         'Localização atualizada: ' + normalized.label + '.',
@@ -117,7 +124,10 @@ function patchServer(source) {
     }
   }
 
-  return buildTelegramConciergeReply(String(text || ''), profile, snapshot);
+  ensureActive();
+  const reply = await buildTelegramConciergeReply(String(text || ''), profile, snapshot);
+  ensureActive();
+  return reply;
 });`;
   if (!whatsappBindingPattern.test(next)) throw new Error(`${TAG} binding do Concierge WhatsApp não localizado.`);
   next = next.replace(whatsappBindingPattern, `${whatsappBinding}\n`);

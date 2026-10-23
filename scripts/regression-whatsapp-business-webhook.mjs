@@ -162,7 +162,7 @@ assert.doesNotMatch(whatsappSource, /console\.(?:log|info|warn|error)\([^\n]*(?:
 
 const serverSource = fs.readFileSync('server.mjs', 'utf8');
 assert.match(serverSource, /import \{ configureWhatsAppConcierge, handleWhatsAppRoute \} from '\.\/server\/whatsapp\.mjs';/);
-assert.match(serverSource, /configureWhatsAppConcierge\(async \(\{ email, text, location \}\) => \{/);
+assert.match(serverSource, /configureWhatsAppConcierge\(async \(\{ email, text, location, signal \}\) => \{/);
 assert.equal((serverSource.match(/configureWhatsAppConcierge\(async /g) || []).length, 1, 'one canonical handler; no legacy overwrite');
 assert.match(serverSource, /buildTelegramConciergeReply\(String\(text \|\| ''\), profile, snapshot\)/);
 assert.match(serverSource, /if \(await handleWhatsAppRoute\(req, res, url\)\) return;/);
