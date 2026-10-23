@@ -84,6 +84,25 @@ try {
    assert.equal(writes,beforeAuthWrites);assert.deepEqual([...storage],beforeAuthFailure);
    failedRead=null;assert.equal(run().monthly,250,'read access recovery preserves the original rates');
  }
+ const userKey='crewcheck_auth_user',tokenKey='crewcheck_auth_token',validUser=storage.get(userKey),validToken=storage.get(tokenKey);
+ const invalidIdentities=[['missing',null],['empty',''],['malformed','{'],['null','null'],['array','[]'],['primitive','"synthetic-a"'],['missing id','{}'],['numeric id','{"id":7}'],['empty id','{"id":""}'],['blank id','{"id":"  "}'],['invalid role','{"id":"synthetic-a","role":{}}']];
+ const setIdentity=raw=>raw===null?storage.delete(userKey):storage.set(userKey,raw);
+ const counterproof=invalidIdentities.map(([label,raw])=>{setIdentity(raw);return {label,state:learning.readFinancialRateArchive().state,monthly:run().monthly};});
+ storage.set(userKey,validUser);
+ console.log('Synthetic token-present identity counterproof:',JSON.stringify(counterproof));
+ assert.deepEqual(counterproof,invalidIdentities.map(([label])=>({label,state:'unavailable',monthly:null})), 'token-present unreadable identity is not logout');
+ for(const [label,raw] of invalidIdentities){
+   setIdentity(raw);const before=[...storage],beforeWrites=writes;archiveReads=0;
+   assert.equal(learning.financialRateOwner(),null,label+': no financial owner inferred');
+   const refs=learning.confirmedPerDiemReferencesAt(iso);assert.equal(refs.state,'unavailable');assert.equal(refs.mainMeal,null);assert.equal(refs.breakfast,null);assert.equal(refs.taxi,null);
+   assert.equal(run().monthly,null);assert.equal(run().rows.length,0);assert(run().unclassifiedItems.every(item=>/Referências locais indisponíveis/.test(item.reason)));
+   assert.equal(run('04:10').monthlyUnclassifiedItems.filter(item=>item.pendingKind==='taxi_rate').length,1);
+   assert.equal(learning.saveConfirmedFinancialRates(base.rates),false);assert.equal(writes,beforeWrites);assert.deepEqual([...storage],before);assert.equal(archiveReads,0,'unknown owner never reads any owner archive');
+   storage.delete(tokenKey);const loggedOut=[...storage];assert.equal(learning.readFinancialRateArchive().state,'unauthenticated',label+': absent token is genuine logout');assert.equal(learning.readConfirmedFinancialRates().length,0);assert.equal(learning.saveConfirmedFinancialRates(base.rates),false);assert.equal(writes,beforeWrites);assert.deepEqual([...storage],loggedOut);storage.set(tokenKey,validToken);
+ }
+ for(const role of ['visitor','guest']){storage.set(userKey,JSON.stringify({id:'synthetic-a',role}));const before=[...storage],beforeWrites=writes;assert.equal(learning.financialRateOwner(),null);assert.equal(learning.readFinancialRateArchive().state,'unavailable');assert.equal(run().monthly,null);assert.equal(learning.saveConfirmedFinancialRates(base.rates),false);assert.equal(writes,beforeWrites);assert.deepEqual([...storage],before);}
+ storage.set(userKey,validUser);assert.equal(run().monthly,250,'identity recovery restores only the original owner rates');
+ storage.delete(tokenKey);failedRead=userKey;assert.equal(learning.readFinancialRateArchive().state,'unauthenticated','known absent token does not require a readable user record');failedRead=null;storage.set(tokenKey,validToken);
  storage.delete(key);assert.equal(learning.readFinancialRateArchive().state,'missing');
  assert.equal(run().monthly,100,'missing archive retains independently stored manual meal and quarter breakfast');
  assert.match(run().rows[0].source,/não salva neste dispositivo/);

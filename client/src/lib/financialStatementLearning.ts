@@ -336,8 +336,15 @@ const OWNER_KEY = 'crewcheck_financial_learned_rates_v2:';
 // Keep read failures observable to the archive diagnostic, while legacy callers
 // retain their fail-closed nullable owner contract.
 function financialRateOwnerFromStorage(): string | null {
+  // A known absent token is logout. With a token, a missing/corrupt/ineligible
+  // cached owner is an unavailable financial identity, never a fallback signal.
+  if (!getToken()) return null;
   const user = getStoredUser();
-  return getToken() && typeof user?.id === 'string' && user.id.trim() && !['visitor', 'guest'].includes(user.role || '') ? user.id : null;
+  if (!user || typeof user !== 'object' || Array.isArray(user)
+    || typeof user.id !== 'string' || !user.id.trim()
+    || (user.role !== undefined && typeof user.role !== 'string')
+    || ['visitor', 'guest'].includes(user.role || '')) throw new Error('Financial owner identity unavailable');
+  return user.id;
 }
 export function financialRateOwner(): string | null {
   try { return financialRateOwnerFromStorage(); } catch { return null; }
