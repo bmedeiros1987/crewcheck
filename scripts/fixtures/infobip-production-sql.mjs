@@ -19,7 +19,8 @@ export function fixture() {
         if(sql.startsWith('SELECT public_id'))return [[{public_id:state.owner}]];
         if(sql.startsWith('SELECT payload'))return [[rows.has(p[0])?{payload:JSON.stringify(rows.get(p[0]))}:null].filter(Boolean)];
         if(sql.startsWith('INSERT INTO crewcheck_telegram_state')){if(!rows.has(p[0]))rows.set(p[0],JSON.parse(p[1]));return [{affectedRows:1}];}
-        if(sql.startsWith('UPDATE crewcheck_telegram_state SET payload=?')){const next=JSON.parse(p[0]);if(state.failMarker&&['preparing','dispatching'].includes(next.status))throw Error('SYNTHETIC_ROLLBACK');if(!rows.has(p[1]))return [{affectedRows:0}];rows.set(p[1],next);return [{affectedRows:1}];}
+        if(sql.startsWith('UPDATE crewcheck_telegram_state SET payload=?')){const next=JSON.parse(p[0]);if(state.failCleanup&&next.engineActive===false)throw Error('SYNTHETIC_CLEANUP_FAILURE');if(state.failMarker&&['preparing','dispatching'].includes(next.status))throw Error('SYNTHETIC_ROLLBACK');if(!rows.has(p[1]))return [{affectedRows:0}];rows.set(p[1],next);return [{affectedRows:1}];}
+        if(sql.startsWith('SELECT state_key FROM')&&sql.includes('engineActive'))return [[...rows].filter(([k,r])=>k>p[0]&&k<p[1]&&((r.engineActive===true&&r.engineOwner===p[2])||(r.status==='preparing'&&r.engineActive===undefined))).slice(0,1).map(([state_key])=>({state_key}))];
         if(sql.startsWith('SELECT state_key FROM'))return [[...rows].filter(([k,r])=>k>p[0]&&k<p[1]&&r.status==='held').slice(0,1).map(([state_key])=>({state_key}))];
         if(sql.startsWith('SELECT state_key,payload'))return [[...rows].filter(([k])=>k>p[0]&&k<p[1]).sort(([a],[b])=>a.localeCompare(b)).slice(0,p[2]).map(([state_key,payload])=>({state_key,payload:JSON.stringify(payload)}))];
         if(sql.startsWith('DELETE FROM crewcheck_telegram_state')){rows.delete(p[0]);return [{affectedRows:1}];}

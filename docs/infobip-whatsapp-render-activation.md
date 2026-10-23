@@ -99,11 +99,39 @@ native pool. OFF never calls them. No real environment values were inspected.
    reply once enabled; activation is not a cost-free read-only operation.
 
 Render rolling deploys can overlap processes even with one configured instance.
-The existing revocation/engine quiescence guarantee is process-local; durable
-SQL claims/quota remain shared. A noncooperative handler keeps shutdown pending;
-Render may eventually kill the process. No forced cancellation, distributed
-revocation or unlimited graceful-drain guarantee is claimed. These operational
-limits remain an activation review gate, not permission to retry uncertain work.
+The existing preparing/quota transaction now also records an active engine fence
+in the same ledger row, before invoking the canonical handler. Cleanup clears it
+only after the actual handler settles, including on abort/timeout. Authenticated
+unlink/account deletion checks this durable fence even on an OFF host with no
+installed lifecycle owner. A live or unknown remote invocation prevents successful
+completion of erasure/revocation. Unlink blocks new admissions through the existing
+revoked link first and returns 503/pending if quiescence cannot be confirmed;
+account deletion rolls back instead of claiming completion. Provider submission
+continues to hold the existing link/state locks. Dedupe and quantity stay durable.
+
+This is a completion fence, not forced interruption: legacy work already started
+can produce effects before revocation completes. Local shutdown still waits for
+the actual handler, and Render may kill it. A crash, lost preparation ACK or failed
+cleanup leaves the fence pending across restart, without an automatic TTL or
+quota refund. Maintenance expires content but retains the opaque active fence.
+Legacy preparing rows without a known completion marker conservatively block
+erasure. Recovery must first prove every possible old invocation is gone and
+review a separate scoped repair; no automated unlock/repair endpoint exists here.
+All processes handling account mutation must run this revision before activation.
+These operational checks remain an activation gate, not permission to retry
+uncertain work or treat a pending response as completed revocation.
+
+### Isolated storage preflight
+
+`preflightInfobipWhatsAppStorage(existingAuthorizedPool)` from
+`server/infobip-whatsapp-preflight.mjs` is independently importable. It takes an
+already authorized native MySQL pool and executes only the three fixed
+information_schema SELECTs for tables, engines, columns and unique state key.
+It uses bounded transactions, resolves no credentials/environment/pool, reads no
+user rows, creates no tables, installs no lifecycle/scheduler and enables no
+factory. Production calls the same function. Invoke it only through existing
+approved host access; lack of a MySQL connector is not permission to obtain new
+access or credentials. Missing schema stops the preflight; migration is separate.
 
 ## Evidence and limits
 
