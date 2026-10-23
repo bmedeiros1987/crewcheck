@@ -2,6 +2,9 @@ name: Financial persistent ledger offline
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server/financial-ledger*.mjs'
       - 'server/financial-forecast-producer.mjs'
       - 'server/financial-canonical-capture.mjs'
@@ -60,6 +63,15 @@ jobs:
         run: |
           npx tsc --noEmit
           npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated synthetic browser
         run: |
           npm install --prefix "$RUNNER_TEMP/financial-ledger-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0

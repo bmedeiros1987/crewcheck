@@ -2,6 +2,9 @@ name: FOR hotel catalog review
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/data/crewHotels.ts'
       - 'scripts/regression-hotel-catalog-for*.mjs'
       - '.github/workflows/hotel-catalog-for.yml'
@@ -26,6 +29,15 @@ jobs:
       - run: npm run regression:v13.8.9:mobile-hotels
       - name: Verify prepared catalog and searches
         run: node scripts/regression-hotel-catalog-for.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser tools
         run: |
           npm install --prefix "$RUNNER_TEMP/catalog-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
