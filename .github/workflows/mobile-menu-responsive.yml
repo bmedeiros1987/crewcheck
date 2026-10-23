@@ -62,6 +62,8 @@ on:
       - 'scripts/regression-menu-favorites-interaction.mjs'
       - 'scripts/regression-shell-navigation-browser.mjs'
       - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - '.github/workflows/mobile-menu-responsive.yml'
   workflow_dispatch:
 
