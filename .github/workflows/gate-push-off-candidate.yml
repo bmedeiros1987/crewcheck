@@ -5,6 +5,7 @@ on:
       - 'server/web-push/**'
       - 'server/watch-authority/mysql-authority-producer.mjs'
       - 'scripts/regression-gate-host-off.mjs'
+      - 'scripts/regression-gate-source-history.mjs'
       - 'server/gate-source-update.mjs'
       - 'shared/gate-query-day.mjs'
       - 'shared/crewcheckPushContract.mjs'
@@ -31,6 +32,9 @@ jobs:
       - name: Source, producer, existing dispatcher and PWA receiver offline
         run: |
           node --check server/web-push/gateCandidate.mjs
+          TZ=UTC node scripts/regression-gate-source-history.mjs
+          TZ=America/Sao_Paulo node scripts/regression-gate-source-history.mjs
+          TZ=Pacific/Auckland node scripts/regression-gate-source-history.mjs
           node scripts/regression-gate-host-off.mjs
           node scripts/regression-gate-push-candidate.mjs
           node scripts/regression-gate-receiver-fence.mjs
@@ -39,6 +43,9 @@ jobs:
       - name: Canonical preparation and repeat receiver/lifecycle checks
         run: |
           npm run prepare:v139
+          TZ=UTC node scripts/regression-gate-source-history.mjs
+          TZ=America/Sao_Paulo node scripts/regression-gate-source-history.mjs
+          TZ=Pacific/Auckland node scripts/regression-gate-source-history.mjs
           node scripts/regression-gate-host-off.mjs
           node scripts/regression-gate-push-candidate.mjs
           node scripts/regression-gate-receiver-fence.mjs

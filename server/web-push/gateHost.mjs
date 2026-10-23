@@ -3,8 +3,7 @@ import { createMysqlWatchAuthorityProducer } from '../watch-authority/mysql-auth
 import { installationBindingKey } from './installationRegistry.mjs';
 import { enqueueCrewCheckPush, dispatchPersistentPush } from './outbox.mjs';
 import { validPushEnvelope } from '../../shared/crewcheckPushContract.mjs';
-import { customGateSourceUpdate } from '../gate-source-update.mjs';
-import { radarResultDecision, radarFlightId } from '../../shared/gate-query-day.mjs';
+import { inspectGateSourceHistory } from './gateSourceHistory.mjs';
 
 // Code connection only. No environment variable can activate this host.
 export const CREWCHECK_GATE_HOST_ENABLED = false;
@@ -88,21 +87,11 @@ export function createGateOutboxConnection({ enabled = false, readSource = async
     if (!authority || authority.epoch !== envelope.authorityEpoch || Date.parse(envelope.expiresAt) > Math.min(authority.expiresAt, now + 300000)) return false;
     // No request body, persisted job or device can be its own operational proof.
     const source = await readSource(c, scope, now), context = job.sourceContext;
-    if (!source || source.observation?.provider !== 'custom' || source.observation.ok !== true || source.observation.operationalConflicts?.includes('gate') || source.ownerId !== scope.ownerId || source.rosterRevision !== context?.rosterRevision
-      || typeof source.rosterRevision !== 'string' || !context?.identity || !radarResultDecision(source.observation, context.identity, now).allowed) return false;
-    const previous = source.previousObservation, previousProof = customGateSourceUpdate(previous, now);
-    // A first observed gate is not a gate CHANGE. Both observations must come
-    // from the trusted server source/history, never from job/request JSON.
-    if (!previousProof || previous?.provider !== 'custom' || previous.ok !== true || previous.operationalConflicts?.includes('gate')
-      || !radarResultDecision(previous, context.identity, now).allowed) return false;
-    const proof = customGateSourceUpdate(source.observation, now);
-    if (!proof || proof.gate !== context.gate || proof.sourceUpdatedAt !== context.sourceUpdatedAt || !/^[A-Z]?\d{1,3}[A-Z]?$/.test(proof.gate)
-      || radarFlightId(proof.flight) !== radarFlightId(context.identity.flight) || proof.origin !== context.identity.origin || proof.destination !== context.identity.destination
-      || Date.parse(proof.scheduledDepartureUtc) !== Date.parse(context.identity.scheduledDepartureUtc)) return false;
-    if (now - Date.parse(previousProof.sourceUpdatedAt) > 1800000 || previousProof.gate === proof.gate || Date.parse(previousProof.sourceUpdatedAt) >= Date.parse(proof.sourceUpdatedAt)) return false;
-    const observed = Date.parse(proof.sourceUpdatedAt), departure = Date.parse(proof.scheduledDepartureUtc);
-    return now - observed <= 1800000 && observed <= now && departure - now <= 28800000 && now - departure < 3600000
-      && Date.parse(envelope.expiresAt) <= Math.min(observed + 1800000, departure + 3600000);
+    const history = inspectGateSourceHistory(source, { ...scope, rosterRevision: context?.rosterRevision, identity: context?.identity }, now);
+    if (history.status !== 'change') return false;
+    const proof = history.current;
+    if (proof.gate !== context.gate || proof.sourceUpdatedAt !== context.sourceUpdatedAt) return false;
+    return Date.parse(envelope.expiresAt) <= Math.min(Date.parse(proof.sourceUpdatedAt) + 1800000, Date.parse(proof.scheduledDepartureUtc) + 3600000);
   };
   return Object.freeze({
     async enqueue(db, identity, input) {

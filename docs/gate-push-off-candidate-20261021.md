@@ -268,3 +268,75 @@ Receipt fence (after the 2ee344f2 freeze): `reconcilePushReceipts` now also comp
 divergent epoch or topic revision, or without those fields, reconciles nothing; a stored
 gate job lacking them never reconciles; non-gate jobs, which carry neither field on
 either side, are unchanged. Receipts remain telemetry of an API/click attempt only.
+
+
+## Source/history admission continuation — 2026-10-23
+
+Existing PR ownership was checked before editing: remote HEAD9c5ad5e3,
+main161a66b1 in the PR metadata, no concurrent branch change after fetch.
+The known native notification owner is idle; native files and admission remain
+outside this delta. Main71f18784 was merged normally without importing #1191.
+#1191's reviewed HEAD8a17dd06 remains untouched. No second outbox, source store,
+provider decoder, endpoint, scheduler or receiver was added.
+
+`gateSourceHistory.mjs` admits the existing trusted `readSource` shape already
+used by gateHost: ownerId, rosterRevision, observation, previousObservation.
+The callback remains absent by default. It must read an authorized server-owned
+snapshot/history in the existing transaction, not accept request/job/device
+content as evidence. This module does not authenticate a provider or make a
+source label trustworthy. No actual production history table/reader or source
+capture lifecycle was established in this work.
+
+Only the EXISTING custom `crewcheck.departure-gate-update.v1` DATA contract is
+recognized, separately and identically for both observations. No Cirium/Sky,
+AeroDataBox or AirLabs contract is invented or relabeled custom. Generic updated,
+HTTP/cache time, status and registration do not prove a departure gate. Both
+samples must match flight, route and exact scheduled UTC, including their own
+proof tuple, with no conflict/suppression and valid origin day. A source-owned
+observation instant must be <= the numeric server sourceReceivedAt <= now;
+each observation is at most30min old. Receipts must not run backwards. These are
+chronology constraints; receipt time alone never supplies missing observation.
+
+The inspector returns baseline for a first current observation, unchanged for
+the same gate/replay, blocked for invalid history, reverse source order or an
+equal-time conflict, and change only for a strictly later different proven gate.
+Host admits ONLY change. It does not save a baseline, manufacture prior history
+or backfill a notice. The existing candidate retains its transactional baseline,
+event dedup and uncertain-send hold; existing outbox claim/commit/revalidation
+and receiver claim/revocation/ACK remain reused without semantic changes.
+The original finite authority/installation/topic/roster fences and expiry bounds
+still apply before enqueue and again before provider I/O. Server consent revoke
+is not a local receiver ACK; ACK must match owner, installation, epoch, both
+revisions and pending request. A display API report is not proof of receipt/read.
+
+The SQL regression now uses explicit synthetic receipt times and rejects absent
+receipts, observation-after-receipt, backwards receipts and Cirium provenance
+through the REAL gateHost -> existing persistent outbox. Its existing duplicate,
+authority revocation, exact receipt, transaction and engine restart assertions
+are preserved. Pure admission fixtures cover both samples and all above states
+in UTC/Sao Paulo/Auckland, raw and prepared. No local MySQL/Docker executable
+was available; disposable real-SQL durability is delegated to the existing CI
+job, not claimed by the pure fixtures.
+
+### NOTAM mapping only
+
+Existing `server/aisweb-diagnostic.mjs` requests AISWEB area=notam for an ICAO
+through injected fetch, bounded timeout and redirect rejection. It reads the
+existing configuration only when invoked; this work never invoked real fetch
+or read configured values. `server/v1412/aiswebHealth.mjs` exposes only the
+admin-authenticated GET/HEAD `/api/admin/aisweb-health`, routed by
+`server/v139/index.mjs`. The result is sanitized health/content-presence metadata;
+it does NOT return raw NOTAM text. `regression-aisweb-sanitized-diagnostic.mjs`
+provides injected synthetic responses. No NOTAM operational parser, validity/
+spatial applicability reconciliation or briefing consumer was found in the
+searched tracked server/client paths. A weather disclaimer explicitly says it
+does not replace NOTAM. This is a mapping of code, not a production presence
+or official briefing certification. NOTAM adaptation stays a separate task.
+
+Next minimum: identify an approved real source's exact field contract and
+capture/history ownership, then implement a separately reviewed read-only
+reader for that existing storage. Without it the host stays fail-closed. Native
+host/enrollment, canonical authority issuance/logout/schema, trusted clock,
+external transport admission and physical closed-app receipt/revocation remain
+HOLD. Nothing here makes notifications work on a closed phone. All switches
+remain OFF; no credentials, paid query, enrollment or real notification.
