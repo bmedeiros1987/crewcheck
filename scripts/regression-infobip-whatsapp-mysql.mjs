@@ -6,6 +6,7 @@ import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {createHash,createHmac} from 'node:crypto';
+import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
 import {runMysqlScenarios} from './infobip-whatsapp-mysql-scenarios.mjs';
 import {verifyNamespaceIsolation} from './infobip-whatsapp-mysql-scenarios.mjs';
 const HEAD=process.argv[6];assert(/^[a-f0-9]{40}$/.test(HEAD));
@@ -45,12 +46,27 @@ const stateKey='crewcheck-infobip-inbound-v1:'+eventKey;
 const packet=(item=event)=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
 const make=(pool=db)=>{const store=createInfobipSqlStore({db:pool,sender,encryptionKey:key,linkHashKey:salt,now:()=>clock});return {store,receive:createOfflineInfobipReceiver({sender,username:'synthetic',password,store,now:()=>clock})};};
 const read=async()=>{const [r]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);return typeof r[0]?.payload==='string'?JSON.parse(r[0].payload):r[0]?.payload;};
+const reportEvent={...event,messageId:'synthetic-restart-reports'};
+const reportKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,reportEvent.messageId])).digest('hex');
+const reportStateKey='crewcheck-infobip-inbound-v1:'+reportKey;
+const report={messageId:'cc-'+reportKey,to:recipient,sentAt:new Date(epoch).toISOString(),doneAt:new Date(epoch+1000).toISOString(),status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
+const seen={messageId:report.messageId,from:sender,to:recipient,sentAt:report.sentAt,seenAt:new Date(epoch+2000).toISOString()};
+const reportsPacket=items=>({...packet(),rawBody:Buffer.from(JSON.stringify({results:items}))});
+const receiveReports=kind=>createOfflineInfobipDeliveryReceiver({kind,username:'synthetic',password,store:make().store,now:()=>epoch+3000});
 const passed=[];const run=async(name,fn)=>{await fn();passed.push(name);};
 const timeout=setTimeout(()=>{console.error('FAIL bounded synthetic SQL suite');process.exit(1);},45000);
 try{
  if(mode==='restart'){
    assert.equal((await make().receive(packet())).duplicates,1);assert.equal((await read()).status,'held');
-   console.log(JSON.stringify({head:HEAD,phase:'restart',passed:['real engine restart retained claim'],externalCalls:0}));
+   const hmacBody=Buffer.from(JSON.stringify({results:[event]})),hmacKey='synthetic-hmac-after-engine-restart';
+   const hmacReceive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:hmacKey},store:make().store,now:()=>clock});
+   assert.equal((await hmacReceive({method:'POST',rawHeaders:['x-hub-signature','SHA256='+createHmac('sha256',hmacKey).update(hmacBody).digest('hex')],rawBody:hmacBody})).duplicates,1);
+   const [[persisted]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[reportStateKey]);
+   const projected=typeof persisted.payload==='string'?JSON.parse(persisted.payload):persisted.payload;
+   assert.equal(projected.status,'delivered');assert.equal(projected.report.seenAt,epoch+2000);
+   assert.equal((await receiveReports('delivery')(reportsPacket([report]))).duplicates,1);
+   assert.equal((await receiveReports('seen')(reportsPacket([seen]))).duplicates,1);
+   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart'],externalCalls:0}));
  }else{
    await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
    await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64),created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
@@ -95,12 +111,16 @@ try{
    await run('retry timeline and prolonged unavailability simulate possible loss',async()=>{
      let minute=0;const times=[0];for(let retry=0;retry<20;retry++){minute+=1+retry*retry;times.push(minute);}assert.equal(minute,2490);
      assert.equal(times.filter(t=>t>=3000).length,0,'provider horizon can expire with no callback received');assert.equal(await read(),undefined);
-     const first=times.find(t=>t>=60);assert.equal(first,61);clock=epoch+first*60000;const {receive}=make();assert.equal((await receive(packet())).accepted,1);assert.equal((await read()).status,'expired');assert.equal((await read()).sealed,null);assert.equal((await receive(packet())).duplicates,1);
+     const first=times.find(t=>t>=60);assert.equal(first,61);clock=epoch+first*60000;const {receive}=make();assert.equal((await receive(packet())).denied,1);assert.equal((await read()).status,'denied');assert.equal((await read()).sealed,null);assert.equal((await receive(packet())).duplicates,1);
    });
    await runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock:value=>{clock=value;}});
    await verifyNamespaceIsolation({run,db,reset,make,event,sender,key,salt,email});
    // Leave exactly one held synthetic claim to verify an actual engine restart.
    await reset();assert.equal((await make().receive(packet())).accepted,1);
-   console.log(JSON.stringify({head:HEAD,phase:'suite',engine:server[0].version,passed,externalCalls:0,retryContract:'general only; account inbound not verified'}));
+   assert.equal((await make().receive(packet(reportEvent))).accepted,1);
+   assert.equal((await make().store.exerciseDispatch(reportKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})})).status,'accepted_unconfirmed');
+   assert.equal((await receiveReports('delivery')(reportsPacket([report]))).recorded,1);
+   assert.equal((await receiveReports('seen')(reportsPacket([seen]))).seen,1);
+   console.log(JSON.stringify({head:HEAD,phase:'suite',engine:server[0].version,passed,externalCalls:0,retryContract:'synthetic ten-day ACK horizon; no account verification'}));
  }
 }finally{clearTimeout(timeout);await db.end();}
