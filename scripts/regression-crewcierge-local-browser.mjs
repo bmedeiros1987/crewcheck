@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 // a browser/package, access a personal browser profile or contact a real site.
 const require = createRequire(import.meta.url);
 const playwright = require(process.env.CREWCHECK_PLAYWRIGHT_PACKAGE || 'playwright');
-const bundled = await build({ stdin: { contents: 'import {createLocalCrewcierge} from "./client/src/lib/crewCiergeLocal.ts"; window.createLocalCrewcierge=createLocalCrewcierge;', resolveDir: process.cwd() }, bundle: true, write: false, platform: 'browser', format: 'iife', metafile: true });
+const bundled = await build({ stdin: { contents: 'import {createLocalCrewcierge} from "./client/src/lib/crewCiergeLocal.ts"; import {normalizeRosterDays} from "./client/src/lib/canonicalRoster.ts"; window.createLocalCrewcierge=createLocalCrewcierge; window.normalizeRosterDays=normalizeRosterDays;', resolveDir: process.cwd() }, bundle: true, write: false, platform: 'browser', format: 'iife', metafile: true });
 for (const name of Object.keys(bundled.metafile.inputs)) assert(!/conversation-provider|server\/|node:/.test(name), `No provider/server in browser graph: ${name}`);
 const server = createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><title>CrewCierge synthetic offline reader</title>'); });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -58,6 +58,29 @@ try {
     check(result.state === 'available' && result.facts[0].minutes === 400, 'actual canonical browser read without network or provider');
     check(result.reply.includes('2032-10-10T08:00:00.000Z') && result.reply.includes('UTC−03:00') && result.reply.includes('Dados salvos'), 'dated source and timezone');
     check(!result.reply.includes('account-a') && !result.reply.includes('QA0001') && !result.reply.includes('BSB'), 'minimum displayed facts');
+    const normalized = { ...a, roster: window.normalizeRosterDays(structuredClone(a.roster)) };
+    rawOverride = JSON.stringify(normalized);
+    const normalizedResult = await reader('próxima jornada');
+    check(normalized.roster.days[0].publishedClockEvidence && normalizedResult.state === 'available' && normalizedResult.facts[0].minutes === 400, 'actual parser normalizer ordinary clock evidence remains available');
+    for (const mutate of [
+      e => { e.records = [structuredClone(e)]; },
+      e => { e.legs.push(structuredClone(e.legs[0])); },
+      e => { e.legs[0].departureTime = 'invalid'; },
+      e => { e.dutyReport = '06:25'; },
+      e => { e.dutyReportSource = 'estimated'; },
+      e => { e.legs = null; },
+    ]) {
+      const unsafe = structuredClone(normalized); mutate(unsafe.roster.days[0].publishedClockEvidence);
+      rawOverride = JSON.stringify(unsafe);
+      check((await reader('próxima jornada')).state === 'unavailable', 'unsafe or merged original clock evidence is preserved and denied');
+    }
+    const duplicateSource = structuredClone(a.roster); duplicateSource.days.push(structuredClone(duplicateSource.days[0]));
+    rawOverride = JSON.stringify({ ...a, roster: window.normalizeRosterDays(duplicateSource) });
+    check((await reader('próxima jornada')).state === 'unavailable', 'real normalizer merged duplicate records never erased');
+    const removedLeg = structuredClone(a.roster); removedLeg.days[0].legs.push(structuredClone(removedLeg.days[0].legs[0]));
+    rawOverride = JSON.stringify({ ...a, roster: window.normalizeRosterDays(removedLeg) });
+    check((await reader('próxima jornada')).state === 'unavailable', 'real normalizer physical dedup never erases original leg evidence');
+    rawOverride = undefined;
     for (const text of ['q horas é a prx jornada?', 'Qual a proxma joranda?', 'próxima escalla']) check((await reader(text)).reply === result.reply, `paraphrase: ${text}`);
     check((await reader('mostre minha escala')).state === 'available', 'schedule paraphrase');
     check((await reader('e o horário?', result.context)).reply === result.reply, 'valid local continuation');
@@ -99,6 +122,23 @@ try {
     const nearEnd = await reader('próxima jornada');
     time = result.facts[0].end + 1000;
     check((await reader('e o horário?', nearEnd.context)).state === 'clarification', 'continuation cannot switch to another canonical program across time boundary');
+    const training = (date, dayNumber, start, end) => ({ date, year: 2032, month: 10, dayNumber, type: 'TRAINING', pairingCode: 'TRAINING', base: 'BSB', dutyReport: start, dutyDebrief: end, dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [] });
+    const overlapping = structuredClone(a);
+    overlapping.roster.days = [training('10/10/2032', 10, '23:00', '03:00'), training('11/10/2032', 11, '01:00', '05:00')];
+    rawOverride = JSON.stringify(overlapping);
+    for (const instant of ['2032-10-11T03:30:00Z', '2032-10-11T04:30:00Z']) {
+      time = Date.parse(instant);
+      for (const question of ['próxima jornada', 'mostre minha escala']) {
+        const ambiguous = await reader(question);
+        check(ambiguous.state === 'clarification' && ambiguous.facts.length === 0 && !ambiguous.context && ambiguous.reply.includes('sobrepostas'), `overlapping canonical training never silently selected: ${instant}/${question}`);
+      }
+    }
+    const adjacent = structuredClone(overlapping); adjacent.roster.days[0].dutyDebrief = '01:00';
+    rawOverride = JSON.stringify(adjacent); time = Date.parse('2032-10-11T04:00:00Z');
+    for (const question of ['próxima jornada', 'mostre minha escala']) {
+      const atBoundary = await reader(question);
+      check(atBoundary.state === 'available' && atBoundary.facts.length === 1 && atBoundary.facts[0].minutes === 240, `half-open adjacent canonical duties are unambiguous: ${question}`);
+    }
     rawOverride = undefined; time = now;
     const switching = window.createLocalCrewcierge({ now: () => time, identity: () => identity,
       readSnapshot: owner => { const saved = localStorage.getItem(key(owner)); identity = { owner: 'account-b', sessionEpoch: 'session-b' }; return saved; }, isCurrent: () => true });

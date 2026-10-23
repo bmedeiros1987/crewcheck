@@ -5,6 +5,7 @@ import os from 'node:os';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { build } from 'esbuild';
 
 // Entire unmodified Vite build and production worker, never an extracted screen.
 // Only the local HTTP auth response and pre-existing saved account are fixtures.
@@ -21,7 +22,12 @@ const report = { scope: 'Complete Vite App + real service worker, synthetic reta
   htmlSha256: createHash('sha256').update(html).digest('hex'), workerSha256: createHash('sha256').update(worker).digest('hex'),
   steps: [], errors: [], externalBlocked: [], requests: [], offlineResponses: [] };
 const user = { id: 'synthetic-pwa-a', email: 'synthetic-pwa-a@example.test', name: 'Synthetic PWA', emailVerified: true, premiumAccess: true };
-const roster = { year: 2032, month: 10, base: 'BSB', rank: 'CCM', days: [{ date: '10/10/2032', year: 2032, month: 10, dayNumber: 10, type: 'VOO', pairingCode: 'SYN', base: 'BSB', dutyReport: '07:25', dutyDebrief: '14:05', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [{ flightNumber: 'QA1', origin: 'BSB', destination: 'GRU', departureTime: '08:20', arrivalTime: '13:35', presentationTime: '07:25', workType: 'OP' }] }] };
+// Same normalizer used by the real PDF parser. Never hand-remove its preserved
+// clock evidence to make the offline fixture pass.
+const normalizerBundle = await build({ stdin: { contents: 'export {normalizeRosterDays} from "./client/src/lib/canonicalRoster.ts";', resolveDir: process.cwd() }, bundle: true, write: false, platform: 'node', format: 'esm' });
+const { normalizeRosterDays } = await import('data:text/javascript;base64,' + Buffer.from(normalizerBundle.outputFiles[0].text).toString('base64'));
+const roster = normalizeRosterDays({ year: 2032, month: 10, base: 'BSB', rank: 'CCM', days: [{ date: '10/10/2032', year: 2032, month: 10, dayNumber: 10, type: 'VOO', pairingCode: 'SYN', base: 'BSB', dutyReport: '07:25', dutyDebrief: '14:05', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [{ flightNumber: 'QA1', origin: 'BSB', destination: 'GRU', departureTime: '08:20', arrivalTime: '13:35', presentationTime: '07:25', workType: 'OP' }] }] });
+assert.ok(roster.days[0].publishedClockEvidence);
 const contentHash = createHash('sha256').update(JSON.stringify(roster)).digest('hex');
 const key = 'crewcheck_roster_choice_v1_' + user.id;
 // Fixture represents an already saved capture, not a capture stamped on read.

@@ -1,5 +1,7 @@
 # CrewCierge: ligação local entregue e correção temporal
 
+Revisão independente: [correções de sobreposição e evidência ordinária do normalizador](concierge-local-review-fixes.md), após merge normal da base #1204 `194c0d3b`. As fixtures da tela/PWA agora usam o normalizador real do parser. Os resultados de 40 verificações abaixo descrevem o estágio anterior; a nova suíte do leitor possui 55 por execução e exige nova validação.
+
 Atualização: [validação do boot completo PWA offline](concierge-pwa-offline-validation.md), sobre main `196a0a07937d1f466894b45b8f4ddc9b487ba4a3` incorporado por merge normal. O teste abaixo de tela isolada continua válido e agora é complementado pelo App/worker completos. #1201 foi integrada por seu responsável; a nova CI deve revalidar o novo HEAD.
 
 Continuação da PR1203 sobre main `6269b5100a5db25fbcd90696747cd95829221795`. O HEAD22e4d7bf era o estágio isolado; esta continuação liga o cliente existente. Não cria outro chat. Sem merge/deploy, chave, conta, OAuth, dados reais, mensagens ou modelo real. Provider e canais externos continuam OFF.

@@ -26,13 +26,31 @@ function injected(value: unknown): boolean {
   if (typeof value === 'string') return containsConversationInstruction(value);
   return Boolean(value && typeof value === 'object' && Object.entries(value).some(([key, child]) => containsConversationInstruction(key) || injected(child)));
 }
+function ordinaryClockEvidence(day: any): boolean {
+  if (!Object.prototype.hasOwnProperty.call(day, 'publishedClockEvidence')) return true;
+  const evidence = day.publishedClockEvidence;
+  // The canonical normalizer preserves pre-dedup evidence. Accept its ordinary
+  // single record only when it matches the complete selected publication; never
+  // discard records or clocks erased by physical-leg selection/deduplication.
+  const fields = ['dutyReport', 'dutyDebrief', 'dutyReportSource', 'dutyDebriefSource'];
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)
+    || Object.keys(evidence).some(key => ![...fields, 'legs'].includes(key))
+    || fields.some(key => evidence[key] !== day[key])
+    || !Array.isArray(evidence.legs) || evidence.legs.length !== day.legs.length) return false;
+  const clocks = ['departureTime', 'arrivalTime', 'presentationTime'];
+  if (evidence.legs.some((leg: any) => !leg || typeof leg !== 'object' || Array.isArray(leg)
+    || Object.keys(leg).some(key => !clocks.includes(key)))) return false;
+  const keys = (legs: any[]) => legs.map(leg => JSON.stringify(clocks.map(key => leg[key] ?? null))).sort();
+  const original = keys(evidence.legs), selected = keys(day.legs);
+  return new Set(original).size === original.length && original.every((key, i) => key === selected[i]);
+}
 function completeDay(day: any): boolean {
   const m = typeof day?.date === 'string' ? day.date.match(/^(\d\d)\/(\d\d)\/(\d{4})$/) : null;
   if (!m) return false;
   const iso = `${m[3]}-${m[2]}-${m[1]}`;
   if (!safeDate(iso + 'T12:00:00.000Z')) return false;
   if (day.year !== Number(m[3]) || day.month !== Number(m[2]) || (day.dayNumber != null && day.dayNumber !== Number(m[1]))) return false;
-  if (!Array.isArray(day.legs) || day.legs.length > 12 || day.publishedClockEvidence) return false;
+  if (!Array.isArray(day.legs) || day.legs.length > 12 || !ordinaryClockEvidence(day)) return false;
   // Explicit multi-day markers and preserved duplicate publications need the
   // fuller domain evidence reader before this small browser slice accepts them.
   if (new Set(day.legs.map((leg: any) => JSON.stringify([leg?.flightNumber, leg?.origin, leg?.destination, leg?.departureTime]))).size !== day.legs.length) return false;
@@ -100,7 +118,12 @@ export function createLocalCrewcierge(options: LocalCrewciergeOptions) {
       const deliveredAt = (options.now || Date.now)();
       if (!current() || !Number.isFinite(deliveredAt) || deliveredAt < now || deliveredAt - capturedAt > 7 * 24 * 60 * 60_000
         || (request.kind === 'continuation' && deliveredAt >= previous!.expiresAt)) return unavailable();
-      const selected = facts.filter(fact => fact.end > deliveredAt).slice(0, intent === 'nextDuty.read' ? 1 : 3);
+      const remaining = facts.filter(fact => fact.end > deliveredAt);
+      if (remaining.filter(fact => fact.start <= deliveredAt).length > 1
+        || remaining.some((fact, i) => i > 0 && (fact.start === remaining[i - 1].start || fact.start < remaining[i - 1].end))) {
+        return { state: 'clarification' as const, facts: [] as Fact[], reply: 'A programação salva está ambígua: há jornadas sobrepostas ou com o mesmo início. Confira a escala publicada e faça uma nova consulta.' };
+      }
+      const selected = remaining.slice(0, intent === 'nextDuty.read' ? 1 : 3);
       const selectionKey = JSON.stringify(selected);
       if (request.kind === 'continuation' && previous!.selectionKey !== selectionKey) return { state: 'clarification' as const, facts: [] as Fact[], reply: 'A programação pertinente mudou com o horário. Pergunte novamente pela próxima jornada.' };
       const format = (time: number) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(time);

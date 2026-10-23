@@ -14,6 +14,7 @@ const save=home.match(/function saveRoster\([\s\S]*?\n}/)?.[0];assert(save);
 const input=`import React,{useEffect,useRef,useState}from'react';import{createRoot}from'react-dom/client';
 import{useCrewciergeConversation}from'./client/src/lib/useCrewciergeConversation';
 import{recordCrewciergeCapture}from'./client/src/lib/crewCiergeCapture';
+import{normalizeRosterDays}from'./client/src/lib/canonicalRoster';
 import{startupOwner,startupKey,startupIntentRevision}from'./client/src/lib/rosterStartup';
 import{WellhubConciergeAnswer}from'./client/src/components/WellhubConciergeAnswer';
 const isAdmin=()=>false,Brand=()=>null,KpiCard=()=>null,StayNavigationContext=()=>null;
@@ -30,6 +31,7 @@ window.networkAttempts=0;window.fetch=forbid;window.XMLHttpRequest=class{constru
 let root=createRoot(document.getElementById('root'));window.fixtureMount=roster=>root.render(<TelegramConciergeView bundle={{roster,source:'synthetic'}} setBundle={()=>{}} setView={()=>{}}/>);
 window.fixtureUnmount=()=>root.unmount();window.fixtureSave=saveRoster;
 window.fixtureStartupKey=startupKey;
+window.fixtureNormalize=normalizeRosterDays;
 const choice=JSON.parse(localStorage.getItem(startupKey())||'null');window.fixtureMount(choice?.roster||{year:2032,month:10,days:[]});
 window.fixtureReady=true;`;
 const compiled=await build({stdin:{contents:input,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,platform:'browser',format:'iife',jsx:'automatic',alias:{'@':process.cwd()+'/client/src','@shared':process.cwd()+'/shared'},define:{'process.env.NODE_ENV':'"test"'}});
@@ -44,9 +46,9 @@ try{
  let unexpected=0;await context.route('**/*',route=>route.request().isNavigationRequest()?route.fulfill({status:200,contentType:'text/html',body:html}):(unexpected++,route.abort()));
  const page=await context.newPage();page.on('pageerror',error=>console.error('Synthetic screen error: '+error.message));
  await page.addInitScript(()=>{
-  window.makeRoster=(report='07:25')=>({year:2032,month:10,base:'BSB',rank:'CCM',days:[{date:'10/10/2032',year:2032,month:10,dayNumber:10,type:'VOO',pairingCode:'SYN',base:'BSB',dutyReport:report,dutyDebrief:'14:05',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'QA1',origin:'BSB',destination:'GRU',departureTime:'08:20',arrivalTime:'13:35',presentationTime:report,workType:'OP'}]}]});
+  window.makeRoster=(report='07:25')=>window.fixtureNormalize({year:2032,month:10,base:'BSB',rank:'CCM',days:[{date:'10/10/2032',year:2032,month:10,dayNumber:10,type:'VOO',pairingCode:'SYN',base:'BSB',dutyReport:report,dutyDebrief:'14:05',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'QA1',origin:'BSB',destination:'GRU',departureTime:'08:20',arrivalTime:'13:35',presentationTime:report,workType:'OP'}]}]});
   window.account=(owner)=>{localStorage.setItem('crewcheck_auth_token','synthetic-'+owner);localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner,email:owner+'@example.test',name:'Synthetic'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));};
-  window.seed=(roster)=>{localStorage.setItem(window.fixtureStartupKey(),JSON.stringify({owner:JSON.parse(localStorage.getItem('crewcheck_auth_user')).id,roster,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2'}));window.fixtureMount(roster);};
+  window.seed=(roster)=>{roster=window.fixtureNormalize(roster);localStorage.setItem(window.fixtureStartupKey(),JSON.stringify({owner:JSON.parse(localStorage.getItem('crewcheck_auth_user')).id,roster,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2'}));window.fixtureMount(roster);};
   window.pauseDigest=()=>{window.digestQueue=[];const original=crypto.subtle.digest.bind(crypto.subtle);window.resumeDigest=async()=>{crypto.subtle.digest=original;for(const run of window.digestQueue.splice(0))await run();};crypto.subtle.digest=(...args)=>new Promise((resolve,reject)=>window.digestQueue.push(async()=>{try{resolve(await original(...args));}catch(e){reject(e);}}));};
  });
  await page.goto(`http://127.0.0.1:${server.address().port}`);await page.waitForFunction(()=>window.fixtureReady&&window.fixtureAsk&&window.fixtureSettled);
