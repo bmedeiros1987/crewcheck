@@ -62,5 +62,15 @@ if (runtimeStart >= 0) {
 if (!source.includes('const crewcheckMenu = createTelegramMenu(')) source = source.replace('async function processTelegramUpdate(update = {}) {', runtime + 'async function processTelegramUpdate(update = {}) {');
 replace('async function processTelegramUpdate(update = {}) {', 'async function processTelegramUpdate(update = {}) {\n  if (await crewcheckMenu.callback(update)) return true;\n  if (await crewcheckMenu.text(update.message || {})) return true;');
 replace('  const v1391TelegramHandled = await handleV139Telegram(update, sendTelegramMessage);', '  await crewcheckMenu.interrupt(update.message || {});\n  const v1391TelegramHandled = await handleV139Telegram(update, sendTelegramMessage);');
+// Capture the producer's immutable final check before any asynchronous markup.
+replace('  extra = await crewcheckMenu.markup(chatId, extra);', '  const deliveryCheck = crewcheckMenu.deliveryCheck(extra);\n  extra = await crewcheckMenu.markup(chatId, extra);');
+const senderStart = source.indexOf('async function sendTelegramMessage(');
+const senderEnd = source.indexOf('\n}', senderStart) + 2;
+let sender = source.slice(senderStart, senderEnd);
+if (!sender.includes('if (deliveryCheck && !deliveryCheck())')) sender = sender.replace('    const response = await fetch(url,', "    if (deliveryCheck && !deliveryCheck()) return {ok:false,message:'Contexto da consulta alterado.'};\n    const response = await fetch(url,");
+if (!sender.includes('if (deliveryCheck && !deliveryCheck())')) throw new Error('[telegram-menu] missing final delivery check anchor');
+source = source.slice(0,senderStart) + sender + source.slice(senderEnd);
+// The typed departure path needs the same final transport owner fence as callbacks.
+replace("{ reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeReplyKeyboard(normalizedText) }", "{ ...((profile.conciergeResponseAuthority?.kind === 'departure') ? crewcheckMenu.guard(profile) : {}), reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeReplyKeyboard(normalizedText) }");
 fs.writeFileSync(file, source);
 console.log('[telegram-menu] private one-use inline navigation; direct existing producers; no live sends');

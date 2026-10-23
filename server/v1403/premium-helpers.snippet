@@ -95,28 +95,90 @@ async function conciergePremiumScheduleReply(snapshot, mode = 'next', profile = 
     ? buildProgramSummary({ profile, snapshot, record: next, label: 'A próxima programação', presentationTime: conciergePresentationTime(next) })
     : `${premiumGreeting(profile, snapshot)} Não encontrei uma programação futura confirmada na escala ativa.`;
 }
+async function conciergeDepartureOwnerCurrent(profile, snapshot) {
+  const owner = conciergeSafeKey(profile?.email || '');
+  if (!owner || !snapshot?.roster || conciergeSafeKey(snapshot.email || snapshot.key || '') !== owner
+    || (snapshot.key && conciergeSafeKey(snapshot.key) !== owner) || !conciergeAccessMatches(profile, snapshot)) return false;
+  if (profile.channel !== 'telegram') return true;
+  if (!profile.chatId || profile.chatType !== 'private' || profile.linked !== true) return false;
+  try {
+    const current = await telegramProfileForChatAsync({chat:{id:profile.chatId,type:'private'},from:{id:profile.chatId}});
+    return current?.linked === true && current.channel === 'telegram' && current.chatType === 'private'
+      && String(current.chatId) === String(profile.chatId) && conciergeSafeKey(current.email) === owner
+      && String(current.accessKeyHash || '') === String(profile.accessKeyHash || '') && conciergeAccessMatches(current, snapshot);
+  } catch { return false; }
+}
 async function conciergePremiumDepartureReply(snapshot, profile = {}) {
+  // The actual producer, after semantic resolution, authorizes the final fence.
+  // No surface-specific text matcher may decide whether these facts are private.
+  const revision = crypto.createHash('sha256').update(JSON.stringify(snapshot?.roster || null)).digest('hex');
+  let evidence = null;
+  let acceptedRadar = null;
+  const initialEmail = conciergeSafeKey(profile.email || '');
+  const initialHash = String(profile.accessKeyHash || '');
+  const checkNow = () => {
+    try {
+      if (conciergeSafeKey(profile.email || '') !== initialEmail || String(profile.accessKeyHash || '') !== initialHash) return false;
+      if (profile.channel === 'telegram') {
+        const binding = telegramProfileForChat({chat:{id:profile.chatId,type:'private'},from:{id:profile.chatId}});
+        if (!binding?.linked || conciergeSafeKey(binding.email) !== initialEmail || String(binding.accessKeyHash || '') !== initialHash) return false;
+      }
+      const latest = conciergeSnapshotForProfile(profile);
+      if (!latest?.roster || conciergeSafeKey(latest.email || latest.key || '') !== initialEmail
+        || (latest.key && conciergeSafeKey(latest.key) !== initialEmail) || !conciergeAccessMatches(profile, latest)
+        || crypto.createHash('sha256').update(JSON.stringify(latest.roster)).digest('hex') !== revision) return false;
+      if (evidence && (!gateQueryDay(evidence).allowed || !findPublishedGateLeg(latest.roster,evidence,buildCanonicalRosterEvents(latest.roster)))) return false;
+      return !acceptedRadar || radarResultDecision(acceptedRadar,evidence,Date.now()).allowed;
+    } catch { return false; }
+  };
+  const validate = async () => {
+    try {
+      if (!await conciergeDepartureOwnerCurrent(profile, snapshot)) return false;
+      const current = await conciergeLoadSnapshot(profile);
+      if (!await conciergeDepartureOwnerCurrent(profile, current)) return false;
+      if (crypto.createHash('sha256').update(JSON.stringify(current.roster)).digest('hex') !== revision) return false;
+      if (evidence && (!gateQueryDay(evidence).allowed || !findPublishedGateLeg(current.roster, evidence, buildCanonicalRosterEvents(current.roster)))) return false;
+      if (acceptedRadar && !radarResultDecision(acceptedRadar, evidence, Date.now()).allowed) return false;
+      return checkNow();
+    } catch { return false; }
+  };
+  profile.conciergeResponseAuthority = Object.freeze({ kind: 'departure', validate, checkNow });
   const owner = conciergeSafeKey(profile.email || '');
   const owns = candidate => Boolean(owner && conciergeSafeKey(profile.email || '') === owner && candidate?.roster
     && conciergeSafeKey(candidate.email || candidate.key || '') === owner && (!candidate.key || conciergeSafeKey(candidate.key) === owner) && conciergeAccessMatches(profile, candidate));
-  if (!owns(snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
+  if (!owns(snapshot) || !await conciergeDepartureOwnerCurrent(profile, snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
   const roster = snapshot?.roster;
-  const record = conciergeProgramRecords(roster).find((item) => {
+  const record = conciergeJourneyProgramRecords(roster, conciergeProgramRecords(roster)).find((item) => {
     if (item.end < new Date()) return false;
     if (item.legs?.length) return true;
-    return !conciergeRemoteCodes.has(item.code) && ['ASB', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
+    return ['ASB', 'HSB', 'HSBE', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
   });
-  if (!record) return buildDepartureSummary({ profile, snapshot });
-  const presentation = conciergePresentationTime(record);
-  const parsedPresentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
-  const presentationDate = Number.isFinite(parsedPresentationDate.getTime()) ? parsedPresentationDate : record.start;
-  const origin = record.legs?.[0]?.origin || record.day?.base || '';
-  const location = snapshot?.preferences?.location;
-  if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
-  const route = await conciergeTravelEstimate(location, origin);
-  if (!owns(snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
-  if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
-  if (route.distanceKm > 250) return `${premiumGreeting(profile, snapshot)} Você está longe de ${airportName(origin)}. Revise a rota completa no app antes de considerar o horário da apresentação, que é às ${spokenTime(presentation)}.`;
+  // Share the existing departure reader's non-routing policy responses. These
+  // conditions return before its route boundary, preserving one canonical APZ.
+  const origin = record?.legs?.[0]?.origin || record?.day?.base || '';
+  const status = String(record?.day?.status || '').trim().toLowerCase();
+  if (!record || record.display?.cancelled === true || ['cancelled', 'canceled', 'cancelado'].includes(status)
+    || ['HSB', 'HSBE'].includes(record.code) || !roster.base || !origin
+    || String(origin).toUpperCase() !== String(roster.base).toUpperCase()) return conciergeDepartureReply(snapshot);
+  // The projection's display proof is the same authority used by Next. Neither
+  // a classifier clock nor a legacy row report can supply a missing APZ.
+  const presentationDate = record.display?.clockBasis === 'published-brt'
+    && record.display.presentationConfirmed === true && Number.isFinite(record.display.publishedStart)
+    ? new Date(record.display.publishedStart) : null;
+  if (!presentationDate) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin });
+  const presentation = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(presentationDate);
+  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({ now: Date.now(),profile, snapshot, record, origin});
+  const locationState = conciergeLocationContextV14335(snapshot);
+  const location = locationState.fresh ? locationState.location : null;
+  if (!location) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin, presentationTime: presentation });
+  let route = null;
+  try { route = await conciergeTravelEstimate(location, origin); } catch {
+    // An unavailable route cannot replace the shared published APZ with a fallback clock.
+  }
+  if (!owns(snapshot) || !await validate()) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({ now: Date.now(),profile, snapshot, record, origin});
+  if (!route) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin, presentationTime: presentation, routeState: 'unavailable' });
+  if (route.distanceKm > 250) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin, presentationTime: presentation, route, routeState: 'long' });
   const departureWindow = calculateDepartureWindow(presentationDate, route);
   const leaveTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(departureWindow.leave);
   const safeRoute = { ...route, minutes: departureWindow.routeMinutes, leadMinutes: departureWindow.leadMinutes };
@@ -127,27 +189,37 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
     const canonical = buildCanonicalRosterEvents(roster);
     const bindings = [];
     if (owns(snapshot)) for (const event of canonical) {
-      if (event.kind !== 'flight' || buildFlightContext(event.flightNumber).raw !== queryContext.raw) continue;
+      if (event.kind !== 'flight' || event.id !== record.canonicalEventIds?.[0] || buildFlightContext(event.flightNumber).raw !== queryContext.raw) continue;
       const binding = findPublishedGateLeg(roster, {flight:queryContext.raw,origin:event.origin,destination:event.destination,
-        departureDate:originFlightDate(event.startDateTime,event.origin),scheduledDepartureUtc:event.startDateTime}, canonical);
-      if (binding?.leg === firstLeg && binding.day === record.day && gateQueryDay(binding.identity).allowed) bindings.push(binding);
+        eventId:event.id,departureDate:originFlightDate(event.startDateTime,event.origin),scheduledDepartureUtc:event.startDateTime}, canonical);
+      if (binding?.identity.eventId === event.id && gateQueryDay(binding.identity).allowed) bindings.push(binding);
     }
     if (bindings.length !== 1) radar = gateQuerySuppressed({reason:owns(snapshot) ? 'occurrence-unverified' : 'account-unverified'});
     else {
       queryContext.gateQueryEvidence = bindings[0].identity;
+      evidence = Object.freeze({ ...bindings[0].identity });
+      if (!await validate()) return gateQuerySuppressed({reason:'response-context-expired'}).message;
       radar = await runRadarRace(queryContext, firstLeg.origin || '', firstLeg.destination || '');
       const currentSnapshot = await conciergeLoadSnapshot(profile);
-      if (!owns(currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
+      if (!owns(currentSnapshot) || !await conciergeDepartureOwnerCurrent(profile, currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
         return gateQuerySuppressed({reason:'response-context-expired'}).message;
+      // The source that supplied APZ/route must still be the source being enriched.
+      // A matching flight tuple alone does not authorize a changed roster baseline.
+      if (crypto.createHash('sha256').update(JSON.stringify(currentSnapshot.roster)).digest('hex') !== revision || !await validate())
+        return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
       const currentBinding = findPublishedGateLeg(currentSnapshot.roster, queryContext.gateQueryEvidence, buildCanonicalRosterEvents(currentSnapshot.roster));
       if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
       if (radar?.ok && !radar.querySuppressed) {
-        conciergeApplyRadar(currentSnapshot, currentBinding, radar);
-        await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
-        if (!owns(currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
-          return gateQuerySuppressed({reason:'response-context-expired'}).message;
+        acceptedRadar = Object.freeze({ ...radar });
+        if (!radarResultDecision(acceptedRadar, evidence, Date.now()).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+        // Ephemeral Radar evidence only. The snapshot writer replaces the whole
+        // roster and has no atomic expected-revision contract. Do not persist or
+        // promote a revision here: an awaited validation cannot protect a later
+        // overwrite of independently updated programming. Final delivery still
+        // validates the original roster, exact occurrence and source freshness.
       }
     }
   }
-  return buildDepartureSummary({ profile, snapshot, record, route: safeRoute, leaveTime, origin, radar, presentationTime: presentation });
+  if (!await validate()) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, route: safeRoute, leaveTime, leaveEpoch: departureWindow.leave.getTime(), origin, radar, presentationTime: presentation });
 }

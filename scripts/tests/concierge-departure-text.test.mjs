@@ -163,3 +163,76 @@ for(const [date,year,month,day,at] of [
  if(['null','throw'].includes(mode))assert.match(text,/Não consegui calcular a rota/);
  if(mode==='long')assert.match(text,/posicionamento aéreo/);
 });
+
+
+for(const [date,year,month,day] of [['04/10/2099',2099,10,4],['01/01/2100',2100,1,1]])test(`selected second ASB block keeps its own published APZ ${date}`,async()=>{
+ const f=realRuntime(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T15:00:00Z`);
+ const raw=sourceDay({date,year,month,dayNumber:day,type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'17:30',legs:[
+  {flightNumber:'LA0012',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'},
+  {flightNumber:'LA0013',origin:'BBB',destination:'AAA',departureTime:'16:00',arrivalTime:'17:00',presentationTime:'15:00',workType:'OP'},
+ ]});
+ const roster={...sourceRoster([raw]),year,month,base:'BBB'};const before=JSON.stringify(roster),programs=f.programs(roster);assert.equal(programs.length,2);
+ assert.notEqual(programs[0].journeyId,programs[1].journeyId);assert.equal(programs[0].display.publishedStart,Date.parse(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T06:00:00Z`),'first bound reserve still starts03:00');
+ const second=programs[1];assert.equal(second.startTime,'15:00');assert.equal(second.display.publishedStart,Date.parse(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T18:00:00Z`));
+ const text=realSummary({record:second,label:'A próxima programação',includeGreeting:false});assert(text.includes(`APZ: ${date} às 15:00.`));assert.match(text,/UTC−03/);assert.doesNotMatch(text,/APZ:.*03:00/);
+ const departure=await f.run(roster);assert(departure.includes(`${date} às 15:00`));assert.match(departure,/14:05/);assert.doesNotMatch(departure,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+
+for(const order of ['full-first','partial-first'])test(`ASB partial duplicate ownership is order independent: ${order}`,async()=>{
+ const first={flightNumber:'QA-OWNER-1',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'};
+ const second={flightNumber:'QA-OWNER-2',origin:'BBB',destination:'AAA',departureTime:'16:00',arrivalTime:'17:00',presentationTime:'15:00',workType:'OP'};
+ const full=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'17:30',legs:[first,second]}),partial={...full,legs:[second]};
+ const roster={...sourceRoster(order==='full-first'?[full,partial]:[partial,full]),base:'BBB'},before=JSON.stringify(roster),f=realRuntime('2099-10-04T15:00:00Z');
+ const next=f.programs(roster).filter(p=>p.legs.some(l=>l.flightNumber==='QA-OWNER-2'));assert(next.length);
+ for(const p of next)assert.equal(p.display.publishedStart,Date.parse('2099-10-04T18:00:00Z'),'03:00 cannot attach through a partial duplicate');
+ const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 15:00/);assert.match(text,/14:05/);assert.doesNotMatch(text,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+for(const explicit of [true,false])test(`ASB physical filtering cannot transfer reserve ownership: explicit=${explicit}`,async()=>{
+ const raw=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'19:30',legs:[
+  {flightNumber:'QA-DROPPED',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'},
+  {flightNumber:'QA-REINDEXED',origin:'CCC',destination:'DDD',departureTime:'16:00',arrivalTime:'17:00',...(explicit?{presentationTime:'15:00'}:{}),workType:'OP'},
+  {flightNumber:'QA-CONTINUATION',origin:'DDD',destination:'CCC',departureTime:'18:00',arrivalTime:'19:00',workType:'OP'},
+ ]});
+ const roster={...sourceRoster([raw]),base:'CCC'},before=JSON.stringify(roster),f=realRuntime('2099-10-04T15:00:00Z'),programs=f.programs(roster);
+ assert.equal(programs.length,1);assert.equal(programs[0].legs[0].flightNumber,'QA-REINDEXED');assert.equal(programs[0].display.publishedStart,explicit?Date.parse('2099-10-04T18:00:00Z'):null);
+ const text=await f.run(roster);assert.doesNotMatch(text,/às 03:00/);assert.equal(f.routes(),explicit?1:0);if(explicit){assert.match(text,/04\/10\/2099 às 15:00/);assert.match(text,/14:05/);assert.doesNotMatch(text,/já passou/);}assert.equal(JSON.stringify(roster),before);
+});
+
+for(const source of ['estimated','unknown',undefined])test(`literal leg APZ cannot publish reserve03 from ${source}`,async()=>{
+ const raw=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyReportSource:source,legs:[{flightNumber:'QA-OWN-APZ',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'}]});
+ const roster=sourceRoster([raw]),before=JSON.stringify(roster),f=realRuntime('2099-10-04T09:00:00Z'),record=f.programs(roster)[0];
+ assert.equal(record.display.publishedStart,Date.parse('2099-10-04T10:00:00Z'));const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 07:00/);assert.doesNotMatch(text,/às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+for(const source of ['estimated','unknown',undefined])for(const reverse of [false,true])test(`duplicate reserve provenance stays pending: ${source} reverse=${reverse}`,async()=>{
+ const full=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00'}),uncertain={...full,dutyReportSource:source};
+ const roster=sourceRoster(reverse?[uncertain,full]:[full,uncertain]),before=JSON.stringify(roster),f=realRuntime('2099-10-04T04:00:00Z'),programs=f.programs(roster);
+ assert(programs.length);for(const p of programs)assert.equal(p.display.publishedStart,null,'a published duplicate cannot erase unknown provenance');const text=await f.run(roster);assert.doesNotMatch(text,/às 03:00/);assert.equal(f.routes(),0);assert.equal(JSON.stringify(roster),before);
+});
+
+for(const reverse of [false,true])test(`equivalent clock spellings reconcile reserve ownership reverse=${reverse}`,async()=>{
+ const early={flightNumber:'QA-EARLY',origin:'CCC',destination:'BBB',departureTime:'04:00',arrivalTime:'05:00',workType:'OP'},own={flightNumber:'QA-CLOCK',origin:'BBB',destination:'AAA',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'};
+ const full=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'00:00',legs:[early,own]}),partial={...full,legs:[{...own,departureTime:'8:00',arrivalTime:'9:00'}]};
+ const roster={...sourceRoster(reverse?[partial,full]:[full,partial]),base:'BBB'},before=JSON.stringify(roster),f=realRuntime('2099-10-04T09:00:00Z');
+ for(const p of f.programs(roster).filter(p=>p.legs.some(l=>l.flightNumber==='QA-CLOCK')))assert.equal(p.display.publishedStart,Date.parse('2099-10-04T10:00:00Z'));
+ const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 07:00/);assert.doesNotMatch(text,/já passou|às 00:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+for(const kind of ['estimated','earlier-block'])test(`nested original evidence cannot publish another reserve: ${kind}`,async()=>{
+ const own={flightNumber:'QA-NESTED',origin:'AAA',destination:'BBB',departureTime:kind==='estimated'?'08:00':'16:00',arrivalTime:kind==='estimated'?'09:00':'17:00',presentationTime:kind==='estimated'?'07:00':'15:00',workType:'OP'};
+ const raw=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:kind==='estimated'?'09:30':'17:30',legs:[own]});
+ const clocks=legs=>legs.map(({departureTime,arrivalTime,presentationTime})=>({departureTime,arrivalTime,presentationTime}));
+ const original={dutyReport:raw.dutyReport,dutyDebrief:raw.dutyDebrief,dutyReportSource:'published',dutyDebriefSource:'published',legs:clocks(raw.legs)};
+ const nested=kind==='estimated'?{...original,dutyReportSource:'estimated'}:{...original,legs:clocks([{departureTime:'08:00',arrivalTime:'09:00'},own])};
+ raw.publishedClockEvidence={...original,records:[{...original,records:[nested]}]};
+ const roster=sourceRoster([raw]),before=JSON.stringify(roster),f=realRuntime(kind==='estimated'?'2099-10-04T09:00:00Z':'2099-10-04T15:00:00Z'),record=f.programs(roster)[0];
+ assert.equal(record.display.publishedStart,Date.parse(kind==='estimated'?'2099-10-04T10:00:00Z':'2099-10-04T18:00:00Z'));const text=await f.run(roster);assert.match(text,kind==='estimated'?/04\/10\/2099 às 07:00/:/04\/10\/2099 às 15:00/);assert.doesNotMatch(text,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+
+for(const kind of ['estimated-container','earlier-container'])for(const order of ['alone','plain-first','preserved-first'])test(`preserved container survives normalization merge: ${kind} ${order}`,async()=>{
+ const own={flightNumber:'QA-MERGED',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'};
+ const plain=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',legs:[own]});
+ const leaf={dutyReport:'03:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]};
+ const container=kind==='estimated-container'?{...leaf,dutyReportSource:'estimated',records:[leaf]}:{...leaf,legs:[{departureTime:'04:00',arrivalTime:'05:00'},...leaf.legs],records:[leaf]};
+ const preserved={...plain,publishedClockEvidence:container},days=order==='alone'?[preserved]:order==='plain-first'?[plain,preserved]:[preserved,plain],roster=sourceRoster(days),before=JSON.stringify(roster),f=realRuntime('2099-10-04T09:00:00Z');
+ const records=f.programs(roster);assert.equal(records.length,1);assert.equal(records[0].display.publishedStart,Date.parse('2099-10-04T10:00:00Z'));const summary=realSummary({record:records[0],label:'A próxima programação',includeGreeting:false});assert.match(summary,/APZ: 04\/10\/2099 às 07:00/);
+ const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 07:00/);assert.doesNotMatch(text,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});

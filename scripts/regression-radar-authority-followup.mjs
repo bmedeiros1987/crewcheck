@@ -2,6 +2,7 @@ import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import ts from 'typescript';
 import {build} from 'esbuild';
@@ -10,18 +11,19 @@ import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs
 assert.match(fs.readFileSync('.github/workflows/next-flight-gate.yml','utf8'), /^\s+- ['"]client\/src\/lib\/authClient\.ts['"]\s*$/m, 'real authClient changes must trigger the Radar workflow');
 prepareConciergeCanonicalBridge();
 const {buildCanonicalRosterEvents}=await import('../server/concierge/generated/canonicalRoster.mjs');
+const {conciergeJourneyProgramRecords}=await import('../server/concierge/journey-programs.mjs');
 function extract(file,names){const text=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,text,99,true,ts.ScriptKind.TSX);return names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,name);return ts.transpileModule(fn.getText(ast).replace(/^export /,''),{compilerOptions:{target:99}}).outputText}).join('\n');}
 let now=Date.parse('2032-10-14T12:00:00Z');
 class FixedDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
 const leg={flightNumber:'LA3981',origin:'CPV',destination:'GRU',departureTime:'09:00',arrivalTime:'11:00',duration:2};
-const roster={year:2032,month:10,base:'CPV',days:[{date:'14/10/2032',type:'VOO',dutyReport:'08:00',dutyDebrief:'11:30',legs:[leg]}]};
+const roster={year:2032,month:10,base:'CPV',days:[{date:'14/10/2032',type:'VOO',dutyReport:'08:00',dutyDebrief:'11:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[leg]}]};
 const identity={flight:'LA3981',origin:'CPV',destination:'GRU',departureDate:'2032-10-14',scheduledDepartureUtc:'2032-10-14T12:00:00Z'};
 let rows,queries,providerCalls,writes,claims,poolAvailable,lateChange,snapshot;
-const scope=vm.createContext({...policy,Date:FixedDate,buildCanonicalRosterEvents,gateQueryDay:i=>policy.gateQueryDay(i,now),setTimeout,clearTimeout,process:{env:{}},
+const scope=vm.createContext({...policy,crypto,Date:FixedDate,buildCanonicalRosterEvents,conciergeJourneyProgramRecords,gateQueryDay:i=>policy.gateQueryDay(i,now),setTimeout,clearTimeout,process:{env:{}},
  safeEmail:s=>String(s||'').trim().toLowerCase(),verifyJwt:()=>claims,requestToken:r=>r.token,
  pool:async()=>poolAvailable?{query:async(sql,args)=>{queries.push({sql,args});if(queries.length===2)lateChange?.();return {rows};}}:null,
  telegramRequestUser:()=>({email:'a@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:s=>String(s||'').trim().toLowerCase(),
- conciergeLoadSnapshot:async()=>snapshot,conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{writes++},conciergeSaveSnapshotAsync:async()=>{writes++},
+ telegramRostersRead:()=>structuredClone({snapshots:snapshot?{'a@example.invalid':snapshot}:{}}),conciergeLoadSnapshot:async()=>snapshot,conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{writes++},conciergeSaveSnapshotAsync:async(_profile,roster)=>{writes++;if(roster){snapshot={...snapshot,roster:scope.conciergeMinimizeRoster(roster)};return snapshot;}},
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,configuredProviders:()=>[],scoreRadar:()=>95,publicRadarPayload:x=>x,sendJson:(_r,status,payload)=>({...payload,httpStatus:status})});
 for(const name of ['providerFlightAware','providerCustom','providerAviationstack','providerAirLabs','providerAeroDataBox'])scope[name]=async()=>{providerCalls++;return {ok:true,gate:'46',...identity,departure:identity.scheduledDepartureUtc};};
 vm.runInContext(extract('server.mjs',['normalizeFlightRaw','buildFlightContext']),scope);
@@ -40,14 +42,14 @@ reset();snapshot={email:'foreign@example.invalid',roster};result=await scope.han
 reset();snapshot={email:'a@example.invalid',key:'foreign@example.invalid',roster};result=await scope.handleRadar({token:'mock-A'}, {}, url());assert.equal(result.ok,false);assert.equal(providerCalls,0);
 reset();delete rows[0].updated_at;result=await scope.handleRadar({token:'mock-A'}, {}, url());assert.equal(result.ok,false);assert.equal(providerCalls,0);
 console.log('PASS actual app handler/owned DB loader: no snapshot, token owner, foreign row, DB outage, revision/removal/midnight fences, no writes; providers fictitious');
-reset();snapshot={email:'a@example.invalid',roster,preferences:{location:{synthetic:true}}};const record={day:roster.days[0],legs:roster.days[0].legs,end:new FixedDate(now+3600000),start:new FixedDate(now),startTime:'08:00'};
-Object.assign(scope,{conciergeProgramRecords:()=>[record],conciergeRemoteCodes:new Set(),conciergePresentationTime:()=> '08:00',conciergeProgramDate:()=>new FixedDate(now),conciergeTravelEstimate:async()=>({minutes:20,distanceKm:10}),calculateDepartureWindow:()=>({leave:new FixedDate(now),routeMinutes:20,leadMinutes:30}),buildDepartureSummary:x=>x.radar,conciergeLoadSnapshot:async()=>snapshot});
-const premiumFile=process.env.RADAR_HELD_PREMIUM || (fs.readFileSync('server.mjs','utf8').includes('async function conciergePremiumDepartureReply(')?'server.mjs':'server/v1403/premium-helpers.snippet');vm.runInContext(extract('server.mjs',['conciergeRosterDayParts','conciergeDateKey','conciergeRecordDateKey'])+extract(premiumFile,['conciergePremiumDepartureReply']),scope);
-result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});assert.equal(result.ok,true);assert(providerCalls>0);assert.equal(writes,2);
+reset();now=Date.parse('2032-10-14T10:30:00Z');snapshot={email:'a@example.invalid',roster,preferences:{location:{synthetic:true}}};const record={day:roster.days[0],legs:roster.days[0].legs,end:new FixedDate(now+3600000),start:new FixedDate(now),startTime:'08:00'};
+Object.assign(scope,{conciergeLocationContextV14335:()=>({fresh:true,location:{synthetic:true}}),conciergeProgramRecords:()=>[record],conciergeRemoteCodes:new Set(),conciergePresentationTime:()=> '08:00',conciergeProgramDate:()=>new FixedDate(now),conciergeTravelEstimate:async()=>({minutes:20,distanceKm:10}),calculateDepartureWindow:()=>({leave:new FixedDate(now),routeMinutes:20,leadMinutes:30}),buildDepartureSummary:x=>x.radar,conciergeLoadSnapshot:async()=>snapshot});
+const premiumFile=process.env.RADAR_HELD_PREMIUM || (fs.readFileSync('server.mjs','utf8').includes('async function conciergePremiumDepartureReply(')?'server.mjs':'server/v1403/premium-helpers.snippet');vm.runInContext(extract('server.mjs',['conciergeRosterDayParts','conciergeDateKey','conciergeRecordDateKey','conciergeMinimizeRoster','conciergeSnapshotForProfile'])+extract(premiumFile,['conciergeDepartureOwnerCurrent','conciergePremiumDepartureReply']),scope);
+result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});assert.equal(result.ok,true);assert(providerCalls>0);assert.equal(writes,0,'premium departure Radar evidence is ephemeral; no whole-roster write');
 for (const formatted of ['LA 3981','la3981','la 3981',' LA \t3981 ']) {
  leg.flightNumber=formatted;providerCalls=0;writes=0;
  result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});
- assert.equal(result.ok,true,`formatted published flight ${JSON.stringify(formatted)} uses the canonical binding`);assert(providerCalls>0);assert.equal(writes,2);
+ assert.equal(result.ok,true,`formatted published flight ${JSON.stringify(formatted)} uses the canonical binding`);assert(providerCalls>0);assert.equal(writes,0,'premium departure Radar evidence is ephemeral; no whole-roster write');
 }
 leg.flightNumber='LA3981';
 providerCalls=0;writes=0;result=await scope.conciergePremiumDepartureReply(snapshot,{email:'foreign@example.invalid',authenticated:true});assert.equal(result,policy.gateQuerySuppressed({reason:'account-unverified'}).message);assert.equal(providerCalls,0);assert.equal(writes,0);
