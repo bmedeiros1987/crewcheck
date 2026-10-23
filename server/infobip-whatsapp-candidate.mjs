@@ -134,12 +134,18 @@ export async function prepareInfobipReply(job, { lookupLink, concierge, now = Da
     const stamp = linkStamp(initial, job);
     if (signal?.aborted || !stamp || stamp !== job.bindingStamp) return null;
     let timer,abortListener; const controller = new AbortController();
+    const work=Promise.resolve().then(() => concierge({accountId: initial.accountId, email: initial.email,
+      text: job.text, messageId: job.messageId, signal: signal?AbortSignal.any([controller.signal,signal]):controller.signal}));
     const reply = await Promise.race([
-      Promise.resolve().then(() => concierge({accountId: initial.accountId, email: initial.email,
-        text: job.text, messageId: job.messageId, signal: signal?AbortSignal.any([controller.signal,signal]):controller.signal})),
+      work,
       new Promise(resolve => {timer = setTimeout(() => {controller.abort(); resolve(null);}, 5_000);}),
       ...(signal?[new Promise(resolve=>{abortListener=()=>{controller.abort();resolve(null);};if(signal.aborted)abortListener();else signal.addEventListener('abort',abortListener,{once:true});})]:[]),
-    ]).finally(() => {clearTimeout(timer);if(abortListener)signal.removeEventListener('abort',abortListener);});
+    ]).finally(async () => {
+      clearTimeout(timer);if(abortListener)signal.removeEventListener('abort',abortListener);
+      // Abort/timeout requests cancellation; it cannot detach a legacy handler.
+      // Completion and lifecycle ownership remain pending until actual settle.
+      await work.catch(()=>{});
+    });
     if (signal?.aborted || typeof reply !== 'string' || !reply.trim() || reply.length > 4_000 ||
         linkStamp(await lookupLink(job), job) !== stamp || now() - job.receivedAt > INFOBIP_REPLY_MAX_AGE_MS) return null;
     return Object.freeze({ provider: 'infobip', sender: job.sender, recipient: job.recipient,

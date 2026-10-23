@@ -6,7 +6,7 @@ import {createInfobipProductionStore} from './infobip-whatsapp-store.mjs';
 import {createInfobipProductionTextTransport} from './infobip-whatsapp-transport.mjs';
 import {createInfobipSendAdmission} from './infobip-whatsapp-admission.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
-import {invokeConfiguredWhatsAppConcierge,isWhatsAppConciergeConfigured} from './whatsapp.mjs';
+import {invokeConfiguredWhatsAppConcierge,isWhatsAppConciergeConfigured,withWhatsAppConciergeQuiesced} from './whatsapp.mjs';
 
 const fail=()=>{throw Error('INFOBIP_PRODUCTION_CONFIGURATION');};
 const reference=value=>typeof value==='string'&&/^[A-Za-z0-9_.:/-]{1,160}$/.test(value);
@@ -94,7 +94,7 @@ export async function createInfobipWhatsAppProduction(options={}) {
     const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now});
     const report=kind=>createInfobipReportReceiver({kind,authentication:configuration.webhookAuthentication,store,now});
     const pipeline=Object.freeze({receive,receiveDelivery:report('delivery'),receiveSeen:report('seen'),
-      dispatch:store.dispatch,expire:store.expirePayload,maintain:store.maintain,nextHeld:store.nextHeld,eraseAccount:store.eraseAccount});
+      dispatch:store.dispatch,expire:store.expirePayload,maintain:store.maintain,nextHeld:store.nextHeld,eraseAccount:(email,context)=>withWhatsAppConciergeQuiesced(email,()=>store.eraseAccount(email,context))});
     return bindInfobipWhatsAppRuntime({pipeline,auth,scheduler:fixedScheduler,verifyTls});
   } catch {throw Error('INFOBIP_PRODUCTION_UNAVAILABLE');}
 }

@@ -309,14 +309,42 @@ export function configureWhatsAppConcierge(handler) {
   whatsappConciergeHandler = typeof handler === 'function' ? handler : null;
 }
 
+// Active Infobip invocations are tracked by owner until the actual handler
+// settles, including handlers/capabilities that do not honor cancellation.
+const activeConciergeInvocations=new Set(),quiescingOwners=new Map();
+const conciergeOwner=email=>typeof email==='string'?email.trim().toLowerCase():'';
+export async function withWhatsAppConciergeQuiesced(email,run) {
+  const owner=conciergeOwner(email);
+  if(!owner||typeof run!=='function')throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+  quiescingOwners.set(owner,(quiescingOwners.get(owner)||0)+1);
+  try {
+    const active=[...activeConciergeInvocations].filter(entry=>entry.owner===owner);
+    for(const entry of active)entry.controller.abort();
+    await Promise.allSettled(active.map(entry=>entry.work));
+    return await run();
+  } finally {
+    const count=quiescingOwners.get(owner)-1;
+    if(count)quiescingOwners.set(owner,count);else quiescingOwners.delete(owner);
+  }
+}
+
 // Shared canonical engine only; no linking, provider fallback or transport.
 // Caller must supply an authenticated, currently revalidated owner binding.
 export async function invokeConfiguredWhatsAppConcierge({email, text, messageId, signal}) {
-  if (signal?.aborted || typeof whatsappConciergeHandler !== 'function' ||
-      typeof email !== 'string' || !email || typeof text !== 'string' || !text.trim()) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
-  const result = await whatsappConciergeHandler({email, text, location: null, messageType: 'text', messageId, signal});
-  if (signal?.aborted) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
-  return typeof result === 'string' ? result : String(result?.text || result?.reply || '');
+  const owner=conciergeOwner(email),handler=whatsappConciergeHandler;
+  if (signal?.aborted || typeof handler !== 'function' || !owner || quiescingOwners.has(owner) ||
+      typeof text !== 'string' || !text.trim()) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+  const controller=new AbortController(),combined=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
+  const work=Promise.resolve().then(()=>{
+    if(combined.aborted||quiescingOwners.has(owner))throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+    return handler({email, text, location:null, messageType:'text', messageId, signal:combined});
+  });
+  const entry={owner,controller,work};activeConciergeInvocations.add(entry);
+  try {
+    const result=await work;
+    if(combined.aborted||quiescingOwners.has(owner))throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+    return typeof result==='string'?result:String(result?.text||result?.reply||'');
+  } finally {activeConciergeInvocations.delete(entry);}
 }
 
 export async function sendWhatsAppText(to, text, options = {}) {

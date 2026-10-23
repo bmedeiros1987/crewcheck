@@ -42,7 +42,7 @@ return sanitized codes, never raw credential/SQL/provider diagnostics.
 - Explicit synchronous scheduler `set/clear` callbacks and a bounded HTTP
   `request` capability; no default fetch or production timer discovery. The
   caller owns startup and must call `dispose()` on shutdown. Disposal aborts
-  engine/provider signals, clears scheduling, drains bounded work and releases
+  engine/provider signals, clears scheduling, drains tracked work and releases
   lifecycle ownership, even if timer clearing reports an error. It is idempotent.
 
 The production store and transport expose `dispatch` and `send`, respectively,
@@ -136,3 +136,40 @@ Before any real wiring or activation, obtain and separately review:
    real messages. Those are not authorized by this code-only change.
 
 Keep draft for independent review and exact-HEAD CI. No activation from this PR.
+
+## P2 follow-up: actual canonical work must settle before completion
+
+The original cancellation test used a cooperative callback. It did not prove the
+actual canonical binding consumed the signal. A new counterexample executes the
+exact function emitted by `scripts/v14410/apply.mjs` with a controlled snapshot
+promise that ignores abort. Before the fix, `dispose()` completed before that
+promise settled (`completedBeforeSettle=true`); the new assertion failed RED.
+The same test runs the actual prepared server binding, not a replacement callback.
+
+The binding now accepts the signal and checks it before/after snapshot resolution,
+location resolution/save and dispatch to the existing reply builder. The core
+reply promise remains tracked until actual settlement even when abort/timeout
+wins the cancellation race. Shutdown cannot report completion or release lifecycle
+ownership while that handler remains active. Owner-scoped revocation temporarily
+blocks new Infobip engine invocations, aborts current ones and drains them before
+performing its existing erasure callback and confirming completion. Quota remains
+consumed conservatively; no late provider reply is permitted.
+
+These are host-local completion fences, not forcible interruption of all legacy
+capabilities or a distributed revocation proof. Work already executing inside the
+legacy builder may ignore abort and continue **while shutdown/revocation is still
+pending**. It is awaited, not detached. A five-second engine deadline requests
+cancellation; it no longer promises five-second drain completion for a
+noncooperative handler. If that handler never settles, completion remains pending
+and admission stays closed; this is not reported as successful shutdown/erasure.
+Already-issued I/O cannot be retracted or rolled back by an AbortSignal. The actual
+host/capability implementations and any multi-process deployment still require
+review before activation. No bounded real-provider cancellation is asserted here.
+
+Tests cover noncooperative snapshot and builder waits, concurrent revoke and
+shutdown, rejection of new owner invocations during revocation, no next canonical
+phase after abort, no late outbound send and no untracked effect after confirmed
+completion. Raw uses the real writer's exact binding; prepared additionally uses
+its materialized server binding. Existing WhatsApp/Wellhub location behavior is
+verified with no signal and with synthetic dependencies. The P2 remains open for
+independent confirmation; this change does not resolve it automatically.
