@@ -8,7 +8,9 @@ import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialE
 import CurrencyCalculator from '@/components/finance/CurrencyCalculator';
 import FinancialHistoryWithoutRoster from '@/components/finance/FinancialHistoryWithoutRoster';
 import {validFinancialDay} from '@/lib/financialHistoryPeriods';
-import {parseFinancialDecimal} from '@shared/financialFx.mjs';
+import {parseFinancialDecimal,projectAllowanceFxRows} from '@shared/financialFx.mjs';
+import {useFinancialFx,FinancialFxSourceControl} from '@/components/finance/FinancialFxProvider';
+import type {FxQuote} from '@/lib/financialFxReference';
 import { AlertRosterNavigation } from '@/components/alerts/AlertRosterNavigation';
 import * as rawNavigationContext from '@/lib/navigationContext';
 import { peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
@@ -3489,6 +3491,7 @@ type PerDiemRow = {
   rateSource: string;
   rateVersion: string;
   exchangeRate: number | null;
+  fxReferences?:FxQuote[];
   expectedPaymentDate?:string;
   expectedPaymentTimezone?:string;
   calculationStart: string;
@@ -3638,19 +3641,12 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     const override = readOptionalNumberSetting('crewcheck_perdiem_rate_' + rule.key);
     return [rule.key, { ...rule, mainMeal: override ?? rule.mainMeal }];
   })) as Record<PerDiemRateKey, { key: PerDiemRateKey; label: string; currency: PerDiemCurrency; mainMeal: number }>;
-  const exchangeRates: Record<PerDiemCurrency, number> = {
-    BRL: 1,
-    USD: readNumberSetting('crewcheck_fx_usd_brl', 0),
-    EUR: readNumberSetting('crewcheck_fx_eur_brl', 0),
-    GBP: readNumberSetting('crewcheck_fx_gbp_brl', 0),
-  };
   const demonstratedSource = domestic.source === 'demonstrated'
     ? ' · demonstrativo nacional confirmado no período'
     : '';
   return {
     act,
     rates,
-    exchangeRates,
     breakfastPercent: act.breakfastPercent,
     domesticBreakfast: domestic.breakfast,
     taxiRate: references.taxi,
@@ -3707,7 +3703,6 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Valor da tarifa de diária inválido para o período.' });
       return;
     }
-    const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       eventId: event.id,
       partial,
@@ -3717,14 +3712,15 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       label,
       value,
       currency: rate.currency,
-      convertedBRL: rate.currency === 'BRL' ? value : fx > 0 ? value * fx : null,
+      // FX is projected separately from native entitlements using dated quotes.
+      convertedBRL: rate.currency === 'BRL' ? value : null,
       source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso
         + (classification.rateKey==='domestic'&&(slot==='breakfast'?cfg.personalReferences?.breakfast:cfg.personalReferences?.mainMeal)?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':''),
       airport: classification.airport,
       rateKey: classification.rateKey,
       rateSource: classification.rateKey === 'domestic' ? (slot === 'breakfast' ? cfg.domesticBreakfastSource : cfg.domesticMainMealSource) : (readOptionalNumberSetting('crewcheck_perdiem_rate_' + classification.rateKey) !== null ? 'manual' : 'act'),
       rateVersion: cfg.act.version,
-      exchangeRate: rate.currency === 'BRL' ? 1 : fx > 0 ? fx : null,
+      exchangeRate: rate.currency === 'BRL' ? 1 : null,
       calculationStart: calculationStart.toISOString(),
       calculationEnd: calculationEnd.toISOString(),
     });
@@ -4102,7 +4098,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster, salaryScope = 'f
     dsr,
   };
 }
-function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabel, nextPayment }: { bundle: BundleState; forecastOverride?: ReturnType<typeof calculatePerDiem> & { scopeIncomplete?: boolean }; controls?: ReactNode; graph?: ReactNode; rangeLabel?: string; nextPayment?: ReactNode }) {
+function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabel, nextPayment, fxControl, onExchangeConfigured }: { bundle: BundleState; forecastOverride?: ReturnType<typeof calculatePerDiem> & { scopeIncomplete?: boolean }; controls?: ReactNode; graph?: ReactNode; rangeLabel?: string; nextPayment?: ReactNode; fxControl?:ReactNode; onExchangeConfigured?:()=>void }) {
   const privacy = useFinancialPrivacy();
   const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
   const moneyCurrency = (value: number, currency: PerDiemCurrency) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value));
@@ -4139,7 +4135,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       if (!writeFinancialSetting(key, normalized, session) || !writeFinancialSetting(key + '_reference', JSON.stringify({rate: normalized, asOf, source: 'Cotação informada nesta conta'}), session)) { toast.error('Não foi possível salvar o câmbio na sessão que abriu a revisão.'); return; }
       changed = true;
     }
-    if (changed) { setRevision((value) => value + 1); toast.success('Referência de câmbio atualizada para esta previsão.'); }
+    if (changed) { onExchangeConfigured?.(); setRevision((value) => value + 1); toast.success('Referência de câmbio atualizada para esta previsão.'); }
   }
 
   return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">
@@ -4158,6 +4154,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     {forecast.pendingCurrencies.length > 0 && <section className="cz-toolbox cz-finance-attention">
       <h2>Câmbio necessário</h2>
       <p>A conversão em reais depende da cotação de {forecast.pendingCurrencies.join(', ')}.</p>
+      {fxControl}
       <div className="cz-tool-actions"><button onClick={configureExchange} disabled={!forecast.nativeSummary.complete}><DollarSign/> Informar câmbio</button></div>
     </section>}
     {!forecast.nativeSummary.complete && forecast.nativeSummary.state !== 'no_data' && <section className="cz-toolbox cz-finance-attention">
@@ -4194,7 +4191,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
           <span>{row.date}</span>
           <strong>{row.label} · {row.airport}</strong>
           <b><MoneyText value={moneyCurrency(row.value, row.currency)}/></b>
-          <details className="cc-per-diem-source"><summary>Origem e regra{row.convertedBRL === null ? ' · cotação pendente' : ''}</summary><small>{privacy.text(row.source)}</small></details>
+          <details className="cc-per-diem-source"><summary>Origem e regra{row.convertedBRL === null ? ' · cotação pendente' : ''}</summary><small>{privacy.text(row.source)}</small>{row.currency!=='BRL'&&row.convertedBRL!==null&&<small>Estimativa em reais: {moneyBRL(row.convertedBRL)}</small>}{row.fxReferences?.map((quote,index)=><small key={index}>{quote.source} · referência {quote.asOf}{quote.retrievedAt?` · consulta ${quote.retrievedAt}`:''}</small>)}</details>
         </div>
       ) : pendingTaxiRows.length ? null : <article className="cz-empty-real"><BriefcaseBusiness/><h2>{forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Previsão pendente'}</h2><p>{forecast.nativeSummary.state === 'no_data' ? 'A escala selecionada não contém diárias previstas nesta competência.' : 'Os dados incompletos não foram tratados como ausência de diárias.'}</p></article>}
     </section>
@@ -4202,9 +4199,10 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
   </section></>;
 }
 
-function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[]) {
+function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[], quotes?:Record<string,FxQuote>,today=new Date().toISOString().slice(0,10)) {
   const base = snapshots[0]?.perdiem || {};
-  const rows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
+  const nativeRows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
+  const rows = quotes===undefined?nativeRows:projectAllowanceFxRows(nativeRows,quotes,today);
   const pending = snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems);
   const unclassifiedItems = [...financialRowsInRange(pending, range), ...pending.filter(item => !item.iso)];
   const native = summarizeNativeForecastRows(rows, unclassifiedItems), converted = summarizeForecastRows(rows, unclassifiedItems);
@@ -4226,17 +4224,18 @@ function FinancialFreeDayDetails({evaluation}:{evaluation:FreeDayPostponementEva
  return <section data-free-day-reference-month={boundCurrent?period||undefined:undefined}>{reference&&<small>Referência · {reference}</small>}<FinancialFreeDayComparison key={session} session={session} review={visibleReview}><FreeDaySourceConsent key={session} session={session} bound={boundCurrent}/></FinancialFreeDayComparison></section>;
 }
 function PerDiemView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDayEvaluation:FreeDayPostponementEvaluation }) {
+  const fx=useFinancialFx();
   return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} changesDetails={<FinancialFreeDayDetails evaluation={freeDayEvaluation}/>} mode="allowance" metric={snapshot=>snapshot.perdiem.nativeSummary.totalsByCurrency} rangeMetric={(snapshot,range)=>scopedFinancialForecast([snapshot],range,[]).nativeSummary.totalsByCurrency}
     periodMetric={(snapshots,range,missing)=>scopedFinancialForecast(snapshots,range,missing).nativeSummary.totalsByCurrency}
     weeks={(snapshots,range)=>financialWeeks(range).map(week=>({range:week,value:scopedFinancialForecast(snapshots,week,[]).currencySummary}))}
     render={({snapshots,range,missing,controls,graph,coverageReady,requestRange})=>{
-      const forecast = scopedFinancialForecast(snapshots.map(item=>item.snapshot),range,missing);
+      const forecast = scopedFinancialForecast(snapshots.map(item=>item.snapshot),range,missing,fx.quotes);
       const selected = snapshots.find(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===range.start.slice(0,7)) || {roster:bundle.roster,source:bundle.source};
       const knownPeriods = new Set(snapshots.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`));
-      const auditRows = snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows);
+      const auditRows = projectAllowanceFxRows(snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows),fx.quotes,new Date().toISOString().slice(0,10));
       const payment = nextAllowancePayment(auditRows, snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems), coverageReady?[...knownPeriods]:[], new Date(), snapshots.flatMap(item=>item.roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date)));
       const captureFlights = [...new Map(snapshots.flatMap(item=>buildLegs(item.roster).filter(event=>event.kind==='flight'&&event.salaryClockKnown===true&&item.roster.days.some(day=>day.date===event.day.date&&(day.legs||[]).some(leg=>leg.flightNumber===event.flightNumber&&leg.origin===event.origin&&leg.destination===event.destination&&leg.departureTime===event.leg?.departureTime&&leg.arrivalTime===event.leg?.arrivalTime))&&/^\d{2}\/\d{2}\/\d{4}$/.test(event.day.date)).map(event=>({id:event.id,published:true,localDate:event.day.date.split('/').reverse().join('-'),timezone:'America/Sao_Paulo',airport:event.origin,label:`${event.day.date} · ${event.flightNumber} · ${event.origin} → ${event.destination} · ${event.departure} BRT`}))).map(flight=>[flight.id,flight])).values()];
-      return <><CanonicalForecastCapture key={JSON.stringify([getStoredUser()?.email,range,forecast.monthlyRows,captureFlights])} flights={captureFlights} rows={forecast.monthlyRows} range={range} complete={forecast.nativeSummary.complete&&!forecast.scopeIncomplete} crewId={selected.roster.crewId} airline={selected.roster.airline||''} coveredDays={snapshots.flatMap(item=>item.roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date))}/><PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} nextPayment={<NextPaymentCard payment={payment} requestRange={requestRange} extraDetails={graph}/>} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<><FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} rows={auditRows} unclassified={snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems)}/></>}/></>;
+      return <><CanonicalForecastCapture key={JSON.stringify([getStoredUser()?.email,range,forecast.monthlyRows,captureFlights])} flights={captureFlights} rows={forecast.monthlyRows} range={range} complete={forecast.nativeSummary.complete&&!forecast.scopeIncomplete} crewId={selected.roster.crewId} airline={selected.roster.airline||''} coveredDays={snapshots.flatMap(item=>item.roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date))}/><PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} fxControl={<FinancialFxSourceControl/>} onExchangeConfigured={()=>fx.setMode('manual')} nextPayment={<NextPaymentCard payment={payment} requestRange={requestRange} extraDetails={graph}/>} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<><FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} quotes={fx.quotes} today={new Date().toISOString().slice(0,10)} rows={snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows)} unclassified={snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems)}/></>}/></>;
     }}/>
 }
 function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
