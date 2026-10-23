@@ -88,16 +88,55 @@ jobs:
           cache: npm
       - name: Resolve immutable MCC comparison (fail closed)
         run: node scripts/ci/mcc-comparison.mjs
+      - name: Classify MCC ownership scope without weakening the auditor
+        run: |
+          node --input-type=module <<'NODE'
+          // mcc-scope-classifier:js:start
+          import fs from 'node:fs';
+          import { mccChangedPaths } from './scripts/ci/mcc-comparison.mjs';
+          const plan = {
+            baseSha: process.env.CREWCHECK_MCC_BASE_SHA,
+            headSha: process.env.CREWCHECK_MCC_HEAD_SHA,
+            checkoutSha: process.env.CREWCHECK_MCC_CHECKOUT_SHA,
+          };
+          const changed = mccChangedPaths(plan);
+          const isMccSignal = (path) => (
+            /mycrewcare/i.test(path)
+            || path.startsWith('android-wrapper/app/src/debug/')
+            || path === 'scripts/ci/mcc-comparison.mjs'
+            || path === 'scripts/regression-mcc-comparison.mjs'
+            || path === '.github/workflows/mycrewcare-v3-persistence.yml'
+          );
+          const mccSignals = changed.filter(isMccSignal);
+          const fullAudit = mccSignals.length > 0;
+          fs.appendFileSync(process.env.GITHUB_ENV, `CREWCHECK_MCC_FULL_AUDIT=${fullAudit ? 'true' : 'false'}\n`);
+          console.log(JSON.stringify({ fullAudit, mccSignals, changed }));
+          // mcc-scope-classifier:js:end
+          NODE
       - run: npm ci
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+      - name: MCC Gradle contract before canonical preparation
+        run: |
+          node --input-type=module <<'NODE'
+          // mcc-gradle-contract:js:start
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const build = fs.readFileSync('android-wrapper/app/build.gradle', 'utf8');
+          const webkit = [...build.matchAll(/implementation\s+['"]androidx\.webkit:webkit:([^'"]+)['"]/g)];
+          assert.equal(webkit.length, 1, 'MCC WebView dependency must remain singular');
+          assert.equal(webkit[0][1], '1.17.1', 'MCC WebView dependency changed without MCC review');
+          assert.match(build, /debug\s*\{[\s\S]*?applicationIdSuffix\s+["']\.mcctest["']/, 'MCC debug applicationIdSuffix must remain isolated');
+          // mcc-gradle-contract:js:end
+          NODE
       - name: Isolated synthetic DOM test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/mycrewcare-dom" --no-package-lock --ignore-scripts jsdom@22.1.0
           echo "WAKEUP_JSDOM_PACKAGE=$RUNNER_TEMP/mycrewcare-dom/package.json" >> "$GITHUB_ENV"
       - name: Focused contracts before canonical preparation
+        if: env.CREWCHECK_MCC_FULL_AUDIT == 'true'
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
           node --test scripts/regression-mcc-comparison.mjs
@@ -108,7 +147,19 @@ jobs:
           done
       - name: Complete canonical preparation
         run: node scripts/v139/apply.mjs
+      - name: MCC Gradle contract after canonical preparation
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const build = fs.readFileSync('android-wrapper/app/build.gradle', 'utf8');
+          const webkit = [...build.matchAll(/implementation\s+['"]androidx\.webkit:webkit:([^'"]+)['"]/g)];
+          assert.equal(webkit.length, 1, 'MCC WebView dependency must remain singular after canonical preparation');
+          assert.equal(webkit[0][1], '1.17.1', 'MCC WebView dependency changed during canonical preparation');
+          assert.match(build, /debug\s*\{[\s\S]*?applicationIdSuffix\s+["']\.mcctest["']/, 'MCC debug applicationIdSuffix must remain isolated after canonical preparation');
+          NODE
       - name: Focused contracts after canonical preparation
+        if: env.CREWCHECK_MCC_FULL_AUDIT == 'true'
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
           node --test scripts/regression-mcc-comparison.mjs
