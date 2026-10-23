@@ -14,6 +14,7 @@ import {
   isConciergeContextFreshV14341 as isConciergeContextFreshV14338,
 } from '../server/v14341/concierge-semantic.mjs';
 import { stayMenuReply } from '../server/concierge/stay-menu.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import * as wellhub from '../server/v14407/wellhub.mjs';
 import * as preferences from '../server/v14410/wellhub-concierge.mjs';
 import * as personality from '../server/v14336/concierge-personality.mjs';
@@ -82,6 +83,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   const partner = { id: 'synthetic', name: 'Synthetic gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'basic', activities: ['Pilates'], openingHours: [], sourceUrl: 'https://example.invalid/synthetic' };
   let appResponse;
   const context = vm.createContext({
+    ...radarEvidence,
     crewcheckMenu: createTelegramMenu({}),
     requestedWeatherAirport,
     normalizeConciergeNaturalTextV14338, interpretConciergeNaturalTextV14338, buildConciergeContextV14338, isConciergeContextFreshV14338,
