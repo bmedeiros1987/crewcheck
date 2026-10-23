@@ -23,6 +23,7 @@ import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
 import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailability';
 import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
+import {OperationalBriefing} from '@/components/notifications/OperationalBriefing';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import {useFreeDayPostponementReview,type FreeDayPostponementEvaluation} from '@/lib/useFreeDayPostponementReview';
 import FinancialFreeDayComparison from '@/components/finance/FinancialFreeDayComparison';
@@ -5024,6 +5025,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
       <KpiCard icon={FileText} title="Escala no bot" value={status?.hasRoster ? 'Sincronizada' : 'Aguardando'} detail={status?.roster?.updatedAt ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(status.roster.updatedAt)) : 'Envie PDF ou sincronize'}/>
       <KpiCard icon={Wifi} title="Comandos" value="Restaurados" detail="texto, voz e localização"/>
     </section>
+    <div className="cc-notification-center"><OperationalBriefing/></div>
     <section className="cz-toolbox">
       <h2>Enviar a escala pelo Telegram</h2>
       <p>1. Vincule o bot. 2. Abra a conversa e envie o PDF oficial como documento. 3. O Concierge valida a escala e responde com o resumo e a próxima programação. Depois você pode importar essa mesma escala no app.</p>
@@ -5672,7 +5674,7 @@ export default function Home() {
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
-    {view === 'notifications' && <NotificationCenter deviceSettings={<><NotificationReadiness/><NotificationPermissionSetting/><NotificationSoundSetting/></>}/>}
+    {view === 'notifications' && <NotificationCenter onOpenConcierge={() => setView('concierge')} deviceSettings={<><NotificationReadiness/><NotificationPermissionSetting/><NotificationSoundSetting/></>}/>}
     {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
     {view === 'admin' && <AdminControlView/>}
     {view === 'updates' && <UpdateCenterView/>}

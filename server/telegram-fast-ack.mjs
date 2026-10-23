@@ -1,3 +1,4 @@
+import { runTelegramBriefingCycle, handleTelegramBriefingConsent } from './concierge/telegram-briefing.mjs';
 import { handleNotificationDiagnostic } from './notification-diagnostic.mjs';
 import { runCrewCheckPushQueue } from './web-push/bidsProducer.mjs';
 import { handleSimulatedWorker } from './free-day-simulated-worker.mjs';
@@ -366,6 +367,8 @@ async function runSchedulerCycle() {
     if (!db) throw new Error('Banco indisponível para notificações.');
     await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
     await ensureNotificationTable(db);
+    try { summary.operationalBriefing = await runTelegramBriefingCycle(db); }
+    catch { summary.operationalBriefing = { status: 'unavailable', planned: 0 }; }
     await db.query("UPDATE crewcheck_notification_jobs SET status='uncertain',locked_at=NULL WHERE status IN ('processing','dispatching') AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
     await db.query("UPDATE crewcheck_notification_jobs SET status='expired' WHERE status='pending' AND scheduled_at < DATE_SUB(NOW(3), INTERVAL 120 SECOND)");
     const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 120 SECOND) ORDER BY scheduled_at ASC LIMIT 50");
@@ -543,6 +546,7 @@ http.createServer = function patchedCreateServer(...args) {
     const path = pathname(req);
     try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);
+      if (await handleTelegramBriefingConsent(req, res, new URL(req.url, 'http://localhost'))) return;
       if (path === '/api/notifications/diagnostic') return await handleNotificationDiagnostic(req, res, { schedulerHealthState });
       if (path === '/api/notifications/free-day-simulated-worker') return handleSimulatedWorker(req, res, { identity, readJson, dbPool, sendJson });
       if (path === '/api/notifications/free-day-personal-consent') return handlePersonalConsent(req, res, { identity, readJson, dbPool, sendJson });
