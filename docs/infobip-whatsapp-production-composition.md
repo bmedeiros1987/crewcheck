@@ -1,5 +1,11 @@
 # Explicit Infobip production composition — default OFF
 
+Host follow-up: [OFF bootstrap and remaining real-host gates](infobip-whatsapp-host-wiring.md).
+The history below describes #1209. Its production factory is now reached through
+the separately tested host wrapper only when explicit capabilities are supplied;
+the installed public host still has no options and remains OFF. The original P2
+was subsequently confirmed corrected and resolved after exact-HEAD review.
+
 Base: main `5de6661a499bda6c6e656f95d5c1782d7bfd23aa`. New isolated branch;
 no other active Infobip production-composition owner or competing open PR was
 identified. No AGENTS.md exists in the checkout. The existing public bootstrap
