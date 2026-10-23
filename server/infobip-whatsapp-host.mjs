@@ -3,6 +3,16 @@ import {Readable} from 'node:stream';
 import {createHeldInfobipWhatsAppRuntime} from './infobip-whatsapp-runtime.mjs';
 import {createInfobipWhatsAppProduction} from './infobip-whatsapp-production.mjs';
 
+// Private provenance of construction, not public-host/certificate attestation.
+// No API registers an arbitrary object or marks incoming requests as trusted.
+const directTlsListeners = new WeakSet();
+const createNativeHttpsServer = https.createServer.bind(https);
+export function createInfobipDirectTlsListener(tlsOptions = {}, onRequest) {
+  const listener = createNativeHttpsServer(tlsOptions, onRequest);
+  directTlsListeners.add(listener);
+  return listener;
+}
+
 // One native HTTPS request. No proxy discovery, redirects, retries or background
 // queue. The production transport owns the whole-operation timeout/body budget.
 // open is a trusted test/host capability, never selected by request input.
@@ -60,7 +70,7 @@ export function createInfobipWhatsAppHost(options = {}) {
         // Only direct socket TLS has an implementation here. The deployed HTTP
         // listener cannot satisfy it; trusted-boundary needs a separate review.
         const ingress = options.ingress;
-        if (ingress?.mode !== 'direct-tls' || !(options.listener instanceof https.Server) || typeof options.load !== 'function' ||
+        if (ingress?.mode !== 'direct-tls' || !directTlsListeners.has(options.listener) || typeof options.load !== 'function' ||
             typeof options.lifecycle?.registerShutdown !== 'function') throw Error();
         unregister = options.lifecycle.registerShutdown(dispose);
         if (typeof unregister !== 'function') throw Error();

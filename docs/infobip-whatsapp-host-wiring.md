@@ -20,15 +20,20 @@ request, scheduler or credential lookup. Existing callback paths still return
 
 The optional explicit host interface requires all of:
 
-- `enabled:true`, a native `listener instanceof https.Server`, and
+- `enabled:true`, a native listener created by `createInfobipDirectTlsListener()`, and
   `ingress:{mode:'direct-tls',publicOrigin}`. This host adapter
   deliberately rejects `trusted-boundary`: it cannot validate the real proxy.
-  The listener type is checked before dependency loading; a plain HTTP server
-  or a forged object fails. The host must supply its actual serving listener,
-  not an unrelated TLS object. This type check is necessary but is not proof
-  of certificate health, route attachment or public deployment binding.
+  Private WeakSet membership is checked before dependency loading. Only the
+  module's captured native HTTPS constructor can add a newly created listener;
+  no API registers supplied objects or trusts request headers. A plain server,
+  a prototype-forged server, or an unrelated HTTPS server fails. This is object
+  construction provenance under trusted Node core, not certificate health,
+  route attachment, public deployment binding or hostile-process protection.
+  The host must supply the actual serving listener created by this factory.
+  The helper does not call listen(), discover keys or create certificates.
   Every enabled callback still requires its actual socket to be encrypted and
-  its Host to match. No forwarded header grants trust and no WeakSet is created.
+  its Host to match. No forwarded header grants trust and no request-attestation
+  WeakSet is created.
 - `lifecycle.registerShutdown(dispose)` must register with the **actual host
   shutdown coordinator** and return an unregister function. This is a trusted
   host capability, not proof that a real SIGTERM coordinator is installed.
@@ -106,3 +111,14 @@ cover redirect rejection, abort during body, pre-abort, oversize body, lost ACK
 and timeout with one attempt and zero external calls. Existing canonical
 lifecycle, HMAC, persistence, production, runtime, and Wellhub behavior remain
 part of verification. Independent review and exact-HEAD CI remain required.
+
+## P2 listener provenance regression
+
+The initial instanceof check accepted a plain HTTP server after
+Object.setPrototypeOf(server, https.Server.prototype). The exact counterexample
+failed RED (missing expected startup rejection). The private-constructor
+registry rejects it before lifecycle registration, loading, SQL or credential
+resolution; tests also reject a prototype-only object and an unrelated native
+HTTPS server. Only synthetic positive fixtures use the construction helper,
+without certificates/keys or listening on a TLS port. The public OFF bootstrap
+does not construct one. The P2 remains subject to independent confirmation.

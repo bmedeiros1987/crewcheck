@@ -6,7 +6,7 @@ import {createInfobipProductionTextTransport} from '../server/infobip-whatsapp-t
 import {Readable} from 'node:stream';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {createInfobipWhatsAppHost,createInfobipNodeRequest,createInfobipNodeScheduler} from '../server/infobip-whatsapp-host.mjs';
+import {createInfobipWhatsAppHost,createInfobipNodeRequest,createInfobipNodeScheduler,createInfobipDirectTlsListener} from '../server/infobip-whatsapp-host.mjs';
 import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
 import {fixture,sender,recipient,epoch,secrets} from './fixtures/infobip-production-sql.mjs';
 globalThis.fetch=()=>assert.fail('NO_EXTERNAL_NETWORK');
@@ -24,7 +24,7 @@ function setup() {
   admission:{id:'synthetic-host',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+3600000},
   scheduler:{set(){stats.scheduled++;return 1;},clear(){stats.cleared++;}},
   request(){stats.sends++;assert.fail('NO_PROVIDER_SEND');}};
- const options={enabled:true,listener:https.createServer(),ingress:{mode:'direct-tls',publicOrigin:origin},load:async()=>{stats.loads++;return dependencies;},
+ const options={enabled:true,listener:createInfobipDirectTlsListener(),ingress:{mode:'direct-tls',publicOrigin:origin},load:async()=>{stats.loads++;return dependencies;},
   lifecycle:{registerShutdown(fn){stats.registered++;stop=fn;return ()=>{stats.removed++;};}}};
  return {state,stats,dependencies,options,stop:()=>stop()};
 }
@@ -32,9 +32,9 @@ function setup() {
  const host=createInfobipWhatsAppHost({enabled:false,get load(){assert.fail();},get ingress(){assert.fail();},get lifecycle(){assert.fail();}});
  assert.equal((await host.start()).enabled,false);await host.dispose();assert.equal(host.health().enabled,false);
 }
-for(const change of [o=>delete o.listener,o=>o.listener=http.createServer(),o=>o.listener={encrypted:true},o=>delete o.ingress,o=>o.ingress.mode='trusted-boundary',o=>o.ingress.mode='forwarded-headers',o=>delete o.lifecycle,o=>delete o.load]) {
+for(const change of [o=>delete o.listener,o=>o.listener=https.createServer(),o=>o.listener=Object.create(https.Server.prototype),o=>o.listener=http.createServer(),o=>o.listener={encrypted:true},o=>o.listener=Object.setPrototypeOf(http.createServer(),https.Server.prototype),o=>delete o.ingress,o=>o.ingress.mode='trusted-boundary',o=>o.ingress.mode='forwarded-headers',o=>delete o.lifecycle,o=>delete o.load]) {
  const {options,stats,state}=setup();change(options);const host=createInfobipWhatsAppHost(options);
- await assert.rejects(host.start(),/HOST_UNAVAILABLE/);assert.equal(stats.loads,0);assert.equal(state.queries.length,0);await host.dispose();
+ await assert.rejects(host.start(),/HOST_UNAVAILABLE/);assert.equal(stats.loads,0);assert.equal(stats.registered,0);assert.equal(stats.resolved,0);assert.equal(state.queries.length,0);await host.dispose();
 }
 {
  const {options,stats}=setup();const host=createInfobipWhatsAppHost(options);const a=host.start(),b=host.start();assert.equal(a,b);
