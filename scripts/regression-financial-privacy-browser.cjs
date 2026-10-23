@@ -115,7 +115,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
     assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview,'preview never adopts values: '+name);
     if(name==='mismatch'){
-     await importer.getByRole('checkbox').nth(0).check();await importer.getByRole('checkbox').nth(1).check();
+     await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
      assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false,'both consents cannot override proven mismatch');
      assert.match(await importer.getByRole('alert').innerText(),/Aplicação bloqueada/);
      assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview,'mismatch with both consents writes nothing');
@@ -125,15 +125,15 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    // Missing totals are unknown, not contradictory and never converted to zero.
    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-missing-totals.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,'Salario-base mensal 3000,00'])});
    await preview.waitFor();assert.match(await preview.innerText(),/Conciliação indisponível/);assert.doesNotMatch(await preview.innerText(),/Zero explícito|Totais impressos divergentes/);
-   await importer.getByRole('checkbox').nth(0).check();await importer.getByRole('checkbox').nth(1).check();
+   await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
    assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),true,'missing totals do not masquerade as proven mismatch');
    assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview);
    // A new, corrected document resets consent and can follow normal scoped adoption.
    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-corrected.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,'Salario-base mensal 3000,00','TOTAIS 3000,00 100,00','Liquido 2900,00'])});
    await preview.waitFor();assert.match(await preview.innerText(),/Totais impressos conciliados/);
-   assert.equal(await importer.getByRole('checkbox').nth(0).isChecked(),false);assert.equal(await importer.getByRole('checkbox').nth(1).isChecked(),false);
+   assert.equal(await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).isChecked(),false);assert.equal(await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).isChecked(),false);
    assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
-   await importer.getByRole('checkbox').nth(0).check();await importer.getByRole('checkbox').nth(1).check();
+   await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
    await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await preview.waitFor({state:'hidden'});
    const savedRates=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')).rates);
    assert.equal(savedRates.length,1);assert.equal(savedRates[0].key,'salary.base');assert.equal(savedRates[0].value,3000);
