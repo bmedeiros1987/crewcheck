@@ -20,8 +20,13 @@ request, scheduler or credential lookup. Existing callback paths still return
 
 The optional explicit host interface requires all of:
 
-- `enabled:true`, `ingress:{mode:'direct-tls',publicOrigin}`. This host adapter
+- `enabled:true`, a native `listener instanceof https.Server`, and
+  `ingress:{mode:'direct-tls',publicOrigin}`. This host adapter
   deliberately rejects `trusted-boundary`: it cannot validate the real proxy.
+  The listener type is checked before dependency loading; a plain HTTP server
+  or a forged object fails. The host must supply its actual serving listener,
+  not an unrelated TLS object. This type check is necessary but is not proof
+  of certificate health, route attachment or public deployment binding.
   Every enabled callback still requires its actual socket to be encrypted and
   its Host to match. No forwarded header grants trust and no WeakSet is created.
 - `lifecycle.registerShutdown(dispose)` must register with the **actual host
@@ -61,7 +66,7 @@ The read-only service metadata confirms Node with a plain HTTP/TCP listener and
 startup directly via `node server.mjs`, not the repository npm-start wrapper.
 Build preparation therefore must materialize the bootstrap. It does not show
 an authenticated TLS boundary inside Node. The deployed listener cannot satisfy
-this adapter's direct-tls requirement; **activation remains blocked**. Adding
+this adapter's direct-tls/native-HTTPS-listener requirement; **activation remains blocked**. Adding
 `X-Forwarded-Proto` or filling a WeakSet indiscriminately is not a remedy.
 A reviewed provenance mechanism/host architecture is required before an enabled
 caller can be installed. No new infrastructure or permission was created.

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import https from 'node:https';
 import {createHash,createHmac} from 'node:crypto';
 import {createInfobipProductionTextTransport} from '../server/infobip-whatsapp-transport.mjs';
 import {Readable} from 'node:stream';
@@ -23,7 +24,7 @@ function setup() {
   admission:{id:'synthetic-host',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+3600000},
   scheduler:{set(){stats.scheduled++;return 1;},clear(){stats.cleared++;}},
   request(){stats.sends++;assert.fail('NO_PROVIDER_SEND');}};
- const options={enabled:true,ingress:{mode:'direct-tls',publicOrigin:origin},load:async()=>{stats.loads++;return dependencies;},
+ const options={enabled:true,listener:https.createServer(),ingress:{mode:'direct-tls',publicOrigin:origin},load:async()=>{stats.loads++;return dependencies;},
   lifecycle:{registerShutdown(fn){stats.registered++;stop=fn;return ()=>{stats.removed++;};}}};
  return {state,stats,dependencies,options,stop:()=>stop()};
 }
@@ -31,7 +32,7 @@ function setup() {
  const host=createInfobipWhatsAppHost({enabled:false,get load(){assert.fail();},get ingress(){assert.fail();},get lifecycle(){assert.fail();}});
  assert.equal((await host.start()).enabled,false);await host.dispose();assert.equal(host.health().enabled,false);
 }
-for(const change of [o=>delete o.ingress,o=>o.ingress.mode='trusted-boundary',o=>o.ingress.mode='forwarded-headers',o=>delete o.lifecycle,o=>delete o.load]) {
+for(const change of [o=>delete o.listener,o=>o.listener=http.createServer(),o=>o.listener={encrypted:true},o=>delete o.ingress,o=>o.ingress.mode='trusted-boundary',o=>o.ingress.mode='forwarded-headers',o=>delete o.lifecycle,o=>delete o.load]) {
  const {options,stats,state}=setup();change(options);const host=createInfobipWhatsAppHost(options);
  await assert.rejects(host.start(),/HOST_UNAVAILABLE/);assert.equal(stats.loads,0);assert.equal(state.queries.length,0);await host.dispose();
 }

@@ -60,7 +60,7 @@ export function createInfobipWhatsAppHost(options = {}) {
         // Only direct socket TLS has an implementation here. The deployed HTTP
         // listener cannot satisfy it; trusted-boundary needs a separate review.
         const ingress = options.ingress;
-        if (ingress?.mode !== 'direct-tls' || typeof options.load !== 'function' ||
+        if (ingress?.mode !== 'direct-tls' || !(options.listener instanceof https.Server) || typeof options.load !== 'function' ||
             typeof options.lifecycle?.registerShutdown !== 'function') throw Error();
         unregister = options.lifecycle.registerShutdown(dispose);
         if (typeof unregister !== 'function') throw Error();
