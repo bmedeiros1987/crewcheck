@@ -77,7 +77,14 @@ export function createInfobipWhatsAppRuntime(options = {}) {
     ? {mode:'basic', username:configuration.webhookUsername, password:configuration.webhookPassword} : configuration.webhookAuthentication);
   if (typeof verifyTls !== 'function' || typeof scheduler?.set !== 'function' || typeof scheduler?.clear !== 'function') throw Error('INFOBIP_CONFIGURATION');
   const pipeline = composeInfobipWhatsAppForOfflineTests({...options,configuration});
-  let closed=false,running=null,cursor='',timer;
+  return bindInfobipWhatsAppRuntime({pipeline,auth,scheduler,verifyTls});
+}
+
+// Shared HTTP/lifecycle boundary. Callers supply a fully admitted pipeline;
+// production wiring does not call the offline composition or exercise methods.
+export function bindInfobipWhatsAppRuntime({pipeline,auth,scheduler,verifyTls}) {
+  const shutdown=new AbortController();
+  let closed=false,running=null,cursor='',timer,disposal;
   const active=new Set();
   const tracked=run=>{
     if(closed)return Promise.resolve({status:'closed'});
@@ -89,7 +96,8 @@ export function createInfobipWhatsAppRuntime(options = {}) {
     if(running)return running;
     running=(async()=>{
       const result=await pipeline.maintain({cursor});cursor=result.cursor||'';
-      const eventKey=await pipeline.nextHeld();if(eventKey)await pipeline.dispatch(eventKey);
+      if(closed)return {status:'closed'};
+      const eventKey=await pipeline.nextHeld();if(eventKey&&!closed)await pipeline.dispatch(eventKey,{signal:shutdown.signal});
       return {status:'processed'};
     })().catch(()=>({status:'unavailable'})).finally(()=>{running=null;});
     return running;
@@ -103,7 +111,7 @@ export function createInfobipWhatsAppRuntime(options = {}) {
   const respond=(res,status,code)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify({ok:status===200,code}));};
   return Object.freeze({
     health:()=>({enabled:true,ready:!closed,code:closed?'INFOBIP_CLOSED':'INFOBIP_COMPOSED'}),
-    dispatch:eventKey=>tracked(()=>pipeline.dispatch(eventKey)),
+    dispatch:eventKey=>tracked(()=>pipeline.dispatch(eventKey,{signal:shutdown.signal})),
     expire:eventKey=>tracked(()=>pipeline.expire(eventKey)),maintain:tick,
     async handleRoute(req,res,url){
       if(![INFOBIP_WHATSAPP_CALLBACK_PATH,INFOBIP_WHATSAPP_DELIVERY_PATH,INFOBIP_WHATSAPP_SEEN_PATH].includes(url.pathname))return false;
@@ -138,6 +146,14 @@ export function createInfobipWhatsAppRuntime(options = {}) {
       })();
       active.add(task);try{await task;}catch{if(!res.writableEnded)respond(res,503,'UNAVAILABLE');}finally{active.delete(task);}return true;
     },
-    async dispose(){closed=true;scheduler.clear(timer);await Promise.allSettled([...active,...(running?[running]:[])]);uninstall();},
+    dispose(){
+      if(disposal)return disposal;
+      closed=true;shutdown.abort();
+      disposal=(async()=>{let clearFailed=false;
+        try{scheduler.clear(timer);}catch{clearFailed=true;}
+        try{await Promise.allSettled([...active,...(running?[running]:[])]);}finally{uninstall();}
+        if(clearFailed)throw Error('INFOBIP_SHUTDOWN');
+      })();return disposal;
+    },
   });
 }

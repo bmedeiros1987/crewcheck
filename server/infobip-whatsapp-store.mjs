@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { parseJsonColumn } from './v139/common.mjs';
 import { sealSubscription as seal, openSubscription as open } from './web-push/installationRegistry.mjs';
-import { prepareOfflineInfobipReply, INFOBIP_REPLY_MAX_AGE_MS, INFOBIP_IDENTIFIER_RETENTION_MS, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
+import { prepareInfobipReply, INFOBIP_REPLY_MAX_AGE_MS, INFOBIP_IDENTIFIER_RETENTION_MS, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
 import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
 import {createCipheriv, randomBytes} from 'node:crypto';
@@ -19,7 +19,17 @@ const revision = link => JSON.stringify([String(link.linked_at || ''), String(li
 const fresh = (job, now) => Number.isFinite(job?.receivedAt) && job.receivedAt <= now + 30_000 && now - job.receivedAt <= INFOBIP_REPLY_MAX_AGE_MS;
 const stamp = link => link && JSON.stringify([link.accountId, link.revision, link.provider, link.sender, link.recipient]);
 
-export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sqlBudget }) {
+export function createInfobipSqlStore(options) { return buildStore(options); }
+
+// Explicit production capability; shares the transaction implementation, never
+// calls the synthetic exercise API. No pool, env, credential discovery or DDL.
+export function createInfobipProductionStore(options, dependencies) {
+  if (typeof dependencies?.concierge !== 'function' || typeof dependencies?.send !== 'function' ||
+      typeof dependencies?.admission?.allows !== 'function' || typeof dependencies?.admission?.reserve !== 'function') error();
+  return buildStore(options, Object.freeze({...dependencies}));
+}
+
+function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sqlBudget }, production) {
   if (!db?.getConnection || !phone(sender) || !Buffer.isBuffer(encryptionKey) || encryptionKey.length !== 32 ||
       typeof linkHashKey !== 'string' || linkHashKey.length < 32) error();
   // Copy key bytes; caller mutation must not switch the cryptographic context.
@@ -62,10 +72,76 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
     const [owners] = await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);
     await c.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?',[email]);
     if (owners[0]?.public_id) await c.query(`UPDATE crewcheck_telegram_state SET payload=JSON_SET(payload,'$.sealed',NULL,'$.ownerHash',NULL,'$.report',NULL,
-      '$.status',CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) IN ('held','dispatching') THEN 'cancelled' ELSE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) END),updated_at=NOW(3)
+      '$.status',CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) IN ('held','preparing','dispatching') THEN 'cancelled' ELSE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) END),updated_at=NOW(3)
       WHERE state_key LIKE 'crewcheck-infobip-inbound-v1:%' AND CAST(state_key AS BINARY)>? AND CAST(state_key AS BINARY)<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerHash'))=?`,[PREFIX,PREFIX+'~',privateIndex(owners[0].public_id)]);
     return {status:'erased'};
   };
+  async function dispatchAttempt(eventKey, {concierge,send,admission,signal,clock=now,timeoutMs=5_000}) {
+      if (typeof concierge !== 'function' || typeof send !== 'function') error();
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5_000) error();
+      const stateKey = jobKey(eventKey);
+      try {
+        const initial = await transaction(c => lockState(c, stateKey));
+        if (initial?.status !== 'held') return {status: initial?.status || 'missing'};
+        const job = loadJob(initial, stateKey);
+        if (signal?.aborted || (admission && !admission.allows(job))) {
+          await transaction(async c=>{const current=await lockState(c,stateKey);if(current?.status==='held')await save(c,stateKey,{...current,status:'cancelled',sealed:null});});
+          return {status:'blocked'};
+        }
+        // Production admission commits before invoking the canonical engine.
+        // The preparing marker and quantity reservation are atomic. A crash or
+        // lost ACK cannot cause this conversation/attempt to be retried.
+        let preparationId;
+        if(admission){
+          preparationId=await transaction(async c=>{
+            const current=await lookupLink(c,job),state=await lockState(c,stateKey);
+            if(state?.status!=='held')return null;
+            if(signal?.aborted||stamp(current)!==job.bindingStamp||!fresh(job,clock())||!await admission.reserve(c,job)){
+              await save(c,stateKey,{...state,status:'cancelled',sealed:null});return null;
+            }
+            const token=randomUUID();await save(c,stateKey,{...state,status:'preparing',preparationId:token});return token;
+          });
+          if(!preparationId)return {status:'blocked'};
+        }
+        const proposal = await prepareInfobipReply(job, {
+          lookupLink: event => transaction(c => lookupLink(c, event)),
+          concierge: job.kind === 'link_confirmation' ? async () => job.text : concierge, now: clock, signal,
+        });
+        // Phase one commits a durable no-retry marker BEFORE provider I/O.
+        const attemptId = await transaction(async c => {
+          const current = await lookupLink(c, job), state = await lockState(c, stateKey);
+          if (state?.status !== (admission?'preparing':'held') || (admission&&state.preparationId!==preparationId)) return null;
+          if (signal?.aborted || !proposal || stamp(current) !== job.bindingStamp || !fresh(job, clock())) {
+            await save(c, stateKey, {...state, status: 'cancelled', sealed: null}); return null;
+          }
+          const attempt = randomUUID();
+          await save(c, stateKey, {...state, status: 'dispatching', attemptId: attempt,
+            report: {recipientHash: privateIndex(job.recipient), senderHash: privateIndex(sender), attemptAt: clock()}}); return attempt;
+        });
+        if (!attemptId) return {status: 'blocked'};
+        return await transaction(async c => {
+          // Same locks as consent/revocation/account mutation through send.
+          const current = await lookupLink(c, job), state = await lockState(c, stateKey);
+          if (state?.status !== 'dispatching' || state.attemptId !== attemptId) return {status: 'uncertain'};
+          if (signal?.aborted || (admission && !admission.allows(job)) || stamp(current) !== job.bindingStamp || !fresh(job, clock())) {
+            await save(c, stateKey, {...state, status: 'cancelled', sealed: null}); return {status: 'cancelled'};
+          }
+          // Reserve the whole bounded send plus the final SQL operation before
+          // starting I/O. Never start a send at the end of a transaction budget.
+          if (c.signal.aborted || c.remainingMs() < timeoutMs + 2_000) error();
+          let result, timer; const controller = new AbortController();
+          try { result = await Promise.race([
+            send({...proposal, messageId: `cc-${eventKey}`}, {signal: AbortSignal.any([controller.signal, c.signal,...(signal?[signal]:[])])}),
+            new Promise(resolve => { timer = setTimeout(() => {controller.abort(); resolve({status: 'uncertain'});}, timeoutMs); }),
+          ]); }
+          catch { result = {status: 'uncertain'}; }
+          finally { clearTimeout(timer); }
+          const status = result?.status === 'accepted_unconfirmed' ? 'accepted_unconfirmed' : 'uncertain';
+          await save(c, stateKey, {...state, status, sealed: null});
+          return {status};
+        });
+      } catch { return {status: 'uncertain'}; }
+  }
   const store = {
     transaction: run => transaction(async c => {
       const claimed = new Set();
@@ -113,8 +189,10 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
         },
       });
     }),
-    // Production dispatch cannot be enabled by configuration or environment.
-    dispatch: async () => ({status: INFOBIP_WHATSAPP_RELEASE_ENABLED ? 'blocked' : 'disabled'}),
+    // Default candidate stays disabled; the separate production factory supplies
+    // explicit send/engine/admission capabilities to this shared core.
+    dispatch: production ? (eventKey,{signal}={})=>dispatchAttempt(eventKey,{...production,signal,clock:now}) : async () => ({status: INFOBIP_WHATSAPP_RELEASE_ENABLED ? 'blocked' : 'disabled'}),
+    ...(production ? {} : {exerciseDispatch:dispatchAttempt}),
     nextHeld: () => transaction(async c => {
       const [rows] = await c.query("SELECT state_key FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-inbound-v1:%' AND CAST(state_key AS BINARY)>? AND CAST(state_key AS BINARY)<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status'))='held' ORDER BY CAST(state_key AS BINARY) LIMIT 1 FOR UPDATE",[PREFIX,PREFIX+'~']);
       return rows[0]?.state_key.slice(PREFIX.length) || null;
@@ -181,7 +259,7 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
         const expired = state.sealed && !fresh(loadJob(state, row.state_key), now());
         let next = state;
         if (forgetting || expired) next = {...state, sealed: null,
-          status: state.status === 'dispatching' ? 'uncertain' : state.status === 'held' ? 'expired' : state.status,
+          status: state.status === 'dispatching' ? 'uncertain' : ['held','preparing'].includes(state.status) ? 'expired' : state.status,
           ...(forgetting ? {ownerHash: null, report: null} : {})};
         if (!next.sealed && Number.isFinite(next.retainUntil) && next.retainUntil <= now()) {
           await c.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?', [row.state_key]);
@@ -199,54 +277,7 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
       const status = state.status === 'dispatching' ? 'uncertain' : 'expired';
       await save(c, stateKey, {...state, status, sealed: null}); return {status};
     }),
-    // Executes only with an explicitly injected synthetic transport in tests.
-    async exerciseDispatch(eventKey, { concierge, send, clock = now, timeoutMs = 5_000 }) {
-      if (typeof concierge !== 'function' || typeof send !== 'function') error();
-      if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5_000) error();
-      const stateKey = jobKey(eventKey);
-      try {
-        const initial = await transaction(c => lockState(c, stateKey));
-        if (initial?.status !== 'held') return {status: initial?.status || 'missing'};
-        const job = loadJob(initial, stateKey);
-        const proposal = await prepareOfflineInfobipReply(job, {
-          lookupLink: event => transaction(c => lookupLink(c, event)),
-          concierge: job.kind === 'link_confirmation' ? async () => job.text : concierge, now: clock,
-        });
-        // Phase one commits a durable no-retry marker BEFORE provider I/O.
-        const attemptId = await transaction(async c => {
-          const current = await lookupLink(c, job), state = await lockState(c, stateKey);
-          if (state?.status !== 'held') return null;
-          if (!proposal || stamp(current) !== job.bindingStamp || !fresh(job, clock())) {
-            await save(c, stateKey, {...state, status: 'cancelled', sealed: null}); return null;
-          }
-          const attempt = randomUUID();
-          await save(c, stateKey, {...state, status: 'dispatching', attemptId: attempt,
-            report: {recipientHash: privateIndex(job.recipient), senderHash: privateIndex(sender), attemptAt: clock()}}); return attempt;
-        });
-        if (!attemptId) return {status: 'blocked'};
-        return await transaction(async c => {
-          // Same locks as consent/revocation/account mutation through send.
-          const current = await lookupLink(c, job), state = await lockState(c, stateKey);
-          if (state?.status !== 'dispatching' || state.attemptId !== attemptId) return {status: 'uncertain'};
-          if (stamp(current) !== job.bindingStamp || !fresh(job, clock())) {
-            await save(c, stateKey, {...state, status: 'cancelled', sealed: null}); return {status: 'cancelled'};
-          }
-          // Reserve the whole bounded send plus the final SQL operation before
-          // starting I/O. Never start a send at the end of a transaction budget.
-          if (c.signal.aborted || c.remainingMs() < timeoutMs + 2_000) error();
-          let result, timer; const controller = new AbortController();
-          try { result = await Promise.race([
-            send({...proposal, messageId: `cc-${eventKey}`}, {signal: AbortSignal.any([controller.signal, c.signal])}),
-            new Promise(resolve => { timer = setTimeout(() => {controller.abort(); resolve({status: 'uncertain'});}, timeoutMs); }),
-          ]); }
-          catch { result = {status: 'uncertain'}; }
-          finally { clearTimeout(timer); }
-          const status = result?.status === 'accepted_unconfirmed' ? 'accepted_unconfirmed' : 'uncertain';
-          await save(c, stateKey, {...state, status, sealed: null});
-          return {status};
-        });
-      } catch { return {status: 'uncertain'}; }
-    },
+
   };
   return store;
 }

@@ -303,6 +303,8 @@ async function claimPersistentEvent(event, rawHash) {
   }
 }
 
+export function isWhatsAppConciergeConfigured() { return typeof whatsappConciergeHandler === 'function'; }
+
 export function configureWhatsAppConcierge(handler) {
   whatsappConciergeHandler = typeof handler === 'function' ? handler : null;
 }
@@ -312,7 +314,7 @@ export function configureWhatsAppConcierge(handler) {
 export async function invokeConfiguredWhatsAppConcierge({email, text, messageId, signal}) {
   if (signal?.aborted || typeof whatsappConciergeHandler !== 'function' ||
       typeof email !== 'string' || !email || typeof text !== 'string' || !text.trim()) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
-  const result = await whatsappConciergeHandler({email, text, location: null, messageType: 'text', messageId});
+  const result = await whatsappConciergeHandler({email, text, location: null, messageType: 'text', messageId, signal});
   if (signal?.aborted) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
   return typeof result === 'string' ? result : String(result?.text || result?.reply || '');
 }
