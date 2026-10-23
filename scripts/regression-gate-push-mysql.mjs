@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { installationStateKey,mutateInstallation } from '../server/web-push/installationRegistry.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import path from 'node:path';
 import mysql from 'mysql2/promise';
 import { createOfflineSqlGateAdapters } from '../server/web-push/gateSqlOffline.mjs';
@@ -106,8 +107,24 @@ try {
   assert.equal((await connected.enqueue(db,identityContext,jobInput)).status,'queued');
   const [queued]=await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey'))=?",[gateEnvelope.eventKey]);assert.equal(queued.length,1);
   let providerCalls=0;const configuration={enabled:true,configured:true,encryptionKey:Buffer.alloc(32)};
-  assert.equal((await connected.dispatch(db,queued[0],configuration,async(sub,envelope)=>{providerCalls++;assert.equal(sub.endpoint,subscription.endpoint);assert.equal(envelope.authorityEpoch,epoch);return{status:'accepted_unconfirmed',received:null};})).status,'accepted_unconfirmed');assert.equal(providerCalls,1);
+  // Continue the real source/history -> real host/outbox chain into the existing
+  // guarded receiver. Only storage/display/transport surfaces are synthetic.
+  const worker={URL,Date,structuredClone};vm.createContext(worker);
+  for(const file of ['client/public/crewcheck-push-offline.js','client/public/crewcheck-gate-receiver-offline.js'])vm.runInContext(fs.readFileSync(file,'utf8'),worker);
+  let topic={ownerId,installationId:installId,consentRevision:2,topicRevision:1,authorityEpoch:epoch,active:true},displayCount=0;
+  const claims=new Set(),notifications=[];
+  const store={binding:async()=>({...topic}),gateBinding:async()=>({...topic}),claim:async key=>{if(claims.has(key))return false;claims.add(key);return true;},record:async()=>{},
+    invalidateGate:async expected=>{if(!['ownerId','installationId','consentRevision','topicRevision','authorityEpoch'].every(key=>topic[key]===expected[key]))return false;topic={...topic,active:false};return true;}};
+  let tail=Promise.resolve();const locks={request:(_name,_options,run)=>{const result=tail.then(run);tail=result.catch(()=>{});return result;}};
+  const receiver=worker.CrewCheckGateReceiverOffline.create({enabled:true,store,locks,clock:()=>NOW,processPush:worker.CrewCheckPushOffline.processPush,
+    registration:{getNotifications:async()=>notifications,showNotification:async(_title,options)=>{displayCount++;notifications.push({...options,closed:false,close(){this.closed=true;}});}}});
+  assert.equal((await connected.dispatch(db,queued[0],configuration,async(sub,envelope)=>{providerCalls++;assert.equal(sub.endpoint,subscription.endpoint);assert.equal(envelope.authorityEpoch,epoch);assert.equal((await receiver.receive(envelope)).status,'display_api_resolved');return{status:'accepted_unconfirmed',received:null};})).status,'accepted_unconfirmed');assert.equal(providerCalls,1);assert.equal(displayCount,1);
   assert.equal((await connected.dispatch(db,queued[0],configuration,async()=>{throw Error('duplicate');})).status,'accepted_unconfirmed');providerCalls=0;
+  assert.equal((await receiver.receive(gateEnvelope)).status,'duplicate_or_revoked');assert.equal(displayCount,1);
+  const revokeRequest={...topic,requestId:'revoke_source_history_01'},localRevoke=await receiver.revoke(revokeRequest);
+  assert(worker.CrewCheckGateReceiverOffline.matchesAck(localRevoke.ack,revokeRequest));assert.equal(localRevoke.ack.received,null);
+  assert(!worker.CrewCheckGateReceiverOffline.matchesAck(localRevoke.ack,{...revokeRequest,authorityEpoch:'z'.repeat(64)}));
+  assert(notifications.every(item=>item.closed));assert.equal((await receiver.receive(gateEnvelope)).status,'revoked');assert.equal(displayCount,1);
   // Device receipts for a gate job must carry its exact authority epoch and topic revision.
   const receiptOwner={email,ownerId},gateJob=async()=>{const [rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[queued[0].state_key]);return typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;};
   const {authorityEpoch:_epoch,topicRevision:_topic,...withoutGateFields}=gateEnvelope;
