@@ -1,7 +1,11 @@
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
+# This test runs before checkout-cleanliness gates in disposable CI jobs.
+# Import the helper without leaving a generated __pycache__ in the checkout.
+sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('mirror', Path(__file__).with_name('prefer-ubuntu-archive.py'))
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
