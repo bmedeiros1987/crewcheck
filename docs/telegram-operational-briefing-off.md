@@ -1,6 +1,6 @@
 # Deterministic Telegram briefing: existing-queue composition, OFF
 
-Base: main46fffaa8b76eac87c00982e766010b3dc2acaaa9. This is a draft for review, not activation or delivery proof.
+Original base: main46fffaa8b76eac87c00982e766010b3dc2acaaa9. Composed by normal merge with maina7ae68f6fce92fd34e306c9f787d1b6a6d3e8194 (#1211 OFF), without touching its files. This is a draft for review, not activation or delivery proof.
 
 ## Reused work and ownership
 
@@ -32,7 +32,7 @@ The generic external body says a briefing is available. Activation must first co
 
 61 local tests passed raw and prepared, including real canonical source/planner and actual dispatcher with fake transport. Both forms passed in UTC, America/Sao_Paulo and Pacific/Honolulu. Existing queue safety, phone refusal and real extracted scheduler heartbeat regressions passed. TypeScript passed. Canonical prepared Vite build passed using the existing official Node22 runtime and a private copy of existing dependencies; bundled signed Node24 rejected native Rollup, and a dependency symlink was replaced after cache writes outside this checkout were denied. No signing/security bypass or dependency install occurred.
 
-A dedicated workflow runs those contracts and real disposable MySQL raw/prepared using the existing network-disabled notification QA pattern. Real SQL scenarios include consent CAS,8concurrent planners, competing claims, revision cancellation, opt-out, uncertain outcome and accepted-send/final-write failure. Local Docker/MySQL was unavailable; those SQL results and exact-head CI remain pending until the workflow finishes. Fake DB tests alone are not SQL-lock proof. No physical/device/browser permission or provider delivery test was performed.
+A dedicated workflow runs those contracts and real disposable MySQL raw/prepared using the existing network-disabled notification QA pattern. Real SQL scenarios include consent CAS,8concurrent planners, competing claims, revision cancellation, opt-out, uncertain outcome and accepted-send/final-write failure. Local Docker/MySQL was unavailable. The first exact-head CI5cf05ef7 passed the complete dedicated workflow, including real SQL raw/prepared. Composition with current main needs its own new exact-head CI and independent review. Fake DB tests alone are not SQL-lock proof. No physical/device/browser permission or provider delivery test was performed.
 
 ## Web Push diagnosis
 
