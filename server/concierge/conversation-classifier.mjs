@@ -1,6 +1,6 @@
 import { classifyConversation, containsConversationInstruction } from '../../shared/concierge-conversation-intent.mjs';
 import { PROVIDER_LIMITS, READ_TOOLS } from './conversation-provider.mjs';
-import { GROQ_MODELS } from './groq-transport.mjs';
+import { GROQ_MODELS, serializeGroqRequestBody } from './groq-transport.mjs';
 
 export const CLASSIFICATION_INTENTS = Object.freeze([...READ_TOOLS, 'clarify', 'unsupported']);
 const clarify = 'Qual programação você quer consultar? Apresentação no aeroporto, APZ do hotel e saída da van são horários diferentes.';
@@ -30,14 +30,14 @@ export function createConversationClassifier({ enabled = false, transport = null
       // Unknown anaphora without owner-held context must not become a fresh
       // query just because a model returns nextDuty.read.
       if (/^(?:e\b|isso\b|essa\b|esse\b)/.test(normalized.trim()) && controls.hasContext !== true) return result('clarify', 'deterministic', false, clarify);
-      if (typeof controls.beforeModel !== 'function' || typeof controls.canSend !== 'function'
-        || await controls.beforeModel() !== true || controls.canSend() !== true) return unsupported();
       const request = Object.freeze({ model: GROQ_MODELS[0], messages: Object.freeze([
         Object.freeze({ role: 'system', content: 'JSON {"intent":"..."}. nextDuty.read=next duty; schedule.read=saved roster; clarify=ambiguous airport report/hotel APZ/van or unbound followup; unsupported=other. No facts/args.' }),
         Object.freeze({ role: 'user', content: JSON.stringify({ text: text.trim(), followup: controls.hasContext === true }) }),
       ]), max_tokens: PROVIDER_LIMITS.outputTokens, response_format: Object.freeze({ type: 'json_object' }) });
       // Account, session, roster and prior conversation never enter this object.
-      if (Buffer.byteLength(JSON.stringify(request)) > PROVIDER_LIMITS.inputTokens || controls.canSend() !== true) return unsupported();
+      if (Buffer.byteLength(serializeGroqRequestBody(request)) > PROVIDER_LIMITS.inputTokens
+        || typeof controls.beforeModel !== 'function' || typeof controls.canSend !== 'function'
+        || await controls.beforeModel() !== true || controls.canSend() !== true) return unsupported();
       controller = new AbortController();
       const raw = await Promise.race([
         Promise.resolve().then(() => {

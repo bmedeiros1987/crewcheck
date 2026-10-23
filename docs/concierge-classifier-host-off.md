@@ -2,7 +2,7 @@
 
 ## Base e ownership
 
-Branch empilhada na #1203 `693df833220370d1bd3aa7fb6a8aab7c0bc369a6`, com merge normal da #1207 corrigida `851c4e922fdb63464ac48f8abc6111ed7bf6597b`; main observado `71f18784`. O merge de dependências é `432b9b970bf11956b669295f8de79d122fcfef84`. A PR aponta para a branch da #1203 e inclui explicitamente os quatro arquivos já revisados da dependência #1207. Nenhum arquivo dessas dependências ou da #1135 é modificado por este incremento. Retarget para main somente depois da integração/revisão das dependências.
+Branch empilhada na #1203 `693df833220370d1bd3aa7fb6a8aab7c0bc369a6`, com merge normal da #1207 corrigida `851c4e922fdb63464ac48f8abc6111ed7bf6597b`; main observado `71f18784`. O merge de dependências é `432b9b970bf11956b669295f8de79d122fcfef84`. A PR aponta para a branch da #1203 e inclui explicitamente os quatro arquivos já revisados da dependência #1207. A correção P2 abaixo extrai o serializador puro de groq-transport.mjs nesta stack; nenhum arquivo da #1203 ou da #1135 é modificado por este incremento. Retarget para main somente depois da integração/revisão das dependências.
 
 Antes da edição: #1135 continua aberta no HEAD `373b2bb2`, base `965a48c4`, autor público bmedeiros1987 e comentários vazios; não foi demonstrado outro owner pessoal nem transferência. A alteração do hunk de seu roteador é uma fronteira ativa, não autorização implícita de edição. Nenhum AGENTS.md/skill local foi encontrado. A primeira tentativa de merge da dependência no novo checkout falhou em stash, sem MERGE_HEAD ou mudança de HEAD; a composição ficou pausada durante a correção P2 da #1207. Depois de conferir checkout limpo, o merge normal do HEAD corrigido terminou.
 
@@ -34,5 +34,11 @@ Resposta de admissão/turno superado traz `deliveryAllowed:false` e nenhum fato/
 O teste executável compara frases que o reconhecedor anterior devolve unsupported (contraprova RED) com a nova composição usando **labels mockados** e facts reais do motor (GREEN). Cobre paráfrases/typos, followups válidos e expirados, APZ, source normalization, injeção, saída com campos proibidos, quota/timeout, P2 tardio do transporte #1207, duas perguntas concorrentes, troca de conta/session/epoch/revisão/hash/seleção, prazo/freshness, mudança de ocorrência durante await, temporal primeiro e zero HTTP/escritas/console.
 
 Os mocks não demonstram capacidade linguística, precisão, latência ou segurança de um modelo real. Não há IA ativa no produto. Para prosseguir faltam revisão das dependências, wiring conjunto com owner, orçamento global de inferência e decisão explícita de credencial/privacidade antes de qualquer canary autorizado com dados fictícios. Sem merge/deploy, custos, chaves, permissões ou transmissão real nesta tarefa.
+
+## Correção P2 da revisão do HEAD 0fb2cb58
+
+A admissão media o objeto interno, omitindo o overhead do transporte: uma frase desconhecida de 130 bytes admitia 506 bytes internos, mas produzia body de 532 bytes e falhava antes do HTTP. O transporte agora exporta seu serializador puro e o classificador usa a mesma função antes dos probes locais. O limite permanece 512 bytes, sem truncar pergunta nem aumentar orçamento. A extração altera `groq-transport.mjs` somente nesta stack; a branch #1207 permanece intacta.
+
+Sete contraprovas falharam antes e passaram após a correção: exemplo de 130 bytes e fronteiras 512/513 com ASCII, Unicode BMP/astral, aspas/barras escapadas e booleano followup. Os testes atravessam o transporte real com fetch exclusivamente fictício; acima do limite há zero preparação/transporte/fetch. Total da suíte: 38 testes.
 
 Contraprova adicional: a verificação assíncrona final de sessão avança o clock para depois do fim canônico. Antes da correção, 30 testes passaram e esse caso falhou entregando available; depois, os 31 passaram e o host exige nova consulta, sem fatos. A revalidação usa somente fim e validade fornecidos pelo leitor; não calcula nem escolhe outra jornada.

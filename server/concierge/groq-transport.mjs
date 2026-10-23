@@ -15,10 +15,12 @@ const object = value => value && typeof value === 'object' && !Array.isArray(val
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const keys = (value, allowed) => object(value) && Object.keys(value).every(key => allowed.includes(key));
 const bytes = value => Buffer.byteLength(value, 'utf8');
-function requestBody(request, model) {
+// Pure serializer shared with classifier admission. This is the exact HTTP body,
+// including field renaming, stream:false, nested JSON escaping and UTF-8 bytes.
+export function serializeGroqRequestBody(request, model = GROQ_MODELS[0]) {
   try {
     const inputModel = request?.model, inputMessages = request?.messages, outputTokens = request?.max_tokens, format = request?.response_format;
-    if (!keys(request, ['model', 'messages', 'max_tokens', 'response_format'])
+    if (!GROQ_MODELS.includes(model) || !keys(request, ['model', 'messages', 'max_tokens', 'response_format'])
       || inputModel !== model || !Number.isInteger(outputTokens) || outputTokens < 1 || outputTokens > GROQ_TRANSPORT_LIMITS.outputTokens
       || !keys(format, ['type']) || format.type !== 'json_object'
       || !Array.isArray(inputMessages) || inputMessages.length !== 2) throw fault('REQUEST');
@@ -102,7 +104,7 @@ export function createGroqHttpTransport(options = {}) {
       signal = controls?.signal;
       if (signal != null && (typeof signal.aborted !== 'boolean' || typeof signal.addEventListener !== 'function'
         || typeof signal.removeEventListener !== 'function')) throw fault('REQUEST');
-      const body = requestBody(request, model);
+      const body = serializeGroqRequestBody(request, model);
       const at = now();
       if (!Number.isFinite(at) || at < lastClock) throw fault('CLOCK');
       lastClock = at;

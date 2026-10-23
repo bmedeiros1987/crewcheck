@@ -210,3 +210,31 @@ test('patched HTTP transport quota/timeout composed only with synthetic injected
   at = 500; release(new Response(null, { status: 429, headers: { 'retry-after': '120' } })); await new Promise(done => setImmediate(done));
   assert.equal((await h.host({}, unknownNext)).state, 'unsupported'); assert.equal(count, 1);
 });
+
+test('130-byte counterexample rejects the 532-byte wire body before preparation or transport', async () => {
+  let prepared = 0, transported = 0;
+  const classify = createConversationClassifier({ enabled: true, transport: async request => {
+    transported++;
+    assert.equal(Buffer.byteLength(JSON.stringify(request)), 506);
+    return '{"intent":"nextDuty.read"}';
+  } });
+  const answer = await classify('x'.repeat(130), { beforeModel: async () => { prepared++; return true; }, canSend: () => true });
+  assert.equal(answer.intent, 'unsupported'); assert.equal(prepared, 0); assert.equal(transported, 0);
+});
+for (const [label, text, hasContext] of [
+  ['ASCII', 'x'.repeat(110), false], ['Unicode BMP', 'é'.repeat(55), false],
+  ['Unicode astral', '🛫'.repeat(27) + 'xx', false], ['JSON quote escaping', '"'.repeat(27) + 'xx', false],
+  ['JSON slash escaping', '\\'.repeat(27) + 'xx', false], ['followup boolean overhead', 'x'.repeat(111), true],
+]) test('exact 512/513 wire-byte frontier through real transport: ' + label, async () => {
+  let prepared = 0, transported = 0, fetched = 0;
+  const http = createGroqHttpTransport({ enabled: true, credential: 'gsk_SYNTHETIC_NOT_REAL_KEY', fetchImpl: async (_url, options) => {
+    fetched++; assert.equal(Buffer.byteLength(options.body), 512);
+    const body = JSON.parse(options.body); assert.equal(body.stream, false); assert.equal(body.max_completion_tokens, 128);
+    return Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '{"intent":"nextDuty.read"}' } }] });
+  } });
+  const classify = createConversationClassifier({ enabled: true, transport: (...args) => { transported++; return http(...args); } });
+  const controls = { hasContext, beforeModel: async () => { prepared++; return true; }, canSend: () => true };
+  assert.equal((await classify(text, controls)).intent, 'nextDuty.read');
+  assert.equal((await classify(text + 'x', controls)).intent, 'unsupported');
+  assert.equal(prepared, 1); assert.equal(transported, 1); assert.equal(fetched, 1);
+});
