@@ -1,3 +1,4 @@
+import { formatWeatherNoticeDetails } from '../../shared/weatherNoticeDetails.mjs';
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -73,7 +74,7 @@ function fixture() {
       return { raw: 'SBGR 041650Z 08015KT 2000 TSRA BKN008 18/17 Q1013', station: 'SBGR', observedAt: '2026-10-04T16:50:00Z', ok: true, official: true, provider: 'redemet', source: 'Synthetic fixture', stale: false };
     },
     criticalWeatherChange: () => ({ critical: false, severity: 2, reasons: ['synthetic severe weather'], fingerprint: 'synthetic-unique-report' }),
-    evaluateCriticalWeatherDelivery,
+    evaluateCriticalWeatherDelivery, formatWeatherNoticeDetails,
     criticalWeatherMonitorMemory: new Map(),
     sendTelegramMessage: async (chatId, text) => { sent.push({ chatId, text }); return { ok: true }; },
     setTimeout: (callback, delay) => { timers.push({ callback, delay, type: 'timeout' }); return { unref() {} }; },

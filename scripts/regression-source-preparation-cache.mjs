@@ -49,6 +49,27 @@ try {
     fs.rmSync(path.join(root, file));
     assert.equal(await prepareSourcesOnce(prepare, root), true, `${file}: removing input invalidates`);
   }
+  // Cold build creates OCR output after preparation. Neither its creation nor
+  // later integrity-checked replacement may replay legacy source materializers.
+  const beforeOcr = calls;
+  fs.mkdirSync(path.join(root, 'client/public/ocr/v7'), { recursive: true });
+  const model = path.join(root, 'client/public/ocr/v7/eng.traineddata.gz');
+  fs.writeFileSync(model, 'generated pinned model fixture');
+  assert.equal(await prepareSourcesOnce(prepare, root), false);
+  fs.writeFileSync(model, 'changed output; asset builder must revalidate it');
+  assert.equal(await prepareSourcesOnce(prepare, root), false);
+  fs.rmSync(path.join(root, 'client/public/ocr'), { recursive: true });
+  assert.equal(await prepareSourcesOnce(prepare, root), false);
+  assert.equal(calls, beforeOcr);
+  for (const file of ['scripts/stay-screenshot-assets.mjs', 'scripts/stay-screenshot-worker.js', 'docs/stay-screenshot/ocr-assets-manifest.json', 'client/src/lib/stayScreenshotOcr.ts', 'package.json', 'package-lock.json', 'client/public/ocr-other/input.txt']) {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), 'OCR source input');
+    assert.equal(await prepareSourcesOnce(prepare, root), true, `${file}: OCR source addition invalidates`);
+    fs.appendFileSync(path.join(root, file), ' changed');
+    assert.equal(await prepareSourcesOnce(prepare, root), true, `${file}: OCR source mutation invalidates`);
+    fs.rmSync(path.join(root, file));
+    assert.equal(await prepareSourcesOnce(prepare, root), true, `${file}: OCR source removal invalidates`);
+  }
   // Partial contexts neither consume a cached success nor certify partial output.
   for (const flag of ['CREWCHECK_MANUAL_SYNC_SKIP_APPLY', 'CREWCHECK_V14356_SKIP_APPLY', 'CREWCHECK_V14380_SKIP_APPLY']) {
     const beforeSkip = calls;

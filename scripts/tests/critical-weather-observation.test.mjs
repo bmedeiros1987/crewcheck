@@ -1,3 +1,4 @@
+import { formatWeatherNoticeDetails } from '../../shared/weatherNoticeDetails.mjs';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -124,17 +125,18 @@ test('malformed assessment fails closed', () => assert.equal(evaluate(report(), 
 function cycleHarness({ snapshot, candidates, observation, sendOK = true, initialState = {} } = {}) {
   const sent = [], writes = [], memory = new Map();
   let state = initialState, fetches = 0;
+  const states = new Map();
   const context = {
-    Map, Date, evaluateCriticalWeatherDelivery,
+    Map, Date, evaluateCriticalWeatherDelivery, formatWeatherNoticeDetails,
     criticalWeatherMonitorSettings: () => weatherMonitorSettings({}),
     criticalWeatherCanaryBlocked: () => false,
     telegramRostersRead: () => ({ snapshots: { test: snapshot ?? { key: 'synthetic', chatId: 'synthetic-chat', roster: {}, preferences: { weatherCriticalAlerts: true } } } }),
     conciergeDbListSnapshots: async () => [],
     conciergeWeatherCandidates: () => candidates ?? [{ station: 'SBGR', role: 'origem', key: 'synthetic-leg', flight: 'TEST1', route: 'GRU → NAT' }],
     fetchAviationWeatherReport: async () => { fetches++; return observation ?? report(); },
-    weatherAlertStateKey: () => 'synthetic-state',
-    conciergeDbGet: async () => state,
-    conciergeDbPut: async (_key, value) => { state = value; writes.push(value); },
+    weatherAlertStateKey: (_snapshot, candidate) => candidate.key || 'synthetic-state',
+    conciergeDbGet: async key => states.get(key) || initialState,
+    conciergeDbPut: async (key, value) => { states.set(key, value); state = value; writes.push(value); },
     criticalWeatherMonitorMemory: memory,
     criticalWeatherChange: assess,
     sendTelegramMessage: async (...args) => { sent.push(args); return { ok: sendOK }; },
@@ -156,6 +158,56 @@ test('real monitor integration: failed delivery stays pending for existing retry
   assert.equal(h.state.pendingDelivery, true);
   await h.run();
   assert.equal(h.sent.length, 2);
+});
+test('real monitor: 30 to 40kt gust worsening sends current 40kt, never persisted 30kt reasons', async () => {
+  const current = report('METAR SBGR 041730Z 02020G40KT 9999 BKN020', { observedAt: '2026-10-04T17:30:00Z' });
+  const previous = delivered(GUSTS, { reasons: ['rajadas de 30 nós'], observedAt: '2026-10-04T17:00:00Z' });
+  assert.equal(assess(previous.raw, current.raw).reasons.length, 0, 'reproduce the stale-reason path');
+  const h = cycleHarness({ observation: current, initialState: previous });
+  assert.equal((await h.run()).alerts, 1);
+  assert.equal(h.sent.length, 1);
+  const text = h.sent[0][1];
+  assert.ok(text.includes(`• ${formatWeatherNoticeDetails(current)}`));
+  assert.match(text, /Vento 020°: 20 kt · rajadas 40 kt/);
+  assert.doesNotMatch(text, /30 nós|rajadas 30 kt/);
+  assert.match(text, /Para parar: \/alertameteo off/);
+  assert.deepEqual(h.state.reasons, previous.reasons, 'legacy state is not silently migrated');
+  await h.run();
+  assert.equal(h.sent.length, 1, 'copy does not create an extra send');
+});
+test('real monitor: pending retry uses present facts, not stale historical reasons', async () => {
+  const current = report('METAR SBGR 041730Z VRB20G40KT 9999 VCTS', { observedAt: '2026-10-04T17:30:00Z' });
+  const h = cycleHarness({ observation: current, sendOK: false, initialState: delivered(GUSTS, { reasons: ['rajadas de 30 nós'], pendingDelivery: true }) });
+  await h.run(); await h.run();
+  assert.equal(h.sent.length, 2, 'existing failed-delivery retry count');
+  for (const [, text] of h.sent) {
+    assert.match(text, /Vento variável: 20 kt · rajadas 40 kt · trovoada nas proximidades/);
+    assert.doesNotMatch(text, /30 nós|aumentou/);
+  }
+  assert.equal(h.state.pendingDelivery, true);
+});
+test('real monitor: trend/remark-only thunder does not appear as an observed bullet', async () => {
+  const current = report('METAR SBGR 041730Z 02020G40KT 9999 TEMPO TSRA RMK TS', { observedAt: '2026-10-04T17:30:00Z' });
+  const h = cycleHarness({ observation: current });
+  await h.run();
+  assert.equal(h.sent.length, 1, 'existing classifier remains authoritative, not rewritten by copy');
+  const bullet = h.sent[0][1].split('\n').find(line => line.startsWith('• '));
+  assert.match(bullet, /rajadas 40 kt/);
+  assert.doesNotMatch(bullet, /trovoada/);
+});
+test('three real monitor blocks retain current facts and complete opt-out under the Telegram 3900 limit', async () => {
+  const raw = `METAR SBGR 041730Z 360125G199KT 9999 +TSRA VCTSRA FZRA BKN001CB RMK ${'X'.repeat(1500)}`;
+  const current = report(raw, { observedAt: '2026-10-04T17:30:00Z', source: 'Synthetic source '.repeat(30) });
+  const candidates = [1, 2, 3].map(index => ({ station: 'SBGR', role: 'origem', key: `synthetic-${index}`, flight: `TEST${index}`, route: 'Synthetic route '.repeat(20) }));
+  const h = cycleHarness({ observation: current, candidates });
+  assert.equal((await h.run()).alerts, 3); assert.equal(h.sent.length, 1);
+  const text = h.sent[0][1];
+  assert.ok(text.length < 3900, `actual batch length ${text.length}`);
+  assert.equal(text.slice(0, 3900), text, 'existing Telegram adapter does not truncate the batch');
+  assert.equal(text.match(/rajadas 199 kt/g).length, 3);
+  assert.equal(text.match(/METAR\/SPECI: .*…/g).length, 3, 'raw display truncation is explicit');
+  assert.ok(text.endsWith('Para parar: /alertameteo off'));
+  assert.equal(h.state.raw, raw, 'full report remains persisted for existing evaluation/dedup');
 });
 test('real monitor integration: hour-boundary fetch uses observation-time clock', async () => {
   const h = cycleHarness();

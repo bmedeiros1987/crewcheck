@@ -158,7 +158,7 @@ jobs:
       - name: Validate patched development dependency compatibility
         run: node scripts/regression-dependency-dev-security.mjs
       - name: Audit all dependencies including development and iOS
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=high --loglevel=http 2>&1 | tee "$RUNNER_TEMP/npm-audit-all.log"
       - name: Validate notification safety with fictional recipients before preparation
         run: |
           node scripts/regression-bids-delivery.mjs
@@ -251,7 +251,9 @@ jobs:
           node scripts/regression-transit-availability-ui.mjs
           node scripts/regression-transit-review-blockers.mjs
       - name: Build web client
-        run: npx vite build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
+        # Use the shipping build, including pinned public OCR assets, before the
+        # existing no-egress build/start smoke. Never relax the smoke's network guard.
+        run: npm run build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
       - name: Validate SOS after source preparation
         run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
       - name: Smoke configured Render build and start without credentials or egress
@@ -332,6 +334,7 @@ jobs:
         with:
           name: CrewCheck-web-diagnostics
           path: |
+            ${{ runner.temp }}/npm-audit-all.log
             ${{ runner.temp }}/crewcheck-prepare.log
             ${{ runner.temp }}/typescript.log
             ${{ runner.temp }}/vite-build.log
