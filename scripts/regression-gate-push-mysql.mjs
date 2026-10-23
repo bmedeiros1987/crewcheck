@@ -112,8 +112,8 @@ try {
   const worker={URL,Date,structuredClone};vm.createContext(worker);
   for(const file of ['client/public/crewcheck-push-offline.js','client/public/crewcheck-gate-receiver-offline.js'])vm.runInContext(fs.readFileSync(file,'utf8'),worker);
   let topic={ownerId,installationId:installId,consentRevision:2,topicRevision:1,authorityEpoch:epoch,active:true},displayCount=0;
-  const claims=new Set(),notifications=[];
-  const store={binding:async()=>({...topic}),gateBinding:async()=>({...topic}),claim:async key=>{if(claims.has(key))return false;claims.add(key);return true;},record:async()=>{},
+  const receiverClaims=new Set(),notifications=[];
+  const store={binding:async()=>({...topic}),gateBinding:async()=>({...topic}),claim:async key=>{if(receiverClaims.has(key))return false;receiverClaims.add(key);return true;},record:async()=>{},
     invalidateGate:async expected=>{if(!['ownerId','installationId','consentRevision','topicRevision','authorityEpoch'].every(key=>topic[key]===expected[key]))return false;topic={...topic,active:false};return true;}};
   let tail=Promise.resolve();const locks={request:(_name,_options,run)=>{const result=tail.then(run);tail=result.catch(()=>{});return result;}};
   const receiver=worker.CrewCheckGateReceiverOffline.create({enabled:true,store,locks,clock:()=>NOW,processPush:worker.CrewCheckPushOffline.processPush,
