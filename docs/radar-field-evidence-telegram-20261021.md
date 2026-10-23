@@ -57,3 +57,37 @@ Reutiliza o desenho do monitor meteorológico (agendador autenticado, snapshots 
 6. Revalidação imediatamente antes do envio (dono, inscrição, ocorrência, frescor ≤ 30 min); estado `submitted` gravado antes do envio para no máximo uma tentativa; histórico sanitizado; aceitação do Telegram não é confirmação de leitura.
 
 Mínimo para entrega real: fonte com instante de observação por campo para portão e status (contrato custom ampliado ou provedor aprovado), orçamento/entitlement, implementação do produtor acima com testes, canário autorizado e validação física com conta e voo autorizados.
+
+## P2 independent review follow-up — 2026-10-23
+
+The exact8a17dd06 review found a valid proof could be lost when a richer
+AeroDataBox response won the whole-response score after an agreeing custom
+response had already settled. The new actual-adapter regression failed RED:
+`agreeing custom field proof survives a richer winner`, empty versus12, with
+T1 proving the richer response won and alternatives2 proving both had settled.
+
+The race now retains an agreeing gate proof independently of the selected
+response's other fields. Both the donor and combined response must pass the
+existing exact-occurrence field validator; differing gate/flight/route/UTC,
+conflict/suppression, invalid/future/stale source observations and invalid
+receipts do not donate proof. Among admitted agreeing proofs the latest source
+observation is selected. No status/registration/terminal/aircraft is blended.
+
+The existing `gateEvidenceReceivedAt` field carries the ORIGINAL donor receipt;
+the winner's `sourceReceivedAt` and other response fields remain untouched.
+Server admission uses this field when present, matching the app's existing
+receipt-anchor support, without a new app consumer or altered proof schema.
+Neither race completion nor client cache receipt renews the source observation.
+Proof provenance stays custom; no Cirium or other provider is relabeled custom.
+The provider's original source observation remains in gateUpdate unchanged.
+
+Fixtures include richer-winner `/radar`, `/saida` and separate Concierge evidence,
+app/server parity, split winner/donor receipts, freshness expiry, proof order,
+nonmutation and cross-provider negatives, raw/prepared in three timezones.
+The gate-query-day harness only receives the new imported dependency; existing
+assertions remain intact. The race's existing completion window is unchanged:
+only responses already available to that race can donate proof.
+
+This corrects evidence composition, not provider availability, physical gate
+accuracy or closed-app delivery. No real lookup, message, credential, activation,
+merge or deployment. The review thread remains unresolved until re-review.

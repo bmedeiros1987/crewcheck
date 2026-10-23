@@ -1,7 +1,7 @@
 import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
-import { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS } from './shared/radar-field-evidence.mjs';
+import { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS, retainAgreeingRadarGateProof } from './shared/radar-field-evidence.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
@@ -72,6 +72,7 @@ function publicRadarPayload(item = {}, now = Date.now()) {
     departure: firstKnown(item.departure),
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
+    ...(item.gateEvidenceReceivedAt !== undefined ? { gateEvidenceReceivedAt: item.gateEvidenceReceivedAt } : {}),
     gateUpdate: item.gateUpdate?.provider === 'custom' ? item.gateUpdate : null,
     operationalConflicts: Array.isArray(item.operationalConflicts) ? item.operationalConflicts.filter(field => ['gate','status','registration'].includes(field)) : [],
     arrival: firstKnown(item.arrival),
@@ -351,7 +352,7 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
       }
       const operationalConflicts = ['gate', 'status', 'registration'].filter(field =>
         new Set(okResults.map(row => String(row[field] || '').trim().toUpperCase()).filter(Boolean)).size > 1);
-      resolve(publicRadarPayload({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }));
+      resolve(publicRadarPayload(retainAgreeingRadarGateProof({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }, okResults, evidence, Date.now())));
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;

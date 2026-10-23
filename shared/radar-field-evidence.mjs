@@ -47,7 +47,7 @@ function admitField(item, field, now) {
   const proof = field === 'gate' ? gateProof(item) : null;
   if (!proof) return { reason: 'source-observation-missing' };
   if (normalizeRadarGate(proof.gate) !== value) return { reason: 'source-value-mismatch' };
-  const observed = radarSourceEpoch(proof.sourceUpdatedAt), receipt = Number(item.sourceReceivedAt);
+  const observed = radarSourceEpoch(proof.sourceUpdatedAt), receipt = Number(item.gateEvidenceReceivedAt ?? item.sourceReceivedAt);
   if (!Number.isFinite(observed) || observed <= 0 || observed > now || !Number.isFinite(receipt) || observed > receipt || receipt > now) return { reason: 'source-observation-invalid' };
   if (now - observed > RADAR_FIELD_FRESH_MS) return { reason: 'source-observation-stale' };
   return { value, observedAt: observed, proof };
@@ -95,4 +95,19 @@ export function verifiedRadarFields(payload, identity, now = Date.now()) {
     observedAt[field] = new Date(admitted.observedAt).toISOString();
   }
   return { ...fields, gaps, observedAt };
+}
+
+// Whole-response quality does not rank per-field proof. Retain only an already
+// validated, agreeing gate proof from this race and its ORIGINAL source receipt.
+// No other value/field is blended and the selected response keeps its provenance.
+export function retainAgreeingRadarGateProof(selected, results, identity, now = Date.now()) {
+  const gate = normalizeRadarGate(selected?.gate);
+  if (!gate || selected?.operationalConflicts?.includes('gate')) return selected;
+  const proven = results.filter(candidate => typeof candidate?.sourceReceivedAt === 'number' && Number.isFinite(candidate.sourceReceivedAt)
+    && verifiedRadarFields(candidate, identity, now).gate === gate);
+  for (const candidate of proven.sort((a, b) => radarSourceEpoch(b.gateUpdate.sourceUpdatedAt) - radarSourceEpoch(a.gateUpdate.sourceUpdatedAt))) {
+    const combined = { ...selected, gateUpdate: candidate.gateUpdate, gateEvidenceReceivedAt: candidate.sourceReceivedAt };
+    if (verifiedRadarFields(combined, identity, now).gate === gate) return combined;
+  }
+  return selected;
 }

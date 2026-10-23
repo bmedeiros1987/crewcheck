@@ -11,7 +11,7 @@ import { prepareConciergeCanonicalBridge } from './p1-concierge-journey/bridge.m
 globalThis.fetch = () => { throw Error('External network forbidden'); };
 prepareConciergeCanonicalBridge();
 const { buildCanonicalRosterEvents } = await import('../server/concierge/generated/canonicalRoster.mjs');
-const { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, normalizeRadarGate, RADAR_FIELD_FRESH_MS } = radarEvidence;
+const { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, normalizeRadarGate, RADAR_FIELD_FRESH_MS, retainAgreeingRadarGateProof } = radarEvidence;
 
 let now = Date.parse('2032-10-14T11:00:00Z');
 class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
@@ -82,6 +82,32 @@ const payloadOf = over => { const raw = item(over); return { ...raw, ...radarFie
   console.log('PASS radar field evidence contract: source-owned observation only; conflict/stale/future/receipt/mismatch/placeholder; occurrence/route/offset');
 }
 
+// Agreeing proof belongs to the field, with its own original receipt, never the
+// richer winner's receipt or generic clocks. Raw values/provider identity stay put.
+{
+  const winner = item({ gateUpdate: null, provider: 'aerodatabox', sourceReceivedAt: now - 120000 });
+  const candidate = item({ provider: 'custom', sourceReceivedAt: now - 30000 });
+  const selected = retainAgreeingRadarGateProof(winner, [winner, candidate], identity, now);
+  assert.equal(selected.provider, 'aerodatabox'); assert.equal(selected.sourceReceivedAt, winner.sourceReceivedAt);
+  assert.equal(selected.gateEvidenceReceivedAt, candidate.sourceReceivedAt); assert.equal(selected.gateUpdate.provider, 'custom');
+  assert.equal(verifiedRadarFields(selected, identity, now).gate, '12', 'proof may be newer than the winning response, using its own receipt');
+  assert.equal(winner.gateUpdate, null, 'winner never mutated');
+  assert.equal(verifiedRadarFields(selected, identity, now + RADAR_FIELD_FRESH_MS).gate, '', 'composition never renews proof');
+  for (const delta of [{ gate: '13' }, { flight: 'LA101' }, { origin: 'CGH' }, { destination: 'BSB' },
+    { scheduledDepartureUtc: '2032-10-15T12:00:00Z' }, { sourceReceivedAt: now + 1 }, { sourceReceivedAt: now - 120000 },
+    { sourceReceivedAt: undefined }, { operationalConflicts: ['gate'] }, { gateUpdate: proof({ provider: 'cirium-sky' }) },
+    { gateUpdate: proof({ sourceUpdatedAt: iso(now - RADAR_FIELD_FRESH_MS - 1) }) }, { gateUpdate: proof({ sourceUpdatedAt: iso(now + 1) }) }]) {
+    assert.equal(retainAgreeingRadarGateProof(winner, [{ ...candidate, ...delta }], identity, now), winner, JSON.stringify(delta));
+  }
+  for (const delta of [{ gate: '13' }, { flight: 'LA101' }, { destination: 'BSB' }, { operationalConflicts: ['gate'] }, { querySuppressed: true }]) {
+    const other = { ...winner, ...delta };
+    assert.equal(retainAgreeingRadarGateProof(other, [candidate], identity, now), other, 'never attach to another selected value/occurrence');
+  }
+  const newer = item({ gateUpdate: proof({ sourceUpdatedAt: iso(now - 10000) }) });
+  for (const rows of [[candidate, newer], [newer, candidate]]) assert.equal(retainAgreeingRadarGateProof(winner, rows, identity, now).gateUpdate.sourceUpdatedAt, newer.gateUpdate.sourceUpdatedAt);
+  console.log('PASS cross-provider proof composition: exact value/occurrence, original receipt, stale/future/conflict refusals, ordering, no mutation or renewed freshness');
+}
+
 // 2. Actual server adapters and public projection.
 const source = fs.readFileSync('server.mjs', 'utf8'), ast = ts.createSourceFile('server.mjs', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const extract = (text, names, file) => { const tree = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS); return names.map(name => { const node = tree.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name); assert(node, name); return node.getText(tree); }).join('\n'); };
@@ -115,6 +141,13 @@ payloads.custom = await scenario(['CREWCHECK_FLIGHT_STATUS_URL'], { custom: cust
 assert.equal(payloads.custom.gateUpdate.sourceUpdatedAt, iso(now - 60000)); assert.equal(payloads.custom.operationalEvidenceGaps.gate, undefined);
 assert.equal(verifiedRadarFields(payloads.custom, identity, now).gate, '12');
 assert.equal(payloads.custom.operationalEvidenceGaps.status, 'source-observation-missing', 'status has no source observation contract');
+const agreeingRich = () => aerodatabox({ departure: { gate: '12', terminal: 'T1', airport: { iata: 'GRU' }, scheduledTime: { utc: '2032-10-14 12:00Z' }, estimatedTime: { utc: '2032-10-14 12:05Z' } }, arrival: { airport: { iata: 'REC' }, scheduledTime: { utc: '2032-10-14 14:00Z' } }, aircraft: { reg: 'PR-ABC', model: 'A320' } });
+payloads.agreeingRich = await scenario(['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'], { custom: custom(), aerodatabox: agreeingRich() });
+assert.equal(payloads.agreeingRich.terminal, 'T1', 'richer AeroDataBox response must win the whole-response score');
+assert.equal(payloads.agreeingRich.alternatives, 2, 'custom proof was already available when the race finished');
+assert.equal(verifiedRadarFields(payloads.agreeingRich, identity, now).gate, '12', 'agreeing custom field proof survives a richer winner');
+assert.equal(payloads.agreeingRich.gateUpdate.provider, 'custom', 'proof provenance stays separate from the winning response');
+assert.equal(payloads.agreeingRich.operationalEvidenceGaps.gate, undefined);
 payloads.customStale = await scenario(['CREWCHECK_FLIGHT_STATUS_URL'], { custom: custom({ departureGateUpdate: { ...custom().departureGateUpdate, updatedAt: iso(now - RADAR_FIELD_FRESH_MS - 60000) } }) });
 assert.equal(payloads.customStale.operationalEvidenceGaps.gate, 'source-observation-stale');
 payloads.conflict = await scenario(['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'], { custom: custom(), aerodatabox: aerodatabox() });
@@ -129,7 +162,8 @@ console.log('PASS actual adapters: AeroDataBox lastUpdatedUtc and AirLabs update
 const compiled = await build({ stdin: { contents: "export * from './client/src/lib/nextFlightGate';", resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'cjs', write: false });
 const app = { exports: {} }; Function('module', 'exports', 'require', compiled.outputFiles[0].text)(app, app.exports, () => ({}));
 const event = { id: 'synthetic-la100', kind: 'flight', flightNumber: 'LA100', origin: 'GRU', destination: 'REC', day: { date: '14/10/2032' }, canonical: { date: '2032-10-14', startDateTime: '2032-10-14T12:00:00Z' }, date: new Date('2032-10-14T12:00:00Z') };
-const appGate = (payload, at) => app.exports.resolveNextFlightGate({ event, radar: { ...payload, sourceOrigin: payload.origin, sourceDestination: payload.destination, updatedAt: payload.sourceReceivedAt }, now: at });
+const appGate = (payload, at) => app.exports.resolveNextFlightGate({ event, radar: { ...payload, sourceOrigin: payload.origin, sourceDestination: payload.destination, updatedAt: now }, now: at });
+payloads.separateReceipts = retainAgreeingRadarGateProof(item({ gateUpdate: null, sourceReceivedAt: now - 120000 }), [item({ sourceReceivedAt: now - 30000 })], identity, now);
 const decided = { accepted: 0, refused: 0 };
 for (const [name, payload] of Object.entries(payloads)) for (const at of [now, now + 29 * 60000, now + 31 * 60000]) {
   if (!payload.ok) continue;
@@ -141,15 +175,15 @@ assert(decided.accepted >= 2 && decided.refused >= 10, JSON.stringify(decided));
 console.log(`PASS server/app parity for gate decision (TZ=${process.env.TZ || 'default'})`);
 
 // 4. Telegram /radar and Concierge persistence through the actual reply.
-for (const [label, data, expectGate] of [['legacy', { aerodatabox: aerodatabox() }, ''], ['proven', { custom: custom() }, '12']]) {
-  envs = new Set(label === 'legacy' ? ['AERODATABOX_API_KEY'] : ['CREWCHECK_FLIGHT_STATUS_URL']); bodies = data; writes = 0;
+for (const [label, data, expectGate] of [['legacy', { aerodatabox: aerodatabox() }, ''], ['proven', { custom: custom() }, '12'], ['agreeing-rich', { custom: custom(), aerodatabox: agreeingRich() }, '12']]) {
+  envs = new Set(label === 'legacy' ? ['AERODATABOX_API_KEY'] : label === 'agreeing-rich' ? ['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'] : ['CREWCHECK_FLIGHT_STATUS_URL']); bodies = data; writes = 0;
   leg.gate = 'published-7'; leg.status = ''; leg.registration = '';
   snapshot = { email: 'fictional-a', roster };
   const reply = await scope.conciergeRadarReply('/radar LA100', { email: 'fictional-a' }, snapshot);
   assert.equal(leg.gate, 'published-7', 'radar never overwrites the published gate');
   if (expectGate) { assert.match(reply, /Portão: 12/); assert.match(reply, /Portão comprovado pela fonte nesta consulta; a escala publicada não foi alterada\./); assert.equal(JSON.stringify(leg.radarEvidence), JSON.stringify({ gate: '12', sourceObservedAt: iso(now - 60000), validUntil: iso(now - 60000 + RADAR_FIELD_FRESH_MS) })); }
   else { assert.match(reply, /Portão: indisponível \(fonte sem horário de observação deste campo\)/); assert.doesNotMatch(reply, /Portão: 13|comprovado pela fonte/); assert.equal(leg.radarEvidence, null); }
-  assert.match(reply, /Status: indisponível \(fonte sem horário de observação deste campo\)/);
+  assert.match(reply, label === 'agreeing-rich' ? /Status: indisponível \(fontes divergentes\)/ : /Status: indisponível \(fonte sem horário de observação deste campo\)/);
   assert.equal(leg.status, '', 'unproven status never persisted'); assert.equal(leg.registration, '', 'unproven registration never persisted');
   assert.equal(writes, 1);
 }
@@ -161,8 +195,8 @@ Object.assign(scope, { conciergeProgramRecords: () => [{ day: roster.days[0], le
   telegramRequestUser: () => ({ email: 'fictional-a', authenticated: true }), telegramAppRequestAllowed: () => true, conciergeSafeKey: x => x });
 const premium = fs.readFileSync('server.mjs', 'utf8').includes('async function conciergePremiumDepartureReply(') ? fs.readFileSync('server.mjs', 'utf8') : fs.readFileSync('server/v1403/premium-helpers.snippet', 'utf8');
 vm.runInContext(extract(source, ['conciergeRosterDayParts', 'conciergeDateKey', 'conciergeRecordDateKey'], 'server.mjs') + extract(premium, ['conciergePremiumDepartureReply'], 'premium.mjs'), scope);
-for (const [label, data, expectGate] of [['legacy', { aerodatabox: aerodatabox() }, ''], ['proven', { custom: custom() }, '12']]) {
-  envs = new Set(label === 'legacy' ? ['AERODATABOX_API_KEY'] : ['CREWCHECK_FLIGHT_STATUS_URL']); bodies = data; leg.gate = 'published-7';
+for (const [label, data, expectGate] of [['legacy', { aerodatabox: aerodatabox() }, ''], ['proven', { custom: custom() }, '12'], ['agreeing-rich', { custom: custom(), aerodatabox: agreeingRich() }, '12']]) {
+  envs = new Set(label === 'legacy' ? ['AERODATABOX_API_KEY'] : label === 'agreeing-rich' ? ['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'] : ['CREWCHECK_FLIGHT_STATUS_URL']); bodies = data; leg.gate = 'published-7';
   snapshot = { email: 'fictional-a', roster, preferences: { location: { synthetic: true } } };
   const radar = await scope.conciergePremiumDepartureReply(snapshot, { email: 'fictional-a', authenticated: true });
   assert.equal(radar.ok, true, label); assert.equal(radar.gate, expectGate, label); assert.equal(radar.status, '', label);
