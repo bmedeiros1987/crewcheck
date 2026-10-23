@@ -18,13 +18,14 @@ export default function PayrollNetEstimate({gross,complete,month,paymentMonth}:{
  const other=known('other_deductions');
  const pending=[...(!complete?['Ganhos e fixos incompletos']:[]),...(inss===null?['INSS']:[]),...(irrf===null?['IRRF ou mês de crédito comprovado']:[]),...(other===null?['Outros descontos, antecipações e ajustes pessoais']:[])];
  const subtotal=valid&&inss!==null&&irrf!==null?Math.round(gross!*100)-inss-irrf-(other??0):null;
- return <section aria-label="Previsão líquida individual"><h4>Previsão líquida · {month}</h4>
- <p>Competência dos descontos: {month}. Crédito: {paymentMonth||'mês a confirmar'}. Diárias, férias, 13º e PLR não entram nesta simulação.</p>
- <label><input type="checkbox" checked={approved} onChange={event=>setConsent(event.target.checked?session+':'+month+':'+paymentMonth+':'+gross:null)}/> Para esta simulação, conferi que o bruto disponível é remuneração mensal tributável e contributiva de um único vínculo. IRRF estimado pela alternativa simplificada, sem somar deduções legais.</label>
- <p>Bruto {complete?'estimado':'parcial'}: {valid?money(Math.round(gross!*100)):'indisponível'}. INSS: {inss===null?'pendente':money(inss)+(known('inss')===null?' (estimado)':' (revisado)')}. IRRF: {irrf===null?'pendente':money(irrf)+(known('irrf')===null?' (estimado)':' (revisado)')}. Outros: {other===null?'não informados':money(other)}.</p>
+ return <section className="cc-payroll-net-preview" aria-label="Previsão líquida individual">
  {subtotal!==null&&<p>{pending.length?'Saldo parcial após os descontos disponíveis':'Líquido estimado'}: {money(Math.max(0,subtotal))}. Não confirma pagamento.</p>}
  {subtotal!==null&&subtotal<0&&<p>Saldo de ajuste negativo: {money(subtotal)}. Os descontos disponíveis excedem o bruto em {money(-subtotal)}; crédito estimado limitado a zero, sem apagar o ajuste a conferir.</p>}
- {pending.length>0&&<p>Pendente para fechar o líquido: {pending.join('; ')}. Campos ausentes não foram considerados zero.</p>}
- <p>Estimadores tributários disponíveis somente para 2026. Fontes: <a href={FINANCIAL_SOURCES.inss}>INSS</a> e <a href={FINANCIAL_SOURCES.irrf}>Receita Federal</a>. Valores revisados deste mês prevalecem; não há cópia de descontos de outra competência.</p>
+ {pending.length>0&&<p className="cc-payroll-net-pending">Pendente para fechar o líquido: {pending.join('; ')}. Campos ausentes não foram considerados zero.</p>}
+
+ <details className="cc-payroll-net-details"><summary>Ver composição e premissas</summary> <p>Competência dos descontos: {month}. Crédito: {paymentMonth||'mês a confirmar'}. Diárias, férias, 13º e PLR não entram nesta simulação.</p>
+ <label><input type="checkbox" checked={approved} onChange={event=>setConsent(event.target.checked?session+':'+month+':'+paymentMonth+':'+gross:null)}/> Para esta simulação, conferi que o bruto disponível é remuneração mensal tributável e contributiva de um único vínculo. IRRF estimado pela alternativa simplificada, sem somar deduções legais.</label>
+ <p>Bruto {complete?'estimado':'parcial'}: {valid?money(Math.round(gross!*100)):'indisponível'}. INSS: {inss===null?'pendente':money(inss)+(known('inss')===null?' (estimado)':' (revisado)')}. IRRF: {irrf===null?'pendente':money(irrf)+(known('irrf')===null?' (estimado)':' (revisado)')}. Outros: {other===null?'não informados':money(other)}.</p>
+ <p>Estimadores tributários disponíveis somente para 2026. Fontes: <a href={FINANCIAL_SOURCES.inss}>INSS</a> e <a href={FINANCIAL_SOURCES.irrf}>Receita Federal</a>. Valores revisados deste mês prevalecem; não há cópia de descontos de outra competência.</p></details>
  </section>;
 }
