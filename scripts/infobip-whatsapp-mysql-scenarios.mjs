@@ -1,3 +1,4 @@
+import {createInfobipWhatsAppHost} from '../server/infobip-whatsapp-host.mjs';
 import {createInfobipWhatsAppProduction} from '../server/infobip-whatsapp-production.mjs';
 import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
@@ -135,6 +136,14 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
      await Promise.all(eventKeys('synthetic-production-').map(id=>runtime.dispatch(id)));assert.equal(attempts,1);assert.equal(engineCalls,1);
      const [rows]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%'");assert.equal(rows.length,1);const row=typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;assert.equal(row.used,1);
      await runtime.dispose();runtime=await createInfobipWhatsAppProduction(options);await enqueue('synthetic-production-recreated-');await Promise.all(eventKeys('synthetic-production-recreated-').map(id=>runtime.dispatch(id)));assert.equal(attempts,1);
+     await runtime.dispose();let registered=0,removed=0;
+     runtime=createInfobipWhatsAppHost({enabled:true,ingress:options.ingress,
+       lifecycle:{registerShutdown(){registered++;return ()=>{removed++;};}},
+       load:async()=>({...options,getPool:async()=>db})});
+     await runtime.start();assert.equal(registered,1);await enqueue('synthetic-host-recreated-');
+     await Promise.all(eventKeys('synthetic-host-recreated-').map(id=>runtime.dispatch(id)));assert.equal(attempts,1,'host recreation cannot reset the durable quantity');
+     assert.equal(engineCalls,1);await runtime.dispose();assert.equal(removed,1);
+
    } finally {await runtime?.dispose();configureWhatsAppConcierge(null);}
  });
  await run('account erase joins actual platform transaction and rolls back atomically',async()=>{

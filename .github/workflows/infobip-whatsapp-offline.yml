@@ -8,6 +8,8 @@ on:
       - 'scripts/infobip-whatsapp-mysql-scenarios.mjs'
       - 'scripts/fixtures/infobip-production-sql.mjs'
       - 'docs/infobip-whatsapp-production-composition.md'
+      - 'docs/infobip-whatsapp-host-wiring.md'
+      - 'scripts/p1-infobip-whatsapp-off/**'
       - 'server/whatsapp.mjs'
       - 'scripts/v14410/apply.mjs'
       - 'docs/infobip-whatsapp-hmac-contract-20261021.md'
@@ -31,6 +33,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-hmac.mjs
           node scripts/regression-infobip-whatsapp-candidate.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
+          node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-canonical-lifecycle.mjs
       - name: Prepare existing canonical OFF wiring
         run: node scripts/v139/apply.mjs
@@ -39,6 +42,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-hmac.mjs
           node scripts/regression-infobip-whatsapp-persistence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
+          node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-canonical-lifecycle.mjs
           node scripts/regression-infobip-whatsapp-runtime.mjs
 
