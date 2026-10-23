@@ -5,7 +5,7 @@ import {validatePlan} from '../../scripts/android-play/planned_lifecycle.mjs';
 import {createPlatformJournal} from '../../scripts/android-play/platform_journal.mjs';
 import {REPOSITORY_ID,OWNER_ID,WORKFLOW_REF,checkTimes} from './oidc.mjs';
 export const PACKAGE='com.crewcheck.app';
-export const OPERATIONS=Object.freeze(['probe','read','observe','reserve','startAllocation','saveEdit','allocate','finalize','startStage','reconcile','rollover']);
+export const OPERATIONS=Object.freeze(['probe','read','observe','reserve','startAllocation','saveEdit','allocate','finalize','startStage','commit','reconcile','rollover']);
 const exact=(v,keys)=>{assert(v&&Object.getPrototypeOf(v)===Object.prototype);assert.deepEqual(Object.keys(v).sort(),[...keys].sort());};
 const positive=v=>assert(typeof v==='string'&&/^[1-9][0-9]*$/.test(v));
 const sha=v=>assert(typeof v==='string'&&/^[0-9a-f]{64}$/.test(v));
@@ -42,12 +42,27 @@ export function createApprovalStore(db,{now=()=>Math.floor(Date.now()/1000)}={})
    const rawRead=async key=>{const [rows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key]);assert.equal(rows.length,1);return parse(rows[0].payload);};
    const record=await rawRead(k.approval),revocation=await rawRead(k.revocation);
    match(record,revocation,pinnedClaims,pinnedFrame,now());
-   assert.equal(context.operation,pinnedFrame.operation);assert.equal(context.next.package,PACKAGE);
-   assert.equal(context.current?.revision??0,pinnedFrame.revision);assert.equal(context.current?.generation??1,pinnedFrame.binding.generation);
+   // One service-owned commit spans TWO SQL transactions. Neither phase can be
+   // requested as a frame; completion must cite this exact durable pending admission.
+   const commit=pinnedFrame.operation==='commit';
+   const completion=commit&&['acknowledged','reconciliation_required'].includes(context.operation);
+   if(commit){
+    assert(['pending','acknowledged','reconciliation_required'].includes(context.operation));
+    assert.deepEqual(context.current.plan,pinnedFrame.binding.plan);
+    assert.deepEqual(context.next.plan,pinnedFrame.binding.plan);
+    assert.deepEqual(context.next.staged,pinnedFrame.input);
+    assert.equal(context.next.state,context.operation);
+    if(completion)assert.equal(context.current.state,'pending');
+   }else assert.equal(context.operation,pinnedFrame.operation);
+   assert.equal(context.next.package,PACKAGE);
+   assert.equal(context.current?.revision??0,pinnedFrame.revision+(completion?1:0));assert.equal(context.current?.generation??1,pinnedFrame.binding.generation);
    const ledger=await rawRead(k.admission);exact(ledger,['schema','approvalSha256','revision','operations']);assert.equal(ledger.schema,1);assert.equal(ledger.approvalSha256,record.approvalSha256);assert(Number.isSafeInteger(ledger.revision)&&ledger.revision>0&&ledger.revision<Number.MAX_SAFE_INTEGER);assert(Array.isArray(ledger.operations)&&ledger.operations.length<128);
    for(const op of ledger.operations){exact(op,['opId','operation','owner','generation','revision','digest','resultRevision']);assert(typeof op.opId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(op.opId));assert(OPERATIONS.includes(op.operation));assert.equal(op.owner,record.approval.binding.plan.owner);assert.equal(op.generation,record.approval.binding.generation);assert(Number.isSafeInteger(op.revision)&&op.revision>=0);assert(Number.isSafeInteger(op.resultRevision)&&op.resultRevision>op.revision);sha(op.digest);}
-   assert(!ledger.operations.some(o=>o.opId===pinnedFrame.id),'Operation replay denied');
-   const op={opId:pinnedFrame.id,operation:pinnedFrame.operation,owner:pinnedFrame.binding.plan.owner,generation:pinnedFrame.binding.generation,revision:pinnedFrame.revision,digest:snapshotDigest(pinnedFrame),resultRevision:context.next.revision};
+   const phaseId=phase=>'commit_'+snapshotDigest({frame:pinnedFrame,phase});
+   const opId=commit?phaseId(completion?'completion':'pending'):pinnedFrame.id;
+   if(completion){const prior=ledger.operations.filter(o=>o.opId===phaseId('pending'));assert.equal(prior.length,1);assert.equal(prior[0].digest,snapshotDigest(pinnedFrame));assert.equal(prior[0].resultRevision,context.current.revision);}
+   assert(!ledger.operations.some(o=>o.opId===opId),'Operation replay denied');
+   const op={opId,operation:pinnedFrame.operation,owner:pinnedFrame.binding.plan.owner,generation:pinnedFrame.binding.generation,revision:context.current?.revision??0,digest:snapshotDigest(pinnedFrame),resultRevision:context.next.revision};
    const next={...ledger,revision:ledger.revision+1,operations:[...ledger.operations,op]};
    // ALL authority/admission locks and readbacks are now held. No await between
    // these last checks and the first ledger/journal write; waiting is not authority.

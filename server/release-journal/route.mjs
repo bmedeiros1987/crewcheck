@@ -13,8 +13,9 @@ export function createReleaseJournalHandler({enabled=false,allowedOperations=OPE
  assert.equal(typeof enabled,'boolean');
  assert(Array.isArray(allowedOperations)&&allowedOperations.length>0&&new Set(allowedOperations).size===allowedOperations.length&&allowedOperations.every(operation=>OPERATIONS.includes(operation)));
  const scope=Object.freeze([...allowedOperations]);
- // No caller can inject commit/Play callbacks into the Render side.
- const allowedProof=['verifyInventory','verifyArtifacts','verifyStage','verifyReconciliation','approveRollover'];assert(Object.keys(proofCapabilities).every(k=>allowedProof.includes(k)));
+ // Only reviewed SERVER composition may own these capabilities. No HTTP frame,
+ // enrollment value, job or environment flag supplies executable callbacks.
+ const allowedProof=['verifyInventory','verifyArtifacts','verifyStage','verifyReconciliation','approveRollover','verifyExecution','commitOnce'];assert(Object.keys(proofCapabilities).every(k=>allowedProof.includes(k)));
  const allowedLifecycle=['readCompleteState','verifyReviewProof','approveNextBinding'];assert(Object.keys(lifecycle).every(k=>allowedLifecycle.includes(k)));
  const pinnedProof=Object.freeze({...proofCapabilities}),pinnedLifecycle=Object.freeze({...lifecycle});
  const authenticate=verifyToken??createOidcVerifier({now});
@@ -37,7 +38,21 @@ export function createReleaseJournalHandler({enabled=false,allowedOperations=OPE
    if(proof.state==='revoked'){await binder.revoke(proof);assert.equal(frame.operation,'observe','GitHub approval revoked');}
    else{assert.equal(githubReviewProvider.isFresh(proof),true);await binder.register(proof);}
    const approvals=createApprovalStore(db,{now});const receipt=await approvals.read(claims,frame);
-   const capabilities={...pinnedProof,approvePlan:async p=>canonical(p)===canonical(receipt.approval.binding.plan),authorizeTransition:async(connection,context)=>{assert.equal(githubReviewProvider.isFresh(proof),true);return approvals.transitionAdmission(claims,frame,()=>githubReviewProvider.isFresh(proof))(connection,context);}};
+   let executionFresh=()=>true;
+   const capabilities={...pinnedProof,approvePlan:async p=>canonical(p)===canonical(receipt.approval.binding.plan),authorizeTransition:async(connection,context)=>{
+    const check=pinnedProof.verifyExecution?await pinnedProof.verifyExecution(structuredClone(context)):()=>true;
+    assert.equal(typeof check,'function');executionFresh=check;
+    // Per-request/transition closure: another runner cannot refresh this proof.
+    const fresh=()=>githubReviewProvider.isFresh(proof)&&check()===true;
+    assert.equal(fresh(),true);return approvals.transitionAdmission(claims,frame,fresh)(connection,context);
+   }};
+   if(frame.operation==='commit'){
+    assert.equal(typeof pinnedProof.commitOnce,'function');assert.equal(typeof pinnedProof.verifyExecution,'function');
+    capabilities.commitOnce=async pending=>{
+     await approvals.read(claims,frame);assert.equal(githubReviewProvider.isFresh(proof),true);assert.equal(executionFresh(),true);
+     return pinnedProof.commitOnce(pending);
+    };
+   }
    if(frame.operation==='probe'){
     assert.equal(frame.revision,0);exact(frame.input,[]);await createPlatformJournal(db).verifyExistingSchema();
     await approvals.read(claims,frame);assert.equal(githubReviewProvider.isFresh(proof),true);

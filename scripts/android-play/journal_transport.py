@@ -213,3 +213,56 @@ def validate_planned_record(r, binding):
         assert re.fullmatch('[A-Za-z0-9:_-]{1,128}', h['owner'])
         for f in ('planSha256','artifactsSha256','allocationSha256','reconciliationSha256'):sha(h[f])
     if index >= 3:assert r['allocation']['floor'] >= high
+
+
+class ReviewedHttpJournalExchange:
+    """OFF-default bridge for PlannedJournalTransport, not a live CLI/backend.
+
+    A reviewed job injects its existing HTTP adapter and ephemeral OIDC issuer.
+    This class never obtains secrets from env, opens a Play edit or retries.
+    """
+    ENDPOINT = 'https://crewcheck.onrender.com/api/platform/release-journal'
+    AUDIENCE = 'crewcheck:release-journal:com.crewcheck.app'
+    OPERATIONS = {'read', 'reserve', 'startAllocation', 'saveEdit', 'allocate',
+                  'finalize', 'startStage', 'commit', 'reconcile'}
+
+    def __init__(self, binding, request=None, issue_token=None, enabled=False):
+        assert type(enabled) is bool
+        # Reuse existing binding validation; construction makes no exchange call.
+        PlannedJournalTransport(lambda _: None, binding)
+        self.binding = copy.deepcopy(binding)
+        assert self.binding['plan']['producer'] == 'mobile'
+        self.request, self.issue_token, self.enabled = request, issue_token, enabled
+        self.blocked, self.seen = False, set()
+
+    def __call__(self, serialized):
+        from receipt_backend import snapshot_json
+        if not self.enabled:
+            raise RuntimeError('Reviewed HTTP journal remains OFF')
+        if self.blocked:
+            raise RuntimeError('Uncertain HTTP journal cannot retry')
+        try:
+            assert callable(self.request) and callable(self.issue_token)
+            assert isinstance(serialized, str) and len(serialized.encode()) <= 65536
+            frame = json.loads(serialized)
+            assert snapshot_json(frame) == serialized, 'Noncanonical or duplicate frame'
+            assert set(frame) == {'schema','id','operation','binding','revision','input'}
+            assert type(frame['schema']) is int and frame['schema'] == 2
+            assert frame['binding'] == self.binding and frame['operation'] in self.OPERATIONS
+            assert re.fullmatch('[A-Za-z0-9_-]{1,128}', frame['id']) and frame['id'] not in self.seen
+            assert type(frame['revision']) is int and frame['revision'] >= 0
+            self.seen.add(frame['id'])
+            # Refreshing a JWT never renews approval, reservation or operation IDs.
+            token = self.issue_token(self.AUDIENCE)
+            assert isinstance(token, str) and len(token) <= 16384 and re.fullmatch('[A-Za-z0-9_.-]+', token)
+            response = self.request(method='POST', url=self.ENDPOINT,
+                                    headers={'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
+                                    data=serialized.encode(), timeout=10, allow_redirects=False, retries=0)
+            assert response.status_code == 200 and response.url == self.ENDPOINT
+            assert response.headers.get('Content-Type','').split(';')[0].strip().lower() == 'application/json'
+            assert isinstance(response.content, bytes) and len(response.content) <= 65536
+            return response.content.decode('utf-8', errors='strict')
+        except Exception:
+            self.blocked = True
+            # Never leak bearer, response body, URL diagnostics or provider errors.
+            raise RuntimeError('HTTP journal outcome unverified; preserve reservation, no retry') from None
