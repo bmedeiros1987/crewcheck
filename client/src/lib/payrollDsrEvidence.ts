@@ -55,7 +55,7 @@ export function draftPayrollDsrEvidence(args:{ownerId:string;sourceFingerprint:s
   if(/^R001\b/.test(label)&&/\bBASE\b|COMPENSACAO ORGANICA/.test(label)){if(item.direction!=='credit')return null;continue;}
   (item.direction==='credit'?credits:debits).push(amount);
   const code=label.match(/^(132[0-5])\b/)?.[1];
-  const isDsr=/^(?:\d+\s+)*(?:DSR|DESCANSO SEMANAL REMUNERADO)(?:\s*-?\s*CMS)?\s*$/.test(label);
+  const isDsr=/^(?:\d+\s+)*(?:DSR|DESCANSO SEMANAL REMUNERADO|REPOUSO REMUNERADO)(?:\s*-?\s*CMS)?\s*$/.test(label);
   if(!code&&!isDsr) {
    if(!(/^1037\b/.test(label)&&/CHEF/.test(label))&&/\bKM\b|QUILOMETR|\bRESERVA\b|\bSOBRE\s*AVISO\b|\bHSBE?\b/.test(label))return null;
    continue;
