@@ -41,4 +41,10 @@ A admissão media o objeto interno, omitindo o overhead do transporte: uma frase
 
 Sete contraprovas falharam antes e passaram após a correção: exemplo de 130 bytes e fronteiras 512/513 com ASCII, Unicode BMP/astral, aspas/barras escapadas e booleano followup. Os testes atravessam o transporte real com fetch exclusivamente fictício; acima do limite há zero preparação/transporte/fetch. Total da suíte: 38 testes.
 
+## Revisão dos P2 no HEAD 73ce7a0f
+
+O instante final agora é uma única amostra usada pela admissão e pelo fim/TTL dos fatos e contexto, inclusive seleção vazia; não há leitura posterior que valide só a admissão. Uma ocorrência/contexto válido em 199 e vencendo em 200 não pode ser entregue quando a amostra final é 200/201. Retorna esclarecimento sem fatos ou continuação, sem trocar de jornada.
+
+O filtro local de temas protegidos reconhece singular/plural, gênero previsto, acentos normalizados e email/e-mail: salários, contas, emails, usuários/usuárias, financeiras, portões, gates, radares, metars e legais. Isto não promete classificação linguística irrestrita nem anonimização de texto arbitrário. Nenhuma dessas fixtures chega à preparação ou transporte; ambiguidades já conhecidas continuam com esclarecimento determinístico local. A suíte passou de 38 para 48 testes, com sete contraprovas RED antes das correções (seis temporais e um grupo de flexões).
+
 Contraprova adicional: a verificação assíncrona final de sessão avança o clock para depois do fim canônico. Antes da correção, 30 testes passaram e esse caso falhou entregando available; depois, os 31 passaram e o host exige nova consulta, sem fatos. A revalidação usa somente fim e validade fornecidos pelo leitor; não calcula nem escolhe outra jornada.

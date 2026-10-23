@@ -144,6 +144,32 @@ test('post-read isCurrent await must not deliver ended canonical facts', async (
   const answer = await h.host({}, 'próxima jornada');
   assert.equal(answer.state, 'clarification'); assert.deepEqual(answer.facts, []); assert.equal(h.calls.length, 0);
 });
+for (const kind of ['fact', 'context', 'no_data context']) for (const finalAt of [199, 200, 201])
+test('last clock snapshot validates admission and ' + kind + ' at ' + finalAt, async () => {
+  const times = [0, 0, 0, 0, 199, 199, finalAt];
+  const value = { state: kind === 'no_data context' ? 'no_data' : 'available', reply: 'synthetic only',
+    facts: kind === 'no_data context' ? [] : [{ start: 100, end: kind === 'fact' ? 200 : 1000, minutes: 1 }],
+    context: { expiresAt: kind === 'fact' ? 1000 : 200, selectionKey: 'synthetic-occurrence' } };
+  const host = createConversationReadHost({ enabled: true, clock: () => times.shift() ?? finalAt,
+    admit: async () => ({ allowed: true, owner: 'a', sessionId: 's', epoch: 'e', turnId: 't', revision: 'r', selectionHash: 'h', expiresAt: 1000 }),
+    isCurrent: async () => true, checkNow: () => true, read: async () => value });
+  const answer = await host({}, 'próxima jornada');
+  assert.equal(answer.state, finalAt < 200 ? value.state : 'clarification');
+  if (finalAt >= 200) { assert.deepEqual(answer.facts, []); assert.equal(answer.continuation, undefined); }
+});
+test('inflected protected financial/account topics stay local with zero preparation or transport', async () => {
+  let prepared = 0, transported = 0;
+  const classify = createConversationClassifier({ enabled: true, transport: async () => { transported++; return '{"intent":"nextDuty.read"}'; } });
+  for (const text of ['quanto serão meus salários?', 'quais contas estão vinculadas?', 'quais emails estão salvos?',
+    'quais usuários têm acesso?', 'quais usuárias têm acesso?', 'meus SALÁRIOS', 'meus sala\u0301rios',
+    'referências financeiras', 'referência financeira', 'diária de hotel', 'DIÁRIAS', 'meus e-mails',
+    'qual dos portões?', 'quais gates?', 'quais radares?', 'quais metars?', 'exigências legais', 'conformidades']) {
+    const answer = await classify(text, { beforeModel: async () => { prepared++; return true; }, canSend: () => true });
+    assert.equal(answer.intent, text === 'diária de hotel' ? 'clarify' : 'unsupported', text);
+    assert.equal(answer.mode, 'deterministic');
+  }
+  assert.equal(prepared, 0); assert.equal(transported, 0);
+});
 test('actual reader freshness and missing data remain unavailable, never zero/invented', async () => {
   const h = harness(); const value = JSON.parse(h.store['synthetic-a']); value.capturedAt = new Date(now - 8 * 86400000).toISOString();
   h.store['synthetic-a'] = JSON.stringify(value); h.active.selectionHash = digest(h.store['synthetic-a']);

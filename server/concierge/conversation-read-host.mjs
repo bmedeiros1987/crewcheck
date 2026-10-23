@@ -47,7 +47,10 @@ export function createConversationReadHost({ enabled = false, admit, isCurrent, 
       const binding = Object.freeze(Object.fromEntries(['owner', 'sessionId', 'epoch', 'turnId', 'revision', 'selectionHash'].map(key => [key, admission[key]])));
       const expiresAt = admission.expiresAt, startedAt = clock();
       if (!Object.values(binding).every(validId) || !Number.isFinite(expiresAt) || !Number.isFinite(startedAt)) return denied();
-      const currentNow = () => { const at = clock(); return Number.isFinite(at) && at >= startedAt && at < expiresAt && checkNow(binding) === true; };
+      const currentAt = at => Number.isFinite(at) && at >= startedAt && at < expiresAt && checkNow(binding) === true;
+      const currentNow = () => currentAt(clock());
+      const selectionCurrentAt = (value, at) => (!value?.context || (Number.isFinite(value.context.expiresAt) && value.context.expiresAt > at))
+        && (value?.state !== 'available' || (Array.isArray(value.facts) && value.facts.every(fact => Number.isFinite(fact?.end) && fact.end > at)));
       const current = async () => await isCurrent(binding) === true && currentNow();
       if (!await current()) return changed();
       const prior = previous && typeof previous === 'object' ? contexts.get(previous) : null;
@@ -60,9 +63,7 @@ export function createConversationReadHost({ enabled = false, admit, isCurrent, 
         // The canonical reader chose these occurrences before the last await.
         // Recheck its temporal evidence without selecting a different journey.
         const deliveredAt = clock();
-        if (value?.state === 'available' && (!Array.isArray(value.facts)
-          || value.facts.some(fact => !Number.isFinite(fact?.end) || fact.end <= deliveredAt)
-          || (value.context && (!Number.isFinite(value.context.expiresAt) || value.context.expiresAt <= deliveredAt)))) return changed(true);
+        if (!selectionCurrentAt(value, deliveredAt)) return changed(true);
         return value;
       };
       let baseline = null, preparationFailure = null;
@@ -84,14 +85,19 @@ export function createConversationReadHost({ enabled = false, admit, isCurrent, 
       if (!readIntents.includes(choice?.intent)) return unknown();
       const value = await readOne(choice.intent, choice.followup === true);
       if (!value) return changed();
-      if (!currentNow()) return changed();
-      if (baseline && baseline.get(choice.intent) !== selection(value)) return changed(true);
       if (!['available', 'no_data', 'clarification', 'unavailable'].includes(value.state) || typeof value.reply !== 'string' || !Array.isArray(value.facts)) return denied();
       const output = { handled: true, deliveryAllowed: true, state: value.state, facts: value.facts, reply: value.reply };
       if (choice.intent === 'nextDuty.read' && value.context && value.state === 'available') {
         const reference = Object.freeze({}); contexts.set(reference, { binding, context: value.context });
         Object.defineProperty(output, 'continuation', { value: reference });
       }
+      // One final clock snapshot governs BOTH admission and the selected facts/
+      // context. No later clock read may validate admission alone and deliver
+      // evidence that expired between the two samples.
+      const finalAt = clock();
+      if (!currentAt(finalAt)) return changed();
+      if (!selectionCurrentAt(value, finalAt)) return changed(true);
+      if (baseline && baseline.get(choice.intent) !== selection(value)) return changed(true);
       return output;
     } catch { return denied(); }
   };

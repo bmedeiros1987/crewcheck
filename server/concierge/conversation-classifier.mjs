@@ -6,7 +6,7 @@ export const CLASSIFICATION_INTENTS = Object.freeze([...READ_TOOLS, 'clarify', '
 const clarify = 'Qual programação você quer consultar? Apresentação no aeroporto, APZ do hotel e saída da van são horários diferentes.';
 const result = (intent, mode, followup = false, reply = '') => Object.freeze({ intent, mode, followup, reply });
 const unsupported = () => result('unsupported', 'deterministic');
-const protectedTopic = value => /\b(?:financeiro|diarias|salario|receber|radar|portao|gate|metar|conformidade|legal|amanha|hoje|ontem|depois|conta|email|usuario|cancelar|apagar|salvar|enviar|agendar)\b/.test(value);
+const protectedTopic = value => /\b(?:financeir[oa]s?|diarias?|salarios?|receber|radar(?:es)?|port(?:ao|oes)|gates?|metars?|conformidades?|lega(?:l|is)|amanha|hoje|ontem|depois|contas?|e-?mails?|usuari[oa]s?|cancelar|apagar|salvar|enviar|agendar)\b/.test(value);
 
 /** No runtime activation, ambient transport, credentials, facts or identity.
  * Provider inference is opt-in and only an injected mock is used by this PR.
