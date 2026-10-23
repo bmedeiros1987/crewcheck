@@ -1,3 +1,4 @@
+import { formatWeatherNoticeDetails } from '../../../shared/weatherNoticeDetails.mjs';
 import { openStayProgramEditor as editOperationalStay } from '@/lib/stayEditorNavigation';
 import { readStayOperationalProjection, selectCurrentStayOperationalProjection } from '@/lib/stayOperationalProjection';
 import {resolveRegulationProgram,regulationProgramDay} from '@shared/regulationScenarioPrefill.mjs';
@@ -14,7 +15,7 @@ import { peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/na
 import { isGroundAlertIgnored, GROUND_DISPOSITION_EVENT } from '@/lib/groundAlertDispositions';
 import { alertRosterOwned } from '@/lib/alertRosterOwnership';
 import { AlertCenter } from '@/components/alerts/AlertCenter';
-import { alertAccount, alertIsReviewed, complianceAlertIdentity, ALERT_REVIEW_EVENT } from '@/lib/alertReviewStore';
+import { alertAccount, alertDigest, alertIsReviewed, complianceAlertIdentity, ALERT_REVIEW_EVENT } from '@/lib/alertReviewStore';
 import { alertText } from '@/lib/alertExperienceText';
 import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
 import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailability';
@@ -2317,7 +2318,7 @@ function financeSnapshot(roster: CrewRoster, salaryScope = 'forecast') {
   const salary = calculateSalary(events, roster, salaryScope);
   return { roster, perdiem, salary };
 }
-function notifyCrewCheck(title: string, body: string) {
+function notifyCrewCheck(title: string, body: string, displayDetail = body) {
   const reminder = /despertador|soneca/i.test(title);
   const lower = `${title} ${body}`.toLowerCase();
   const category = /portão|portao|gate/.test(lower)
@@ -2345,7 +2346,9 @@ function notifyCrewCheck(title: string, body: string) {
     tone: reminder ? 'lembrete' : 'atencao',
     priority: 'alta',
     title,
-    detail: body,
+    detail: displayDetail,
+    // Preserve existing dispositions/dedupe when only weather presentation changes.
+    ...(displayDetail !== body ? { review: { occurrence: alertDigest(['notice', `local:${title}:${body}`]), version: alertDigest([`local:${title}:${body}`, body]) } } : {}),
     pulseCooldownMs: 60_000,
     systemNotification: 'background',
     notificationTag: `crewcheck:${title}`,
@@ -2367,7 +2370,7 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
       const signature = `${airport}|${upper}`;
       const previous = storage.get(signatureKey, '');
       if (previous && previous !== signature && weatherLooksWorse(upper)) {
-        notifyCrewCheck('Meteorologia mudou', `${airport}: novo ${upper.startsWith('SPECI') ? 'SPECI' : 'METAR'} com atenção operacional até o pouso.`);
+        notifyCrewCheck('Meteorologia mudou', `${airport}: novo ${upper.startsWith('SPECI') ? 'SPECI' : 'METAR'} com atenção operacional até o pouso.`, `${airport} · ${formatWeatherNoticeDetails({ raw: upper, station: airportIcao(airport) })}`);
       }
       storage.set(signatureKey, signature);
     };
@@ -2438,7 +2441,9 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
             tone: severity >= 3 ? 'erro' : 'atencao',
             priority: severity >= 3 ? 'critica' : 'alta',
             title: severity >= 3 ? `Meteorologia crítica · ${airport}` : `Meteorologia requer atenção · ${airport}`,
-            detail: hazardText || `${event.flightNumber || 'Próximo voo'} · METAR/TAF com critério operacional relevante.`,
+            detail: formatWeatherNoticeDetails({ raw: station.metar, observedAt: station.observedAt?.metar, station: station.icao || airportIcao(airport) }),
+            // Copy-only patch: keep the pre-existing review identity, including old dismissals.
+            review: { occurrence: alertDigest(['notice', `weather:${event.id}:${airport}:${signature}`]), version: alertDigest([`weather:${event.id}:${airport}:${signature}`, hazardText || `${event.flightNumber || 'Próximo voo'} · METAR/TAF com critério operacional relevante.`]) },
             pulseCooldownMs: 10 * 60_000,
             systemNotification: 'background',
             notificationTag: `crewcheck:weather:${event.id}:${airport}`,
@@ -5434,7 +5439,7 @@ export default function Home() {
         const stay=events.find(item=>item.kind==='stay'&&(item.canonical?.id||item.id)===selected.contextId);
         const hotelReport=stay&&alertRosterOwned(bundle.roster)?savedStayEditorEvent(stay.id,stay):null;
         if(!watchSession.isCurrent()) { invalidateWatchSnapshot();return; }
-        const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now):null;
+        const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now,events):null;
         const projectedEvents=localStay?.isCurrent()&&localStay.hotelName?events.map(item=>item===stay?{...item,hotel:localStay.hotelName}:item):events;
         const projectedEvent=projectedEvents.find(item=>item.id===event.id)||event;
         const base = buildCrewCheckWatchSnapshot(projectedEvents, projectedEvent, null, now, hotelReport);

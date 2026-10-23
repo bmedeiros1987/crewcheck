@@ -424,13 +424,13 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     {unconfirmed.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada">
       <h2>Data não confirmada</h2>
       <p>{unconfirmed.length} programações não puderam ser posicionadas no mês ou dia. Os dados e detalhes permanecem disponíveis abaixo; confirme a data na fonte.</p>
-      <AimsRosterTable events={unconfirmed} showHistory={false} focusEventId={focusedEventId} dayView title="Programações com data não confirmada"/>
+      <AimsRosterTable operationalEvents={allOrdered} events={unconfirmed} showHistory={false} focusEventId={focusedEventId} dayView title="Programações com data não confirmada"/>
     </section>}
 
     {(layout === 'aims' || layout === 'document')
-      ? <AimsDocumentView events={visibleEvents} onReturnToMonth={() => chooseZoom('month')} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
+      ? <AimsDocumentView events={visibleEvents} operationalEvents={allOrdered} onReturnToMonth={() => chooseZoom('month')} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
       : layout === 'calendar' && ordered.length
-        ? <CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
+        ? <CalendarRosterView operationalEvents={allOrdered} events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
         : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
       {visibleGroups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
@@ -521,7 +521,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     {layout !== 'calendar' && layout !== 'document' && civilOnlyEvents.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações sem instante confirmado">
       <h2>Data publicada, horário a confirmar</h2>
       <p>Estas programações têm data confirmada, mas não têm um instante confirmado para posicioná-las na sequência das jornadas. Estão listadas por data publicada.</p>
-      <AimsRosterTable events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
+      <AimsRosterTable operationalEvents={allOrdered} events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
     </section>}
 
     <details className="cc-roster-compact-legend"><summary>Legenda das programações</summary>

@@ -22,6 +22,7 @@ export default function FinancialChangesScreen({range}:{range?:FinancialRange}){
   window.addEventListener('crewcheck:auth-changed',refresh);
   return()=>{unsubscribe();window.removeEventListener('crewcheck:auth-will-change',clear);window.removeEventListener('crewcheck:auth-changed',refresh);};
  },[]);
+ const periodAvailable=!range||range.valid;
  const inRange=(change:Change)=>!range||range.valid&&[change.before?.date,change.after?.date].some(date=>date&&date>=range.start&&date<=range.end);
  const changes=review?.history.filter(inRange).slice().reverse()||[];
  const pending=review?.unconfirmed?.filter(entry=>!range||range.valid&&entry.item.date>=range.start&&entry.item.date<=range.end)||[];
@@ -30,10 +31,10 @@ export default function FinancialChangesScreen({range}:{range?:FinancialRange}){
   return privacy.hidden&&(key==='hotel'||/\p{Sc}|\b[A-Z]{3}\s*[−+-]?\s*\d|\d[\d.,'’\s]*[A-Z]{3}\b/u.test(text))?privacy.amount(text):privacy.text(text);
  };
  return <section className="cc-financial-changes" aria-label="Alterações">
-  <div className="cc-financial-changes-status"><GitCompareArrows aria-hidden="true"/><strong>{!review||range&&!range.valid?'Indisponível':`${changes.length} ${changes.length===1?'alteração':'alterações'}`}</strong>{review?.unknown&&<small><Info aria-hidden="true"/>Parcial</small>}</div>
+  <div className="cc-financial-changes-status"><GitCompareArrows aria-hidden="true"/><strong>{!review||range&&!range.valid?'Indisponível':`${changes.length} ${changes.length===1?'alteração':'alterações'}`}</strong>{periodAvailable&&review?.unknown&&<small><Info aria-hidden="true"/>Parcial</small>}</div>
   {range&&!range.valid&&<p role="status">Período inválido</p>}
-  {!review&&<p role="status">Sem referência nesta conta</p>}
-  {review&&!changes.length&&<p>{review.version===1?'Primeira referência':review.unknown?'Comparação parcial':'Sem alterações no período'}</p>}
+  {periodAvailable&&!review&&<p role="status">Sem referência nesta conta</p>}
+  {periodAvailable&&review&&!changes.length&&<p>{review.version===1?'Primeira referência':review.unknown?'Comparação parcial':'Sem alterações no período'}</p>}
   {changes.map(change=>{
    const key=`${review!.owner}:${review!.version}:${change.id}`,item=change.after||change.before!,expanded=open===key;
    return <article key={key} data-change-status={change.seen?'seen':'unread'}>

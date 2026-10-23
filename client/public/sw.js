@@ -214,6 +214,9 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET') return;
 
+  // OCR owns a verified public-model cache; never duplicate it in runtime caches.
+  if (url.pathname.startsWith('/ocr/')) return;
+
   if (url.pathname.startsWith(SHARED_PDF_ROUTE)) {
     event.respondWith((async () => {
       await cleanupSharedPdfs();

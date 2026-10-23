@@ -1,0 +1,10 @@
+export type StayScreenshotField = 'hotelName' | 'apzTime' | 'apzDate' | 'apzTimeZone' | 'transportProvider' | 'transportLocation' | 'pickupDate' | 'pickupTime' | 'pickupTimeZone';
+export type StayScreenshotValues = Record<StayScreenshotField, string>;
+export type StayScreenshotImport = { version: 1; source: 'screenshot'; reviewedByUser: true; fields: Partial<Record<StayScreenshotField, { value: string; previous: string }>> };
+export type StayScreenshotCandidates = { source: 'screenshot'; values: StayScreenshotValues; evidence: Partial<Record<StayScreenshotField, string>>; uncertain: StayScreenshotField[]; warnings: string[] };
+export const STAY_SCREENSHOT_FIELDS: readonly StayScreenshotField[];
+export function parseStayScreenshot(text: string, confidence: number): StayScreenshotCandidates;
+export function sanitizeStayScreenshotValues(value: unknown): Partial<StayScreenshotValues>;
+export function sanitizeStayScreenshotImport(value: unknown): StayScreenshotImport | undefined;
+export function createStayScreenshotImport(current: unknown, selected: unknown, previousImport?: unknown): { values: StayScreenshotValues; imported: StayScreenshotImport | undefined; rejectedFields: StayScreenshotField[] };
+export function removeStayScreenshotImport(current: unknown, imported: unknown): { values: StayScreenshotValues; imported: undefined };

@@ -1,3 +1,4 @@
+import { stayApzBounds } from '../../../shared/stay-apz-date.mjs';
 import { captureAuthSession, getStoredUser, getToken } from './authClient';
 import { loadStayEditor, savedStayEditorEvent } from './stayEditorStore';
 import { orderStayDisplay } from './stayDisplayOrder';
@@ -5,11 +6,11 @@ import { calculateStayWakeup, stayInstant, stayLocalInstant } from '../../../sha
 
 export const stayOperationalSignature = (event: any) => [event?.id,event?.canonical?.startDateTime,event?.canonical?.endDateTime,event?.origin,event?.destination].join('|');
 /** Local projection only. room is private and must never enter transport/Watch. */
-export function projectStayOperational({accountId,event,editor,now=Date.now()}: {accountId:string|null;event:any;editor:any;now?:number}) {
+export function projectStayOperational({accountId,event,editor,events=[],now=Date.now()}: {accountId:string|null;event:any;editor:any;events?:readonly any[];now?:number}) {
   const absent = (state:'missing'|'needs-review',reason:string,extra:any={}) => ({state,reason,eventId:event?.id || '',hotelName:'',room:'',apzAt:null,calculation:null,record:null,...extra});
   if (!accountId || editor?.accountId!==accountId || editor?.version!==2) return absent('missing','account-unavailable');
   if (event?.kind!=='stay' || typeof event.id!=='string' || !event.id) return absent('missing','stay-unavailable');
-  const start=stayInstant(event.canonical?.startDateTime),end=stayInstant(event.canonical?.endDateTime);
+  const bounds=stayApzBounds(event,events),start=bounds?.start??null,end=bounds?.end??null;
   if(start===null||end===null||end<=start||!Number.isFinite(now)) return absent('needs-review','bounds-invalid');
   const record=editor.stays?.[event.id];
   if(!record) return absent('missing','saved-stay-missing');
@@ -24,19 +25,19 @@ export function projectStayOperational({accountId,event,editor,now=Date.now()}: 
 }
 
 /** Continuity fence only; this is not server authentication or scheduling admission. */
-export function readStayOperationalProjection(event:any,now=Date.now()) {
+export function readStayOperationalProjection(event:any,now=Date.now(),events:readonly any[]=[]) {
   const session=captureAuthSession(),accountId=getToken()?getStoredUser()?.id || null:null;
-  const editor=loadStayEditor(),signature=stayOperationalSignature(event),snapshot=JSON.stringify(editor);
+  const editor=loadStayEditor(),signature=stayOperationalSignature(event),snapshot=JSON.stringify(editor),boundsSnapshot=JSON.stringify(stayApzBounds(event,events)),eventsSnapshot=JSON.stringify(events);
   // Use the canonical reader's signature fence too; never adopt platform caches.
   const record=event?.id?savedStayEditorEvent(event.id,event):null;
-  const projection=projectStayOperational({accountId,event,editor:{...editor,stays:{...editor.stays,...(record?{[event.id]:record}:{})}},now});
-  return {...projection,isCurrent:()=>Boolean(accountId&&getToken()&&session.isCurrent()&&getStoredUser()?.id===accountId&&event?.kind==='stay'&&stayOperationalSignature(event)===signature&&JSON.stringify(loadStayEditor())===snapshot)};
+  const projection=projectStayOperational({accountId,event,events,editor:{...editor,stays:{...editor.stays,...(record?{[event.id]:record}:{})}},now});
+  return {...projection,isCurrent:()=>Boolean(accountId&&getToken()&&session.isCurrent()&&getStoredUser()?.id===accountId&&event?.kind==='stay'&&stayOperationalSignature(event)===signature&&JSON.stringify(loadStayEditor())===snapshot&&JSON.stringify(stayApzBounds(event,events))===boundsSnapshot&&JSON.stringify(events)===eventsSnapshot)};
 }
 
 export function selectCurrentStayOperationalProjection(events:readonly any[],now=Date.now()) {
   const stays=events.filter(event=>event?.kind==='stay'),ordered=orderStayDisplay(stays,now);
-  const current=ordered.events.filter(event=>{const start=stayInstant(event.canonical?.startDateTime),end=stayInstant(event.canonical?.endDateTime);return start!==null&&end!==null&&end>start&&start<=now&&now<end;});
+  const current=ordered.events.filter(event=>{const bounds=stayApzBounds(event,events),start=bounds?.start??null,end=bounds?.end??null;return start!==null&&end!==null&&end>start&&start<=now&&now<end;});
   if(ordered.ambiguous||current.length>1||current.some(event=>stays.filter(other=>other.id===event.id).length!==1)) return {state:'needs-review',reason:'ambiguous-current-stay',event:null,projection:null};
   if(current.length!==1) return {state:'missing',reason:'no-current-stay',event:null,projection:null};
-  return {state:'selected',reason:'unique-current-stay',event:current[0],projection:readStayOperationalProjection(current[0],now)};
+  return {state:'selected',reason:'unique-current-stay',event:current[0],projection:readStayOperationalProjection(current[0],now,events)};
 }
