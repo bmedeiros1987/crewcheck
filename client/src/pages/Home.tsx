@@ -3629,7 +3629,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     actMainMeal: domesticRule?.mainMeal ?? NaN,
     manualOverride: domesticOverride,
     learnedMainMeal: learnedMeal,
-    ownerConfirmedMainMeal: learnedMealRate?.valueOrigin === 'owner_confirmed' || references.personal?.mainMeal === true,
+    ownerConfirmedMainMeal: learnedMealRate?.confirmed === true || references.personal?.mainMeal === true,
     learnedBreakfast,
     breakfastPercent: act.breakfastPercent,
   });
