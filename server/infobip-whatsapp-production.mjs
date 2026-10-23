@@ -1,4 +1,5 @@
 import {createHeldInfobipWhatsAppRuntime,bindInfobipWhatsAppRuntime} from './infobip-whatsapp-runtime.mjs';
+import {createInfobipRenderIngressPolicy} from './infobip-whatsapp-render-ingress.mjs';
 import {createInfobipWebhookAuthenticator} from './infobip-whatsapp-auth.mjs';
 import {createInfobipInboundReceiver} from './infobip-whatsapp-candidate.mjs';
 import {createInfobipReportReceiver} from './infobip-whatsapp-delivery.mjs';
@@ -69,8 +70,11 @@ export async function createInfobipWhatsAppProduction(options={}) {
     const refs=Object.freeze({...input.credentialReferences});
     if(Object.keys(refs).sort().join(',')!=='apiKey,encryptionKey,linkHashKey,webhookSecret'||!Object.values(refs).every(reference)||new Set(Object.values(refs)).size!==4)fail();
     if(input.authentication!=='hmac-sha256')fail();
-    const ingress=options.ingress,verifyTls=ingressVerifier(ingress);
+    const ingress=options.ingress;
     const binding=input.deploymentBinding;
+    const renderPolicy=ingress?.mode==='render-managed-hmac'
+      ? createInfobipRenderIngressPolicy(ingress,options.listener,binding) : null;
+    const verifyTls=renderPolicy ? undefined : ingressVerifier(ingress);
     if(!binding||!reference(binding.profileId)||!Array.isArray(binding.subscriptionIds)||!binding.subscriptionIds.length||
       !binding.subscriptionIds.every(reference)||binding.sender!==sender||binding.baseUrl!==baseUrl||
       binding.publicOrigin!==httpsOrigin(ingress.publicOrigin)||binding.linkHashKeyReference!==refs.linkHashKey)fail();
@@ -95,6 +99,6 @@ export async function createInfobipWhatsAppProduction(options={}) {
     const report=kind=>createInfobipReportReceiver({kind,authentication:configuration.webhookAuthentication,store,now});
     const pipeline=Object.freeze({receive,receiveDelivery:report('delivery'),receiveSeen:report('seen'),
       dispatch:store.dispatch,expire:store.expirePayload,maintain:store.maintain,nextHeld:store.nextHeld,eraseAccount:(email,context)=>withWhatsAppConciergeQuiesced(email,()=>store.eraseAccount(email,context))});
-    return bindInfobipWhatsAppRuntime({pipeline,auth,scheduler:fixedScheduler,verifyTls});
+    return bindInfobipWhatsAppRuntime({pipeline,auth,scheduler:fixedScheduler,verifyTls,ingressPolicy:renderPolicy});
   } catch {throw Error('INFOBIP_PRODUCTION_UNAVAILABLE');}
 }

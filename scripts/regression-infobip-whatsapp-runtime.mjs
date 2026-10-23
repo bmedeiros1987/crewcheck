@@ -25,7 +25,7 @@ for (const path of ['/api/whatsapp/webhook','/api/whatsapp/link/start','/api/tel
 const server=fs.readFileSync('server.mjs','utf8');
 assert.equal(createInfobipWhatsAppRuntime().health().enabled,false);
 assert.equal(createInfobipWhatsAppRuntime({enabled:false,get configuration(){assert.fail();}}).health().enabled,false);
-const imported="import { createInfobipWhatsAppHost } from './server/infobip-whatsapp-host.mjs';";
+const imported="import { createInfobipWhatsAppApplicationHost as createInfobipWhatsAppHost, createInfobipRenderHttpServer } from './server/infobip-whatsapp-application.mjs';";
 const instance='const infobipWhatsAppRuntime = createInfobipWhatsAppHost();';
 const route='  if (await infobipWhatsAppRuntime.handleRoute(req, res, url)) return;';
 const meta='  if (await handleWhatsAppRoute(req, res, url)) return;';

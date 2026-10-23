@@ -1,4 +1,6 @@
 import https from 'node:https';
+import {snapshotInfobipRenderIngress} from './infobip-whatsapp-render-ingress.mjs';
+export {createInfobipRenderHttpServer} from './infobip-whatsapp-render-ingress.mjs';
 import {Readable} from 'node:stream';
 import {createHeldInfobipWhatsAppRuntime} from './infobip-whatsapp-runtime.mjs';
 import {createInfobipWhatsAppProduction} from './infobip-whatsapp-production.mjs';
@@ -48,7 +50,7 @@ export function createInfobipNodeScheduler(timers = {setInterval, clearInterval}
 export function createInfobipWhatsAppHost(options = {}) {
   const held = createHeldInfobipWhatsAppRuntime();
   if (options.enabled !== true) return Object.freeze({...held, start:async () => held.health()});
-  let runtime = held, starting, disposal, closed = false, failed = false, unregister;
+  let runtime = held, starting, disposal, servingListener, closed = false, failed = false, unregister;
   const health = () => closed || failed
     ? {enabled:false, ready:false, code:closed?'INFOBIP_HOST_CLOSED':'INFOBIP_HOST_UNAVAILABLE'} : runtime.health();
   const dispose = () => {
@@ -62,15 +64,16 @@ export function createInfobipWhatsAppHost(options = {}) {
     })();
     return disposal;
   };
-  const start = () => {
+  const start = (listener=options.listener) => {
     if (closed) return Promise.reject(Error('INFOBIP_HOST_CLOSED'));
-    if (starting) return starting;
+    if (starting) return listener===servingListener ? starting : Promise.reject(Error('INFOBIP_HOST_LISTENER'));
+    servingListener=listener;
     starting = Promise.resolve().then(async () => {
       try {
-        // Only direct socket TLS has an implementation here. The deployed HTTP
-        // listener cannot satisfy it; trusted-boundary needs a separate review.
-        const ingress = options.ingress;
-        if (ingress?.mode !== 'direct-tls' || !directTlsListeners.has(options.listener) || typeof options.load !== 'function' ||
+        const inputIngress=options.ingress;
+        const ingress=inputIngress?.mode==='render-managed-hmac'
+          ? snapshotInfobipRenderIngress(inputIngress,servingListener) : inputIngress;
+        if ((ingress?.mode !== 'render-managed-hmac'&&(ingress?.mode!=='direct-tls'||!directTlsListeners.has(servingListener))) || typeof options.load !== 'function' ||
             typeof options.lifecycle?.registerShutdown !== 'function') throw Error();
         unregister = options.lifecycle.registerShutdown(dispose);
         if (typeof unregister !== 'function') throw Error();
@@ -83,7 +86,7 @@ export function createInfobipWhatsAppHost(options = {}) {
         const db = await dependencies.getPool();
         if (closed) return health();
         runtime = await createInfobipWhatsAppProduction({...dependencies, enabled:true, db,
-          ingress, scheduler:dependencies.scheduler ?? createInfobipNodeScheduler(),
+          ingress, listener:servingListener, scheduler:dependencies.scheduler ?? createInfobipNodeScheduler(),
           request:dependencies.request ?? createInfobipNodeRequest()});
         // A stop during resolution/preflight must drain before startup settles.
         if (closed) await runtime.dispose();

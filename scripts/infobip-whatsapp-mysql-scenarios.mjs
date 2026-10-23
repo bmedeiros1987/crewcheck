@@ -1,3 +1,5 @@
+import {EventEmitter} from 'node:events';
+import {createInfobipWhatsAppApplicationHost,createInfobipRenderHttpServer} from '../server/infobip-whatsapp-application.mjs';
 import {createInfobipWhatsAppHost,createInfobipDirectTlsListener} from '../server/infobip-whatsapp-host.mjs';
 import {createInfobipWhatsAppProduction} from '../server/infobip-whatsapp-production.mjs';
 import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
@@ -143,6 +145,18 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
      await runtime.start();assert.equal(registered,1);await enqueue('synthetic-host-recreated-');
      await Promise.all(eventKeys('synthetic-host-recreated-').map(id=>runtime.dispatch(id)));assert.equal(attempts,1,'host recreation cannot reset the durable quantity');
      assert.equal(engineCalls,1);await runtime.dispose();assert.equal(removed,1);
+     const renderConfiguration=structuredClone(options.configuration);
+     renderConfiguration.credentialReferences={apiKey:'env:CREWCHECK_INFOBIP_WHATSAPP_API_KEY',encryptionKey:'env:CREWCHECK_INFOBIP_WHATSAPP_CONTENT_KEY',linkHashKey:'env:CREWCHECK_WHATSAPP_AUDIT_SALT',webhookSecret:'env:CREWCHECK_INFOBIP_WHATSAPP_HMAC_SECRET'};
+     Object.assign(renderConfiguration.deploymentBinding,{renderServiceId:'srv-syntheticcrewcheck',callbackPaths:['/api/infobip/whatsapp/webhook'],linkHashKeyReference:renderConfiguration.credentialReferences.linkHashKey});
+     const environment={RENDER_SERVICE_ID:'srv-syntheticcrewcheck',CREWCHECK_INFOBIP_WHATSAPP_API_KEY:'synthetic-outbound-api-key-not-real',CREWCHECK_INFOBIP_WHATSAPP_CONTENT_KEY:key.toString('base64'),CREWCHECK_WHATSAPP_AUDIT_SALT:salt,CREWCHECK_INFOBIP_WHATSAPP_HMAC_SECRET:'synthetic-production-hmac-key-not-real',
+       CREWCHECK_INFOBIP_WHATSAPP_POLICY:JSON.stringify({version:1,configuration:renderConfiguration,admission:options.admission,
+         ingress:{mode:'render-managed-hmac',trustModel:'render-edge-tls-private-http',serviceId:'srv-syntheticcrewcheck',publicOrigin,callbackPaths:['/api/infobip/whatsapp/webhook']}})};
+     const signals=new EventEmitter();signals.exit=()=>assert.fail('no real signal');
+     runtime=createInfobipWhatsAppApplicationHost({enabled:true,environment,signals,getPool:async()=>db,matchesLinkKey:value=>value===salt,now:()=>epoch,request:options.request,scheduler:options.scheduler});
+     await runtime.start(createInfobipRenderHttpServer());await enqueue('synthetic-render-recreated-');
+     await Promise.all(eventKeys('synthetic-render-recreated-').map(id=>runtime.dispatch(id)));assert.equal(attempts,1);assert.equal(engineCalls,1);
+     await runtime.dispose();assert.equal(signals.listenerCount('SIGTERM'),0);
+
 
    } finally {await runtime?.dispose();configureWhatsAppConcierge(null);}
  });

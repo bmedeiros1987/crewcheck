@@ -85,13 +85,13 @@ for(const phase of ['load','pool','credentials']) {
 // real-looking environment switches exist. No imports, pool or network execute.
 {
  const {composeHeldInfobipRoute}=await import('./p1-infobip-whatsapp-off/compose.mjs');
- const source=composeHeldInfobipRoute("import { configureWhatsAppConcierge, handleWhatsAppRoute } from './server/whatsapp.mjs';\nconfigureWhatsAppConcierge(async ({ email, text }) => {\n  return text;\n});\n\nhttp.createServer(async (req, res) => {\n  if (await handleWhatsAppRoute(req, res, url)) return;\n});");
- assert(source.indexOf('await infobipWhatsAppRuntime.start();')>source.indexOf('configureWhatsAppConcierge(async'));
+ const source=composeHeldInfobipRoute("import { configureWhatsAppConcierge, handleWhatsAppRoute } from './server/whatsapp.mjs';\nconfigureWhatsAppConcierge(async ({ email, text }) => {\n  return text;\n});\n\nhttp.createServer(async (req, res) => {\n  if (await handleWhatsAppRoute(req, res, url)) return;\n}).listen(port, () => {});");
+ assert(source.indexOf('await infobipWhatsAppRuntime.start(infobipHttpServer);')>source.indexOf('configureWhatsAppConcierge(async'));
  assert.equal(composeHeldInfobipRoute(source),source);
  const instance=source.match(/const infobipWhatsAppRuntime = .*;/)[0];
- await vm.runInNewContext(`(async()=>{${instance}\nawait infobipWhatsAppRuntime.start();return infobipWhatsAppRuntime.health();})()`,{createInfobipWhatsAppHost}).then(h=>assert.equal(h.enabled,false));
+ await vm.runInNewContext(`(async()=>{${instance}\nawait infobipWhatsAppRuntime.start(infobipHttpServer);return infobipWhatsAppRuntime.health();})()`,{createInfobipWhatsAppHost,infobipHttpServer:{}}).then(h=>assert.equal(h.enabled,false));
  const server=fs.readFileSync('server.mjs','utf8');
- if(server.includes('createInfobipWhatsAppHost();'))assert(server.indexOf('await infobipWhatsAppRuntime.start();')>server.lastIndexOf('configureWhatsAppConcierge(async'));
+ if(server.includes('createInfobipWhatsAppHost();'))assert(server.indexOf('await infobipWhatsAppRuntime.start(infobipHttpServer);')>server.lastIndexOf('configureWhatsAppConcierge(async'));
 }
 // Native HTTP machinery over owned loopback only, with a trusted test opener
 // mapping the synthetic HTTPS address. This proves request/abort/body behavior,

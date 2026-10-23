@@ -1,5 +1,10 @@
 # Infobip host bootstrap — OFF
 
+Current follow-up: [concrete Render application adapter and activation checklist](infobip-whatsapp-render-activation.md).
+The direct-TLS-only description below records the prior reviewed implementation.
+A separately approved managed-HTTP/HMAC mode is now prepared in the same draft;
+the installed application caller still supplies no options and remains OFF.
+
 This follow-up starts from main 2bc6e354 (production composition #1209).
 Open PRs and active tasks were checked before editing: the existing CrewCierge
 classification work and restricted WhatsApp/PDF integration remain separate.

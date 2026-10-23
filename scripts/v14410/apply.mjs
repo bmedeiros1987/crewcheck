@@ -80,7 +80,7 @@ function patchServer(source) {
       'gym request precedence over pending name capture');
   }
 
-  const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);\n(?=\n(?:await infobipWhatsAppRuntime\.start\(\);\n\n)?http\.createServer)/;
+  const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);\n(?=\n(?:await infobipWhatsAppRuntime\.start\(\);\n\n)?(?:http\.createServer|const infobipHttpServer = createInfobipRenderHttpServer))/;
   const whatsappBinding = `configureWhatsAppConcierge(async ({ email, text, location, signal }) => {
   const ensureActive = () => { if (signal?.aborted) throw Error('WHATSAPP_ENGINE_UNAVAILABLE'); };
   ensureActive();
