@@ -80,7 +80,7 @@ export async function changeTelegramBriefingConsent(db, identity, input, { enabl
 async function source(c, context, clock) {
   // Hold the active source rows/range in this transaction as well as the owner.
   await c.query('SELECT id FROM crewcheck_platform_rosters WHERE owner_email=? AND active=TRUE FOR UPDATE', [context.email]);
-  const result = await readOperationalBriefingPreview({ ok: true, email: context.email, publicId: context.owner, db: c }, { now: clock, includeInternal: true });
+  const result = await readOperationalBriefingPreview({ ok: true, email: context.email, publicId: context.owner, db: c }, { now: clock, includeInternal: true, lockSource: true });
   if (result.status !== 200 || !result.internal?.preview?.dutyKey) throw deny();
   return result;
 }
@@ -158,7 +158,7 @@ export async function dispatchTelegramBriefing(db, selected, { enabled = TELEGRA
         Number(job.scheduled_epoch) !== hint.scheduledAt || now < hint.scheduledAt || now > hint.scheduledAt + 120000 || now >= hint.presentationAt ||
         now >= Date.parse(result.internal.preview.validUntil) || Date.parse(consent.grantedAt) > hint.scheduledAt) throw deny();
       // Never trust persisted/client message text as the operational content.
-      job.message = 'Seu briefing operacional está disponível. Abra o app para conferir.';
+      job.message = 'Seu briefing operacional está disponível. No app, abra Menu → Notificações → Briefing antes da apresentação.';
       reservationAttempted = true;
       const [claimed] = await c.query("UPDATE crewcheck_notification_jobs SET status='dispatching' WHERE id=? AND status='processing' AND locked_at=?", [job.id, job.locked_at]);
       return claimed.affectedRows === 1;
@@ -187,8 +187,19 @@ export async function handleTelegramBriefingConsent(req, res, url, { enabled = T
     if (!who) { reply(res, 401, { ok: false, code: 'AUTH_REQUIRED' }); return true; }
     try {
       const result = await transaction(identity.db, async c => {
-        const context = await currentContext(c, who.email, who.owner, clock);
-        return source(c, context, clock);
+        const [profiles] = await c.query('SELECT p.public_id,a.must_change_password FROM crewcheck_platform_profiles p JOIN crewcheck_platform_accounts a ON a.email=p.email WHERE p.email=? FOR UPDATE', [who.email]);
+        if (profiles.length !== 1 || profiles[0].public_id !== who.owner || ![false,0,'0'].includes(profiles[0].must_change_password)) throw deny();
+        const saved = await readState(c, consentKey(who.email, who.owner));
+        if (saved && (saved.version !== 1 || saved.email !== who.email || saved.owner !== who.owner || !Number.isSafeInteger(saved.revision))) throw deny();
+        let linked = false, active = false;
+        try { const context = await currentContext(c, who.email, who.owner, clock); linked = true; active = Boolean(validConsent(saved, context, clock())); } catch {}
+        const preview = await readOperationalBriefingPreview({ ok: true, email: who.email, publicId: who.owner, db: c }, { now: clock, lockSource: true });
+        const trigger = preview.status === 200 && saved?.preferences
+          ? briefingTriggerAt({ preview: { duty: preview.body.briefing.duty }, preferences: saved.preferences }).scheduledAt : null;
+        return { status: 200, body: { ...preview.body, ok: true, previewAvailable: preview.status === 200,
+          consent: { enabled: active, recorded: saved?.enabled === true, revision: saved?.revision || 0, preferences: saved?.preferences || null },
+          telegramLinked: linked, scheduledAt: Number.isFinite(trigger) ? iso(trigger) : null,
+          deliveryConfirmed: false } };
       });
       reply(res, result.status, result.body);
     } catch { reply(res, 409, { ok: false, code: 'BRIEFING_CONTEXT_CHANGED' }); }

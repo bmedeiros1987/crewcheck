@@ -45,7 +45,7 @@ function publishedMetadataValid(roster) {
 // query/header email, local cache, roster payload or consent is accepted here.
 // SQL evaluates the DB-managed revision in the database session's time zone;
 // the JS process never interprets an unqualified DATETIME string as local time.
-export async function readOperationalBriefingPreview(context, { now = Date.now, includeInternal = false } = {}) {
+export async function readOperationalBriefingPreview(context, { now = Date.now, includeInternal = false, lockSource = false } = {}) {
   if (context?.ok !== true || typeof context.email !== 'string' || !context.email ||
       typeof context.publicId !== 'string' || !context.publicId || typeof context.db?.query !== 'function') {
     return failure(401, 'AUTH_REQUIRED', 'Faça login para consultar seu briefing.');
@@ -58,7 +58,7 @@ export async function readOperationalBriefingPreview(context, { now = Date.now, 
       FROM crewcheck_platform_profiles p
       LEFT JOIN crewcheck_platform_rosters r ON r.owner_email=p.email AND r.active=TRUE
       WHERE p.email=? AND p.public_id=?
-      ORDER BY r.updated_at DESC,r.id DESC LIMIT 2`, [context.email, context.publicId]);
+      ORDER BY r.updated_at DESC,r.id DESC LIMIT 2${lockSource ? ' FOR UPDATE' : ''}`, [context.email, context.publicId]);
   } catch { return unavailable(); }
   const checkedAt = now();
   if (!Number.isFinite(checkedAt) || checkedAt <= 0 || checkedAt > 8_640_000_000_000_000 || !Array.isArray(rows)) return unavailable();

@@ -70,7 +70,7 @@ export function briefingPresentation({ preview, preferences = {}, alarm = null, 
   }
   // Same authoritative full preview in either tone; external/lock-screen content is generic.
   return { submissionAllowed: false, scheduledAt: new Date(scheduledAt).toISOString(),
-    external: { title: 'CrewCheck', body: 'Seu briefing operacional está disponível. Abra o app para conferir.' },
+    external: { title: 'CrewCheck', body: 'Seu briefing operacional está disponível. No app, abra Menu → Notificações → Briefing antes da apresentação.' },
     inApp: { introduction: lines.join('\n'), preview }, phraseId,
     weatherNote: 'Observação meteorológica não é previsão para a viagem. Previsão dos destinos/datas ainda exige fonte verificada, atualização e limite de horizonte.' };
 }

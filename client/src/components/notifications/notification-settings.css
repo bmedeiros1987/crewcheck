@@ -51,3 +51,8 @@
 .cc-notification-center .cc-notification-section-heading { margin-bottom: 8px; }
 .cc-notification-center .cc-notification-save-actions > button { flex: 1 1 180px; }
 .cc-notification-center :is(.cc-notification-section-heading,.cc-notification-save-actions,.cc-notification-status-row) > .cc-notification-help-icon[open] { flex-basis: 100%; }
+
+.cc-operational-briefing fieldset { min-width: 0; display: grid; gap: 12px; margin-block: 16px; }
+.cc-operational-briefing label { display: grid; gap: 6px; }
+.cc-operational-briefing :is(input:not([type=checkbox]),select) { width: 100%; min-width: 0; box-sizing: border-box; min-height: 44px; font: inherit; }
+.cc-operational-briefing p, .cc-operational-briefing li, .cc-operational-briefing span { overflow-wrap: anywhere; }

@@ -9,6 +9,8 @@ on:
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/tests/*briefing*.mjs'
       - 'scripts/regression-telegram-briefing-mysql.mjs'
+      - 'scripts/regression-operational-briefing-browser.mjs'
+      - 'client/src/components/notifications/**'
       - '.github/workflows/telegram-operational-briefing.yml'
 permissions:
   contents: read
@@ -42,11 +44,38 @@ jobs:
           done
           docker exec crewcheck-briefing-qa mysql --database=crewcheck_notification_qa --execute='SELECT 1'
           docker exec crewcheck-briefing-qa chmod 755 /var/run/mysqld
+      - name: Counterproof old consistent source read under REPEATABLE READ
+        run: |
+          cp server/concierge/telegram-briefing.mjs "$RUNNER_TEMP/telegram-briefing-current.mjs"
+          trap 'cp "$RUNNER_TEMP/telegram-briefing-current.mjs" server/concierge/telegram-briefing.mjs' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/concierge/telegram-briefing.mjs')
+          text = path.read_text()
+          assert 'includeInternal: true, lockSource: true' in text
+          path.write_text(text.replace('includeInternal: true, lockSource: true', 'includeInternal: true, lockSource: false'))
+          PYCODE
+          set +e
+          node scripts/regression-telegram-briefing-mysql.mjs > "$RUNNER_TEMP/briefing-old-snapshot.log" 2>&1
+          result=$?
+          set -e
+          test "$result" -ne 0
+          grep 'STALE_SOURCE_RACE: committed source revision must cancel' "$RUNNER_TEMP/briefing-old-snapshot.log"
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
       - name: Real SQL consent, competing claims and uncertain outcome
         run: node scripts/regression-telegram-briefing-mysql.mjs
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+      - name: Existing isolated browser fixture pattern
+        run: |
+          npm install --prefix "$RUNNER_TEMP/briefing-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/briefing-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          node scripts/regression-operational-briefing-browser.mjs
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
       - name: Canonical preparation and existing safeguards
         run: |
           node scripts/v139/apply.mjs
@@ -55,7 +84,9 @@ jobs:
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
+          node scripts/regression-operational-briefing-browser.mjs
         env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
       - name: Remove only disposable fixture container

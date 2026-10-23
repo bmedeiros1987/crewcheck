@@ -42,6 +42,34 @@ try{
  await plan();assert.equal((await jobs()).length,1);assert.equal(sends,1);passed.push('terminal event not resurrected after producer recreation');
  // Reset ONLY disposable fixture job/state, retaining source/link/consent.
  async function freshJob(){clock=NOW;await db.query('DELETE FROM crewcheck_notification_jobs');await plan();const next=(await jobs())[0];assert(next);await claim(next);clock=Date.parse('2026-10-06T07:00:00Z');return next;}
+ // Force an old consistent-read snapshot before waiting for the source writer.
+ job=await freshJob();
+ const writer=await db.getConnection();let waiting,readerConnectionId;
+ const ownerWait=new Promise(resolve=>{waiting=resolve;});
+ await writer.beginTransaction();
+ await writer.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);
+ await writer.query('UPDATE crewcheck_platform_rosters SET updated_at=? WHERE id=?',[new Date(NOW-45000),'synthetic-roster']);
+ const racing={query:(...args)=>db.query(...args),getConnection:async()=>{
+  const c=await db.getConnection();await c.query('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+  readerConnectionId=(await c.query('SELECT CONNECTION_ID() AS id'))[0][0].id;
+  return {beginTransaction:()=>c.beginTransaction(),commit:()=>c.commit(),rollback:()=>c.rollback(),release:()=>c.release(),query:(sql,args)=>{
+   if(sql.startsWith('SELECT p.public_id,a.must_change_password'))waiting();
+   return c.query(sql,args);
+  }};
+ }};
+ const raced=dispatch(job,async()=>{sends++;return {ok:true};},racing);
+ try {
+  await ownerWait;let blocked=false;
+  for(let attempt=0;attempt<100;attempt++){
+   const [waits]=await db.query('SELECT COUNT(*) AS n FROM performance_schema.data_lock_waits w JOIN performance_schema.threads t ON t.THREAD_ID=w.REQUESTING_THREAD_ID WHERE t.PROCESSLIST_ID=?',[readerConnectionId]);
+   if(Number(waits[0].n)>0){blocked=true;break;}
+   await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert(blocked,'fixture must observe an actual reader lock wait before writer commit');
+  await writer.commit();
+ }finally{await writer.rollback();writer.release();}
+ assert.equal((await raced).status,'cancelled','STALE_SOURCE_RACE: committed source revision must cancel');assert.equal(sends,1);
+ passed.push('REPEATABLE READ old hint snapshot plus waiting writer commit reads current source');
  job=await freshJob();await db.query('UPDATE crewcheck_platform_rosters SET updated_at=? WHERE id=?',[new Date(NOW-30000),'synthetic-roster']);
  assert.equal((await dispatch(job)).status,'cancelled');assert.equal(sends,1);passed.push('source revision changed before dispatch cancels');
  job=await freshJob();await changeTelegramBriefingConsent(db,identity,{enabled:false,expectedRevision:1},options);assert.equal((await dispatch(job)).status,'skipped');assert.equal(sends,1);passed.push('revocation cancels processing before dispatch');

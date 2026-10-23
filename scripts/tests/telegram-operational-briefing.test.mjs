@@ -58,7 +58,7 @@ test('actual canonical source -> consent -> existing queue -> actual dispatcher 
  assert.equal(f.jobs[0].scheduled_epoch,Date.parse('2099-10-06T07:00:00Z'));
  const selected=f.claim();f.clock=f.jobs[0].scheduled_epoch;
  assert.equal((await f.dispatch(selected)).status,'sent');assert.equal(f.sent.length,1);
- assert.equal(f.sent[0].chat_id,CHAT);assert.equal(f.sent[0].message,'Seu briefing operacional está disponível. Abra o app para conferir.');
+ assert.equal(f.sent[0].chat_id,CHAT);assert.equal(f.sent[0].message,'Seu briefing operacional está disponível. No app, abra Menu → Notificações → Briefing antes da apresentação.');
  assert.equal((await f.dispatch(selected)).status,'skipped');assert.equal(f.sent.length,1);
 });
 test('durable same-duty dedupe survives producer recreation and reimport with same content',async()=>{
@@ -140,4 +140,21 @@ test('preference drift without revision cannot authorize the old job',async()=>{
  const f=fixture();await f.grant();await f.plan();const selected=f.claim();f.clock=f.jobs[0].scheduled_epoch;
  for(const [key,value] of f.records)if(key.startsWith('briefing-consent:'))value.preferences.timing='custom';
  assert.equal((await f.dispatch(selected)).status,'cancelled');assert.equal(f.sent.length,0);
+});
+test('reader returns saved consent revision/preferences after reload without leaking binding authority',async()=>{
+ const f=fixture();await f.grant({preferences:{timing:'lead',leadMinutes:120,timeZone:'America/Sao_Paulo'}});let output;
+ await handleTelegramBriefingConsent({method:'GET',headers:{}},{},{pathname:'/api/notifications/operational-briefing'},{...f.options,identify:async()=>f.identity,reply:(_r,status,body)=>{output={status,body};}});
+ assert.equal(output.status,200);assert.equal(output.body.consent.revision,1);assert.equal(output.body.consent.enabled,true);assert.equal(output.body.consent.preferences.leadMinutes,120);assert.equal(output.body.scheduledAt,'2099-10-06T06:30:00.000Z');assert.equal(output.body.consent.email,undefined);assert.equal(output.body.consent.bindingRevision,undefined);assert.equal(output.body.internal,undefined);
+});
+test('reader and revoke remain available without Telegram link or active roster',async()=>{
+ const f=fixture();await f.grant();f.records.delete('link-email:'+EMAIL);f.source.id=null;let output;
+ const options={...f.options,identify:async()=>f.identity,reply:(_r,status,body)=>{output={status,body};}};
+ await handleTelegramBriefingConsent({method:'GET',headers:{}},{},{pathname:'/api/notifications/operational-briefing'},options);
+ assert.equal(output.status,200);assert.equal(output.body.previewAvailable,false);assert.equal(output.body.telegramLinked,false);assert.equal(output.body.consent.revision,1);assert.equal(output.body.consent.enabled,false);assert.equal(output.body.consent.recorded,true);
+ await handleTelegramBriefingConsent({method:'POST',headers:{origin:'https://crewcheck.online'}},{},{pathname:'/api/notifications/operational-briefing'},{...options,read:async()=>({enabled:false,expectedRevision:output.body.consent.revision})});
+ assert.equal(output.status,200);assert.equal(output.body.status,'consent_revoked');assert.equal(output.body.revision,2);
+});
+test('reader rejects changed account owner even when client identity still matches old owner',async()=>{
+ const f=fixture();f.owner='CC-DIFFERENT';let status;
+ await handleTelegramBriefingConsent({method:'GET'},{},{pathname:'/api/notifications/operational-briefing'},{...f.options,identify:async()=>f.identity,reply:(_r,value)=>{status=value;}});assert.equal(status,409);
 });
