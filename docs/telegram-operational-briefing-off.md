@@ -1,0 +1,48 @@
+# Deterministic Telegram briefing: existing-queue composition, OFF
+
+Base: main46fffaa8b76eac87c00982e766010b3dc2acaaa9. This is a draft for review, not activation or delivery proof.
+
+## Reused work and ownership
+
+#909 head5883cdbc6a340acd0101814439d3c91a64246be6 and #910 headf1fd52e68d22071e45b692e294efd8e2bcccfb2d remain open/unmerged. Their PR descriptions/comments and current open-PR file ownership were checked. No active briefing owner was identified in recent task inventory. The planner and its39 tests are reused byte-for-byte from#909. The source reader comes from#910 with one internal-only option exposing its already-computed preview/authority outside the public response body. The current canonical bridge adds rosterPublicationReview while preserving canonicalDutyMeasurement.
+
+This is a new composition on current main, not a merge/overwrite of those old drafts. #910's historical full-lifecycle failure is not claimed resolved; its old generator/Home/auth patches are not copied. Current requireExistingIdentity and owner/profile/account/source checks are used. No platform.mjs edit or new JWT implementation is needed. #1211 Infobip/bootstrap, #1212/#1213 finance/Home, #1203/#1208 AI and #872 packing/forecast stay separate. Original branches and other local checkouts are preserved.
+
+## Connected, but inert
+
+TELEGRAM_OPERATIONAL_BRIEFING_ENABLED is literal false. No environment flag enables it. The existing scheduler calls runTelegramBriefingCycle, which returns before DB access while OFF. The new existing-runtime host at /api/notifications/operational-briefing returns503 before auth/body while OFF. The existing dispatcher recognizes the reserved operational-briefing namespace; forged or disabled jobs cannot fall through to arbitrary-message delivery. Public alarm enqueue rejects the prefix case-insensitively.
+
+When explicitly enabled only in synthetic fixtures, the path is canonical primary active roster -> topic consent/binding -> existing crewcheck_notification_jobs -> existing dispatchClaimedJob -> fake Telegram. There is no new queue, scheduler, broker, provider, AI, weather lookup, external trigger or schema migration. Source/weather unsupported states remain explicit.
+
+Consent uses existing state storage, account incarnation and current forward/reverse private-chat binding. Grant requires explicit confirmation, exact expected revision and a valid timing/timezone choice; opt-out remains possible after unlink. CAS serializes on the account; changes cancel pending/processing jobs, reporting in-flight work separately. The read host returns only the existing next-duty source projection, never the monthly roster/internal authority. Both new state prefixes participate in the existing account erasure contract.
+
+Source selection, owner/account/password-change status, binding, consent revision, full-content digest, active DB revision, semantic duty and validity are rechecked under transaction locks at dispatch before the durable processing->dispatching CAS. Outgoing text is regenerated and generic, not a persisted/client message. The final clock is checked again after commit, before transport. Unknown commit/transport/final-write outcomes never cause an automatic resend. Revocation after the durable dispatch cutoff can race submission and cannot recall an accepted message.
+
+## Timing and conservative limits
+
+The existing presentation helper supports a duty-bound active alarm, otherwise APZ minus90minutes; explicit lead/custom zoned choices remain supported. No server-authoritative stored alarm-to-duty adapter exists in this slice, so it cannot adopt an arbitrary wake job as that alarm. The default is therefore APZ-90, not an invented12h preference. No real preference was read, saved, inferred or changed.
+
+Only future confirmed presentation plans are admitted; no backfill after enrollment/revision misses the trigger. Dispatch also retains the queue's120s grace and the earlier source-preview/presentation deadline. Identical semantic-duty reimports share one durable job identity. A cancelled/sent/uncertain same-duty job is not silently resurrected by new consent or process restart. Rearming a cancelled current duty would need a distinct explicit reviewed action; it is intentionally not implemented.
+
+The canonical primary roster can be read while the app is closed; the existing30s scheduler is the trigger. Source import freshness is an observed DB revision, not proof that the employer has published no later changes. Missing/ambiguous/unconfirmed source blocks. Enumeration is bounded and rotates existing state rows by updated_at so blocked recipients do not permanently starve later ones.
+
+The generic external body says a briefing is available. Activation must first connect and visibly validate the authenticated in-app briefing view; merely enabling the code without a usable reader/UI is not an acceptable release. The new authenticated GET is prepared behind the same OFF gate, but this patch does not add Home/UI controls. There is no enabling UI or real consent enrollment in this task.
+
+## Validation
+
+61 local tests passed raw and prepared, including real canonical source/planner and actual dispatcher with fake transport. Both forms passed in UTC, America/Sao_Paulo and Pacific/Honolulu. Existing queue safety, phone refusal and real extracted scheduler heartbeat regressions passed. TypeScript passed. Canonical prepared Vite build passed using the existing official Node22 runtime and a private copy of existing dependencies; bundled signed Node24 rejected native Rollup, and a dependency symlink was replaced after cache writes outside this checkout were denied. No signing/security bypass or dependency install occurred.
+
+A dedicated workflow runs those contracts and real disposable MySQL raw/prepared using the existing network-disabled notification QA pattern. Real SQL scenarios include consent CAS,8concurrent planners, competing claims, revision cancellation, opt-out, uncertain outcome and accepted-send/final-write failure. Local Docker/MySQL was unavailable; those SQL results and exact-head CI remain pending until the workflow finishes. Fake DB tests alone are not SQL-lock proof. No physical/device/browser permission or provider delivery test was performed.
+
+## Web Push diagnosis
+
+The existing observational diagnostic computes webPush.gate solely as process.env.WEB_PUSH_ENABLED === 'true'. The previously observed disabled therefore means that exact flag test was false, not a missing signature/subscription or failed transport. configuration/installation/delivery were explicitly not_observed. pushConfiguration returns before reading key material on the disabled path. No key, subscription, endpoint or VAPID material was read. This Telegram slice does not change Web Push configuration; enabling a flag alone would prove neither registration nor physical receipt.
+
+## Separate activation checklist
+
+1. Keep OFF and draft until independent review, exact-head raw/prepared tests, isolated real MySQL and full canonical build/TypeScript/CI pass. Any later ready-triggered automatic review must also finish before integration.
+2. Coordinate #909/#910 disposition and scheduler/bridge ownership; preserve finance/Infobip. Do not merge old lifecycle fixes wholesale.
+3. Provide and validate the real authenticated in-app reader/UI and explicit consent/timing/revoke flow. Do not infer timing from a suggestion, Bids or weather consent.
+4. Verify existing Telegram configuration, exact owner/private-chat binding and canonical primary roster with current revision. No new credentials/permissions/costs are authorized here.
+5. Independently review a bounded code enablement, recipient/event/time/query/message budget and production schema readiness. Do not set flags or seed consent from this task.
+6. Only under separate send authority, observe provider acceptance and physical receipt separately. Never reset ambiguous intent or auto-replay. Revocation/cancellation, account deletion and source corrections must retain their fences.

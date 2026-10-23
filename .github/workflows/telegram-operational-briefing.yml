@@ -1,0 +1,63 @@
+name: Telegram operational briefing OFF
+on:
+  pull_request:
+    paths:
+      - 'server/concierge/**'
+      - 'server/notification-job-safety.mjs'
+      - 'server/telegram-fast-ack.mjs'
+      - 'server/v139/notificationStateDeletion.mjs'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/tests/*briefing*.mjs'
+      - 'scripts/regression-telegram-briefing-mysql.mjs'
+      - '.github/workflows/telegram-operational-briefing.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Compile current canonical engines and test raw source
+        run: |
+          node scripts/p1-concierge-journey/compile.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs
+          node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-notification-scheduler-heartbeat-health.mjs
+      - name: Start existing disposable notification QA pattern without network
+        run: |
+          mkdir -p /tmp/crewcheck-notification-qa-socket
+          docker run --detach --rm --name crewcheck-briefing-qa --network none --mount type=bind,source=/tmp/crewcheck-notification-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_notification_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-briefing-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-briefing-qa mysql --database=crewcheck_notification_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-briefing-qa mysql --database=crewcheck_notification_qa --execute='SELECT 1'
+          docker exec crewcheck-briefing-qa chmod 755 /var/run/mysqld
+      - name: Real SQL consent, competing claims and uncertain outcome
+        run: node scripts/regression-telegram-briefing-mysql.mjs
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+      - name: Canonical preparation and existing safeguards
+        run: |
+          node scripts/v139/apply.mjs
+          node scripts/p1-concierge-journey/compile.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs
+          node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-notification-scheduler-heartbeat-health.mjs
+          node scripts/regression-telegram-briefing-mysql.mjs
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+      - name: Remove only disposable fixture container
+        if: always()
+        run: docker rm -f crewcheck-briefing-qa || true

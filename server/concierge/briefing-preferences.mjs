@@ -6,6 +6,22 @@ function instant(value) {
     ? Date.parse(value) : NaN;
 }
 
+export function briefingTriggerAt({ preview, preferences = {}, alarm = null } = {}) {
+  const apz = instant(preview?.duty?.presentationAt);
+  if (!Number.isFinite(apz)) return { reason: 'presentation-unconfirmed' };
+  const mode = preferences.timing || 'default';
+  let scheduledAt;
+  if (mode === 'default') {
+    // The adapter must bind an existing, uncancelled alarm to this account and duty.
+    const bound = alarm?.active === true && alarm.scopeHash === preview.authority.scopeHash && alarm.dutyKey === preview.dutyKey;
+    scheduledAt = bound ? instant(alarm.scheduledAt) : apz - 90 * MINUTE;
+  } else if (mode === 'lead' && Number.isInteger(preferences.leadMinutes) && preferences.leadMinutes > 0 && preferences.leadMinutes <= 4320) {
+    scheduledAt = apz - preferences.leadMinutes * MINUTE;
+  } else if (mode === 'custom') scheduledAt = instant(preferences.customAt);
+  else return { reason: 'invalid-timing' };
+  return { scheduledAt };
+}
+
 export function briefingPresentation({ preview, preferences = {}, alarm = null, now = Date.now(), reportedFatigue = false,
   sensitiveContext = false, humorContextConfirmed = false, recentPhrases = null } = {}) {
   const blocked = reason => ({ submissionAllowed: false, reason });
@@ -18,16 +34,9 @@ export function briefingPresentation({ preview, preferences = {}, alarm = null, 
   const duty = preview.duty;
   const apz = instant(duty?.presentationAt);
   if (!Number.isFinite(apz)) return blocked('presentation-unconfirmed'); // HSB/reserve are never lifted to APZ.
-  const mode = preferences.timing || 'default';
-  let scheduledAt;
-  if (mode === 'default') {
-    // The adapter must bind an existing, uncancelled alarm to this account and duty.
-    const bound = alarm?.active === true && alarm.scopeHash === preview.authority.scopeHash && alarm.dutyKey === preview.dutyKey;
-    scheduledAt = bound ? instant(alarm.scheduledAt) : apz - 90 * MINUTE;
-  } else if (mode === 'lead' && Number.isInteger(preferences.leadMinutes) && preferences.leadMinutes > 0 && preferences.leadMinutes <= 4320) {
-    scheduledAt = apz - preferences.leadMinutes * MINUTE;
-  } else if (mode === 'custom') scheduledAt = instant(preferences.customAt);
-  else return blocked('invalid-timing');
+  const trigger = briefingTriggerAt({ preview, preferences, alarm });
+  if (trigger.reason) return blocked(trigger.reason);
+  const scheduledAt = trigger.scheduledAt;
   // No activation backfill: expired trigger requires a new reviewed plan.
   if (!Number.isFinite(scheduledAt) || scheduledAt <= now || scheduledAt >= apz) return blocked('expired-or-invalid-trigger');
   const legs = Array.isArray(duty.legs) ? duty.legs : [];
