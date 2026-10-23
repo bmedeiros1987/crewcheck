@@ -58,7 +58,7 @@ test('actual canonical source -> consent -> existing queue -> actual dispatcher 
  assert.equal(f.jobs[0].scheduled_epoch,Date.parse('2099-10-06T07:00:00Z'));
  const selected=f.claim();f.clock=f.jobs[0].scheduled_epoch;
  assert.equal((await f.dispatch(selected)).status,'sent');assert.equal(f.sent.length,1);
- assert.equal(f.sent[0].chat_id,CHAT);assert.equal(f.sent[0].message,'Seu briefing operacional está disponível. No app, abra Menu → Notificações → Briefing antes da apresentação.');
+ assert.equal(f.sent[0].chat_id,CHAT);assert.equal(f.sent[0].message,'Seu briefing operacional está disponível. No app, abra Menu → Concierge Telegram → Briefing antes da apresentação.');
  assert.equal((await f.dispatch(selected)).status,'skipped');assert.equal(f.sent.length,1);
 });
 test('durable same-duty dedupe survives producer recreation and reimport with same content',async()=>{

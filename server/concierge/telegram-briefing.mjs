@@ -158,7 +158,7 @@ export async function dispatchTelegramBriefing(db, selected, { enabled = TELEGRA
         Number(job.scheduled_epoch) !== hint.scheduledAt || now < hint.scheduledAt || now > hint.scheduledAt + 120000 || now >= hint.presentationAt ||
         now >= Date.parse(result.internal.preview.validUntil) || Date.parse(consent.grantedAt) > hint.scheduledAt) throw deny();
       // Never trust persisted/client message text as the operational content.
-      job.message = 'Seu briefing operacional está disponível. No app, abra Menu → Notificações → Briefing antes da apresentação.';
+      job.message = 'Seu briefing operacional está disponível. No app, abra Menu → Concierge Telegram → Briefing antes da apresentação.';
       reservationAttempted = true;
       const [claimed] = await c.query("UPDATE crewcheck_notification_jobs SET status='dispatching' WHERE id=? AND status='processing' AND locked_at=?", [job.id, job.locked_at]);
       return claimed.affectedRows === 1;
