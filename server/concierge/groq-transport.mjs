@@ -124,7 +124,6 @@ export function createGroqHttpTransport(options = {}) {
         try {
           response = await fetchImpl(GROQ_ENDPOINT, { method: 'POST', redirect: 'error', cache: 'no-store', credentials: 'omit',
             headers: { authorization: `Bearer ${credential}`, 'content-type': 'application/json' }, body, signal: controller.signal });
-          if (controller.signal.aborted) throw fault('ABORTED');
           if (response?.redirected || (response?.status >= 300 && response?.status < 400)
             || (response?.url && response.url !== GROQ_ENDPOINT)) throw fault('REDIRECT');
           if (response?.status === 429) {
@@ -135,6 +134,10 @@ export function createGroqHttpTransport(options = {}) {
             cooldownUntil = Math.max(previousCooldown, receivedAt + cooldown(response.headers, receivedAt));
             throw fault('RATE_LIMIT');
           }
+          // A cancelled caller must not erase organization throttling learned
+          // from a late same-origin 429. Admit headers before abandoning body;
+          // the settled caller still receives its original timeout/abort.
+          if (controller.signal.aborted) throw fault('ABORTED');
           if (response?.status === 401 || response?.status === 403) throw fault('AUTH');
           if (response?.status !== 200) throw fault('HTTP');
           return await readContent(response, controller.signal);

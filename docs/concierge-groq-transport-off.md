@@ -18,6 +18,10 @@ O transporte recebe `(request,{signal})` e retorna somente o conteúdo JSON text
 
 O erro de transporte deve cair no fallback determinístico existente quando houver integração autorizada. Nenhum texto do modelo deve ser mostrado como fato. Não há integração nesta entrega.
 
+### Correção da revisão: 429 recebido depois de timeout/abort
+
+A revisão independente reproduziu no HEAD03a29a2f que o abort-check descartava um 429 tardio antes de registrar seu cooldown. Os quatro novos casos RED reproduzem timeout e abort, cada um com Retry-After em segundos e em data HTTP: a segunda chamada fazia HTTP indevido. A correção mantém a verificação de origem/redirect primeiro, admite somente os headers de 429 antes de abandonar a resposta cancelada, e cancela o corpo sem lê-lo. O caller já concluído mantém o erro original TIMEOUT/ABORTED; o slot liberado não apaga o cooldown. Os testes verificam zero leituras do corpo, cancelamento e nenhuma chamada durante todo o intervalo, inclusive no mesmo clock e em expiry−1ms. A suíte passa agora 66 testes. Nenhum retry, loop ou callsite foi acrescentado.
+
 ## Testes sem rede
 
 `node --test scripts/regression-groq-transport-off.mjs` usa somente módulos nativos do Node e mocks de Response/ReadableStream. Fetch ambiente é proibido antes do import; toda credencial e pergunta são sentinelas fictícias. A suíte verifica OFF, contrato de envio, modelos/payloads proibidos, cópia imutável de orçamento, redirects, HTTP/rede, cooldown, clocks, concorrência, abort, fetch/corpo pendentes, resposta tardia, tamanhos, UTF8/JSON, ausência de console e ausência das sentinelas em erros/stack/cause. Não mede latência ou qualidade de modelo real e não prova compatibilidade com uma organização Groq real. A CI roda em Node22 sem instalar dependências.

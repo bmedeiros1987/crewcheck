@@ -183,6 +183,33 @@ test('a late fetch response is cancelled after timeout, never consumed or retrie
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(cancelled, true);
 });
+for (const interruption of ['timeout', 'abort']) for (const header of ['seconds', 'date']) {
+  test(`late 429 after ${interruption} retains ${header} cooldown without reading/delivering body`, async () => {
+    let at = 0, calls = 0, resolveLate, cancelled = 0, reads = 0;
+    const external = new AbortController();
+    const run = transport(() => {
+      calls++;
+      return calls === 1 ? new Promise(resolve => { resolveLate = resolve; }) : Promise.resolve(response());
+    }, { timeoutMs: 10, maxCalls: 2, now: () => at });
+    const first = run(request(), { signal: external.signal });
+    if (interruption === 'abort') external.abort();
+    await rejectsSafe(() => first, interruption === 'abort' ? 'ABORTED' : 'TIMEOUT');
+    at = 500;
+    const stream = new ReadableStream({ cancel() { cancelled++; } });
+    stream.getReader = () => { reads++; throw Error(upstream); };
+    const value = new Response(stream, { status: 429, headers: {
+      'retry-after': header === 'seconds' ? '120' : new Date(120000).toUTCString(),
+      'content-type': 'application/json',
+    } });
+    resolveLate(value);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(cancelled, 1); assert.equal(reads, 0);
+    await rejectsSafe(() => run(request()), 'RATE_LIMIT'); assert.equal(calls, 1);
+    const until = header === 'seconds' ? 120500 : 120000;
+    at = until - 1; await rejectsSafe(() => run(request()), 'RATE_LIMIT'); assert.equal(calls, 1);
+    at = until; assert.equal(await run(request()), content); assert.equal(calls, 2);
+  });
+}
 test('failure to register abort signal is sanitized before HTTP', async () => {
   let calls = 0;
   const signal = { aborted: false, addEventListener() { throw Error(upstream); }, removeEventListener() {} };
