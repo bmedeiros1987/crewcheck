@@ -39,6 +39,7 @@ function fixture() {
         assert(began,'every query uses a transaction');
         if(sql.startsWith('SELECT email,consent_concierge')){assert(sql.endsWith('FOR UPDATE'));return [[p[0]===phoneHash&&s.link?{...s.link}:null].filter(Boolean)];}
         if(sql.startsWith('SELECT public_id')){assert(sql.endsWith('FOR UPDATE'));return [[s.owner&&s.link?.email===p[0]?{public_id:s.owner}:null].filter(Boolean)];}
+        if(sql.startsWith('SELECT state_key FROM')&&sql.includes('engineActive'))return [[...rows].filter(([,r])=>(r.engineActive===true&&r.engineOwner===p[2])||(r.status==='preparing'&&r.engineActive===undefined)).slice(0,1).map(([state_key])=>({state_key}))];
         if(sql.startsWith('SELECT state_key FROM'))return [[...rows].filter(([,r])=>r.status==='held').slice(0,1).map(([state_key])=>({state_key}))];
         if(sql.startsWith('UPDATE crewcheck_whatsapp_links')){if(s.link?.email===p[0])s.link={...s.link,revoked_at:'now',consent_concierge:0};return [{affectedRows:1}];}
         if(sql.startsWith('DELETE FROM crewcheck_whatsapp_link_codes'))return [{affectedRows:1}];
@@ -188,7 +189,7 @@ for(const mode of ['revoke','relink','account','consent','expire','failure','unc
   // Execute the CURRENT canonical configure callback with synthetic snapshot and
   // reply-builder dependencies; then reach it through the real shared invoker.
   const source=fs.readFileSync('server.mjs','utf8');
-  const binding=source.match(/configureWhatsAppConcierge\(async \(\{ email, text, location, signal \}\) => \{[\s\S]*?\n\}\);(?=\n\nhttp\.createServer)/)?.[0];
+  const binding=source.match(/configureWhatsAppConcierge\(async \(\{ email, text, location, signal \}\) => \{[\s\S]*?\n\}\);(?=\n\n(?:await infobipWhatsAppRuntime\.start\(\);\n\n)?(?:http\.createServer|const infobipHttpServer = createInfobipRenderHttpServer))/)?.[0];
   assert(binding,'prepare canonical server before this regression');
   const {s,db}=fixture();let engineCalls=0,requests=0;
   vm.runInNewContext(binding,{configureWhatsAppConcierge,conciergeLoadSnapshot:async profile=>{assert.equal(profile.email,baseLink.email);return {name:'Synthetic'};},

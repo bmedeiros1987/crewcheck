@@ -82,7 +82,8 @@ export function createInfobipWhatsAppRuntime(options = {}) {
 
 // Shared HTTP/lifecycle boundary. Callers supply a fully admitted pipeline;
 // production wiring does not call the offline composition or exercise methods.
-export function bindInfobipWhatsAppRuntime({pipeline,auth,scheduler,verifyTls}) {
+export function bindInfobipWhatsAppRuntime({pipeline,auth,scheduler,verifyTls,ingressPolicy}) {
+  if(ingressPolicy&&(ingressPolicy.mode!=='render-managed-hmac'||ingressPolicy.requiresHmac!==true||auth.mode!=='hmac-sha256'||typeof ingressPolicy.inspect!=='function'))throw Error('INFOBIP_INGRESS_POLICY');
   const shutdown=new AbortController();
   let closed=false,running=null,cursor='',timer,disposal;
   const active=new Set();
@@ -110,7 +111,7 @@ export function bindInfobipWhatsAppRuntime({pipeline,auth,scheduler,verifyTls}) 
   catch {uninstall();throw Error('INFOBIP_SCHEDULER');}
   const respond=(res,status,code)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify({ok:status===200,code}));};
   return Object.freeze({
-    health:()=>({enabled:true,ready:!closed,code:closed?'INFOBIP_CLOSED':'INFOBIP_COMPOSED'}),
+    health:()=>({enabled:true,ready:!closed,code:closed?'INFOBIP_CLOSED':'INFOBIP_COMPOSED',...(ingressPolicy?{ingressMode:ingressPolicy.mode,transport:ingressPolicy.transport,proxyAuthenticated:false}:{})}),
     dispatch:eventKey=>tracked(()=>pipeline.dispatch(eventKey,{signal:shutdown.signal})),
     expire:eventKey=>tracked(()=>pipeline.expire(eventKey)),maintain:tick,
     async handleRoute(req,res,url){
@@ -118,7 +119,8 @@ export function bindInfobipWhatsAppRuntime({pipeline,auth,scheduler,verifyTls}) 
       const task=(async()=>{
         if(closed)return respond(res,503,'INFOBIP_CLOSED');
         if(req.method!=='POST')return respond(res,405,'METHOD');
-        if(verifyTls(req)!==true)return respond(res,503,'TLS_REQUIRED');
+        if(ingressPolicy){if(ingressPolicy.inspect(req,url)!==true)return respond(res,503,'INGRESS_REQUIRED');}
+        else if(verifyTls(req)!==true)return respond(res,503,'TLS_REQUIRED');
         if(!auth.acceptsHeaders(req.rawHeaders))return respond(res,401,'AUTH');
         if(!/^application\/json(?:\s*;|$)/i.test(req.headers?.['content-type']||''))return respond(res,415,'CONTENT_TYPE');
         let rawBody,kind;

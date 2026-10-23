@@ -13,7 +13,7 @@ const turn=()=>new Promise(r=>setTimeout(r,0));
 const writer=fs.readFileSync('scripts/v14410/apply.mjs','utf8');
 const literal=writer.match(/const whatsappBinding = (`[\s\S]*?`);/);assert(literal,'actual canonical writer binding');
 const rawBinding=vm.runInNewContext(literal[1]);
-const prepared=fs.readFileSync('server.mjs','utf8').match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);(?=\n\nhttp\.createServer)/)?.[0];
+const prepared=fs.readFileSync('server.mjs','utf8').match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);(?=\n\n(?:await infobipWhatsAppRuntime\.start\(\);\n\n)?(?:http\.createServer|const infobipHttpServer = createInfobipRenderHttpServer))/)?.[0];
 // Raw runs the exact binding emitted by its writer, prepared runs that server's
 // actual binding too. Neither replaces it with a cooperative abort mock.
 const bindings=[['writer',rawBinding],...(prepared?[['prepared',prepared]]:[])];
