@@ -333,11 +333,14 @@ export function rateAt(rates: LearnedRate[], key: string, date: string, currency
 // Legacy values remain untouched, but their unknown owner is never inferred or migrated.
 export const FINANCIAL_RATES_STORAGE_KEY = 'crewcheck_financial_learned_rates_v1';
 const OWNER_KEY = 'crewcheck_financial_learned_rates_v2:';
+// Keep read failures observable to the archive diagnostic, while legacy callers
+// retain their fail-closed nullable owner contract.
+function financialRateOwnerFromStorage(): string | null {
+  const user = getStoredUser();
+  return getToken() && typeof user?.id === 'string' && user.id.trim() && !['visitor', 'guest'].includes(user.role || '') ? user.id : null;
+}
 export function financialRateOwner(): string | null {
-  try {
-    const user = getStoredUser();
-    return getToken() && typeof user?.id === 'string' && user.id.trim() && !['visitor', 'guest'].includes(user.role || '') ? user.id : null;
-  } catch { return null; }
+  try { return financialRateOwnerFromStorage(); } catch { return null; }
 }
 export function financialRateSession(): string | null {
   const owner = financialRateOwner();
@@ -373,7 +376,9 @@ export type FinancialRateArchive = {
 };
 /** Read-only diagnosis. Invalid archives remain intact and are never filtered or repaired. */
 export function readFinancialRateArchive(): FinancialRateArchive {
-  const owner = financialRateOwner();
+  let owner: string | null;
+  try { owner = financialRateOwnerFromStorage(); }
+  catch { return { state: 'unavailable', rates: [] }; }
   if (!owner) return { state: 'unauthenticated', rates: [] };
   let raw: string | null;
   try { raw = localStorage.getItem(OWNER_KEY + encodeURIComponent(owner)); }

@@ -8,6 +8,8 @@ A valid monthly review supplied a main meal of 200 and breakfast of 50. A single
 
 The reader now distinguishes missing, ready, invalid, unavailable and unauthenticated. The legacy array reader remains fail-closed. A per-diem calculation reads the status and applicable rates from one validated snapshot. Invalid/unavailable archives produce domestic financial pending items instead of silently adopting ACT/manual amounts; an eligible taxi remains a separate pending row. Independent international references are unchanged.
 
+The P1 follow-up also preserves authentication read failures: if every localStorage read, or just the user/token read, throws, the archive is unavailable rather than unauthenticated. A genuinely absent session remains unauthenticated. The regression reproduced a complete synthetic ACT total of 125 before the fix; it now requires a null total, pending taxi, unchanged storage and no writes, then verifies the original confirmed values return when reads recover. The public nullable owner helper keeps its existing fail-closed behavior.
+
 No entries are filtered, deleted, repaired, migrated or uploaded. The existing writer still rejects replacing malformed/conflicting archives or dropping history. Manual values are preserved; a valid monthly owner review keeps its existing bounded precedence. Merely missing or expired references retain the existing reference calculation and its source warning, rather than becoming a corruption error. A missing archive additionally says the own reference is not saved on this device.
 
 ## Cross-tab behavior

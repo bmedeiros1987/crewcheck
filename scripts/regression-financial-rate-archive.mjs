@@ -5,8 +5,9 @@ import ts from 'typescript';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
 const modules = loadClientModules({ files: ['ownerPerDiemReview','financialSettingStore','financialStatementLearning','financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialForecastPeriods'].map(name=>'client/src/lib/'+name+'.ts') });
 const previous = {localStorage:globalThis.localStorage,window:globalThis.window}, storage = new Map();
-let unavailable=false, archiveReads=0, writes=0, geography='domestic';
+let unavailable=false, failedRead=null, archiveReads=0, writes=0, geography='domestic';
 globalThis.localStorage = {getItem:key=>{
+ if(failedRead==='all'||failedRead===key)throw Error('Synthetic unavailable authentication/storage read');
  if(key.startsWith('crewcheck_financial_learned_rates_v2:')){archiveReads++;if(unavailable)throw Error('Synthetic unavailable storage');}
  return storage.get(key)??null;
 },setItem:(key,value)=>{writes++;storage.set(key,String(value));}};
@@ -68,6 +69,21 @@ try {
  assert.equal(learning.readFinancialRateArchive().state,'unavailable');assert.equal(run().monthly,null);
  assert(run().unclassifiedItems.every(item=>/Referências locais indisponíveis/.test(item.reason)));unavailable=false;
  assert.equal(run().monthly,250,'read failure did not delete rates');
+ // A browser-wide or auth-key read failure is not evidence of a real logout.
+ const beforeAuthFailure=[...storage],beforeAuthWrites=writes;
+ for(const failedKey of ['all','crewcheck_auth_user','crewcheck_auth_token']){
+   failedRead=failedKey;
+   assert.equal(run().monthly,null,failedKey+': unreadable auth storage must not produce a complete ACT fallback');
+   assert.equal(learning.readFinancialRateArchive().state,'unavailable',failedKey);
+   assert.equal(learning.confirmedPerDiemReferencesAt(iso).state,'unavailable',failedKey);
+   assert.equal(learning.financialRateOwner(),null,'legacy owner API remains fail-closed');
+   assert.equal(learning.readConfirmedFinancialRates().length,0);
+   assert.equal(learning.saveConfirmedFinancialRates(base.rates),false,'unreadable auth cannot authorize a write');
+   assert(run().unclassifiedItems.every(item=>/Referências locais indisponíveis/.test(item.reason)));
+   assert.equal(run('04:10').monthlyUnclassifiedItems.filter(item=>item.pendingKind==='taxi_rate').length,1);
+   assert.equal(writes,beforeAuthWrites);assert.deepEqual([...storage],beforeAuthFailure);
+   failedRead=null;assert.equal(run().monthly,250,'read access recovery preserves the original rates');
+ }
  storage.delete(key);assert.equal(learning.readFinancialRateArchive().state,'missing');
  assert.equal(run().monthly,100,'missing archive retains independently stored manual meal and quarter breakfast');
  assert.match(run().rows[0].source,/não salva neste dispositivo/);
@@ -96,5 +112,5 @@ try {
  emit(null,{});assert.equal(authRevision,0,'sessionStorage clear is not an account reset');
  storage.clear();emit(null);assert.equal(authRevision,1,'clear event resets loaded account history');
  for(const cleanup of cleanups)cleanup();login('synthetic-a');emit(key);window.dispatchEvent(new Event('crewcheck:financial-config-changed'));assert.equal(revision,4,'unmounted listeners removed');
- console.log('PASS rate archive: complete-total counterproof, one snapshot, corruption/owner/version/date/conflict/unavailable states, immutable history, manual/international independence, expiry, cross-tab/account/clear/cleanup; synthetic only');
+ console.log('PASS rate archive: complete-total counterproof, one snapshot, corruption/owner/version/date/conflict/archive-and-auth-storage-unavailable states, immutable history, manual/international independence, expiry, cross-tab/account/clear/cleanup; synthetic only');
 } finally {modules.cleanup();Object.assign(globalThis,previous);}
