@@ -25,13 +25,13 @@ for (const path of ['/api/whatsapp/webhook','/api/whatsapp/link/start','/api/tel
 const server=fs.readFileSync('server.mjs','utf8');
 assert.equal(createInfobipWhatsAppRuntime().health().enabled,false);
 assert.equal(createInfobipWhatsAppRuntime({enabled:false,get configuration(){assert.fail();}}).health().enabled,false);
-const imported="import { createInfobipWhatsAppRuntime } from './server/infobip-whatsapp-runtime.mjs';";
-const instance='const infobipWhatsAppRuntime = createInfobipWhatsAppRuntime();';
+const imported="import { createInfobipWhatsAppApplicationHost as createInfobipWhatsAppHost, createInfobipRenderHttpServer } from './server/infobip-whatsapp-application.mjs';";
+const instance='const infobipWhatsAppRuntime = createInfobipWhatsAppHost();';
 const route='  if (await infobipWhatsAppRuntime.handleRoute(req, res, url)) return;';
 const meta='  if (await handleWhatsAppRoute(req, res, url)) return;';
 for(const exact of [imported,instance,route])assert.equal(server.split(exact).length,2,'single canonical OFF composition');
 assert(server.indexOf(route)<server.indexOf(meta));
-const {composeHeldInfobipRoute}=await import('./p1-infobip-whatsapp-off/apply.mjs');
+const {composeHeldInfobipRoute}=await import('./p1-infobip-whatsapp-off/compose.mjs');
 assert.equal(composeHeldInfobipRoute(server),server,'composition idempotent');
 assert.throws(()=>composeHeldInfobipRoute(server.replace(meta,'')),/ANCHOR_MISSING/);
 assert.throws(()=>composeHeldInfobipRoute(server+'\n'+route),/DUPLICATE/);
