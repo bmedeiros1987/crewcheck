@@ -8,7 +8,7 @@ import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs
 const root=process.env.RADAR_SOURCE_ROOT || process.cwd(),require=createRequire(path.join(root,'package.json'));
 const ts=require('typescript'),{build}=require('esbuild'),React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
 prepareConciergeCanonicalBridge(root);
-const policy=await import(pathToFileURL(path.join(root,'shared/gate-query-day.mjs')).href);
+const policy=await import(pathToFileURL(path.join(root,'shared/gate-query-day.mjs')).href),radarEvidence=await import(pathToFileURL(path.join(root,'shared/radar-field-evidence.mjs')).href);
 const {followedFlight}=await import(pathToFileURL(path.join(root,'shared/followedFlights.mjs')).href);
 const injection=await import(pathToFileURL(path.join(root,'server/cirium-radar-injection.mjs')).href);
 const {buildCanonicalRosterEvents}=await import(pathToFileURL(path.join(root,'server/concierge/generated/canonicalRoster.mjs')).href);
@@ -16,7 +16,7 @@ globalThis.fetch=()=>{throw Error('Real network forbidden');};
 function extract(file,names,optional=false,jsx=false){const s=fs.readFileSync(path.join(root,file),'utf8'),ast=ts.createSourceFile(file,s,ts.ScriptTarget.Latest,true,jsx?ts.ScriptKind.TSX:ts.ScriptKind.JS);return names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);if(!fn&&optional)return '';assert(fn,name);return jsx?ts.transpileModule(fn.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText:fn.getText(ast);}).join('\n');}
 const now=Date.parse('2032-10-14T12:00:00Z'),roster={year:2032,month:10,base:'GRU',days:[{date:'14/10/2032',type:'VOO',legs:[{flightNumber:'LA100',origin:'GRU',destination:'REC',departureTime:'09:00',arrivalTime:'11:00',gate:'24'}]}]};
 let sourceDate='2032-10-15T12:00:00Z',saveCalls=0,providerCalls=0,estimated='',selectedNow=now;
-const scope=vm.createContext({...policy,...injection,buildCanonicalRosterEvents,gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??selectedNow),Date:class extends Date{static now(){return selectedNow;}},URL,setTimeout,clearTimeout,
+const scope=vm.createContext({...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??selectedNow),Date:class extends Date{static now(){return selectedNow;}},URL,setTimeout,clearTimeout,
  process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},envAny:keys=>keys.includes('FLIGHTAWARE_AEROAPI_KEY')?'OFFLINE_ONLY':'',providerAvailable:()=>true,markProvider:()=>{},
  jsonFetch:async()=>{providerCalls++;return{response:{ok:true},payload:{flights:[{ident:'LAN100',gate_origin:'99',scheduled_out:sourceDate,estimated_out:estimated,origin:{code_iata:'GRU'},destination:{code_iata:'REC'}}]}};},
  providerCustom:async()=>null,providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,
