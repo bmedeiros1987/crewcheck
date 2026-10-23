@@ -129,3 +129,36 @@ try {
  assert.equal(context.subject.scopedFinancialForecast([snapshot],range,['2032-03'],first.quotes,'2032-02-09').monthly,null,'missing roster scope still blocks a complete total');
 }finally{allowanceModules.cleanup();}
 console.log('PASS shared FX -> actual allowance scope/view: no undated setting fallback, immutable native amounts, national BRL unchanged, source/date, inverse/manual, OFF/expiry/mixed dates and incomplete scope');
+
+const reconciliationModules=loadClientModules({files:['client/src/lib/financialForecastPeriods.ts','client/src/lib/financialHistoryPeriods.ts']});
+try {
+ let stateIndex=0,reconciliationOwner='synthetic',hidden=false;
+ const printedDocument=Object.freeze({owner:'synthetic:synthetic-token',result:Object.freeze({kind:'per_diem',periodStart:'2032-02-08',periodEnd:'2032-02-08',paymentDate:'2032-02-09',totals:Object.freeze({deposited:100}),warnings:[],rates:[]})});
+ const Reconciliation=compile('client/src/components/finance/FinancialStatementReconciliation.tsx',{
+  'react':{...React,useEffect:()=>{},useRef:()=>({current:0}),useState:value=>[stateIndex++===0?printedDocument:value,()=>{}]},'react/jsx-runtime':jsx,
+  './FinancialPrivacy':{useFinancialPrivacy:()=>({hidden,text:x=>x,amount:x=>hidden?'MASKED':x})},
+  '@/lib/authClient':{getStoredUser:()=>({id:reconciliationOwner}),getToken:()=> 'synthetic-token'},
+  '@/lib/financialStatementLearning':{learnFinancialStatement:()=>{throw Error('no import/write in render fixture');}},
+  '@/lib/financialHistoryPeriods':reconciliationModules.load('financialHistoryPeriods'),
+  '@/lib/financialForecastPeriods':reconciliationModules.load('financialForecastPeriods'),
+  './FinancialStatementImporter':{extractPdfText:()=>{throw Error('no real PDF in fixture');}},
+ }).default;
+ const base=Object.freeze({eventId:'synthetic-paid-period',iso:'2032-02-08',label:'Meal',value:20,currency:'USD',source:'synthetic historical entitlement'});
+ const view=rows=>{stateIndex=0;return renderToStaticMarkup(Reconciliation({rows,unclassified:[],coveredMonths:['2032-02'],requestRange:()=>{}}));};
+ for(const rate of ['5','6']) {
+  const q={base:'USD',quote:'BRL',rate,asOf:'2032-02-08',retrievedAt:'2032-02-09T12:00:00Z',source:'synthetic current FX',method:'account_manual'};
+  const rows=fxMath.projectAllowanceFxRows([base],{USD:q},'2032-02-09'),html=view(rows);
+  assert.doesNotMatch(html,/Diferença a conferir/,'current FX must not become a historic payment discrepancy, even when totals happen to agree');
+  assert.match(html,/Diferença histórica indisponível/);assert.match(html,/Estimativa à cotação de referência atual/);
+  assert.match(html,/synthetic current FX/);assert.match(html,/2032-02-08/);assert.match(html,/2032-02-09T12:00:00Z/);
+  assert.ok(html.indexOf('synthetic current FX')<html.indexOf('Conciliação ainda depende'),'FX provenance is beside the total, not only buried in item disclaimers');
+  assert.match(html,rate==='5'?/Estimativa à cotação de referência atual: R\$[^0-9]*100,00/:/Estimativa à cotação de referência atual: R\$[^0-9]*120,00/);
+  assert.equal(printedDocument.result.totals.deposited,100);assert.equal(base.value,20);
+ }
+ const domestic=Object.freeze({...base,currency:'BRL',value:80,convertedBRL:80,exchangeRate:1});
+ assert.match(view([domestic]),/Diferença a conferir/,'domestic same-unit comparison remains available');
+ assert.doesNotMatch(view(fxMath.projectAllowanceFxRows([base],{},'2032-02-09')),/Diferença a conferir/);
+ hidden=true;assert.doesNotMatch(view([domestic]),/R\$|80,00|20,00|100,00/,'privacy protects compared monetary amounts');
+ hidden=false;reconciliationOwner='another-owner';assert.doesNotMatch(view([domestic]),/Total informado pelo documento/,'document never crosses account scope');
+}finally{reconciliationModules.cleanup();}
+console.log('PASS actual reconciliation: current5/current6 cannot become a historical payment delta; source/observation/retrieval visible; original printed total immutable; domestic comparison/privacy/owner preserved');
