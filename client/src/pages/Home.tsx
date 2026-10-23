@@ -3628,7 +3628,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     actMainMeal: domesticRule?.mainMeal ?? NaN,
     manualOverride: domesticOverride,
     learnedMainMeal: learnedMeal,
-    ownerConfirmedMainMeal: learnedMealRate?.valueOrigin === 'owner_confirmed',
+    ownerConfirmedMainMeal: learnedMealRate?.valueOrigin === 'owner_confirmed' || references.personal?.mainMeal === true,
     learnedBreakfast,
     breakfastPercent: act.breakfastPercent,
   });
@@ -3653,6 +3653,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     breakfastPercent: act.breakfastPercent,
     domesticBreakfast: domestic.breakfast,
     taxiRate: references.taxi,
+    personalReferences: references.personal,
     rateArchiveIssue,
     domesticMainMealSource: domestic.source,
     domesticBreakfastSource: domestic.breakfastSource,
@@ -3716,7 +3717,8 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       value,
       currency: rate.currency,
       convertedBRL: rate.currency === 'BRL' ? value : fx > 0 ? value * fx : null,
-      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso,
+      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso
+        + (classification.rateKey==='domestic'&&(slot==='breakfast'?cfg.personalReferences?.breakfast:cfg.personalReferences?.mainMeal)?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':''),
       airport: classification.airport,
       rateKey: classification.rateKey,
       rateSource: classification.rateKey === 'domestic' ? (slot === 'breakfast' ? cfg.domesticBreakfastSource : cfg.domesticMainMealSource) : (readOptionalNumberSetting('crewcheck_perdiem_rate_' + classification.rateKey) !== null ? 'manual' : 'act'),
@@ -3868,8 +3870,8 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     } else {
       rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
-        source: source + ' · tarifa de táxi revisada nesta conta no período; previsão não comprova pagamento',
-        airport: taxi.event.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
+        source: source + (cfg.personalReferences?.taxi?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':' · tarifa de táxi revisada nesta conta no período; previsão não comprova pagamento'),
+        airport: taxi.event.origin, rateKey: 'domestic', rateSource: cfg.personalReferences?.taxi?'personal_reference':'learned', rateVersion: 'taxi-user-reported-v1',
         exchangeRate: 1, calculationStart: taxi.start.toISOString(), calculationEnd: taxi.end.toISOString() });
     }
   }

@@ -133,3 +133,5 @@ try {
  for(const cleanup of cleanups)cleanup();login('synthetic-a');emit(key);window.dispatchEvent(new Event('crewcheck:financial-config-changed'));assert.equal(revision,4,'unmounted listeners removed');
  console.log('PASS rate archive: complete-total counterproof, one snapshot, corruption/owner/version/date/conflict/archive-and-auth-storage-unavailable states, immutable history, manual/international independence, expiry, cross-tab/account/clear/cleanup; synthetic only');
 } finally {modules.cleanup();Object.assign(globalThis,previous);}
+
+await import('./regression-personal-allowance-reference.mjs');
