@@ -92,10 +92,57 @@ test('workflow retains all gates and broad unknown namespace discovery',()=>{
  assert.equal(workflow.split('node scripts/assert-mycrewcare-v3-ownership.mjs').length-1,2);
  for(const name of ['scripts/ci/mcc-comparison.mjs','scripts/regression-mcc-comparison.mjs'])assert.ok(workflow.includes(`'${name}'`));
  assert.match(workflow,/- name: Resolve immutable MCC comparison \(fail closed\)\n        run: node scripts\/ci\/mcc-comparison.mjs/);
+ assert.match(workflow,/- name: Classify MCC ownership scope without weakening the auditor/);
+ assert.equal((workflow.match(/if: env\.CREWCHECK_MCC_FULL_AUDIT == 'true'/g)||[]).length,2,'raw/prepared ownership audit must share the same scope fence');
+ assert.equal((workflow.match(/MCC Gradle contract (?:before|after) canonical preparation/g)||[]).length,2,'Gradle MCC contract must run raw and prepared');
+ assert.ok(workflow.includes("- 'android-wrapper/app/build.gradle'"),'shared Gradle remains a discovery trigger for the equivalent gate');
  // Do not prohibit the independent PR1035 diagnostic APK branch condition.
  // Only comparison/ownership may not have an author-controlled opt-out.
  assert.doesNotMatch(fs.readFileSync(helper,'utf8'),/head_ref|labels|skip.ownership/);
  assert.doesNotMatch(workflow,/pull_request_target/);
+});
+
+
+test('scope routing keeps FCM-only Gradle changes out of the MCC ownership auditor but sends mixed MCC diffs into it',()=>{
+ const classifier=workflow.match(/const isMccSignal = \(path\) => \(\n([\s\S]*?)\n          \);\n          const mccSignals/)?.[1];
+ assert.ok(classifier,'workflow classifier must remain extractable for counterproofs');
+ const isMccSignal=new Function('path',`return (${classifier});`);
+ const fcmOnly=[
+  'android-wrapper/app/build.gradle',
+  'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java',
+  'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckFirebaseMessagingService.java',
+  'client/src/lib/androidPushLifecycle.ts',
+  'docs/android-native-push-off-20261023.md',
+ ];
+ assert.equal(fcmOnly.some(isMccSignal),false,'#1218-style FCM-only diff must use the Gradle-equivalence path, not MCC ownership');
+ for(const foreign of ['android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java','server.mjs','shared/unrelated.mjs']){
+  const mixed=['shared/myCrewCareLogistics.mjs',foreign];
+  assert.equal(mixed.some(isMccSignal),true,'real MCC change must force the full ownership auditor');
+ }
+ assert.equal(['android-wrapper/app/src/debug/AndroidManifest.xml'].some(isMccSignal),true,'MCC debug overlay must force the full ownership auditor');
+});
+
+test('actual workflow Gradle contract accepts unrelated Firebase SDK addition and rejects MCC-only Gradle tampering',()=>{
+ const body=workflow.match(/\/\/ mcc-gradle-contract:js:start\n([\s\S]*?)\n          \/\/ mcc-gradle-contract:js:end/)?.[1];
+ assert.ok(body,'Gradle contract body must remain extractable from the workflow');
+ const baseline=fs.readFileSync('android-wrapper/app/build.gradle','utf8');
+ const run=source=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'mcc-gradle-contract-'));
+  try{
+   fs.mkdirSync(path.join(root,'android-wrapper/app'),{recursive:true});
+   fs.writeFileSync(path.join(root,'android-wrapper/app/build.gradle'),source);
+   const script=body.replace(/^          /gm,'');
+   return spawnSync(process.execPath,['--input-type=module','--eval',script],{cwd:root,encoding:'utf8'});
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
+ };
+ let result=run(baseline.replace("implementation 'androidx.webkit:webkit:1.17.1'","implementation 'com.google.firebase:firebase-messaging:25.1.3'\n    implementation 'androidx.webkit:webkit:1.17.1'"));
+ assert.equal(result.status,0,result.stderr);
+ result=run(baseline.replace('androidx.webkit:webkit:1.17.1','androidx.webkit:webkit:1.16.0'));
+ assert.notEqual(result.status,0,'MCC WebView dependency tamper must fail even when Gradle is the only changed file');
+ assert.match(result.stderr,/MCC WebView dependency changed/);
+ result=run(baseline.replace('applicationIdSuffix ".mcctest"','applicationIdSuffix ".shared"'));
+ assert.notEqual(result.status,0,'MCC debug configuration tamper must fail even when Gradle is the only changed file');
+ assert.match(result.stderr,/MCC debug applicationIdSuffix/);
 });
 
  test('criss-cross merge bases are rejected instead of selecting an arbitrary ancestor',()=>fixture(({root,git,write,commit,base})=>{
