@@ -97,14 +97,27 @@ try {
   const obs=observation('25'),sourceContext={rosterRevision:'roster_fixture_v1',identity,gate:'25',sourceUpdatedAt:obs.departureGateUpdate.updatedAt};
   let source={ownerId,rosterRevision:'roster_fixture_v1',observation:obs,previousObservation:observation('24')};
   const connected=createGateOutboxConnection({enabled:true,readSource:async()=>structuredClone(source),clock:()=>NOW});
-  const gateEnvelope={schema:'crewcheck-notice-v1',ownerId,installationId:installId,consentRevision:2,topicRevision:1,authorityEpoch:epoch,eventKey:'gate-change-v1:'+ 'd'.repeat(64),expiresAt:new Date(NOW+60000).toISOString(),route:'/app'};
+  // Use the EXISTING stateful SQL producer, not a hand-selected event key.
+  const producerEnvelopes=[],producerMock={kind:'isolated-web-push-mock',send:async envelope=>{producerEnvelopes.push(structuredClone(envelope));return{accepted:true};}};
+  const composedProducer=()=>make(a,{mockProvider:producerMock});
+  await mutate(a,s=>{s.authority={ownerId,epoch,expiresAt:NOW+300000,revoked:false};s.installation.revision=2;s.consent.installationRevision=2;s.observation=source.previousObservation;});
+  assert.equal((await composedProducer().process()).status,'baseline');assert.equal(producerEnvelopes.length,0);
+  await mutate(a,s=>s.observation=obs);await composedProducer().process();assert.equal(producerEnvelopes.length,1);
+  const gateEnvelope=producerEnvelopes[0];assert.equal(gateEnvelope.authorityEpoch,epoch);assert.equal(gateEnvelope.consentRevision,2);
   const jobInput={installationKey:endpointKey,envelope:gateEnvelope,sourceContext,scheduledAt:new Date(NOW).toISOString()};
+  for(const digit of ['1','2'])assert.equal((await connected.enqueue(db,identityContext,{...jobInput,envelope:{...gateEnvelope,eventKey:'gate-change-v1:'+digit.repeat(64)}})).status,'blocked','same proved change cannot authorize an arbitrary event key');
+  const [forgedRows]=await db.query("SELECT state_key FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey')) IN (?,?)",['gate-change-v1:'+'1'.repeat(64),'gate-change-v1:'+'2'.repeat(64)]);assert.equal(forgedRows.length,0,'forged keys never enter the persistent outbox');
+  for(const delta of [{gate:'26'},{sourceUpdatedAt:new Date(NOW-10000).toISOString()},{identity:{...identity,destination:'BSB'}}])assert.equal((await connected.enqueue(db,identityContext,{...jobInput,sourceContext:{...sourceContext,...delta}})).status,'blocked','producer key never vouches for mismatched source proof');
   assert.equal((await createGateOutboxConnection().enqueue(db,identityContext,jobInput)).status,'disabled');
   assert.equal((await createGateOutboxConnection({enabled:true,clock:()=>NOW}).enqueue(db,identityContext,jobInput)).status,'blocked','no source adapter is closed, even with valid authority/consent');
   for(const delta of [{authorityEpoch:'x'.repeat(64)},{ownerId:'owner_fixture_B'},{installationId:'installation_fixture_02'},{consentRevision:1},{consentRevision:3},{topicRevision:2}])assert.equal((await connected.enqueue(db,identityContext,{...jobInput,envelope:{...gateEnvelope,...delta}})).status,'blocked');
   for(const delta of [{ownerId:'owner_fixture_B'},{rosterRevision:'other_roster_fixture'},{previousObservation:undefined},{previousObservation:obs},{previousObservation:{...observation('24'),departureGateUpdate:{...observation('24').departureGateUpdate,updatedAt:new Date(NOW-1800001).toISOString()}}},{observation:{...obs,provider:'legacy'}},{observation:{...obs,provider:'cirium'}},{observation:{...obs,sourceReceivedAt:undefined}},{observation:{...obs,sourceReceivedAt:NOW-40000}},{previousObservation:{...observation('24'),sourceReceivedAt:NOW-10000}},{previousObservation:{...observation('24'),sourceReceivedAt:undefined}},{observation:{...obs,operationalConflicts:['gate']}}]){const prior=source;source={...source,...delta};assert.equal((await connected.enqueue(db,identityContext,jobInput)).status,'blocked');source=prior;}
   source={...source,observation:{...obs,departureGateUpdate:undefined}};assert.equal((await connected.enqueue(db,identityContext,jobInput)).status,'blocked','fetch/record time is not field proof');source={ownerId,rosterRevision:'roster_fixture_v1',observation:obs,previousObservation:observation('24')};
   assert.equal((await connected.enqueue(db,identityContext,jobInput)).status,'queued');
+  const regrouped={...jobInput,sourceContext:{...sourceContext,preferencesRevision:'batch_fixture_B',identity:{scheduledDepartureUtc:'2032-10-14T13:00:00.000Z',destination:'REC',origin:'GRU',departureDate:'2032-10-14',flight:'LAN100'}}};
+  assert.equal((await connected.enqueue(db,identityContext,regrouped)).status,'queued','regrouping and canonical aliases preserve the one source-derived event');
+  await mutate(a,s=>s.identity={scheduledDepartureUtc:identity.scheduledDepartureUtc,destination:'REC',origin:'GRU',departureDate:identity.departureDate,flight:'LAN100'});
+  await composedProducer().process();assert.equal(producerEnvelopes.length,1,'recreated producer with regrouped same occurrence cannot emit again');
   const [queued]=await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey'))=?",[gateEnvelope.eventKey]);assert.equal(queued.length,1);
   let providerCalls=0;const configuration={enabled:true,configured:true,encryptionKey:Buffer.alloc(32)};
   // Continue the real source/history -> real host/outbox chain into the existing
@@ -119,6 +132,7 @@ try {
   const receiver=worker.CrewCheckGateReceiverOffline.create({enabled:true,store,locks,clock:()=>NOW,processPush:worker.CrewCheckPushOffline.processPush,
     registration:{getNotifications:async()=>notifications,showNotification:async(_title,options)=>{displayCount++;notifications.push({...options,closed:false,close(){this.closed=true;}});}}});
   assert.equal((await connected.dispatch(db,queued[0],configuration,async(sub,envelope)=>{providerCalls++;assert.equal(sub.endpoint,subscription.endpoint);assert.equal(envelope.authorityEpoch,epoch);assert.equal((await receiver.receive(envelope)).status,'display_api_resolved');return{status:'accepted_unconfirmed',received:null};})).status,'accepted_unconfirmed');assert.equal(providerCalls,1);assert.equal(displayCount,1);
+  assert.equal((await connected.enqueue(db,identityContext,{...regrouped,envelope:{...gateEnvelope,expiresAt:new Date(NOW+120000).toISOString()}})).status,'accepted_unconfirmed','replay with regrouping/shorter expiry cannot create another event');
   assert.equal((await connected.dispatch(db,queued[0],configuration,async()=>{throw Error('duplicate');})).status,'accepted_unconfirmed');providerCalls=0;
   assert.equal((await receiver.receive(gateEnvelope)).status,'duplicate_or_revoked');assert.equal(displayCount,1);
   const revokeRequest={...topic,requestId:'revoke_source_history_01'},localRevoke=await receiver.revoke(revokeRequest);
@@ -143,7 +157,10 @@ try {
   await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify({...stored,envelope:legacyEnvelope,deviceReport:undefined}),legacyKey]);
   for(const envelope of [gateEnvelope,withoutGateFields])assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope,status:'clicked'}])).reconciled,0,'legacy gate job stays unreconciled');
   await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(stored),legacyKey]);
-  const revokedInput={...jobInput,envelope:{...gateEnvelope,eventKey:'gate-change-v1:'+ 'e'.repeat(64)}};assert.equal((await connected.enqueue(db,identityContext,revokedInput)).status,'queued');
+  const nextObservation={...observation('26'),sourceReceivedAt:NOW-5000,departureGateUpdate:{...observation('26').departureGateUpdate,updatedAt:new Date(NOW-10000).toISOString()}};
+  source={...source,previousObservation:obs,observation:nextObservation};await mutate(a,s=>s.observation=nextObservation);
+  await composedProducer().process();assert.equal(producerEnvelopes.length,2,'a later different proved gate derives its own event');
+  const revokedInput={...jobInput,envelope:producerEnvelopes[1],sourceContext:{...sourceContext,gate:'26',sourceUpdatedAt:nextObservation.departureGateUpdate.updatedAt}};assert.equal((await connected.enqueue(db,identityContext,revokedInput)).status,'queued');
   const [revocationJobs]=await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey'))=?",[revokedInput.envelope.eventKey]);assert.equal(revocationJobs.length,1);
   // Revoked canonical session blocks existing persistent outbox before opening subscription/provider.
   await db.query('UPDATE crewcheck_watch_sessions SET revoked=1,epoch=NULL,version=version+1 WHERE owner_id=? AND session_id=?',[ownerId,sessionId]);

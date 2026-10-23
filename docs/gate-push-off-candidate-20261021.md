@@ -392,3 +392,56 @@ clock/admission, installed host/enrollment, external transport and correlated
 remote revoke/ACK, physical closed-app validation. A source name or these
 synthetic tests cannot establish real provenance, gate correctness, delivery or
 read. No credential, permission, real notification, paid lookup, merge or deploy.
+
+## Independent-review composition gap: event identity — 2026-10-23
+
+The OFF review of6e4edd89 found that gateHost accepted an arbitrary syntactically
+valid eventKey for a valid source change. The SQL fixture still hand-built that
+key. RED reproduced queued instead of blocked for the first of two forged keys;
+the isolated database was cleaned after the expected assertion failure.
+
+The existing producer now exports its exact scope/envelope derivation and uses
+it itself. gateHost reuses that SAME function with current locked server owner,
+installation revision, topic revision, canonical authority epoch, trusted roster
+revision, canonical source occurrence, gate and source observation instant.
+It compares every identity field/key/route before enqueue and again before the
+existing outbox claim/send. The formula remains the original producer formula;
+there is no new dispatcher, outbox, scheduler, public route or live caller.
+The stateful producer also recomputes and checks a pending event's key, refusing
+a journal entry relabeled with another key before the mock dispatcher.
+
+Canonical occurrence uses radarFlightId, exact origin/destination and UTC ISO;
+raw object ordering, supported flight aliases and equivalent UTC representation
+do not create another identity. Receipt time, batch/preferences grouping,
+scheduled retry time and shorter expiresAt do not create a new event. Expiry
+still cannot exceed the current authority/5min, source freshness or departure
+horizons. Existing scope generations (owner, installation/topic revisions,
+epoch, roster revision) and fresh-baseline rules are retained, not globally
+collapsed into one key. A matching hash is not authentication or source proof:
+all existing server authority, consent and both-observation fences still run.
+
+The SQL positive now takes its envelope from the EXISTING stateful SQL producer:
+first sample establishes baseline with zero envelopes, next proved gate emits
+one, then the canonical host admits it into the existing persistent outbox and
+the mock sender enters the existing guarded receiver. No hand-picked gate key
+is used. Both forged keys are blocked with zero outbox rows; mismatched gate,
+source instant and route fail closed. Recreated producer and regrouped replay
+(with canonical alias/UTC and changed preferences/expiry) keep one queued row,
+one mock send and one display API resolution. A genuinely later different gate
+emits a distinct producer event, preserving the canonical-session revocation
+counterproof. Existing owner/concurrency/uncertain/receipt/ACK/engine-restart
+assertions remain. The producer fixture separately rejects both relabeled
+pending keys without a second mock send or display.
+
+Author tests:43 producer cases (including the new pending-key counterproof),
+64 source/history checks in three zones,15 receiver cases,27 cancellation cases,
+existing offline lifecycle, TypeScript raw/prepared, canonical build and actual
+IndexedDB/Web Locks with mocked display. Real disposable MySQL raw/prepared and
+engine restart passed; private socket only, TCP/mysqlx OFF, cleanup confirmed.
+Final exact-SHA CI and independent re-review remain separate gates.
+
+This closes OFF event-key composition/dedup, not operational readiness. Trusted
+production source/history, authority lifecycle/schema, native clock/admission,
+phone host/enrollment, remote revoke/ACK and physical closed-app validation
+remain HOLD. No real source, provider, credentials, notification or delivery is
+activated or certified; branch push is not merge or deployment.

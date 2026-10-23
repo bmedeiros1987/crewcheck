@@ -9,6 +9,18 @@ const id = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{8,160}$/.test(v
 const same = (a, b) => digest(a) === digest(b);
 const blocked = reason => ({ status: 'blocked', reason, received: null });
 
+// One derivation shared by the existing producer and canonical host admission.
+// Input must already be admitted server state, never request/job authority.
+export const gateCandidateScope = current => 'gate-candidate:' + digest([current.ownerId, current.installation.installationId,
+  current.installation.revision, current.consent.revision, current.authority.epoch, current.rosterRevision, current.occurrence]);
+export function gateCandidateEnvelope(current, event = current) {
+  return { schema: 'crewcheck-notice-v1', ownerId: current.ownerId,
+    installationId: current.installation.installationId, consentRevision: current.installation.revision,
+    eventKey: 'gate-change-v1:' + digest([gateCandidateScope(current), event.gate, event.observedAt]),
+    topicRevision: current.consent.revision, authorityEpoch: current.authority.epoch,
+    expiresAt: new Date(event.expiresAt).toISOString(), route: '/app' };
+}
+
 // This module has no environment, DB discovery, public endpoint or live sender.
 // The host is deliberately restricted to isolated fixtures. Its read/transaction
 // methods model future server authority; they do not authenticate a real user.
@@ -54,8 +66,7 @@ export function createOfflineGatePushCandidate(options = {}) {
     // No client-supplied observation/identity is accepted by this entry point.
     const initial = admitted(await host.read(), clock());
     if (!initial) return blocked('authority-consent-or-source-unconfirmed');
-    const scope = 'gate-candidate:' + digest([initial.ownerId, initial.installation.installationId,
-      initial.installation.revision, initial.consent.revision, initial.authority.epoch, initial.rosterRevision, initial.occurrence]);
+    const scope = gateCandidateScope(initial);
     const decision = await repository.transaction(scope, async record => {
       const current = admitted(await host.read(), clock());
       if (!current || !same(initial, current)) return blocked('context-changed');
@@ -71,7 +82,7 @@ export function createOfflineGatePushCandidate(options = {}) {
       const baseline = { gate: current.gate, observedAt: current.observedAt, conflicted: previous?.observedAt === current.observedAt && previous.conflicted === true };
       if (previous && previous.observedAt < current.observedAt && !previous.conflicted
         && clock() - previous.observedAt <= MAX_AGE && current.observedAt - previous.observedAt <= MAX_AGE && previous.gate !== current.gate) {
-        const eventKey = 'gate-change-v1:' + digest([scope, current.gate, current.observedAt]);
+        const eventKey = gateCandidateEnvelope(current).eventKey;
         if (!pending.some(event => event.eventKey === eventKey)) pending.push({ eventKey, gate: current.gate, observedAt: current.observedAt, expiresAt: current.expiresAt });
       }
       if (pending.length > 50) return blocked('capacity');
@@ -86,10 +97,8 @@ export function createOfflineGatePushCandidate(options = {}) {
       // consent edit, account/roster replacement or installation revocation.
       if (!current || !same(current, decision.current) || current.gate !== event.gate || current.observedAt < event.observedAt)
         return blocked('context-changed-before-dispatch');
-      const envelope = { schema: 'crewcheck-notice-v1', ownerId: current.ownerId,
-        installationId: current.installation.installationId, consentRevision: current.installation.revision,
-        eventKey: event.eventKey, topicRevision: current.consent.revision, authorityEpoch: current.authority.epoch,
-        expiresAt: new Date(event.expiresAt).toISOString(), route: '/app' };
+      const envelope = gateCandidateEnvelope(current, event);
+      if (envelope.eventKey !== event.eventKey) return blocked('event-proof-mismatch');
       const context = { ownerId: current.ownerId, sourceVerified: true, eligible: true, consent: true,
         gateCandidate: current };
       const guardedRepository = { transaction: repository.transaction.bind(repository),

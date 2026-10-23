@@ -4,6 +4,8 @@ import { installationBindingKey } from './installationRegistry.mjs';
 import { enqueueCrewCheckPush, dispatchPersistentPush } from './outbox.mjs';
 import { validPushEnvelope } from '../../shared/crewcheckPushContract.mjs';
 import { inspectGateSourceHistory } from './gateSourceHistory.mjs';
+import { gateCandidateEnvelope } from './gateCandidate.mjs';
+import { radarFlightId } from '../../shared/gate-query-day.mjs';
 
 // Code connection only. No environment variable can activate this host.
 export const CREWCHECK_GATE_HOST_ENABLED = false;
@@ -88,10 +90,19 @@ export function createGateOutboxConnection({ enabled = false, readSource = async
     // No request body, persisted job or device can be its own operational proof.
     const source = await readSource(c, scope, now), context = job.sourceContext;
     const history = inspectGateSourceHistory(source, { ...scope, rosterRevision: context?.rosterRevision, identity: context?.identity }, now);
-    if (history.status !== 'change') return false;
+    if (history.status !== 'change' || !id(source.rosterRevision)) return false;
     const proof = history.current;
     if (proof.gate !== context.gate || proof.sourceUpdatedAt !== context.sourceUpdatedAt) return false;
-    return Date.parse(envelope.expiresAt) <= Math.min(Date.parse(proof.sourceUpdatedAt) + 1800000, Date.parse(proof.scheduledDepartureUtc) + 3600000);
+    const expiresAt = Math.min(authority.expiresAt, now + 300000, Date.parse(proof.sourceUpdatedAt) + 1800000, Date.parse(proof.scheduledDepartureUtc) + 3600000);
+    // Reuse the producer's exact canonical derivation. Neither an input key nor
+    // a stored outbox row is authority for a second identity of this change.
+    const expected = gateCandidateEnvelope({ ownerId: scope.ownerId,
+      installation: { installationId: scope.installationId, revision: installed.binding.revision },
+      consent: { revision: consent.revision }, authority: { epoch: authority.epoch }, rosterRevision: source.rosterRevision,
+      occurrence: [radarFlightId(proof.flight), proof.origin, proof.destination, new Date(proof.scheduledDepartureUtc).toISOString()],
+      gate: proof.gate, observedAt: Date.parse(proof.sourceUpdatedAt), expiresAt });
+    return ['schema','ownerId','installationId','consentRevision','eventKey','topicRevision','authorityEpoch','route'].every(key => envelope[key] === expected[key])
+      && Date.parse(envelope.expiresAt) <= expiresAt;
   };
   return Object.freeze({
     async enqueue(db, identity, input) {

@@ -81,6 +81,19 @@ await test('producer -> existing dispatcher -> actual worker: baseline then one 
     if (/^\d+$/.test(secret)) continue; assert(!serialized.includes(secret), 'opaque lock-screen envelope');
   }
 });
+await test('replayed pending proof cannot be relabeled with either forged event key', async () => {
+  for (const digit of ['1', '2']) {
+    const f = fixture(); await f.create().process(); f.current.observation = observation('25', -30_000);
+    await f.create().process(); assert.equal(f.sends, 1);
+    for (const [key, record] of f.records) if (key.startsWith('gate-candidate:')) {
+      assert.equal(record.pending.length, 1);
+      record.pending[0].eventKey = 'gate-change-v1:' + digit.repeat(64);
+    }
+    const replay = await f.create().process();
+    assert.equal(replay.status, 'blocked'); assert.equal(replay.reason, 'event-proof-mismatch');
+    assert.equal(f.sends, 1); assert.equal(f.displays, 1);
+  }
+});
 const invalidCases = [
   ['missing epoch', s => { delete s.authority.epoch; }],
   ['nonprimitive epoch', s => { s.authority.epoch = {value:'epoch_fixture_01'}; }],
