@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PrivatePayrollExtraction } from '@/lib/privatePayrollExtraction';
 import { financialRateOwner, financialRateSession } from '@/lib/financialStatementLearning';
 import { readMonthlyFinancialSettings, saveReviewedPayrollDeductions } from '@/lib/financialMonthlySettings';
@@ -9,7 +9,8 @@ import './payroll-deductions-review.css';
 const labels = { inss:'INSS',irrf:'IRRF',other_deductions:'Outros descontos' };
 /** Explicit, account-scoped monthly review. */
 export default function PayrollDeductionsReview({ extraction, documentFingerprint }: { extraction:PrivatePayrollExtraction; documentFingerprint:string }) {
-  const privacy=useFinancialPrivacy();
+  const privacy=useFinancialPrivacy(),liveReview=useRef(true);
+  useEffect(()=>{liveReview.current=true;return()=>{liveReview.current=false;};},[]);
   const month=extraction.competence.state==='candidate'?extraction.competence.candidates[0]?.value||'':'';
   const [identity]=useState(()=>({owner:financialRateOwner()||'',session:financialRateSession()||''}));
   const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
@@ -56,7 +57,7 @@ export default function PayrollDeductionsReview({ extraction, documentFingerprin
     <label><input type="checkbox" checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/> Conferi a titularidade, a competência e o antes/depois de cada grupo selecionado.</label>
     {plan.reasons.length>0&&<ul>{plan.reasons.map(reason=><li key={reason}>{reason}</li>)}</ul>}
     <p role="status">{status || (plan.reviewable?'Revisão pronta para aplicar nesta competência.':'Confira as pendências acima.')}</p>
-    <button type="button" disabled={!plan.reviewable||busy} onClick={async()=>{setBusy(true);try{const saved=await saveReviewedPayrollDeductions({ownerId:identity.owner,expectedSession:identity.session,currentSession:financialRateSession()||'',documentFingerprint,documentKind:monthly?'monthly':'unknown',month,current,expectedRevision:snapshot?.revision??-1,extraction,selection,completeBuckets,ownershipAndMonthConfirmed:confirmed});setStatus(saved.saved?'Descontos aplicados somente nesta competência. A previsão foi recalculada.':'Não aplicado: a sessão, o registro ou a revisão mudou. Reabra a revisão.');}finally{setBusy(false);}}}>Aplicar descontos revisados</button>
+    <button type="button" disabled={!plan.reviewable||busy} onClick={async()=>{setBusy(true);try{const saved=await saveReviewedPayrollDeductions({ownerId:identity.owner,expectedSession:identity.session,currentSession:financialRateSession()||'',documentFingerprint,documentKind:monthly?'monthly':'unknown',month,current,expectedRevision:snapshot?.revision??-1,extraction,selection,completeBuckets,ownershipAndMonthConfirmed:confirmed},()=>liveReview.current);if(!liveReview.current)return;setStatus(saved.saved?'Descontos aplicados somente nesta competência. A previsão foi recalculada.':'Não aplicado: a sessão, o registro ou a revisão mudou. Reabra a revisão.');}finally{setBusy(false);}}}>Aplicar descontos revisados</button>
     <p>Pagamentos confirmados e outras competências são preservados. Não há recorrência automática destes descontos.</p>
   </section>;
 }
