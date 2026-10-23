@@ -18,6 +18,8 @@ on:
       - 'scripts/v14344/**'
       - 'scripts/finalize-theme-runtime.mjs'
       - 'scripts/regression-weather-theme-browser.mjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - '.github/workflows/weather-theme-browser.yml'
   workflow_dispatch:
 
@@ -54,6 +56,15 @@ jobs:
           npx tsc --noEmit
           node scripts/p1-concierge-journey/compile.mjs
           npx vite build
+      # Azure can trickle APT archives for the entire job timeout. Keep the
+      # runner's existing signed HTTPS Ubuntu fallbacks; no test/gate changes.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/weather-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
