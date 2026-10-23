@@ -2,6 +2,9 @@ name: Stay editor hotel APZ contract
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'shared/stay-edit-plan.*'
       - 'shared/stay-apz-date.*'
       - 'scripts/regression-stay-apz-date*.mjs'
@@ -103,6 +106,15 @@ jobs:
         env:
           STAY_ANDROID_API_JAR: ${{ runner.temp }}/stay-android-all.jar
           STAY_WEBKIT_JAR: ${{ runner.temp }}/stay-webkit.jar
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser tools
         run: |
           npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

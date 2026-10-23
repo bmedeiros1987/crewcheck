@@ -2,6 +2,9 @@ name: Stay screenshot local OCR and privacy
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'client/src/components/v1391/StayScreenshotReview.tsx'
       - 'client/src/components/v1391/stay-editor.css'
@@ -77,6 +80,15 @@ jobs:
             TZ="$zone" node scripts/regression-stay-apz-date.mjs
             TZ="$zone" node scripts/regression-stay-details.mjs
           done
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated Chromium QA tools
         run: |
           npm install --prefix "$RUNNER_TEMP/stay-ocr-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

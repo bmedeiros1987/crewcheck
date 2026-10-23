@@ -58,7 +58,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
       if(event.storageArea!==localStorage)return;
       const owner=financialRateOwner();if(!owner)return;
       const scope=encodeURIComponent(owner);
-      if(event.key===`crewcheck_financial_learned_rates_v2:${scope}`||event.key?.startsWith(`crewcheck_financial_settings_v1:${scope}:`))refresh();
+      if(event.key===`crewcheck_financial_learned_rates_v2:${scope}`||event.key===`crewcheck_personal_allowance_reference_v1:${scope}`||event.key?.startsWith(`crewcheck_financial_settings_v1:${scope}:`))refresh();
     };
     window.addEventListener('crewcheck:financial-config-changed',refresh);window.addEventListener('storage',storage);
     return()=>{window.removeEventListener('crewcheck:financial-config-changed',refresh);window.removeEventListener('storage',storage);};

@@ -3,6 +3,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - .github/workflows/staged-preparation-experiment.yml
       - scripts/ci/staged-preparation-experiment.mjs
       - scripts/ci/staged-build-adapter.mjs
@@ -36,6 +39,15 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install job-exclusive dependencies without lifecycle scripts or shared cache
         shell: bash
         run: |

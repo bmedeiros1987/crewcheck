@@ -2,6 +2,9 @@ name: Quick roster raw and prepared contract
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
       - 'scripts/p0-691-care-context/**'
@@ -29,6 +32,15 @@ jobs:
           node scripts/regression-quick-roster-care-source.mjs --compare "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-p1-303-schedule-classification-counts.mjs
           node scripts/p0-691-care-context/regression-formal-folga-authority.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser tooling
         run: |
           npm install --prefix "$RUNNER_TEMP/cards-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
