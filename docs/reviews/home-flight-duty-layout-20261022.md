@@ -58,3 +58,20 @@ Revalidação local após o achado: TypeScript e build canônicos PASS;6 casos d
 CI do HEAD publicado a6d3ff2daa8465478af43735e4c0659b80162184: o gate Web falhou no npm audit por DOMPurify<=3.4.16 herdado de main; a correção pertence à#1201 e permanece preservada. No HEAD inicial,15 workflows passaram,1 foi pulado e o Web falhou no audit. A atualização da draft foi autorizada; a CI do novo HEAD deve ser conferida separadamente. Não houve merge/deploy nem alteração de gates.
 
 Revalidação antes da atualização da draft: main e a ref da PR permaneceram em6269b510 e a6d3ff2d. As listas reais de arquivos dos84 outros PRs abertos foram novamente conferidas; apenas a composição histórica#1032 sobrepõe estes paths. Nenhum arquivo de CrewCierge,#1198,#919,#1200 ou#1201 foi alterado.
+
+
+## Ajustes solicitados em23/10: nomes e campos desconhecidos
+
+No resultado de Regulamentação, automático e manual, a ordem agora é **Corte dos motores → Fim da jornada**. Os campos continuam vinculados a engineStopLimit e normalDutyEnd respectivamente; nenhuma fórmula, regra, cenário, fuso ou previsão foi alterada. A indicação de limites previstos e condicionais permanece no cabeçalho e nos detalhes acessíveis. O resumo de reserva mantém início/liberação publicados: apresentação não foi rebatizada como corte.
+
+Campos desconhecidos do Próximo voo, duração/horários incompletos da jornada e limites não calculáveis mostram apenas o caractere ASCII `-`. Seus nomes acessíveis explicam o motivo, com role img para nomear o sinal, e os detalhes conservam “não confirmado”, razões e proveniência completos. Funções exportadas como gateSourceLabel e gateDisplay não foram alteradas. Não há fallback que confirme um valor ausente.
+
+Verificação local: check/build canônicos PASS;32 combinações da Home,128 casos de layout e6 do card PASS. As regressões automática, deadline, review-gates e UI compilada de regulamentação passam, incluindo três fusos, valores20:45/21:15, atraso sem ampliar limites, manual/OP/PS e dados ausentes. A falha inicial de asserção de espaços dos ícones foi corrigida normalizando apenas whitespace; as asserções antigas de em dash foram atualizadas para o sinal solicitado e para seletores por rótulo, sem remover verificações de valor. As regressões puras automatic-scenario e deadline-summary também passam. A regressão de portão passou sem alterar seleção, fontes ou persistência.
+
+Evidência adicional:16 combinações dos componentes reais de regulamentação com CSS de produção,320/390px, claro/escuro e fonte100/200%, com rótulos em ordem cronológica, dados desconhecidos acessíveis, detalhes por teclado e sem clipping. Este teste não aprova globalmente todos os estilos legados; previsão/margem no tema claro200% ainda têm contraste limitado por regras existentes e ficam na proposta separada de tokens, sem refatoração global nesta PR.
+
+![Regulamentação automática: valores sintéticos preservados,390px escuro](home-flight-duty-layout-20261022/390-dark-regulation-labels.png)
+
+![Somente os dois limites:320px claro200%, rótulos em ordem](home-flight-duty-layout-20261022/320-light-200-regulation-deadlines.png)
+
+A proposta pequena de cor e microinterações compartilhadas está em [shared-color-motion-proposal-20261023.md](shared-color-motion-proposal-20261023.md). É planejamento para outra PR, com reduced-motion, contraste, foco, desempenho e coordenação de owners; nenhum token ou animação global foi implementado aqui.

@@ -14,11 +14,11 @@ export function CanonicalDutyCard({ measurement, onOpen }: { measurement: Canoni
   return <div className="cc-canonical-duty-tools"><button type="button" className="cc-canonical-duty-card" onClick={onOpen}>
     <ShieldCheck aria-hidden="true" className="cc-canonical-duty-icon"/>
     <span className="cc-canonical-duty-copy">
-      <span className="cc-canonical-duty-heading"><strong>{measurement.label}</strong><b>{canonicalDutyDurationLabel(measurement.minutes)}</b></span>
+      <span className="cc-canonical-duty-heading"><strong>{measurement.label}</strong><b role={measurement.minutes === null ? 'img' : undefined} aria-label={measurement.minutes === null ? 'Duração pendente' : undefined}>{measurement.minutes === null ? '-' : canonicalDutyDurationLabel(measurement.minutes)}</b></span>
       <span>{measurement.date} · Base {measurement.base}</span>
       <span className="cc-canonical-duty-times">
-        <span><small>{measurement.label === 'Jornada publicada' ? 'Apresentação publicada' : 'Início publicado'}</small><b>{measurement.state === 'available' ? publishedClock(measurement.start) : 'Pendente'}</b></span>
-        <span><small>Liberação publicada</small><b>{measurement.state === 'available' ? publishedClock(measurement.end) : 'Pendente'}</b></span>
+        <span><small>{measurement.label === 'Jornada publicada' ? 'Apresentação publicada' : 'Início publicado'}</small><b role={measurement.state !== 'available' ? 'img' : undefined} aria-label={measurement.state !== 'available' ? 'Início publicado não comprovado' : undefined}>{measurement.state === 'available' ? publishedClock(measurement.start) : '-'}</b></span>
+        <span><small>Liberação publicada</small><b role={measurement.state !== 'available' ? 'img' : undefined} aria-label={measurement.state !== 'available' ? 'Liberação publicada não comprovada' : undefined}>{measurement.state === 'available' ? publishedClock(measurement.end) : '-'}</b></span>
         <span><small>Fuso</small><b>BRT</b><small>UTC−03</small></span>
       </span>
       <small className="cc-canonical-duty-status">Execução não confirmada · Limite pendente</small>

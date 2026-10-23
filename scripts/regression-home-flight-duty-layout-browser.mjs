@@ -50,18 +50,18 @@ for(const width of [320,360,390,1440])for(const theme of ['light','dark'])for(co
   for(const state of ['missing','gate-only','status-only','manual','conflict','stale','unlinked','incomplete']){
     await page.evaluate(state=>window.scenario(state),state);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
     const gateText=await card.locator('.cc-next-gate-gate b').innerText(),status=await card.locator('.cc-next-gate-facts b').innerText();
-    if(state==='missing'){assert.equal(gateText,'Não confirmado');assert.equal(status,'Não confirmado');assert.equal((await summary.innerText()).match(/não confirmado/gi).length,2);}
-    if(state==='gate-only'){assert.equal(gateText,'9');assert.equal(status,'Não confirmado');}
-    if(state==='status-only'){assert.equal(gateText,'Não confirmado');assert.equal(status,'Programado');}
+    if(state==='missing'){assert.equal(gateText,'-');assert.equal(status,'-');assert.doesNotMatch(await summary.innerText(),/não confirmado/i);assert.equal(await summary.getByRole('img',{name:'Portão de embarque não confirmado'}).count(),1);assert.equal(await summary.getByRole('img',{name:'Status operacional não confirmado'}).count(),1);}
+    if(state==='gate-only'){assert.equal(gateText,'9');assert.equal(status,'-');}
+    if(state==='status-only'){assert.equal(gateText,'-');assert.equal(status,'Programado');}
     if(state==='manual'){assert.equal(gateText,'24');assert.match(await summary.innerText(),/Portão manual/);assert.match(await summary.innerText(),/o Radar indica 9/);assert.doesNotMatch(await summary.innerText(),/Autoria sintética/);}
-    if(state==='conflict'){assert.equal(gateText,'24');assert.equal(status,'Não confirmado');assert.match(await summary.innerText(),/divergência nos dados operacionais/);}
+    if(state==='conflict'){assert.equal(gateText,'24');assert.equal(status,'-');assert.match(await summary.innerText(),/divergência nos dados operacionais/);}
     if(state==='stale')assert.match(await summary.innerText(),/Desatualizado/);
     if(state==='unlinked')assert.match(await summary.innerText(),/Confirme o vínculo/);
-    if(state==='incomplete'){assert.match(await duty.innerText(),/Duração pendente/);assert.doesNotMatch(await duty.innerText(),/6h00|0h00|06:30|12:30/);}
+    if(state==='incomplete'){assert.equal(await duty.getByRole('img',{name:'Duração pendente',exact:true}).innerText(),'-');assert.doesNotMatch(await duty.innerText(),/6h00|0h00|06:30|12:30/);}
     for(const locator of [card,duty]){const m=await geometry(locator);assert.deepEqual(m.violations,[],state);assert.equal(m.overflow,false,state);assert.ok(m.height>=44);}
     await summary.focus();await summary.press('Enter');assert.equal(await summary.getAttribute('aria-expanded'),'true');
     assert.ok(await summary.evaluate(el=>el===document.activeElement&&parseFloat(getComputedStyle(el).outlineWidth)>=2));
-    assert.match(await card.locator('.cc-next-gate-details').innerText(),/Fonte do portão/);
+    assert.match(await card.locator('.cc-next-gate-details').innerText(),/Fonte do portão/);if(state==='missing')assert.match(await card.locator('.cc-next-gate-details').innerText(),/Não confirmado|não confirmado/);
     if(state==='manual')assert.match(await card.locator('.cc-next-gate-details').innerText(),/Informado por Autoria sintética/);
     const expanded=await geometry(card);assert.deepEqual(expanded.violations,[]);assert.equal(expanded.overflow,false);
     await summary.press('Space');assert.equal(await summary.getAttribute('aria-expanded'),'false');

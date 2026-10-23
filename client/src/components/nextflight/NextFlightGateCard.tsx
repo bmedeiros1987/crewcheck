@@ -66,13 +66,13 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
       <span className="cc-next-gate-identity"><strong>{info.flight}</strong><span>{flightDate(info)}</span></span>
       <span className="cc-next-gate-route">{info.origin || '—'} <span aria-label="para">→</span> {info.destination || '—'}</span>
       <span className="cc-next-gate-main">
-        <span className="cc-next-gate-departure"><small>Partida</small><b>{info.departure || 'Não informada'}</b></span>
+        <span className="cc-next-gate-departure"><small>Partida</small><b role={!info.departure ? 'img' : undefined} aria-label={!info.departure ? 'Partida não informada' : undefined}>{info.departure || '-'}</b></span>
         <span className="cc-next-gate-gate">
           <small><DoorOpen aria-hidden="true"/> Portão</small>
-          <b>{gate}</b>
+          <b role={!info.gate ? 'img' : undefined} aria-label={!info.gate ? 'Portão de embarque não confirmado' : undefined}>{info.gate ? gate : '-'}</b>
           {info.terminal && <em>Terminal {info.terminal}</em>}
         </span>
-        <span className="cc-next-gate-facts"><small>Status</small><b>{status}</b></span>
+        <span className="cc-next-gate-facts"><small>Status</small><b role={!info.status ? 'img' : undefined} aria-label={!info.status ? 'Status operacional não confirmado' : undefined}>{info.status || '-'}</b></span>
       </span>
       {info.manualGateUnlinked && <span role="note">Portão informado anteriormente preservado. Confirme o vínculo com este horário de voo no editor.</span>}
       {Boolean(info.operationalConflicts?.length) && <span role="note">Há divergência nos dados operacionais. Valores manuais foram preservados; dados automáticos conflitantes não confirmam a informação.</span>}
@@ -90,6 +90,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
     </button>
     {open && <div className="cc-next-gate-details" id={detailsId}>
       <dl>
+        <div><dt>Portão de embarque</dt><dd>{gate}</dd></div>
         <div><dt>Trecho</dt><dd>{info.origin || '—'} → {info.destination || '—'}</dd></div>
         <div><dt>Apresentação</dt><dd>{info.presentation || 'Não informada'}</dd></div>
         <div><dt>Terminal</dt><dd>{info.terminal || 'Não informado'}</dd></div>
