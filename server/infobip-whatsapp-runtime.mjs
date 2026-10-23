@@ -7,6 +7,7 @@ import {createOfflineInfobipDeliveryReceiver} from './infobip-whatsapp-delivery.
 import {installWhatsAppLifecycle} from './whatsapp-lifecycle.mjs';
 
 export const INFOBIP_WHATSAPP_CALLBACK_PATH = '/api/infobip/whatsapp/webhook';
+export const INFOBIP_WHATSAPP_SEEN_PATH = '/api/infobip/whatsapp/seen';
 export const INFOBIP_WHATSAPP_DELIVERY_PATH = '/api/infobip/whatsapp/delivery';
 
 // Production composition is a sealed OFF surface. No configuration/env access,
@@ -19,7 +20,7 @@ export function createHeldInfobipWhatsAppRuntime() {
     expire: async () => ({status: 'disabled'}),
     dispose: async () => {},
     async handleRoute(_req, res, url) {
-      if (![INFOBIP_WHATSAPP_CALLBACK_PATH, INFOBIP_WHATSAPP_DELIVERY_PATH].includes(url.pathname)) return false;
+      if (![INFOBIP_WHATSAPP_CALLBACK_PATH, INFOBIP_WHATSAPP_DELIVERY_PATH, INFOBIP_WHATSAPP_SEEN_PATH].includes(url.pathname)) return false;
       res.writeHead(503, {'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store', 'x-content-type-options': 'nosniff'});
       res.end(JSON.stringify({ok: false, code: 'INFOBIP_WHATSAPP_DISABLED'}));
@@ -38,6 +39,7 @@ export function composeInfobipWhatsAppForOfflineTests({db, configuration, concie
   const receive = createOfflineInfobipReceiver({sender, username: webhookUsername, password: webhookPassword, authentication: configuration.webhookAuthentication, store, now});
   return Object.freeze({
     receive,
+    receiveSeen: createOfflineInfobipDeliveryReceiver({kind:'seen', username:webhookUsername,password:webhookPassword,authentication:configuration.webhookAuthentication,store,now}),
     receiveDelivery: createOfflineInfobipDeliveryReceiver({username: webhookUsername, password: webhookPassword, authentication: configuration.webhookAuthentication, store, now}),
     dispatch: eventKey => store.exerciseDispatch(eventKey, {concierge, send: transport.exercise, clock: now}),
     expire: eventKey => store.expirePayload(eventKey),
@@ -104,22 +106,32 @@ export function createInfobipWhatsAppRuntime(options = {}) {
     dispatch:eventKey=>tracked(()=>pipeline.dispatch(eventKey)),
     expire:eventKey=>tracked(()=>pipeline.expire(eventKey)),maintain:tick,
     async handleRoute(req,res,url){
-      if(![INFOBIP_WHATSAPP_CALLBACK_PATH,INFOBIP_WHATSAPP_DELIVERY_PATH].includes(url.pathname))return false;
+      if(![INFOBIP_WHATSAPP_CALLBACK_PATH,INFOBIP_WHATSAPP_DELIVERY_PATH,INFOBIP_WHATSAPP_SEEN_PATH].includes(url.pathname))return false;
       const task=(async()=>{
         if(closed)return respond(res,503,'INFOBIP_CLOSED');
         if(req.method!=='POST')return respond(res,405,'METHOD');
         if(verifyTls(req)!==true)return respond(res,503,'TLS_REQUIRED');
         if(!auth.acceptsHeaders(req.rawHeaders))return respond(res,401,'AUTH');
         if(!/^application\/json(?:\s*;|$)/i.test(req.headers?.['content-type']||''))return respond(res,415,'CONTENT_TYPE');
-        let rawBody,isDelivery=false;
+        let rawBody,kind;
         try {rawBody=await readBoundedBody(req);}
         catch{return respond(res,400,'INVALID_BODY');}
         if(!auth.verify(req.rawHeaders,rawBody))return respond(res,401,'AUTH');
-        try {const body=JSON.parse(rawBody);if(body?.results?.length!==1)throw Error();
-          isDelivery=Object.hasOwn(body.results[0]||{},'status');}
-        catch{return respond(res,400,'INVALID_BODY');}
+        try {
+          const body=JSON.parse(rawBody);
+          if(!Array.isArray(body?.results)||!body.results.length||body.results.length>20)throw Error();
+          const kinds=body.results.map(item=>{
+            const matches=[Object.hasOwn(item||{},'status'),Object.hasOwn(item||{},'seenAt'),
+              Object.hasOwn(item||{},'integrationType')&&Object.hasOwn(item||{},'receivedAt')&&Object.hasOwn(item||{},'message')];
+            if(matches.filter(Boolean).length!==1)throw Error();
+            return ['delivery','seen','inbound'][matches.indexOf(true)];
+          });
+          kind=kinds[0];if(kinds.some(value=>value!==kind))throw Error();
+          if(url.pathname===INFOBIP_WHATSAPP_DELIVERY_PATH&&kind!=='delivery')throw Error();
+          if(url.pathname===INFOBIP_WHATSAPP_SEEN_PATH&&kind!=='seen')throw Error();
+        } catch{return respond(res,400,'INVALID_BODY');}
         if(closed)return respond(res,503,'INFOBIP_CLOSED');
-        const receive=url.pathname===INFOBIP_WHATSAPP_DELIVERY_PATH||isDelivery?pipeline.receiveDelivery:pipeline.receive;
+        const receive=kind==='delivery'?pipeline.receiveDelivery:kind==='seen'?pipeline.receiveSeen:pipeline.receive;
         const result=await receive({method:req.method,rawHeaders:req.rawHeaders,rawBody});
         respond(res,result.status,result.code);
         if(result.status===200)void tick();

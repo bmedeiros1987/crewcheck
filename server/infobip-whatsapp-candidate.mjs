@@ -5,7 +5,9 @@ export { verifyInfobipBasic, verifyInfobipHmac } from './infobip-whatsapp-auth.m
 // Review candidate only. No production router imports this module. Environment
 // variables cannot enable it; no transport, credentials, DDL or logs live here.
 export const INFOBIP_WHATSAPP_RELEASE_ENABLED = false;
-export const INFOBIP_INBOUND_MAX_AGE_MS = 48 * 60 * 60_000;
+// Nine-day provider retry horizon plus one day of clock/operational margin.
+export const INFOBIP_INBOUND_MAX_AGE_MS = 10 * 24 * 60 * 60_000;
+export const INFOBIP_IDENTIFIER_RETENTION_MS = 11 * 24 * 60 * 60_000;
 export const INFOBIP_REPLY_MAX_AGE_MS = 15 * 60_000;
 export function infobipWhatsAppReleaseResponse() {
   return { status: 503, code: 'INFOBIP_WHATSAPP_DISABLED' };
@@ -57,8 +59,7 @@ function linkStamp(link, event) {
 // OFFLINE entrypoint. The injected store MUST supply serializable transactions:
 // claim+enqueue commit together, unique claims survive restarts, failures roll
 // back, and lookupLink uses the same transaction. No production store is supplied.
-// Candidate retry policy: 48h (general reporting docs describe 41h30; application
-// to this inbound profile remains unverified). Reply freshness stays 15m.
+// Retry ACK horizon is independent of reply authorization. Content expires at 15m.
 export function createOfflineInfobipReceiver({ sender, username, password, authentication, store, now = Date.now }) {
   if (!phone(sender) ||
       typeof store?.transaction !== 'function' || typeof now !== 'function') fail('CONFIGURATION');
@@ -77,6 +78,14 @@ export function createOfflineInfobipReceiver({ sender, username, password, authe
     try {
       for (const event of events) {
         const result = await store.transaction(async tx => {
+          if (now() - event.receivedAt > INFOBIP_REPLY_MAX_AGE_MS) {
+            const digest = createHash('sha256').update(JSON.stringify(event)).digest('hex');
+            const claim = await tx.claim(eventKey(event), digest);
+            if (claim === 'duplicate') return 'duplicate';
+            if (claim !== 'new') fail('CLAIM');
+            await tx.finishClaim(eventKey(event));
+            return 'denied';
+          }
           if (/^\d{6}$/.test(event.text) && typeof tx.completeLink === 'function') {
             const digest = createHash('sha256').update(JSON.stringify(event)).digest('hex');
             const claim = await tx.claim(eventKey(event), digest);

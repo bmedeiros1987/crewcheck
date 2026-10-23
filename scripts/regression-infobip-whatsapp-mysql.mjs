@@ -98,7 +98,7 @@ try{
    await run('retry timeline and prolonged unavailability simulate possible loss',async()=>{
      let minute=0;const times=[0];for(let retry=0;retry<20;retry++){minute+=1+retry*retry;times.push(minute);}assert.equal(minute,2490);
      assert.equal(times.filter(t=>t>=3000).length,0,'provider horizon can expire with no callback received');assert.equal(await read(),undefined);
-     const first=times.find(t=>t>=60);assert.equal(first,61);clock=epoch+first*60000;const {receive}=make();assert.equal((await receive(packet())).accepted,1);assert.equal((await read()).status,'expired');assert.equal((await read()).sealed,null);assert.equal((await receive(packet())).duplicates,1);
+     const first=times.find(t=>t>=60);assert.equal(first,61);clock=epoch+first*60000;const {receive}=make();assert.equal((await receive(packet())).denied,1);assert.equal((await read()).status,'denied');assert.equal((await read()).sealed,null);assert.equal((await receive(packet())).duplicates,1);
    });
    await runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock:value=>{clock=value;}});
    await verifyNamespaceIsolation({run,db,reset,make,event,sender,key,salt,email});

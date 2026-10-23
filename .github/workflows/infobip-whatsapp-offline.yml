@@ -6,6 +6,7 @@ on:
       - 'scripts/regression-infobip-whatsapp-*.mjs'
       - 'scripts/infobip-whatsapp-mysql-scenarios.mjs'
       - 'docs/infobip-whatsapp-hmac-contract-20261021.md'
+      - 'docs/infobip-whatsapp-events-20261023.md'
       - '.github/workflows/infobip-whatsapp-offline.yml'
 permissions:
   contents: read

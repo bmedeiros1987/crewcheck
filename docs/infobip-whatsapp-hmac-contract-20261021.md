@@ -1,5 +1,7 @@
 # Infobip WhatsApp — contrato HMAC offline, produção OFF
 
+> Atualização de schemas, batches, SEEN e retenção: [contrato de 23/10/2026](infobip-whatsapp-events-20261023.md). Esse complemento substitui os limites históricos batch 1/inbound 48h/tombstones 72h descritos abaixo.
+
 Base: `792fd649cfd036be3a08365e971837037ef6b2e5`.
 Reaproveita receiver, DLR, store transacional, motor e transporte existentes. Não
 altera voz, contas, configuração, permissões, dados reais, bootstrap ou envio.

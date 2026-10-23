@@ -76,10 +76,10 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
  });
  await run('real DLR correlation and retained replay tombstone then purge',async()=>{
    await reset();const {store,receive}=make();await receive(packet(event));await store.exerciseDispatch(eventKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})});
-   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000})).status,'delivered');
-   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000})).status,'duplicate');
+   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000,kind:'delivery',deliveryState:'delivered',statusId:5,receiptKey:['cc-'+eventKey,5,new Date(epoch+1000).toISOString()]})).status,'delivered');
+   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000,kind:'delivery',deliveryState:'delivered',statusId:5,receiptKey:['cc-'+eventKey,5,new Date(epoch+1000).toISOString()]})).status,'duplicate');
    await reset();await make().receive(packet(event));setClock(epoch+900001);await store.maintain();assert.equal((await raw()).sealed,null);
-   assert.equal((await make().receive(packet(event))).duplicates,1);setClock(epoch+73*3600_000);await store.maintain();assert.equal(await raw(),undefined);assert.equal((await make().receive(packet(event))).status,400);
+   assert.equal((await make().receive(packet(event))).duplicates,1);setClock(epoch+12*24*3600_000);await store.maintain();assert.equal(await raw(),undefined);assert.equal((await make().receive(packet(event))).status,400);
  });
  await run('account erase joins actual platform transaction and rolls back atomically',async()=>{
    await reset();await make().receive(packet(event));

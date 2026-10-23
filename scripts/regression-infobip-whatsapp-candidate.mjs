@@ -60,7 +60,7 @@ assert(!verifyInfobipBasic(headers, 'invalid:user', password));
 
 for (const event of [item({to: other}), item({from: 'US.synthetic12345678'}), item({from: '+' + recipient}),
   item({from: 'user-' + recipient}), item({integrationType: 'RCS'}), item({messageId: ''}),
-  item({receivedAt: 'invalid'}), item({receivedAt: '2031-12-30T11:59:59.999Z'}),
+  item({receivedAt: 'invalid'}), item({receivedAt: '2031-12-21T11:59:59.999Z'}),
   item({receivedAt: '2032-01-01T12:00:30.001Z'}), item({message: {type: 'DOCUMENT', url: 'https://example.invalid/file'}}),
   item({message: {type: 'TEXT', text: 'x'.repeat(4001)}}), item({message: {type: 'TEXT', text: '   '}}),
   item({contact: {phoneNumber: other}}), item({status: {groupId: 3}}), item({seenAt: 'now'})]) {

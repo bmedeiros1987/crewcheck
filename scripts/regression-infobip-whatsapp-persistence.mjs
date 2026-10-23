@@ -95,8 +95,8 @@ for(const change of [null,{...baseLink,consent_concierge:0},{...baseLink,revoked
 }
 {
   const {s,receive}=fixture();s.clock=epoch+41.5*3600_000;
-  assert.equal((await receive(request())).accepted,1,'candidate policy accepts 41h30; profile applicability unverified');
-  assert.equal(s.rows.get(stateKey).status,'expired');assert.equal(s.rows.get(stateKey).sealed,null);
+  assert.equal((await receive(request())).denied,1,'old retry is durably acknowledged without reply authorization');
+  assert.equal(s.rows.get(stateKey).status,'denied');assert.equal(s.rows.get(stateKey).sealed,null);
   assert.equal((await receive(request())).duplicates,1,'old retry does not enqueue text again');
 }
 {
@@ -208,14 +208,14 @@ for(const mode of ['revoke','relink','account','consent','expire','failure','unc
   assert.equal((await delivery(report({},[]))).status,401);
   assert.equal((await delivery(report({to:other}))).ignored,1);
   assert.equal((await delivery(report({messageId:'cc-'+ 'a'.repeat(64)}))).ignored,1);
-  assert.equal((await delivery(report({status:{id:26,groupId:1,name:'PENDING_ACCEPTED',groupName:'PENDING'}}))).status,400,'accepted never delivered');
+  assert.equal((await delivery(report({status:{id:26,groupId:1,name:'PENDING_ACCEPTED',groupName:'PENDING'}}))).status,200,'pending observation is accepted without delivery evidence');
   assert.equal((await delivery(report({seenAt:item.doneAt}))).status,400);
   assert.equal((await delivery(report({error:{id:1}}))).status,400);
   assert.equal((await delivery(report({contact:{phoneNumber:other}}))).status,400);
   assert.equal((await delivery(report({sentAt:'2031-12-31T12:00:00.000Z'}))).ignored,1,'correlate attempt time');
   assert.equal((await delivery(report())).recorded,1);assert.equal(s.rows.get(stateKey).status,'delivered');
   assert.equal((await delivery(report())).ignored,1,'repeated DLR idempotent');
-  assert.equal((await delivery(report({status:{id:26,groupId:1,name:'PENDING_ACCEPTED',groupName:'PENDING'}}))).status,400);
+  assert.equal((await delivery(report({status:{id:26,groupId:1,name:'PENDING_ACCEPTED',groupName:'PENDING'}}))).status,200);
   assert.equal(s.rows.get(stateKey).status,'delivered','late pending cannot downgrade delivery');
   let calls=0;await store.exerciseDispatch(eventKey,{concierge:async()=>assert.fail(),send:async()=>{calls++;}});assert.equal(calls,0);
   assert(!JSON.stringify(s.rows.get(stateKey)).includes(recipient),'correlation keeps no raw phone');
@@ -224,7 +224,7 @@ for(const mode of ['revoke','relink','account','consent','expire','failure','unc
   const {s,receive,store}=fixture();await receive(request());s.clock=epoch+900001;
   assert.equal((await store.maintain()).scanned,1);assert.equal(s.rows.get(stateKey).sealed,null);
   assert.equal((await receive(request())).duplicates,1,'retention keeps replay tombstone');
-  s.clock=epoch+73*3600_000;await store.maintain();assert(!s.rows.has(stateKey));
+  s.clock=epoch+12*24*3600_000;await store.maintain();assert(!s.rows.has(stateKey));
   assert.equal((await receive(request())).status,400,'old inbound rejected after tombstone deletion');
   await assert.rejects(()=>store.maintain({limit:21}),/STATE_UNAVAILABLE/);
 }
@@ -277,6 +277,18 @@ console.log('PASS Infobip OFF: canonical engine, existing authenticated consent,
     assert.equal((await route(event,{body:Buffer.alloc(65537)})).status,400);
     assert.equal((await route(event)).status,200);await runtime.maintain();assert.equal(sends,1);
     assert.equal(typeof callback,'function');await callback();await runtime.maintain();assert.equal(sends,1);
+    const dlr={messageId:'cc-'+eventKey,to:recipient,sentAt:new Date(epoch).toISOString(),doneAt:new Date(epoch+1000).toISOString(),status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
+    const reportBody=items=>Buffer.from(JSON.stringify({results:items}));
+    const seen={messageId:dlr.messageId,to:recipient,from:sender,sentAt:dlr.sentAt,seenAt:new Date(epoch+2000).toISOString()};
+    assert.equal((await route(event,{body:reportBody([dlr,dlr])})).status,200,'HTTP processes complete delivery batch');
+    assert.equal(s.rows.get(stateKey).status,'delivered');
+    assert.equal((await route(event,{body:reportBody([seen,seen])})).status,200,'HTTP routes every SEEN item independently');
+    assert.equal(s.rows.get(stateKey).report.seenAt,epoch+2000);
+    await runtime.maintain();const queries=s.queries.length;
+    assert.equal((await route(event,{body:reportBody([dlr,seen])})).status,400,'mixed event shapes fail before SQL');
+    assert.equal(s.queries.length,queries);
+    await runtime.maintain();assert.equal(sends,1,'callbacks never enqueue a reply');
+
     await eraseWhatsAppAccountState(baseLink.email);assert.equal(s.rows.get(stateKey).ownerHash,null);assert.equal(s.link.consent_concierge,0);
     assert.throws(()=>createInfobipWhatsAppRuntime({enabled:true,db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password},request:async()=>{}}),/LIFECYCLE_OWNED/);
   }finally{await runtime.dispose();assert.equal(cleared,1);}
@@ -306,3 +318,50 @@ console.log('PASS Infobip OFF: canonical engine, existing authenticated consent,
   release();await dispatch;await disposed;const queries=s.queries.length;
   assert.equal((await runtime.dispatch(eventKey)).status,'closed');assert.equal((await runtime.expire(eventKey)).status,'closed');assert.equal(s.queries.length,queries);assert.equal(sends,1);
 }
+
+// Event contract: identifiers survive nine-day inbound retries while
+// reply content expires independently. Restart is adapter recreation here.
+for (const hours of [48,72,216,240]) {
+  const {s,receive,store,makeStore}=fixture();
+  s.clock=epoch+hours*3600_000;
+  const response=await receive(request());assert.equal(response.denied,1);
+  assert.equal(s.rows.get(stateKey).sealed,null);
+  s.link=null; // ACK of old claims must not require or recreate a revoked link.
+  const recreated=createOfflineInfobipReceiver({sender,username,password,store:makeStore(),now:()=>s.clock});
+  const changedCounters={...request(),rawBody:Buffer.from(JSON.stringify({results:[event],messageCount:19,pendingMessageCount:7}))};
+  const replies=await Promise.all(Array.from({length:6},()=>recreated(changedCounters)));
+  assert(replies.every(r=>r.duplicates===1));
+  assert.equal((await store.exerciseDispatch(eventKey,{concierge:async()=>assert.fail('OLD_REPLY'),send:async()=>assert.fail('OLD_SEND')})).status,'denied');
+  assert(!JSON.stringify([...s.rows]).includes(event.message.text));
+}
+{
+  const {s,receive,store,makeStore}=fixture();await receive(request());
+  await store.exerciseDispatch(eventKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})});
+  s.clock=epoch+10000;
+  const item={messageId:'cc-'+eventKey,to:recipient,sentAt:new Date(epoch).toISOString(),doneAt:new Date(epoch+2000).toISOString(),status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
+  const pendingItem={...item,doneAt:new Date(epoch+1000).toISOString(),status:{id:26,name:'PENDING_ACCEPTED',groupId:1,groupName:'PENDING'}};
+  const packet=items=>({...request(),rawBody:Buffer.from(JSON.stringify({results:items}))});
+  const seenItem={messageId:item.messageId,to:recipient,from:sender,sentAt:item.sentAt,seenAt:new Date(epoch+3000).toISOString()};
+  const receiver=kind=>createOfflineInfobipDeliveryReceiver({kind,username,password,store:makeStore(),now:()=>s.clock});
+  // SEEN alone changes only seenAt, never delivery or queue authorization.
+  assert.equal((await receiver('seen')(packet([seenItem]))).status,200);
+  assert.equal(s.rows.get(stateKey).status,'accepted_unconfirmed');
+  const olderSeen={...seenItem,seenAt:new Date(epoch+2500).toISOString()};
+  await receiver('seen')(packet([olderSeen,seenItem]));
+  assert.equal(s.rows.get(stateKey).report.seenAt,epoch+3000);
+  // First item commits; second fails. Whole batch retry must retain first claim.
+  let calls=0;
+  const partial=createOfflineInfobipDeliveryReceiver({username,password,now:()=>s.clock,store:{recordDelivery:async report=>{if(++calls===2)throw Error('SYNTHETIC_PARTIAL');return makeStore().recordDelivery(report);}}});
+  assert.equal((await partial(packet([pendingItem,item]))).status,503);
+  assert.equal(s.rows.get(stateKey).status,'accepted_unconfirmed');
+  await Promise.all([receiver('delivery')(packet([item,pendingItem])),receiver('delivery')(packet([pendingItem,item]))]);
+  assert.equal(s.rows.get(stateKey).status,'delivered');
+  assert.equal(s.rows.get(stateKey).report.deliveryStatusId,5);
+  const count=s.rows.size;
+  await receiver('delivery')(packet([pendingItem]));await receiver('seen')(packet([seenItem]));
+  assert.equal(s.rows.size,count,'regrouping and recreation create no duplicate receipts');
+  assert.equal(s.rows.get(stateKey).report.deliveryStatusId,5);
+  assert(!JSON.stringify([...s.rows]).includes(recipient));
+  s.clock=epoch+12*24*3600_000;await store.maintain();assert.equal(s.rows.size,0);
+}
+console.log('PASS nine-day retry ACK without replies; durable per-item DLR/SEEN receipts, regrouping, partial-success retry, concurrent recreation, monotonic projections and cleanup (synthetic SQL fixture)');
