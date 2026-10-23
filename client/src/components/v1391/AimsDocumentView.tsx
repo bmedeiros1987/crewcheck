@@ -14,8 +14,8 @@ const clock = (value?: string) => String(value || '').trim() || '—';
 
 /** Read-only document projection. Array positions identify duplicate IDs without
  * guessing a match, creating events, or using coordinates from a private PDF. */
-export function AimsDocumentView({ events, month, day, describe, focusEventId, onReturnToMonth }: {
-  events: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string; onReturnToMonth?: () => void;
+export function AimsDocumentView({ events, operationalEvents = events, month, day, describe, focusEventId, onReturnToMonth }: {
+  events: Event[]; operationalEvents?: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string; onReturnToMonth?: () => void;
 }) {
   const id = useId(), viewport = useRef<HTMLDivElement>(null), sheet = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | HTMLSelectElement | null>(null);
@@ -136,11 +136,11 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId, o
         </div>
       </div>
     </div>
-    {outside.length > 0 && <AimsRosterTable events={outside} showHistory={false} title="Programações sem posição confirmada no documento"/>}
+    {outside.length > 0 && <AimsRosterTable operationalEvents={operationalEvents} events={outside} showHistory={false} title="Programações sem posição confirmada no documento"/>}
     </div>
     {selected && <div className="cc-doc-detail" tabIndex={-1} ref={detail} role="region" aria-label="Dia ampliado" onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
       <button type="button" onClick={close}>← Voltar à escala inteira</button>
-      <AimsRosterTable key={events.indexOf(selected)} showHistory={false} events={selectedDayEvents} focusEventIndex={selectedDayEvents.indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
+      <AimsRosterTable operationalEvents={operationalEvents} key={events.indexOf(selected)} showHistory={false} events={selectedDayEvents} focusEventIndex={selectedDayEvents.indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
     </div>}
     <p className="cc-doc-help">Horários e códigos preservados da escala. Campo — indica dado não informado; nenhuma atividade é inferida para os dias vazios. As cores seguem a legenda CrewCheck; os rótulos identificam cada tipo.</p>
   </section>;

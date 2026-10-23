@@ -1,3 +1,4 @@
+import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
 import { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS } from './shared/radar-field-evidence.mjs';
@@ -3631,11 +3632,13 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
           : await conciergeDbPut(stateKey, nextState);
         if (canary && !observationPersisted) { summary.failures += 1; continue; }
         if (!shouldSend) continue;
+        // Bound display only: keep full evidence/state and room for all three blocks + opt-out.
+        const excerpt = (value, limit, marker = '…') => { const text = String(value); return text.length > limit ? `${text.slice(0, limit - marker.length)}${marker}` : text; };
         messages.push({ stateKey, nextState, text: [
-          `${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`,
-          ...alertReasons.slice(0, 4).map((reason) => `• ${reason}`),
-          `METAR/SPECI: ${report.raw}`,
-          `Fonte: ${report.source || 'fonte meteorológica oficial disponível'}`,
+          excerpt(`${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`, 120),
+          `• ${formatWeatherNoticeDetails({ raw: report.raw, observedAt: report.observedAt, station: candidate.station })}`,
+          `METAR/SPECI: ${excerpt(report.raw, 600, '… [boletim abreviado]')}`,
+          `Fonte: ${excerpt(report.source || 'fonte meteorológica oficial disponível', 80)}`,
         ].join('\n') });
       } catch {
         summary.failures += 1;
