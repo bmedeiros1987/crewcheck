@@ -25,3 +25,18 @@ Revisão independente estática do commit funcional `1f661dcd3550934f423500cbc7a
 Evidências: [escuro100%](neutral-today-rest-20261023/neutral-today-390-dark-16.png), [claro200%](neutral-today-rest-20261023/neutral-today-320-light-32.png), [Descanso/Pernoite](neutral-today-rest-20261023/rest-label-light-200.png), [cores computadas](neutral-today-rest-20261023/metrics.json). Screenshots inspecionados. Não houve teste em aparelho físico.
 
 Draft para revisão. Sem merge/deploy. CI do HEAD publicado deve ser acompanhado separadamente; não representa aprovação integral.
+
+
+## P2 Codex: variantes reais da continuidade
+
+Achado [discussion_r4357860858](https://github.com/bmedeiros1987/crewcheck/pull/1206#discussion_r4357860858) confirmado. O teste original usava somente a variante “entre jornadas”; não cobria os pairingCode reais gerados em dias civis ausentes. A preferência existente por pairingCode expunha “DESCANSO BASE”, “DESCANSO BASE 1/2” e “DESCANSO BASE 2/2”.
+
+Vermelho antes da correção, com completeContinuityDays real: modelo retornou `DESCANSO BASE` em vez de `Descanso`; browser retornou nome acessível `Descanso: DESCANSO BASE, dia 2032-10-11. Abrir detalhes publicados` em vez do rótulo curto. Ambas as execuções terminaram exit1 no mesmo achado. Nenhum código desconhecido é convertido por fallback de type.
+
+O helper agora reconhece somente as formas simples e i/n válidas de DESCANSO BASE e PERNOITE. Partes/total devem ser inteiros positivos seguros, total>1 e parte<=total. Formatos desconhecidos/inválidos preservados. Origem, classificação, horários e motores não mudam. A borda/cor de hoje não foi alterada nesta correção.
+
+Verde: `regression-generated-rest-label-browser.mjs` usa oito intervalos gerados pelo normalizador real (mesmo dia, uma data ausente e duas datas ausentes; base BSB e pernoite GRU). Afirma labels, origem imutável, classificação REPOUSO/PERNOITE e preservação de desconhecidos. Render real cobre AIMS documento, seletor, nomes acessíveis e detalhes AimsRosterTable, nos dois temas e100/200%, mantendo início/fim. O entry point AIMS existente importa a nova regressão após encerrar sua suíte; nenhum workflow/gate alterado. Verificado esse entry point completo:16casos originais e4contextos novos PASS, sem erros de página.
+
+TSC/build canônicos, roster-display-date, p0-roster-date-integrity, p0-base-rest-vs-overnight e p0-525-continuity-incremental repetidos: PASS. Revisão independente estática de871ae8e: sem bloqueadores; não reproduziu pixels/testes. Evidência [numerado claro200%](neutral-today-rest-20261023/numbered-rest-light-200.png), [escuro100%](neutral-today-rest-20261023/numbered-rest-dark-100.png), [casos gerados](neutral-today-rest-20261023/generated-rest-labels.json). Apenas fixtures sintéticas.
+
+Base da PR preservada em71f18784; sem force, merge ou deploy. CI do novo HEAD deve concluir separadamente; o CI anterior não prova a correção deste P2.

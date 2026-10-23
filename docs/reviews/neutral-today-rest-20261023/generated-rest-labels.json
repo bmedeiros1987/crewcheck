@@ -1,0 +1,192 @@
+{
+  "results": [
+    {
+      "theme": "dark",
+      "scale": 100,
+      "records": [
+        {
+          "pairing": "DESCANSO BASE ENTRE JORNADAS",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 1/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 2/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "PERNOITE ENTRE JORNADAS",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 1/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 2/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "theme": "dark",
+      "scale": 200,
+      "records": [
+        {
+          "pairing": "DESCANSO BASE ENTRE JORNADAS",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 1/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 2/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "PERNOITE ENTRE JORNADAS",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 1/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 2/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "theme": "light",
+      "scale": 100,
+      "records": [
+        {
+          "pairing": "DESCANSO BASE ENTRE JORNADAS",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 1/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 2/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "PERNOITE ENTRE JORNADAS",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 1/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 2/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "theme": "light",
+      "scale": 200,
+      "records": [
+        {
+          "pairing": "DESCANSO BASE ENTRE JORNADAS",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 1/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "DESCANSO BASE 2/2",
+          "label": "Descanso",
+          "category": "REPOUSO"
+        },
+        {
+          "pairing": "PERNOITE ENTRE JORNADAS",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 1/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        },
+        {
+          "pairing": "PERNOITE 2/2",
+          "label": "Pernoite",
+          "category": "PERNOITE"
+        }
+      ],
+      "synthetic": true
+    }
+  ]
+}
