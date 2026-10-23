@@ -40,6 +40,9 @@ try{for(const width of [390,1440]){
    assert.match(await foreign.textContent(),/Frankfurter v2/);assert.match(await foreign.textContent(),/2032-02-08/);
    assert.match(await foreign.textContent(),/2032-02-09T12:00:00Z/);
    assert(!/cotação pendente/.test(await foreign.locator('summary').textContent()),'allowance consumes the calculator provider quotes');
+   const selector=page.getByLabel('Fonte do câmbio',{exact:true});await selector.waitFor();
+   await selector.selectOption('manual');assert.equal(await selector.inputValue(),'manual','source remains editable after successful automatic conversion');
+   await selector.selectOption('automatic');await foreign.getByText(/Estimativa em reais/).waitFor();assert.equal(await selector.inputValue(),'automatic','automatic conversion returns without leaving statement');
    if(automaticState==='available')await page.screenshot({path:path.join(out,'390-automatic-allowance.png'),fullPage:false});
   }
   await page.getByRole('button',{name:'← Voltar',exact:true}).click();
