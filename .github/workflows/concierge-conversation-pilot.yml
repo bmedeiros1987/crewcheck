@@ -15,6 +15,7 @@ on:
       - 'scripts/regression-conversation-pilot.mjs'
       - 'scripts/regression-crewcierge-local-browser.mjs'
       - 'scripts/regression-crewcierge-screen-browser.mjs'
+      - 'scripts/regression-crewcierge-pwa-browser.mjs'
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/v139/**'
       - 'package.json'
@@ -65,3 +66,18 @@ jobs:
             TZ="$zone" node scripts/regression-crewcierge-screen-browser.mjs
           done
           node scripts/regression-concierge-journey-programs.mjs
+      - name: Complete built PWA, real worker, offline reload and fresh document
+        env:
+          CREWCHECK_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/crewcierge-browser/node_modules/playwright
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" CREWCIERGE_PWA_EVIDENCE="$RUNNER_TEMP/crewcierge-pwa-$zone" node scripts/regression-crewcierge-pwa-browser.mjs
+          done
+      - name: Retain synthetic PWA reports and browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewcierge-pwa-${{ github.sha }}
+          path: ${{ runner.temp }}/crewcierge-pwa-*/**
+          if-no-files-found: ignore

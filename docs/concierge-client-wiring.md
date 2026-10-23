@@ -1,5 +1,7 @@
 # CrewCierge: ligação local entregue e correção temporal
 
+Atualização: [validação do boot completo PWA offline](concierge-pwa-offline-validation.md), sobre main `196a0a07937d1f466894b45b8f4ddc9b487ba4a3` incorporado por merge normal. O teste abaixo de tela isolada continua válido e agora é complementado pelo App/worker completos. #1201 foi integrada por seu responsável; a nova CI deve revalidar o novo HEAD.
+
 Continuação da PR1203 sobre main `6269b5100a5db25fbcd90696747cd95829221795`. O HEAD22e4d7bf era o estágio isolado; esta continuação liga o cliente existente. Não cria outro chat. Sem merge/deploy, chave, conta, OAuth, dados reais, mensagens ou modelo real. Provider e canais externos continuam OFF.
 
 ## Tela existente, sem fallback HTTP offline
@@ -44,4 +46,4 @@ Matriz final raw/prepared nos fusos UTC, America/Sao_Paulo e Pacific/Auckland: 2
 
 Nenhum arquivo da #1135 foi editado ou absorvido. Seu HEAD373b2bb2/base965a48c4 continuam com a composição Telegram e sua autoridade temporal. A ligação de provider no servidor continua sem callsite e OFF; a proposta `protect/validate/checkNow` documentada na auditoria anterior permanece para coordenação. WhatsApp/áudio, login real, qualidade de modelo e aparelho não foram validados.
 
-O audit de DOMPurify herdado da base pertence à #1201. Não copiar manifests, rodar audit fix ou afrouxar gate. Não fazer merge/deploy nesta tarefa.
+O audit de DOMPurify falhava na base original; a correção #1201 foi integrada pelo responsável e incorporada por merge normal nesta continuação. Não copiar manifests, rodar audit fix ou afrouxar gate. Não fazer merge/deploy nesta tarefa.
