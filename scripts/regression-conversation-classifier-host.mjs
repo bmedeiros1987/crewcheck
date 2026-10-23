@@ -26,7 +26,7 @@ const unknownNext = 'Vou ter serviço em seguida?';
 const unknownSchedule = 'Me dá um panorama dos compromissos salvos?';
 function harness({ transport, enabled = true, modelEnabled = true, timeoutMs = 1000 } = {}) {
   const store = { 'synthetic-a': fixture('synthetic-a'), 'synthetic-b': fixture('synthetic-b', '06:25') };
-  let time = now, turn = 0, allowed = true;
+  let time = now, turn = 0, allowed = true, currentHook = () => {};
   const active = { owner: 'synthetic-a', sessionId: 'session-a', epoch: 'epoch-a', turnId: 'turn-a', revision: 'revision-a', selectionHash: digest(store['synthetic-a']), expiresAt: now + 300000 };
   const calls = [], reads = [];
   const current = binding => allowed && Object.keys(binding).every(key => active[key] === binding[key]) && digest(store[active.owner] || '') === binding.selectionHash;
@@ -41,8 +41,8 @@ function harness({ transport, enabled = true, modelEnabled = true, timeoutMs = 1
   const read = async input => { reads.push({ intent: input.intent, owner: input.binding.owner }); return capability(input); };
   const host = createConversationReadHost({ enabled, classify: classifier, clock: () => time,
     admit: async _request => { active.turnId = 'turn-' + ++turn; return { ...active, allowed }; },
-    checkNow: current, isCurrent: async binding => current(binding), read });
-  return { host, active, store, calls, reads, setTime: value => { time = value; }, setAllowed: value => { allowed = value; }, current, read };
+    checkNow: current, isCurrent: async binding => { currentHook(); return current(binding); }, read });
+  return { host, active, store, calls, reads, setTime: value => { time = value; }, setAllowed: value => { allowed = value; }, setCurrentHook: fn => { currentHook = fn; }, current, read };
 }
 after(() => {
   globalThis.fetch = originalFetch; globalThis.localStorage = originalStorage;
@@ -137,6 +137,12 @@ test('canonical occurrence end during inference cannot silently select next occu
   const h = harness({ transport: async () => { h.setTime(Date.parse('2032-10-10T17:05:00Z') + 1); h.active.expiresAt = now + 86400000; return '{"intent":"nextDuty.read"}'; } });
   h.active.expiresAt = now + 86400000;
   const answer = await h.host({}, unknownNext); assert.equal(answer.state, 'clarification'); assert.deepEqual(answer.facts, []);
+});
+test('post-read isCurrent await must not deliver ended canonical facts', async () => {
+  const h = harness(); h.active.expiresAt = now + 86400000;
+  h.setCurrentHook(() => { if (h.reads.length) h.setTime(Date.parse('2032-10-10T17:05:00Z') + 1); });
+  const answer = await h.host({}, 'próxima jornada');
+  assert.equal(answer.state, 'clarification'); assert.deepEqual(answer.facts, []); assert.equal(h.calls.length, 0);
 });
 test('actual reader freshness and missing data remain unavailable, never zero/invented', async () => {
   const h = harness(); const value = JSON.parse(h.store['synthetic-a']); value.capturedAt = new Date(now - 8 * 86400000).toISOString();

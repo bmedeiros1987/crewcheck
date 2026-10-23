@@ -57,6 +57,12 @@ export function createConversationReadHost({ enabled = false, admit, isCurrent, 
         if (!currentNow()) return null;
         const value = await read(Object.freeze({ intent, followup, binding, context: followup ? priorContext : null }));
         if (!await current()) return null;
+        // The canonical reader chose these occurrences before the last await.
+        // Recheck its temporal evidence without selecting a different journey.
+        const deliveredAt = clock();
+        if (value?.state === 'available' && (!Array.isArray(value.facts)
+          || value.facts.some(fact => !Number.isFinite(fact?.end) || fact.end <= deliveredAt)
+          || (value.context && (!Number.isFinite(value.context.expiresAt) || value.context.expiresAt <= deliveredAt)))) return changed(true);
         return value;
       };
       let baseline = null, preparationFailure = null;
