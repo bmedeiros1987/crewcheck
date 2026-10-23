@@ -103,7 +103,7 @@ try {
   const ast = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const fn = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'perDiemConfig');
   assert(fn, 'extract actual perDiemConfig');
-  const context = vm.createContext({ ...amounts, confirmedRateAt: learning.confirmedRateAt, confirmedRateValueAt: learning.confirmedRateValueAt,
+  const context = vm.createContext({ ...amounts, confirmedPerDiemReferencesAt: learning.confirmedPerDiemReferencesAt, confirmedRateAt: learning.confirmedRateAt, confirmedRateValueAt: learning.confirmedRateValueAt,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1', breakfastPercent: 0.25,
       perDiem: [{ key: 'domestic', label: 'Synthetic domestic', currency: 'BRL', mainMeal: 100 }] }),
     readOptionalNumberSetting: () => null, readNumberSetting: () => 0, loadAirportPerDiemOverrides: () => ({}) });
