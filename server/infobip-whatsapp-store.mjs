@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { parseJsonColumn } from './v139/common.mjs';
 import { sealSubscription as seal, openSubscription as open } from './web-push/installationRegistry.mjs';
-import { prepareOfflineInfobipReply, INFOBIP_REPLY_MAX_AGE_MS, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
+import { prepareOfflineInfobipReply, INFOBIP_REPLY_MAX_AGE_MS, INFOBIP_IDENTIFIER_RETENTION_MS, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
 import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
 import {createCipheriv, randomBytes} from 'node:crypto';
@@ -97,7 +97,7 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
           const stateKey = jobKey(eventKey), marker = randomUUID();
           await c.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',
             [stateKey, JSON.stringify({v: 1, digest, marker, status: 'claiming', sealed: null,
-              retainUntil: now() + 72 * 60 * 60_000})]);
+              retainUntil: now() + INFOBIP_IDENTIFIER_RETENTION_MS})]);
           const state = await lockState(c, stateKey);
           if (state?.v !== 1 || state.digest !== digest) return 'conflict';
           if (state.marker !== marker) return state.status === 'claiming' ? 'conflict' : 'duplicate';
@@ -134,6 +134,8 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
     // No raw recipient or content is retained for DLR correlation. A callback
     // cannot create a job or schedule a send, nor downgrade a delivered state.
     recordDelivery: report => transaction(async c => {
+      if (!['delivery','seen'].includes(report?.kind) || !Array.isArray(report.receiptKey) ||
+          (report.kind === 'delivery' ? report.receiptKey.length !== 3 || !Number.isInteger(report.statusId) : report.receiptKey.length !== 2)) error();
       const stateKey = jobKey(report.eventKey), state = await lockState(c, stateKey);
       if (!['dispatching','uncertain','accepted_unconfirmed','delivered'].includes(state?.status) ||
           state.report?.recipientHash !== privateIndex(report.recipient) ||
@@ -141,13 +143,32 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
           !Number.isFinite(report.sentAt) || !Number.isFinite(report.doneAt) ||
           report.sentAt < state.report.attemptAt - 30_000 || report.doneAt < report.sentAt ||
           report.doneAt > now() + 30_000 || now() - report.doneAt > 48 * 60 * 60_000) return {status: 'ignored'};
-      if (state.status === 'delivered') return {status: 'duplicate'};
-      await save(c, stateKey, {...state, status: 'delivered', sealed: null});
-      return {status: 'delivered'};
+      // Unique per original event, independent of batch/order/counters. Existing
+      // row locks serialize callback replay with dispatch and maintenance.
+      const receiptKey = jobKey(hash(['infobip-report-v1', sender, report.kind, report.receiptKey]));
+      const marker = randomUUID();
+      await c.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',
+        [receiptKey, JSON.stringify({v:1,status:'receipt',marker,sealed:null,retainUntil:now()+INFOBIP_IDENTIFIER_RETENTION_MS})]);
+      const receipt = await lockState(c,receiptKey);
+      if (receipt.marker !== marker) return {status:'duplicate'};
+      if (report.kind === 'seen') {
+        // Read observation is not delivery evidence and never authorizes a reply.
+        await save(c,stateKey,{...state,report:{...state.report,seenAt:Math.max(state.report.seenAt||0,report.doneAt)}});
+        return {status:'seen'};
+      }
+      const delivered = report.deliveryState === 'delivered';
+      const previous = state.report.deliveryAt || 0;
+      const advance = delivered ? state.status !== 'delivered' || report.doneAt > previous :
+        state.status !== 'delivered' && (report.doneAt > previous || (report.doneAt === previous && report.statusId > (state.report.deliveryStatusId || 0)));
+      await save(c,stateKey,{...state,
+        status:delivered || state.status === 'delivered' ? 'delivered' : state.status,
+        sealed:delivered ? null : state.sealed,
+        report:{...state.report,...(advance?{deliveryAt:report.doneAt,deliveryStatusId:report.statusId}: {})}});
+      return {status:delivered?'delivered':'observed'};
     }),
     // Explicit bounded maintenance, never registered as a timer/worker. Cursor
     // scans only this namespace. Payloads expire after 15m; uniqueness markers
-    // live 72h, longer than the accepted inbound horizon (48h plus clock skew).
+    // live 11 days, beyond the 10-day accepted retry horizon. No content is kept.
     maintain: ({cursor = '', limit = 20, forgetAccountId} = {}) => transaction(async c => {
       if ((cursor && !hex(cursor)) || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
           (forgetAccountId !== undefined && (typeof forgetAccountId !== 'string' || !forgetAccountId))) error();
