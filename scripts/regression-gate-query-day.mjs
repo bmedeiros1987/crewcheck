@@ -3,6 +3,7 @@ import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import ts from 'typescript';
 import * as policy from '../shared/gate-query-day.mjs';
 import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs';
@@ -31,7 +32,7 @@ function functions(file,names){
 const FakeDate=class extends Date {static now(){return now;}};
 let serverCalls=0, exports=0, credentialFactories=0;
 const fake=async()=>{serverCalls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z'};};
-const server=vm.createContext({...policy,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FakeDate,process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
+const server=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FakeDate,process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
  ciriumRadarInjectionEnabled:o=>o?.enabled===true,runCiriumRadarInjection:fake,publicRadarPayload:x=>x,scoreRadar:()=>95,configuredProviders:()=>[],
  providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),defaultCiriumRadarOptions:()=>{credentialFactories++;return undefined;},ciriumRadarIdentity:()=>({}),

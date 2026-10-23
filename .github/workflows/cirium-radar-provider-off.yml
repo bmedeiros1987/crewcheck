@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'server/cirium-radar-provider.mjs'
+      - 'shared/radar-field-evidence.mjs'
       - 'server/cirium-flight-adapter.mjs'
       - 'server/radar-occurrence-identity.mjs'
       - 'server/radar-field-provenance.mjs'
