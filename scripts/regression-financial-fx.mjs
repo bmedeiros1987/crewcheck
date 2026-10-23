@@ -76,3 +76,120 @@ fx=first;assert.match(markup(),/1\.000,00/);assert.match(markup(),/SYNTHETIC ref
 draft={...draft,from:'BRL',to:'USD',amount:'10'};assert.match(markup(),/2,00/);
 draft={...draft,from:'USD',to:'BRL',rate:'0',asOf:'2032-02-08'};assert.match(markup(),/Cotação\/data indisponível/);
 console.log('PASS actual FX loader/calculator: explicit OFF/access vs temporary, timeout, original-age bounded stale cache, session race, invalid/zero/future/inverse payloads, USD200, visible manual shortcut and source/date');
+
+// The allowance statement consumes the same quote set without changing native
+// entitlements, saved history, provider mode, or original statement metadata.
+const originalRows=Object.freeze([
+ Object.freeze({eventId:'synthetic-foreign',iso:'2032-02-08',label:'Meal',value:20.01,currency:'USD',convertedBRL:999,source:'synthetic original',exchangeRate:999}),
+ Object.freeze({eventId:'synthetic-domestic',iso:'2032-02-08',label:'Meal',value:100,currency:'BRL',convertedBRL:100,source:'synthetic original',exchangeRate:1}),
+]);
+const projected=fxMath.projectAllowanceFxRows(originalRows,first.quotes,'2032-02-09');
+assert.equal(projected[0].convertedBRL,100.05);
+assert.equal(projected[0].exchangeRate,5,'the audit rate keeps the explicit BRL/base inverse direction');
+assert.equal(projected[1].convertedBRL,100,'national allowance is never converted');
+assert.equal(projected[0].value,20.01);assert.equal(projected[0].source,'synthetic original');
+assert.equal(projected[0].fxReferences[0].asOf,'2032-02-08');
+assert.equal(projected[0].fxReferences[0].retrievedAt,first.quotes.USD.retrievedAt);
+assert.equal(originalRows[0].convertedBRL,999,'projection is ephemeral, never rewrites the source row');
+for(const refs of [{},{USD:{...first.quotes.USD,rate:'0'}},{USD:{...first.quotes.USD,asOf:'2032-02-10'}},{USD:{...first.quotes.USD,asOf:'2032-02-01'}}]) {
+ const unavailable=fxMath.projectAllowanceFxRows(originalRows,refs,'2032-02-09');
+ assert.equal(unavailable[0].convertedBRL,null);assert.equal(unavailable[0].value,20.01);assert.equal(unavailable[1].convertedBRL,100);
+}
+const mixed=fxMath.projectAllowanceFxRows([...originalRows,{...originalRows[0],currency:'EUR'}],{...first.quotes,EUR:{...first.quotes.USD,quote:'EUR',asOf:'2032-02-07'}},'2032-02-09');
+assert.equal(mixed[0].convertedBRL,null);assert.equal(mixed[2].convertedBRL,null,'dates are coherent across the selected projection');
+const manualQuote={base:'USD',quote:'BRL',rate:'5',asOf:'2032-02-08',source:'synthetic reviewed manual',method:'account_manual'};
+assert.equal(fxMath.projectAllowanceFxRows(originalRows,{USD:manualQuote},'2032-02-09')[0].convertedBRL,100.05);
+
+const {loadClientModules}=await import('./lib/ts-module-harness.mjs');
+const allowanceModules=loadClientModules({files:['client/src/lib/financialForecastPeriods.ts','client/src/lib/financialHistoryPeriods.ts']});
+try {
+ const homeSource=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',homeSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ const functions=ast.statements.filter(node=>ts.isFunctionDeclaration(node)&&['scopedFinancialForecast','PerDiemView'].includes(node.name?.text));assert.equal(functions.length,2);
+ const ownerFx={quotes:first.quotes,setMode:()=>{}},roster={year:2032,month:2,days:[]},snapshot={roster,perdiem:{monthlyRows:originalRows,monthlyUnclassifiedItems:[]}},range={start:'2032-02-01',end:'2032-02-29',valid:true,kind:'month'};
+ const context=vm.createContext({...allowanceModules.load('financialForecastPeriods'),...allowanceModules.load('financialHistoryPeriods'),...fxMath,React,
+  useFinancialFx:()=>ownerFx,financeSnapshot:()=>snapshot,moneyCurrency:(value,currency)=>currency+value,
+  FinancialHistoryExplorer:()=>null,FinancialFreeDayDetails:()=>null,FinancialFxSourceControl:()=>null,
+  financialWeeks:()=>[],nextAllowancePayment:()=>null,buildLegs:()=>[],getStoredUser:()=>({email:'synthetic@example.invalid'}),
+  CanonicalForecastCapture:()=>null,PerDiemMonthView:()=>null,NextPaymentCard:()=>null,FinancialStatementReconciliation:()=>null});
+ vm.runInContext(ts.transpileModule(functions.map(node=>node.getText(ast)).join('\n')+'\nglobalThis.subject={scopedFinancialForecast,PerDiemView};',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,context);
+ const scoped=context.subject.scopedFinancialForecast([snapshot],range,[],first.quotes,'2032-02-09');
+ assert.equal(scoped.monthly,200.05);assert.equal(scoped.pendingCurrencies.length,0);
+ const blocked=context.subject.scopedFinancialForecast([snapshot],range,[],{},'2032-02-09');assert.equal(blocked.monthly,null);assert.deepEqual(Array.from(blocked.pendingCurrencies),['USD']);
+ // Verify the public component passes the live provider quotes to its actual
+ // scoped caller, not only that the pure helper works in isolation.
+ ownerFx.quotes={USD:{...manualQuote,asOf:'2001-01-01'}};
+ const root=context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}});
+ const render=root.props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
+ const monthView=render.props.children.find(child=>child?.props?.forecastOverride);
+ assert.equal(monthView.props.forecastOverride.monthly,200.05);
+ assert.equal(monthView.props.forecastOverride.monthlyRows[0].fxReferences[0].source,'synthetic reviewed manual');
+ assert.ok(monthView.props.fxControl,'shared source control reaches the allowance screen');
+ const captureQuotes=ownerFx.quotes;
+ const capture=render.props.children.find(child=>child?.props?.flights);
+ assert(capture,'actual canonical capture host exists');
+ for(const quotes of [{},{USD:{...manualQuote,rate:'6',retrievedAt:'2032-02-09T14:00:00Z'}},first.quotes]){
+  ownerFx.quotes=quotes;
+  const refreshed=context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
+  const current=refreshed.props.children.find(child=>child?.props?.flights);
+  assert.equal(current.key,capture.key,'quote refresh/source switch must not remount an in-progress canonical review');
+  assert.equal(current.props.rows[0].convertedBRL,undefined,'capture excludes transient converted totals');
+  assert.equal(current.props.rows[0].value,20.01,'capture preserves native amount');
+  assert.equal(current.props.rows[0].fxReferences,undefined,'capture excludes transient FX provenance');
+ }
+ ownerFx.quotes=captureQuotes;
+
+ assert.equal(monthView.props.graph.props.children.props.quotes,ownerFx.quotes,'reconciliation receives live quotes and narrows before projection');
+ assert.equal(monthView.props.graph.props.children.props.rows[0].value,20.01);
+ const captureKey=()=>context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null}).props.children.find(child=>child?.props?.flights).key;
+ const nativeBefore=snapshot.perdiem.monthlyRows;
+ snapshot.perdiem.monthlyRows=[{...nativeBefore[0],value:21.01},...nativeBefore.slice(1)];
+ assert.notEqual(captureKey(),capture.key,'a native amount change still invalidates the review');
+ snapshot.perdiem.monthlyRows=nativeBefore;
+ context.getStoredUser=()=>({email:'other-synthetic@example.invalid'});
+ assert.notEqual(captureKey(),capture.key,'account change still invalidates the review');
+ context.getStoredUser=()=>({email:'synthetic@example.invalid'});
+ assert.equal(captureKey(),capture.key);
+
+ assert.equal(context.subject.scopedFinancialForecast([snapshot],range,['2032-03'],first.quotes,'2032-02-09').monthly,null,'missing roster scope still blocks a complete total');
+}finally{allowanceModules.cleanup();}
+console.log('PASS shared FX -> actual allowance scope/view: no undated setting fallback, immutable native amounts, national BRL unchanged, source/date, inverse/manual, OFF/expiry/mixed dates and incomplete scope');
+
+const reconciliationModules=loadClientModules({files:['client/src/lib/financialForecastPeriods.ts','client/src/lib/financialHistoryPeriods.ts']});
+try {
+ let stateIndex=0,reconciliationOwner='synthetic',hidden=false;
+ const printedDocument=Object.freeze({owner:'synthetic:synthetic-token',result:Object.freeze({kind:'per_diem',periodStart:'2032-02-08',periodEnd:'2032-02-08',paymentDate:'2032-02-09',totals:Object.freeze({deposited:100}),warnings:[],rates:[]})});
+ const Reconciliation=compile('client/src/components/finance/FinancialStatementReconciliation.tsx',{
+  'react':{...React,useEffect:()=>{},useRef:()=>({current:0}),useState:value=>[stateIndex++===0?printedDocument:value,()=>{}]},'react/jsx-runtime':jsx,
+  './FinancialPrivacy':{useFinancialPrivacy:()=>({hidden,text:x=>x,amount:x=>hidden?'MASKED':x})},
+  '@/lib/authClient':{getStoredUser:()=>({id:reconciliationOwner}),getToken:()=> 'synthetic-token'},
+  '@/lib/financialStatementLearning':{learnFinancialStatement:()=>{throw Error('no import/write in render fixture');}},
+  '@/lib/financialHistoryPeriods':reconciliationModules.load('financialHistoryPeriods'),
+  '@/lib/financialForecastPeriods':reconciliationModules.load('financialForecastPeriods'),
+  '@shared/financialFx.mjs':fxMath,
+  './FinancialStatementImporter':{extractPdfText:()=>{throw Error('no real PDF in fixture');}},
+ }).default;
+ const base=Object.freeze({eventId:'synthetic-paid-period',iso:'2032-02-08',label:'Meal',value:20,currency:'USD',source:'synthetic historical entitlement'});
+ const view=(rows,quotes)=>{stateIndex=0;return renderToStaticMarkup(Reconciliation({rows,quotes,today:'2032-02-09',unclassified:[],coveredMonths:['2032-02'],requestRange:()=>{}}));};
+ for(const rate of ['5','6']) {
+  const q={base:'USD',quote:'BRL',rate,asOf:'2032-02-08',retrievedAt:'2032-02-09T12:00:00Z',source:'synthetic current FX',method:'account_manual'};
+  const rows=fxMath.projectAllowanceFxRows([base],{USD:q},'2032-02-09'),html=view(rows);
+  assert.doesNotMatch(html,/Diferença a conferir/,'current FX must not become a historic payment discrepancy, even when totals happen to agree');
+  assert.match(html,/Diferença histórica indisponível/);assert.match(html,/Estimativa à cotação de referência atual/);
+  assert.match(html,/synthetic current FX/);assert.match(html,/2032-02-08/);assert.match(html,/2032-02-09T12:00:00Z/);
+  assert.ok(html.indexOf('synthetic current FX')<html.indexOf('Conciliação ainda depende'),'FX provenance is beside the total, not only buried in item disclaimers');
+  assert.match(html,rate==='5'?/Estimativa à cotação de referência atual: R\$[^0-9]*100,00/:/Estimativa à cotação de referência atual: R\$[^0-9]*120,00/);
+  assert.equal(printedDocument.result.totals.deposited,100);assert.equal(base.value,20);
+ }
+ const scopedQuote={base:'USD',quote:'BRL',rate:'5',asOf:'2032-02-08',retrievedAt:'2032-02-09T12:00:00Z',source:'scoped USD source',method:'account_manual'};
+ const unrelated={...base,iso:'2032-01-08',currency:'EUR'};
+ const scopedHtml=view([base,unrelated],{USD:scopedQuote,EUR:{...scopedQuote,base:'EUR',asOf:'2032-02-07',source:'unrelated EUR source'}});
+ assert.match(scopedHtml,/Estimativa à cotação de referência atual: R\$[^0-9]*100,00/);
+ assert.match(scopedHtml,/scoped USD source/);assert.doesNotMatch(scopedHtml,/unrelated EUR source/);
+ assert.doesNotMatch(scopedHtml,/Diferença a conferir/);
+ const domestic=Object.freeze({...base,currency:'BRL',value:80,convertedBRL:80,exchangeRate:1});
+ assert.match(view([domestic]),/Diferença a conferir/,'domestic same-unit comparison remains available');
+ assert.doesNotMatch(view(fxMath.projectAllowanceFxRows([base],{},'2032-02-09')),/Diferença a conferir/);
+ hidden=true;assert.doesNotMatch(view([domestic]),/R\$|80,00|20,00|100,00/,'privacy protects compared monetary amounts');
+ hidden=false;reconciliationOwner='another-owner';assert.doesNotMatch(view([domestic]),/Total informado pelo documento/,'document never crosses account scope');
+}finally{reconciliationModules.cleanup();}
+console.log('PASS actual reconciliation: current5/current6 cannot become a historical payment delta; source/observation/retrieval visible; original printed total immutable; domestic comparison/privacy/owner preserved');

@@ -2,6 +2,9 @@ name: Telegram operational briefing OFF
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server/concierge/**'
       - 'server/notification-job-safety.mjs'
       - 'server/telegram-fast-ack.mjs'
@@ -76,6 +79,15 @@ jobs:
           ref: 661d27318ff6146e358492422f3249b424c318cf
           path: .ci-concierge-1203
           persist-credentials: false
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Existing isolated browser fixture pattern
         run: |
           npm install --prefix "$RUNNER_TEMP/briefing-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
