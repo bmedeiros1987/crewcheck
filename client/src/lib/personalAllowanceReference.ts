@@ -10,11 +10,11 @@ const day=(value:unknown):value is string=>typeof value==='string'&&/^(?:20|21)\
 export function personalAllowanceSources(rates:readonly LearnedRate[],ownerId:string) {
  const latest=new Map<string,LearnedRate>();
  for(const rate of rates){
-  if(rate.ownerId!==ownerId||!rate.confirmed||!allowanceCategory(rate.key)||rate.currency!=='BRL'||(rate.valueOrigin!==undefined&&!['printed','owner_confirmed'].includes(rate.valueOrigin))||!Number.isFinite(rate.value)||rate.value<=0)continue;
+  if(rate.ownerId!==ownerId||!rate.confirmed||!allowanceCategory(rate.key)||rate.currency!=='BRL')continue;
   const scope=JSON.stringify([rate.key,rate.currency,rate.effectiveFrom]),prior=latest.get(scope);
   if(!prior||(rate.revision||1)>(prior.revision||1))latest.set(scope,rate);
  }
- return [...latest.values()];
+ return [...latest.values()].filter(rate=>(rate.valueOrigin===undefined||['printed','owner_confirmed'].includes(rate.valueOrigin))&&Number.isFinite(rate.value)&&rate.value>0);
 }
 export function parsePersonalAllowanceHistory(raw:string,ownerId:string):PersonalAllowanceHistory|null {
  try{

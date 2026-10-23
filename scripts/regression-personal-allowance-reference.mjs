@@ -44,6 +44,14 @@ try{
  unavailableKey=policyKey;assert.equal(learning.confirmedPerDiemReferencesAt('2032-10-05').state,'unavailable');unavailableKey='';
  const intact=values.get(policyKey);values.set(policyKey,'{broken');assert.equal(learning.confirmedPerDiemReferencesAt('2032-10-05').state,'invalid');assert.equal(await save('taxi'),false);assert.equal(values.get(policyKey),'{broken');values.set(policyKey,intact);
  values.delete(archiveKey);assert.equal(learning.confirmedPerDiemReferencesAt('2032-10-05').state,'unavailable','active personal reference with missing source cannot fall back to ACT');values.set(archiveKey,original);
+ const beforeZero=values.get(archiveKey);
+ const zeroCorrection=learning.mergeConfirmedRates(learning.readConfirmedFinancialRates(),[{...rate('taxi'),value:0,sourceFingerprint:'synthetic-zero-correction',confirmed:true}]);
+ assert.equal(learning.saveConfirmedFinancialRates(zeroCorrection),true);
+ assert.equal(personal.personalAllowanceSources(learning.readConfirmedFinancialRates(),'synthetic-a').some(item=>item.key==='per_diem.taxi'),false,'zero latest revision cannot resurrect older positive source');
+ const afterZero=learning.confirmedPerDiemReferencesAt('2032-10-05');assert.equal(afterZero.state,'unavailable');assert.equal(afterZero.taxi,null);
+ const zeroForecast=run([event()]);assert.equal(taxi(zeroForecast),undefined,'actual caller must not emit superseded taxi amount');assert(zeroForecast.unclassifiedItems.some(item=>item.pendingKind==='taxi_rate'));
+ assert(learning.readConfirmedFinancialRates().some(item=>item.key==='per_diem.taxi'&&item.value===32.5),'zero correction preserves original observation');
+ values.set(archiveKey,beforeZero); // Isolated synthetic branch: also retain the positive-correction counterproof below.
  const corrected=learning.mergeConfirmedRates(learning.readConfirmedFinancialRates(),[{...rate('taxi'),value:34,sourceFingerprint:'synthetic-correction',confirmed:true}]);assert.equal(learning.saveConfirmedFinancialRates(corrected),true);assert.equal(learning.confirmedPerDiemReferencesAt('2032-10-05').state,'unavailable','superseded source requires a new explicit personal review');
  assert.equal(await learning.savePersonalAllowanceReference({expectedSession:learning.financialRateSession(),expectedRevision:learning.readPersonalAllowanceReferences().history.revision,category:'taxi',active:false}),true,'revocation remains possible for a superseded source');assert.equal(learning.confirmedPerDiemReferencesAt('2032-10-05').state,'ready');
  assert(learning.readConfirmedFinancialRates().some(item=>item.sourceFingerprint===rate('taxi').sourceFingerprint&&item.value===32.5),'original source amount retained');
