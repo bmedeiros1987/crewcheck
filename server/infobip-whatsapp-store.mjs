@@ -3,6 +3,7 @@ import { parseJsonColumn } from './v139/common.mjs';
 import { sealSubscription as seal, openSubscription as open } from './web-push/installationRegistry.mjs';
 import { prepareInfobipReply, INFOBIP_REPLY_MAX_AGE_MS, INFOBIP_IDENTIFIER_RETENTION_MS, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
+import {assertInfobipAccountQuiescent,infobipEngineOwner} from './infobip-whatsapp-quiescence.mjs';
 import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
 import {createCipheriv, randomBytes} from 'node:crypto';
 
@@ -33,7 +34,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
   if (!db?.getConnection || !phone(sender) || !Buffer.isBuffer(encryptionKey) || encryptionKey.length !== 32 ||
       typeof linkHashKey !== 'string' || linkHashKey.length < 32) error();
   // Copy key bytes; caller mutation must not switch the cryptographic context.
-  const key = Buffer.from(encryptionKey);
+  const key = Buffer.from(encryptionKey),localPreparations=new Map();
   const privateIndex = value => createHmac('sha256', linkHashKey).update(value).digest('hex');
   const lockState = async (c, stateKey) => {
     const [rows] = await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [stateKey]);
@@ -68,6 +69,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
   const transaction = createInfobipSqlBudget(db, sqlBudget);
   const erase = async (c,email) => {
     if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) error();
+    await assertInfobipAccountQuiescent(c,email,{checkTable:false});
     await c.query('UPDATE crewcheck_whatsapp_links SET revoked_at=UTC_TIMESTAMP(3),consent_concierge=0,consent_alerts=0,updated_at=UTC_TIMESTAMP(3) WHERE email=?',[email]);
     const [owners] = await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);
     await c.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?',[email]);
@@ -91,7 +93,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
         // Production admission commits before invoking the canonical engine.
         // The preparing marker and quantity reservation are atomic. A crash or
         // lost ACK cannot cause this conversation/attempt to be retried.
-        let preparationId;
+        let preparationId,preparationOwner;
         if(admission){
           preparationId=await transaction(async c=>{
             const current=await lookupLink(c,job),state=await lockState(c,stateKey);
@@ -99,14 +101,27 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
             if(signal?.aborted||stamp(current)!==job.bindingStamp||!fresh(job,clock())||!await admission.reserve(c,job)){
               await save(c,stateKey,{...state,status:'cancelled',sealed:null});return null;
             }
-            const token=randomUUID();await save(c,stateKey,{...state,status:'preparing',preparationId:token});return token;
+            preparationOwner=current.email;const token=randomUUID();await save(c,stateKey,{...state,status:'preparing',preparationId:token,engineActive:true,engineOwner:infobipEngineOwner(current.accountId)});return token;
           });
           if(!preparationId)return {status:'blocked'};
         }
-        const proposal = await prepareInfobipReply(job, {
+        let proposal,finishLocal,localWork;
+        if(admission){localWork=new Promise(resolve=>finishLocal=resolve);
+          const pending=localPreparations.get(preparationOwner)||new Set();pending.add(localWork);localPreparations.set(preparationOwner,pending);}
+        try {proposal = await prepareInfobipReply(job, {
           lookupLink: event => transaction(c => lookupLink(c, event)),
           concierge: job.kind === 'link_confirmation' ? async () => job.text : concierge, now: clock, signal,
-        });
+        });} finally {
+          // prepareInfobipReply tracks the actual handler until settle, even on
+          // abort/timeout. Lost cleanup ACK leaves the durable fence fail-closed.
+          try {if(admission)await transaction(async c=>{
+            const state=await lockState(c,stateKey);
+            if(state?.preparationId!==preparationId||state.engineActive!==true)error();
+            await save(c,stateKey,{...state,engineActive:false,engineOwner:null});
+          });} finally {
+            if(finishLocal){finishLocal();const pending=localPreparations.get(preparationOwner);pending.delete(localWork);if(!pending.size)localPreparations.delete(preparationOwner);}
+          }
+        }
         // Phase one commits a durable no-retry marker BEFORE provider I/O.
         const attemptId = await transaction(async c => {
           const current = await lookupLink(c, job), state = await lockState(c, stateKey);
@@ -197,6 +212,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
       const [rows] = await c.query("SELECT state_key FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-inbound-v1:%' AND CAST(state_key AS BINARY)>? AND CAST(state_key AS BINARY)<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status'))='held' ORDER BY CAST(state_key AS BINARY) LIMIT 1 FOR UPDATE",[PREFIX,PREFIX+'~']);
       return rows[0]?.state_key.slice(PREFIX.length) || null;
     }),
+    async waitForLocalPreparations(email){while(localPreparations.has(email))await Promise.all([...localPreparations.get(email)]);},
     eraseAccount: (email,{client} = {}) => {
       if (!client) return transaction(c=>erase(c,email));
       // Join the caller's account-deletion transaction; never commit/release it.
@@ -255,13 +271,14 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
       for (const row of rows) {
         const state = parseJsonColumn(row.payload, null);
         if (state?.v !== 1) error();
+        const active=state.engineActive===true||(state.status==='preparing'&&state.engineActive!==false);
         const forgetting = forgetAccountId !== undefined && state.ownerHash === privateIndex(forgetAccountId);
         const expired = state.sealed && !fresh(loadJob(state, row.state_key), now());
         let next = state;
         if (forgetting || expired) next = {...state, sealed: null,
-          status: state.status === 'dispatching' ? 'uncertain' : ['held','preparing'].includes(state.status) ? 'expired' : state.status,
-          ...(forgetting ? {ownerHash: null, report: null} : {})};
-        if (!next.sealed && Number.isFinite(next.retainUntil) && next.retainUntil <= now()) {
+          status: active&&state.engineActive!==true ? 'preparing' : state.status === 'dispatching' ? 'uncertain' : ['held','preparing'].includes(state.status) ? 'expired' : state.status,
+          ...(forgetting ? {ownerHash: active?state.ownerHash:null, report: null} : {})};
+        if (!active && !next.sealed && Number.isFinite(next.retainUntil) && next.retainUntil <= now()) {
           await c.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?', [row.state_key]);
         } else if (next !== state) await save(c, row.state_key, next);
       }
@@ -274,7 +291,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
       if (!state?.sealed) return {status: state?.status || 'missing'};
       const job = loadJob(state, stateKey);
       if (fresh(job, now())) return {status: state.status};
-      const status = state.status === 'dispatching' ? 'uncertain' : 'expired';
+      const status = state.status==='preparing'&&state.engineActive!==false ? 'preparing' : state.status === 'dispatching' ? 'uncertain' : 'expired';
       await save(c, stateKey, {...state, status, sealed: null}); return {status};
     }),
 

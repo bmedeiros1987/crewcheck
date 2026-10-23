@@ -35,6 +35,7 @@ jobs:
         run: |
           node scripts/regression-infobip-whatsapp-hmac.mjs
           node scripts/regression-infobip-whatsapp-candidate.mjs
+          node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs
@@ -45,6 +46,7 @@ jobs:
         run: |
           node scripts/regression-infobip-whatsapp-hmac.mjs
           node scripts/regression-infobip-whatsapp-persistence.mjs
+          node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs --prepared
