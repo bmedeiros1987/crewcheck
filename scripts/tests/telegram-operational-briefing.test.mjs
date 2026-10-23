@@ -158,3 +158,23 @@ test('reader rejects changed account owner even when client identity still match
  const f=fixture();f.owner='CC-DIFFERENT';let status;
  await handleTelegramBriefingConsent({method:'GET'},{},{pathname:'/api/notifications/operational-briefing'},{...f.options,identify:async()=>f.identity,reply:(_r,value)=>{status=value;}});assert.equal(status,409);
 });
+test('supported CrewCheck origins grant revise and revoke; spoofed origins remain refused',async()=>{
+ for(const origin of ['https://crewcheck.online','https://crewcheck.onrender.com','https://www.crewcheck.online']){
+  const f=fixture();let output,input;
+  const options={...f.options,identify:async()=>f.identity,read:async()=>input,reply:(_r,status,body)=>{output={status,body};}};
+  const request=()=>handleTelegramBriefingConsent({method:'POST',headers:{origin,'sec-fetch-site':'same-site'}},{},{pathname:'/api/notifications/operational-briefing'},options);
+  input={enabled:true,confirmed:true,expectedRevision:0,preferences:{timing:'lead',leadMinutes:120,timeZone:'America/Sao_Paulo'}};
+  await request();assert.equal(output.status,200,'SUPPORTED_ORIGIN: grant '+origin);assert.equal(output.body.revision,1);
+  input={...input,expectedRevision:1,preferences:{...input.preferences,leadMinutes:180}};
+  await request();assert.equal(output.status,200);assert.equal(output.body.revision,2);
+  input={enabled:false,expectedRevision:2};await request();assert.equal(output.status,200);assert.equal(output.body.status,'consent_revoked');assert.equal(output.body.revision,3);
+ }
+ for(const headers of [
+  {origin:'https://www.crewcheck.online.evil.example'}, {origin:'http://www.crewcheck.online'},
+  {origin:'https://www.crewcheck.online:8443'}, {origin:'https://www.crewcheck.online','sec-fetch-site':'cross-site'},
+ ]){
+  let status;
+  await handleTelegramBriefingConsent({method:'POST',headers},{},{pathname:'/api/notifications/operational-briefing'},{enabled:true,identify:()=>{throw Error('refused origin reached auth');},read:()=>{throw Error('refused origin reached mutation');},reply:(_r,value)=>{status=value;}});
+  assert.equal(status,403);
+ }
+});

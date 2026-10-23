@@ -206,7 +206,7 @@ export async function handleTelegramBriefingConsent(req, res, url, { enabled = T
     return true;
   }
   // No cookie-authorized cross-origin preference changes.
-  if (!['https://crewcheck.online','https://crewcheck.onrender.com'].includes(req.headers?.origin) || req.headers?.['sec-fetch-site'] === 'cross-site') { reply(res, 403, { ok: false, code: 'ORIGIN_REFUSED' }); return true; }
+  if (!['https://crewcheck.online','https://www.crewcheck.online','https://crewcheck.onrender.com'].includes(req.headers?.origin) || req.headers?.['sec-fetch-site'] === 'cross-site') { reply(res, 403, { ok: false, code: 'ORIGIN_REFUSED' }); return true; }
   const identity = await identify(req, res); if (!identity) return true;
   try { const result = await changeTelegramBriefingConsent(identity.db, identity, await read(req, 10000), { enabled, clock }); reply(res, 200, { ok: true, ...result }); }
   catch { reply(res, 409, { ok: false, code: 'BRIEFING_CONTEXT_CHANGED' }); }
