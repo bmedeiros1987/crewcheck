@@ -36,6 +36,11 @@ function auditSecret() {
   ]);
 }
 
+// Startup-only compatibility check; never returns or logs the canonical key.
+export function matchesCanonicalWhatsAppLinkSecret(value) {
+  return typeof value==='string' && Boolean(auditSecret()) && secureCompare(value,auditSecret());
+}
+
 function accessToken() {
   return envAny(['WHATSAPP_ACCESS_TOKEN']);
 }

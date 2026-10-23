@@ -38,7 +38,7 @@ const quotaRows=state=>[...state.rows.values()].filter(r=>r.kind==='infobip_send
  const forbidden=new Proxy({},{get(){assert.fail('OFF_MUST_NOT_READ_DEPENDENCIES');}});
  const off=await createInfobipWhatsAppProduction();assert.equal(off.health().enabled,false);
  const held=await createInfobipWhatsAppProduction({enabled:false,get configuration(){return forbidden.any;},get db(){return forbidden.any;}});assert.equal(held.health().enabled,false);
- const source=fs.readFileSync('scripts/p1-infobip-whatsapp-off/apply.mjs','utf8');assert(source.includes('createInfobipWhatsAppRuntime();'));
+ const source=fs.readFileSync('scripts/p1-infobip-whatsapp-off/compose.mjs','utf8');assert(source.includes('createInfobipWhatsAppHost();'));
  assert(!source.includes('createInfobipWhatsAppProduction'));
 }
 for(const change of [o=>delete o.admission,o=>o.admission.recipients=[],o=>o.admission.maxAttempts=0,o=>o.admission.validUntil=epoch+25*3600000,o=>o.configuration.allowedSenders=[],o=>o.configuration.allowedBaseUrls=[],o=>o.configuration.authentication='auto',o=>delete o.configuration.deploymentBinding,o=>o.configuration.deploymentBinding.linkHashKeyReference='wrong',o=>delete o.ingress,o=>o.ingress={mode:'trusted-boundary',publicOrigin},o=>delete o.scheduler,o=>delete o.request,o=>o.configuration.credentialReferences.apiKey='literal secret with spaces']) {
