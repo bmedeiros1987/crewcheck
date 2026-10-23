@@ -101,6 +101,9 @@ jobs:
           node scripts/regression-financial-history-loading-ui.cjs
           node scripts/regression-owner-per-diem-browser.mjs
           node scripts/regression-taxi-pending-row-browser.mjs
+          TZ=UTC node scripts/regression-finance-actionable-browser.mjs
+          TZ=America/Sao_Paulo node scripts/regression-finance-actionable-browser.mjs
+          TZ=Pacific/Auckland node scripts/regression-finance-actionable-browser.mjs
           node scripts/regression-financial-long-history.cjs
           node scripts/regression-salary-display-basis-browser.cjs
       - uses: actions/upload-artifact@v4

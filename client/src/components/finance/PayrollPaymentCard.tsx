@@ -1,3 +1,4 @@
+import PayrollNetEstimate from './PayrollNetEstimate';
 import type { ReactNode } from 'react';
 import { readConfirmedFinancialRates, reviewedPayrollCycleForOperationalMonth } from '@/lib/financialStatementLearning';
 import { nextPayrollPayment } from '@/lib/nextFinancialPayment';
@@ -18,5 +19,5 @@ export default function PayrollPaymentCard({ snapshots, requestRange, extraDetai
   let deductionMonth=candidates.find(item=>item.range===payment.range)?.fixedMonth;
   if(!payment.range&&snapshots.length){const current=new Date().toISOString().slice(0,7);const snapshot=snapshots.find(item=>item.month===current)||[...snapshots].sort((a,b)=>b.month.localeCompare(a.month))[0];payment=composeOperationalPayrollEstimate(snapshot);deductionMonth=snapshot.month;}
   const summary=salaryDisplaySummary(basis,payment.calculationTotals?.BRL??payment.totals?.BRL??null,payment.totals!==null&&payment.totals!==undefined, deductionMonth?[deductionMonth]:[],deductionMonth?[readMonthlyFinancialSettings(deductionMonth)]:[]);
-  return <NextPaymentCard salaryDisplay={{control:<><SalaryBasisControl basis={basis} choose={chooseBasis}/><SalaryPlrNotice/></>,amount:<SalaryBasisAmount summary={summary}/>,caption:payment.estimationBasis==='operational_month'?'Competência operacional · '+deductionMonth+' · '+payment.timing:payment.timing}}  payment={payment} requestRange={requestRange} extraDetails={extraDetails}/>;
+  return <NextPaymentCard salaryDisplay={{control:<><SalaryBasisControl basis={basis} choose={chooseBasis}/><SalaryPlrNotice/></>,amount:<SalaryBasisAmount summary={summary}/>,caption:payment.estimationBasis==='operational_month'?'Competência operacional · '+deductionMonth+' · '+payment.timing:payment.timing}}  payment={payment} requestRange={requestRange} extraDetails={<>{extraDetails}{basis==='net'&&deductionMonth&&<PayrollNetEstimate key={deductionMonth} month={deductionMonth} paymentMonth={candidates.find(item=>item.range===payment.range)?.creditMonth} gross={payment.calculationTotals?.BRL??payment.totals?.BRL??null} complete={payment.totals!==null&&payment.totals!==undefined}/>}</>}/>;
 }

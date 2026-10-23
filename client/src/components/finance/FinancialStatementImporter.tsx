@@ -2,6 +2,8 @@ import { extractFinancialPdfPages, financialPdfPagesText } from '@/lib/financial
 import type { PayrollPage } from '@/lib/privatePayrollExtraction';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from './FinancialPrivacy';
 import OwnerPerDiemConfirmation from './OwnerPerDiemConfirmation';
+import PersonalAllowanceReference from './PersonalAllowanceReference';
+import PayrollDeductionsReview from './PayrollDeductionsReview';
 import PrivatePayrollPreview from './PrivatePayrollPreview';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FileSearch, History, ShieldCheck, Upload, X } from 'lucide-react';
@@ -37,7 +39,7 @@ function formatMoney(value: number, currency = 'BRL') {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency, maximumFractionDigits: 6 }).format(value);
 }
 
-export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' | 'payroll' }) {
+export default function FinancialStatementImporter({ mode, prepared }: { mode: 'per_diem' | 'payroll'; prepared?: {session:string; result:StatementLearningResult} }) {
   const privacy = useFinancialPrivacy();
   const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
   const input = useRef<HTMLInputElement>(null);
@@ -47,15 +49,21 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
   const [sourceConfirmed, setSourceConfirmed] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
   useEffect(() => {
-    const reset = () => { epoch.current++; reviewSession.current = null; setResult(null); setRates(readConfirmedFinancialRates()); setBusy(false); setError(''); setCycleConfirmed(false); setSourceConfirmed(false); setAuthRevision(value => value + 1); };
+    const reset = () => { epoch.current++; reviewSession.current = null; setResult(null); setDocumentFingerprint(''); setRates(readConfirmedFinancialRates()); setBusy(false); setError(''); setCycleConfirmed(false); setSourceConfirmed(false); setAuthRevision(value => value + 1); };
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) reset(); };
     window.addEventListener('crewcheck:auth-changed', reset); window.addEventListener('crewcheck:auth-expired', reset); window.addEventListener('storage', storage);
     return () => { epoch.current++; window.removeEventListener('crewcheck:auth-changed', reset); window.removeEventListener('crewcheck:auth-expired', reset); window.removeEventListener('storage', storage); };
   }, []);
+  const [documentFingerprint,setDocumentFingerprint]=useState('');
   const [result, setResult] = useState<StatementLearningResult | null>(null);
   const [rates, setRates] = useState<LearnedRate[]>(readConfirmedFinancialRates);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    if (!prepared || prepared.session !== financialRateSession() || prepared.result.kind !== mode) return;
+    epoch.current++; reviewSession.current = prepared.session;
+    setResult(prepared.result); setSourceConfirmed(false); setCycleConfirmed(false); setError('');
+  }, [prepared, mode]);
   const visibleRates = useMemo(
     () => rates.filter((item) => mode === 'per_diem' ? item.key.startsWith('per_diem.') : item.key.startsWith('salary.')),
     [rates, mode, authRevision]
@@ -79,7 +87,8 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
       if (learned.kind !== mode) {
         throw new Error(mode === 'per_diem' ? 'Escolha um demonstrativo de diárias.' : 'Escolha um demonstrativo de pagamento.');
       }
-      if (version === epoch.current && identity === financialRateSession()) setResult(learned);
+      const digest = mode === 'payroll' ? await crypto.subtle.digest('SHA-256',await file.arrayBuffer()).then(bytes=>'sha256:'+Array.from(new Uint8Array(bytes)).map(value=>value.toString(16).padStart(2,'0')).join('')) : '';
+      if (version === epoch.current && identity === financialRateSession()) { setDocumentFingerprint(digest); setResult(learned); }
     } catch (cause) {
       if (version === epoch.current && identity === financialRateSession()) setError(cause instanceof Error ? cause.message : 'Não foi possível analisar este documento.');
     } finally {
@@ -119,7 +128,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
 
     {result && <div className="finance-learning-review" aria-live="polite">
       <header><div><small>Revisão obrigatória</small><h3>{result.competence || 'Competência não identificada'}</h3></div></header>
-      {mode === 'payroll' && result.payrollExtraction && <PrivatePayrollPreview extraction={result.payrollExtraction}/>}
+      {mode === 'payroll' && result.payrollExtraction && <><PrivatePayrollPreview extraction={result.payrollExtraction}/><PayrollDeductionsReview key={documentFingerprint} extraction={result.payrollExtraction} documentFingerprint={documentFingerprint}/></>}
       {mode === 'payroll' && <small data-payroll-dsr-review>{result.payrollDsrDraft ? `DSR · ${result.payrollDsrDraft.regime === 'NB' ? '22/8' : '21/9'} · holerite conciliado` : 'DSR · evidência pendente'}</small>}
       {result.warnings.map((warning) => <div className="finance-learning-notice warning" key={warning}>{privacy.text(warning)}</div>)}
       <div className="finance-learning-table-wrap"><table><thead><tr><th>Rubrica</th><th>Valor encontrado</th><th>Vigência</th><th>Confiança</th></tr></thead><tbody>
@@ -132,6 +141,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
       <div className="finance-learning-actions"><button type="button" onClick={() => setResult(null)}><X size={16}/>Descartar</button><button type="button" className="primary" disabled={payrollTotalsMismatch || !sourceConfirmed || (mode === 'payroll' && !cycleConfirmed) || !result.rates.length || result.warnings.some((item) => item.includes('obrigatória'))} onClick={confirm}><Check size={16}/>Confirmar valores</button></div>
     </div>}
 
+    {mode === 'per_diem' && <PersonalAllowanceReference onSaved={() => setRates(readConfirmedFinancialRates())}/>}
     {mode === 'per_diem' && <OwnerPerDiemConfirmation key={financialRateSession() || 'signed-out'} onSaved={() => setRates(readConfirmedFinancialRates())}/>}
     <details className="finance-learning-history" open={visibleRates.length > 0}>
       <summary><History size={16}/> Histórico de tarifas revisadas ({visibleRates.length})</summary>
