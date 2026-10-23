@@ -3635,7 +3635,7 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         if (!shouldSend) continue;
         // Bound display only: keep full evidence/state and room for all three blocks + opt-out.
         const excerpt = (value, limit, marker = '…') => { const text = String(value); return text.length > limit ? `${text.slice(0, limit - marker.length)}${marker}` : text; };
-        messages.push({ stateKey, nextState, text: [
+        messages.push({ stateKey, nextState, report: { ...report }, candidate, previous, change, text: [
           excerpt(`${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`, 120),
           `• ${formatWeatherNoticeDetails({ raw: report.raw, observedAt: report.observedAt, station: candidate.station })}`,
           `METAR/SPECI: ${excerpt(report.raw, 600, '… [boletim abreviado]')}`,
@@ -3659,6 +3659,18 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         if (!reserved) { summary.failures += 1; continue; }
         // Recheck after durable intent writes. A later revocation can still race transport.
         if (!await canaryLease.isHeld() || !await canary.canDispatch(selection)) { summary.skipped += 1; continue; }
+      }
+      if (canary) {
+        // No await between this final evidence/window check and transport. A
+        // later airport query or consent/intent write may have consumed the TTL.
+        const dispatchNow = observationNow();
+        const currentCandidates = conciergeWeatherCandidates(snapshot, new Date(dispatchNow));
+        const valid = Number.isFinite(dispatchNow) && messages.slice(0, 3).every((message) =>
+          currentCandidates.some((candidate) => candidate.key === message.candidate.key &&
+            candidate.role === message.candidate.role && candidate.station === message.candidate.station) &&
+          evaluateCriticalWeatherDelivery({ report: message.report, station: message.candidate.station,
+            previous: message.previous, change: message.change, now: dispatchNow }).accepted);
+        if (!valid) { summary.skipped += 1; continue; }
       }
       const result = await sendTelegramMessage(snapshot.chatId, [
         '⚠️ Mudança meteorológica crítica na sua escala',
