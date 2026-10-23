@@ -124,8 +124,32 @@ try {
  assert.equal(monthView.props.forecastOverride.monthly,200.05);
  assert.equal(monthView.props.forecastOverride.monthlyRows[0].fxReferences[0].source,'synthetic reviewed manual');
  assert.ok(monthView.props.fxControl,'shared source control reaches the allowance screen');
+ const captureQuotes=ownerFx.quotes;
+ const capture=render.props.children.find(child=>child?.props?.flights);
+ assert(capture,'actual canonical capture host exists');
+ for(const quotes of [{},{USD:{...manualQuote,rate:'6',retrievedAt:'2032-02-09T14:00:00Z'}},first.quotes]){
+  ownerFx.quotes=quotes;
+  const refreshed=context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
+  const current=refreshed.props.children.find(child=>child?.props?.flights);
+  assert.equal(current.key,capture.key,'quote refresh/source switch must not remount an in-progress canonical review');
+  assert.equal(current.props.rows[0].convertedBRL,undefined,'capture excludes transient converted totals');
+  assert.equal(current.props.rows[0].value,20.01,'capture preserves native amount');
+  assert.equal(current.props.rows[0].fxReferences,undefined,'capture excludes transient FX provenance');
+ }
+ ownerFx.quotes=captureQuotes;
+
  assert.equal(monthView.props.graph.props.children.props.quotes,ownerFx.quotes,'reconciliation receives live quotes and narrows before projection');
  assert.equal(monthView.props.graph.props.children.props.rows[0].value,20.01);
+ const captureKey=()=>context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null}).props.children.find(child=>child?.props?.flights).key;
+ const nativeBefore=snapshot.perdiem.monthlyRows;
+ snapshot.perdiem.monthlyRows=[{...nativeBefore[0],value:21.01},...nativeBefore.slice(1)];
+ assert.notEqual(captureKey(),capture.key,'a native amount change still invalidates the review');
+ snapshot.perdiem.monthlyRows=nativeBefore;
+ context.getStoredUser=()=>({email:'other-synthetic@example.invalid'});
+ assert.notEqual(captureKey(),capture.key,'account change still invalidates the review');
+ context.getStoredUser=()=>({email:'synthetic@example.invalid'});
+ assert.equal(captureKey(),capture.key);
+
  assert.equal(context.subject.scopedFinancialForecast([snapshot],range,['2032-03'],first.quotes,'2032-02-09').monthly,null,'missing roster scope still blocks a complete total');
 }finally{allowanceModules.cleanup();}
 console.log('PASS shared FX -> actual allowance scope/view: no undated setting fallback, immutable native amounts, national BRL unchanged, source/date, inverse/manual, OFF/expiry/mixed dates and incomplete scope');

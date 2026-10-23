@@ -40,9 +40,15 @@ try{for(const width of [390,1440]){
    assert.match(await foreign.textContent(),/Frankfurter v2/);assert.match(await foreign.textContent(),/2032-02-08/);
    assert.match(await foreign.textContent(),/2032-02-09T12:00:00Z/);
    assert(!/cotação pendente/.test(await foreign.locator('summary').textContent()),'allowance consumes the calculator provider quotes');
+   await page.getByText('Revisar captura da previsão de diárias',{exact:true}).click();
+   const reviewReference=page.getByLabel('Referência da revisão financeira',{exact:true});await reviewReference.fill('synthetic-fx-review');
+   const ownerConfirmation=page.getByRole('checkbox',{name:'Confirmo que esta escala é minha e revisei os valores calculados.',exact:true});await ownerConfirmation.check();
+   const foreignConfirmation=page.getByRole('checkbox',{name:'Confirmo a política: a diária internacional selecionada é prevista na data do voo vinculado.',exact:true});await foreignConfirmation.check();
    const beforeSourceSwitch=quoteRequests;const selector=page.getByLabel('Fonte do câmbio',{exact:true});await selector.waitFor();
    await selector.selectOption('manual');assert.equal(await selector.inputValue(),'manual','source remains editable after successful automatic conversion');
+   assert.equal(await reviewReference.inputValue(),'synthetic-fx-review','FX mode switch preserves in-progress capture reference');assert(await ownerConfirmation.isChecked());assert(await foreignConfirmation.isChecked());
    await selector.selectOption('automatic');await foreign.getByText(/Estimativa em reais/).waitFor();assert.equal(await selector.inputValue(),'automatic','automatic conversion returns without leaving statement');
+   assert.equal(await reviewReference.inputValue(),'synthetic-fx-review','FX mode switch preserves in-progress capture reference');assert(await ownerConfirmation.isChecked());assert(await foreignConfirmation.isChecked());
    sourceSwitchRequests=quoteRequests-beforeSourceSwitch;assert(sourceSwitchRequests<=1,'explicit automatic source selection revalidates at most once');
    if(automaticState==='available')await page.screenshot({path:path.join(out,'390-automatic-allowance.png'),fullPage:false});
   }
