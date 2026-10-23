@@ -5,12 +5,13 @@ import { learnFinancialStatement, type StatementLearningResult } from '@/lib/fin
 import { financialMonths, financialRowsInRange, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { summarizeForecastRows } from '@/lib/financialForecastPeriods';
 import { extractPdfText } from './FinancialStatementImporter';
+import { projectAllowanceFxRows } from '@shared/financialFx.mjs';
 import type { FxQuote } from '@/lib/financialFxReference';
 
 type Row = { iso:string; label:string; value:number; currency:string; convertedBRL:number|null; source:string; eventId?:string; rateSource?:string; rateVersion?:string; exchangeRate?:number|null; fxReferences?:FxQuote[]; calculationStart?:string; calculationEnd?:string };
 const owner = ()=>`${getStoredUser()?.id || getStoredUser()?.email || ''}:${getToken() || ''}`;
 const formatMoney = (value:number,currency='BRL')=>new Intl.NumberFormat('pt-BR',{style:'currency',currency}).format(value);
-export default function FinancialStatementReconciliation({ rows, unclassified, coveredMonths, requestRange }: { rows: Row[]; unclassified: Array<{iso:string;airport:string}>; coveredMonths: string[]; requestRange: (range:FinancialRange)=>void }) {
+export default function FinancialStatementReconciliation({ rows, unclassified, coveredMonths, requestRange, quotes, today }: { quotes?:Record<string,FxQuote>; today?:string; rows: Row[]; unclassified: Array<{iso:string;airport:string}>; coveredMonths: string[]; requestRange: (range:FinancialRange)=>void }) {
   const privacy = useFinancialPrivacy();
   const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
   const [document,setDocument]=useState<{owner:string; result:StatementLearningResult}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
@@ -25,7 +26,8 @@ export default function FinancialStatementReconciliation({ rows, unclassified, c
   const result=document?.owner===owner()?document.result:null;
   const valid=result?.periodStart&&result.periodEnd&&validFinancialDay(result.periodStart)&&validFinancialDay(result.periodEnd)&&result.periodStart<=result.periodEnd;
   const range={start:result?.periodStart||'',end:result?.periodEnd||'',valid:Boolean(valid),kind:'custom' as const};
-  const items=financialRowsInRange(rows,range),pending=financialRowsInRange(unclassified,range),forecast=summarizeForecastRows(items,pending);
+  const scopedRows=financialRowsInRange(rows,range);
+  const items=quotes===undefined?scopedRows:projectAllowanceFxRows(scopedRows,quotes,today||new Date().toISOString().slice(0,10)),pending=financialRowsInRange(unclassified,range),forecast=summarizeForecastRows(items,pending);
   useEffect(()=>{if(valid)requestRange(range);},[result?.periodStart,result?.periodEnd]);
   const missingMonths=financialMonths(range).filter(month=>!coveredMonths.includes(month));
   const completeCoverage=Boolean(valid)&&missingMonths.length===0;

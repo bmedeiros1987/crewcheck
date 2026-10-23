@@ -124,8 +124,8 @@ try {
  assert.equal(monthView.props.forecastOverride.monthly,200.05);
  assert.equal(monthView.props.forecastOverride.monthlyRows[0].fxReferences[0].source,'synthetic reviewed manual');
  assert.ok(monthView.props.fxControl,'shared source control reaches the allowance screen');
- assert.equal(monthView.props.graph.props.children.props.rows[0].convertedBRL,100.05,'reconciliation receives the same FX projection');
- assert.equal(monthView.props.graph.props.children.props.rows[0].exchangeRate,5);
+ assert.equal(monthView.props.graph.props.children.props.quotes,ownerFx.quotes,'reconciliation receives live quotes and narrows before projection');
+ assert.equal(monthView.props.graph.props.children.props.rows[0].value,20.01);
  assert.equal(context.subject.scopedFinancialForecast([snapshot],range,['2032-03'],first.quotes,'2032-02-09').monthly,null,'missing roster scope still blocks a complete total');
 }finally{allowanceModules.cleanup();}
 console.log('PASS shared FX -> actual allowance scope/view: no undated setting fallback, immutable native amounts, national BRL unchanged, source/date, inverse/manual, OFF/expiry/mixed dates and incomplete scope');
@@ -141,10 +141,11 @@ try {
   '@/lib/financialStatementLearning':{learnFinancialStatement:()=>{throw Error('no import/write in render fixture');}},
   '@/lib/financialHistoryPeriods':reconciliationModules.load('financialHistoryPeriods'),
   '@/lib/financialForecastPeriods':reconciliationModules.load('financialForecastPeriods'),
+  '@shared/financialFx.mjs':fxMath,
   './FinancialStatementImporter':{extractPdfText:()=>{throw Error('no real PDF in fixture');}},
  }).default;
  const base=Object.freeze({eventId:'synthetic-paid-period',iso:'2032-02-08',label:'Meal',value:20,currency:'USD',source:'synthetic historical entitlement'});
- const view=rows=>{stateIndex=0;return renderToStaticMarkup(Reconciliation({rows,unclassified:[],coveredMonths:['2032-02'],requestRange:()=>{}}));};
+ const view=(rows,quotes)=>{stateIndex=0;return renderToStaticMarkup(Reconciliation({rows,quotes,today:'2032-02-09',unclassified:[],coveredMonths:['2032-02'],requestRange:()=>{}}));};
  for(const rate of ['5','6']) {
   const q={base:'USD',quote:'BRL',rate,asOf:'2032-02-08',retrievedAt:'2032-02-09T12:00:00Z',source:'synthetic current FX',method:'account_manual'};
   const rows=fxMath.projectAllowanceFxRows([base],{USD:q},'2032-02-09'),html=view(rows);
@@ -155,6 +156,12 @@ try {
   assert.match(html,rate==='5'?/Estimativa à cotação de referência atual: R\$[^0-9]*100,00/:/Estimativa à cotação de referência atual: R\$[^0-9]*120,00/);
   assert.equal(printedDocument.result.totals.deposited,100);assert.equal(base.value,20);
  }
+ const scopedQuote={base:'USD',quote:'BRL',rate:'5',asOf:'2032-02-08',retrievedAt:'2032-02-09T12:00:00Z',source:'scoped USD source',method:'account_manual'};
+ const unrelated={...base,iso:'2032-01-08',currency:'EUR'};
+ const scopedHtml=view([base,unrelated],{USD:scopedQuote,EUR:{...scopedQuote,base:'EUR',asOf:'2032-02-07',source:'unrelated EUR source'}});
+ assert.match(scopedHtml,/Estimativa à cotação de referência atual: R\$[^0-9]*100,00/);
+ assert.match(scopedHtml,/scoped USD source/);assert.doesNotMatch(scopedHtml,/unrelated EUR source/);
+ assert.doesNotMatch(scopedHtml,/Diferença a conferir/);
  const domestic=Object.freeze({...base,currency:'BRL',value:80,convertedBRL:80,exchangeRate:1});
  assert.match(view([domestic]),/Diferença a conferir/,'domestic same-unit comparison remains available');
  assert.doesNotMatch(view(fxMath.projectAllowanceFxRows([base],{},'2032-02-09')),/Diferença a conferir/);
