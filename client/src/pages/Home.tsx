@@ -135,7 +135,7 @@ import FinancialStatementReconciliation from '@/components/finance/FinancialStat
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { confirmedPayrollDsrContext, financialRateOwner, confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
+import { confirmedPerDiemReferencesAt, confirmedPayrollDsrContext, financialRateOwner, confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
@@ -3619,11 +3619,13 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
 }
 function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
   const act = resolveActFinancialRules(roster);
-  const learnedMealRate = confirmedRateAt('per_diem.lunch', effectiveDate)
-    ?? confirmedRateAt('per_diem.dinner', effectiveDate)
-    ?? confirmedRateAt('per_diem.supper', effectiveDate);
+  const references = confirmedPerDiemReferencesAt(effectiveDate);
+  const learnedMealRate = references.mainMeal;
   const learnedMeal = learnedMealRate?.value ?? null;
-  const learnedBreakfast = confirmedRateValueAt('per_diem.breakfast', effectiveDate);
+  const learnedBreakfast = references.breakfast;
+  const rateArchiveIssue = references.state === 'invalid'
+    ? 'Histórico local de tarifas inválido; valores preservados para revisão.'
+    : references.state === 'unavailable' ? 'Referências locais indisponíveis; revise neste dispositivo.' : null;
   const domesticRule = act.perDiem.find((rule) => rule.key === 'domestic');
   const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
   const domestic = resolveDomesticPerDiemRate({
@@ -3655,12 +3657,14 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     exchangeRates,
     breakfastPercent: act.breakfastPercent,
     domesticBreakfast: domestic.breakfast,
-    taxiRate: confirmedRateValueAt('per_diem.taxi', effectiveDate),
+    taxiRate: references.taxi,
+    rateArchiveIssue,
     domesticMainMealSource: domestic.source,
     domesticBreakfastSource: domestic.breakfastSource,
     airportOverrides: loadAirportPerDiemOverrides(),
     source: act.profileLabel + ' · ' + act.legalReference
-      + (learnedMeal || learnedBreakfast ? ' · tarifas revisadas nesta conta' : '')
+      + (learnedMeal !== null || learnedBreakfast !== null ? ' · tarifas revisadas nesta conta e dispositivo' : '')
+      + (references.state === 'missing' ? ' · referência própria não salva neste dispositivo' : '')
       + (domestic.source==='act' && learnedBreakfast===null ? ' · referência ACT; tarifa empresarial da conta não confirmada neste período' : '')
       + (domestic.breakfastSource==='act' && domestic.source!=='act' ? ' · café: referência ACT; tarifa própria não confirmada neste período' : '')
       + demonstratedSource,
@@ -3687,6 +3691,12 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     usedRateKeys.add(classification.rateKey);
     const cfg = perDiemConfig(roster, iso);
     const rate = cfg.rates[classification.rateKey];
+    // An invalid local archive is not evidence that the older ACT fallback applies.
+    // Independent international references and stored manual values are not changed.
+    if (classification.rateKey === 'domestic' && cfg.rateArchiveIssue) {
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: cfg.rateArchiveIssue });
+      return;
+    }
     if (!rate) {
       pendingAirports.add(classification.airport);
       unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Tarifa da diária ausente para o período.' });
@@ -3859,7 +3869,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
       + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · ' + (cfg.rateArchiveIssue || 'Tarifa de táxi confirmada para o período ausente.') });
     } else {
       rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,

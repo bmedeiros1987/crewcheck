@@ -3,12 +3,13 @@ import { rosterDisplayIso, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/
 import { getStoredUser } from '@/lib/authClient';
 import { AimsRosterTable } from './AimsRosterTable';
 import './aims-document.css';
+import { rosterActivityLabel } from './rosterActivityLabel';
 
 type Event = ComponentProps<typeof AimsRosterTable>['events'][number];
 type Description = { mode: string; label: string };
 const MIN_ZOOM = .01, MAX_ZOOM = 2;
 const bounded = (value: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
-const code = (event: Event) => event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação';
+const code = (event: Event) => rosterActivityLabel(String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação'));
 // Keep source clocks intact: suffixes such as (+1) and explicit unknowns matter.
 const clock = (value?: string) => String(value || '').trim() || '—';
 

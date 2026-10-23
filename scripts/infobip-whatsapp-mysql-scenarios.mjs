@@ -1,3 +1,5 @@
+import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
+import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 // Invoked only AFTER the owned-socket/clean-HEAD checks in the SQL harness.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,6 +15,17 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
  const packet=item=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
  const raw=async()=>{const [r]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);return typeof r[0]?.payload==='string'?JSON.parse(r[0].payload):r[0]?.payload;};
  const configuration={sender,encryptionKey:key,linkHashKey:salt,webhookUsername:'synthetic',webhookPassword:password,baseUrl:'https://synthetic.api.infobip.com',apiKey:'synthetic-api-key-not-real'};
+ await run('HMAC raw inbound keeps durable SQL dedup across recreation and key rotation',async()=>{
+   await reset();
+   const receive=secretKey=>createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey},store:createInfobipSqlStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch}),now:()=>epoch});
+   const signed=(secretKey,item=event)=>{const rawBody=Buffer.from(JSON.stringify({results:[item]}));return {method:'POST',rawHeaders:['x-hub-signature','SHA256='+createHmac('sha256',secretKey).update(rawBody).digest('hex').toUpperCase()],rawBody};};
+   const first='synthetic-hmac-key-one',rotated='synthetic-hmac-key-two';
+   const results=await Promise.all(Array.from({length:8},()=>receive(first)(signed(first))));
+   assert.equal(results.reduce((n,r)=>n+r.accepted,0),1);assert.equal(results.reduce((n,r)=>n+r.duplicates,0),7);
+   assert.equal((await receive(rotated)(signed(rotated))).duplicates,1);
+   assert.equal((await receive(rotated)(signed(rotated,{...event,message:{type:'TEXT',text:'CONFLICTING SYNTHETIC'}}))).status,503);
+   assert.equal((await raw()).status,'held');
+ });
  await run('canonical authenticated link start and Infobip completion through enabled HTTP composition',async()=>{
    await reset();await db.query('DELETE FROM crewcheck_whatsapp_links');
    const source=fs.readFileSync(new URL('../server/whatsapp.mjs',import.meta.url),'utf8');
@@ -64,10 +77,44 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
  });
  await run('real DLR correlation and retained replay tombstone then purge',async()=>{
    await reset();const {store,receive}=make();await receive(packet(event));await store.exerciseDispatch(eventKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})});
-   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000})).status,'delivered');
-   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000})).status,'duplicate');
+   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000,kind:'delivery',deliveryState:'delivered',statusId:5,receiptKey:['cc-'+eventKey,5,new Date(epoch+1000).toISOString()]})).status,'delivered');
+   assert.equal((await store.recordDelivery({eventKey,recipient,sentAt:epoch,doneAt:epoch+1000,kind:'delivery',deliveryState:'delivered',statusId:5,receiptKey:['cc-'+eventKey,5,new Date(epoch+1000).toISOString()]})).status,'duplicate');
    await reset();await make().receive(packet(event));setClock(epoch+900001);await store.maintain();assert.equal((await raw()).sealed,null);
-   assert.equal((await make().receive(packet(event))).duplicates,1);setClock(epoch+73*3600_000);await store.maintain();assert.equal(await raw(),undefined);assert.equal((await make().receive(packet(event))).status,400);
+   assert.equal((await make().receive(packet(event))).duplicates,1);setClock(epoch+12*24*3600_000);await store.maintain();assert.equal(await raw(),undefined);assert.equal((await make().receive(packet(event))).status,400);
+ });
+ await run('real receipt and projection rollback together then regrouped retry',async()=>{
+   await reset();const {store,receive}=make();await receive(packet(event));
+   await store.exerciseDispatch(eventKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})});
+   const item={messageId:'cc-'+eventKey,to:recipient,sentAt:new Date(epoch).toISOString(),doneAt:new Date(epoch+1000).toISOString(),status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
+   const seen={messageId:item.messageId,from:sender,to:recipient,sentAt:item.sentAt,seenAt:new Date(epoch+2000).toISOString()};
+   const reports=items=>({...packet(event),rawBody:Buffer.from(JSON.stringify({results:items}))});
+   const wrapped={getConnection:async()=>{const c=await db.getConnection();return {beginTransaction:()=>c.beginTransaction(),commit:()=>c.commit(),rollback:()=>c.rollback(),release:()=>c.release(),destroy:()=>c.destroy(),query:(sql,p)=>{
+     if(sql.startsWith('UPDATE crewcheck_telegram_state')&&p[1]===stateKey)throw Error('SYNTHETIC_PROJECTION_FAILURE');return c.query(sql,p);
+   }};}};
+   const failedStore=createInfobipSqlStore({db:wrapped,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch+3000});
+   const receiver=(kind,target=make().store)=>createOfflineInfobipDeliveryReceiver({kind,username:'synthetic',password,store:target,now:()=>epoch+3000});
+   for(const [kind,report] of [['delivery',item],['seen',seen]]){
+     const [[before]]=await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state');
+     assert.equal((await receiver(kind,failedStore)(reports([report]))).status,503);
+     const [[after]]=await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state');assert.equal(after.n,before.n);
+     assert.equal((await raw()).status,'accepted_unconfirmed');assert.equal((await raw()).report.seenAt,undefined);
+   }
+   const foreign={...item,messageId:'synthetic-foreign'};
+   const result=await receiver('delivery')(reports([foreign,item]));assert.equal(result.recorded,1);assert.equal(result.ignored,1);
+   const concurrent=await Promise.all(Array.from({length:8},()=>receiver('seen')(reports([seen,seen]))));assert(concurrent.every(r=>r.status===200));
+   assert.equal((await raw()).status,'delivered');assert.equal((await raw()).report.seenAt,epoch+2000);
+   assert.equal((await receiver('delivery')(reports([item,foreign]))).duplicates,1);
+ });
+ await run('real old inbound ACK at 48h 72h nine and ten days never creates content or reply',async()=>{
+   for(const hours of [48,72,216,240]){
+     await reset();setClock(epoch+hours*3600_000);
+     assert.equal((await make().receive(packet(event))).denied,1);
+     assert.equal((await raw()).sealed,null);assert.equal((await raw()).status,'denied');
+     const rs=await Promise.all(Array.from({length:8},()=>make().receive({...packet(event),rawBody:Buffer.from(JSON.stringify({results:[event],messageCount:17,pendingMessageCount:3}))})));
+     assert(rs.every(r=>r.duplicates===1));assert.equal((await raw()).sealed,null);
+     setClock(epoch+(hours+12*24)*3600_000);await make().store.maintain();assert.equal(await raw(),undefined);
+     assert.equal((await make().receive(packet(event))).status,400);
+   }
  });
  await run('account erase joins actual platform transaction and rolls back atomically',async()=>{
    await reset();await make().receive(packet(event));

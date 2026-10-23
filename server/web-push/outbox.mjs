@@ -46,11 +46,15 @@ export async function dispatchPersistentPush(db, selected, { configuration, veri
     return {status,received:null};
   });
 }
+// A receipt must name the exact stored envelope. Gate fields compare too: a gate job
+// matches only its own authority epoch and topic revision; when both sides lack them
+// (non-gate jobs) nothing changes, and a stored gate job without them never matches.
+const RECEIPT_ENVELOPE_FIELDS=['schema','ownerId','installationId','consentRevision','eventKey','expiresAt','route','authorityEpoch','topicRevision'];
 export async function reconcilePushReceipts(db, identity, reports) {
   if(!Array.isArray(reports)||reports.length>50)throw Object.assign(new Error('Confirmação inválida.'),{status:400});
   const connection=await db.getConnection();let reconciled=0;
   try{await connection.beginTransaction();const[owners]=await connection.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[identity.email]);if(owners[0]?.public_id!==identity.ownerId)throw Object.assign(new Error('Sessão inválida.'),{status:401});
-    for(const report of reports){if(!validPushEnvelope(report.envelope)||report.envelope.ownerId!==identity.ownerId||!['display_api_resolved','uncertain','clicked'].includes(report.status))continue;const key=outboxKey(report.envelope),job=await lockState(connection,key);if(!job||job.email!==identity.email||job.ownerId!==identity.ownerId||['schema','ownerId','installationId','consentRevision','eventKey','expiresAt','route'].some(field=>job.envelope[field]!==report.envelope[field])||!['accepted_unconfirmed','dispatching','uncertain'].includes(job.status))continue;
+    for(const report of reports){if(!validPushEnvelope(report.envelope)||report.envelope.ownerId!==identity.ownerId||!['display_api_resolved','uncertain','clicked'].includes(report.status))continue;const key=outboxKey(report.envelope),job=await lockState(connection,key);if(!job||job.email!==identity.email||job.ownerId!==identity.ownerId||RECEIPT_ENVELOPE_FIELDS.some(field=>job.envelope[field]!==report.envelope[field])||!['accepted_unconfirmed','dispatching','uncertain'].includes(job.status))continue;
       // Authenticated device report is evidence of an API/click attempt, never proof
       // of delivery/read. No client report can change BIDS completion or scheduling.
       const receipt={status:report.status,received:null};if(job.deviceReport?.status==='clicked'&&report.status!=='clicked')continue;if(job.deviceReport?.status!==receipt.status||job.deviceReport?.received!==null){await save(connection,key,{...job,deviceReport:receipt,received:null});reconciled++;}}
