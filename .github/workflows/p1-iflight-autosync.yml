@@ -1,0 +1,28 @@
+name: CrewCheck P1 iFlight auto sync
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/iflightAutoSync.ts'
+      - 'client/src/lib/useIFlightAutoSync.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'scripts/p1-iflight-autosync/**'
+      - 'scripts/v14356/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-p1-iflight-autosync.mjs'
+      - '.github/workflows/p1-iflight-autosync.yml'
+
+jobs:
+  iflight-autosync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-p1-iflight-autosync.mjs
+      - run: node scripts/v139/apply.mjs
+      - run: npx tsc --noEmit
