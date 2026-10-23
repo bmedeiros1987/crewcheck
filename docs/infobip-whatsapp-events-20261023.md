@@ -39,13 +39,20 @@ objects. Only the exact existing DELIVERED_TO_HANDSET tuple advances the ledger
 to delivered. Other valid states are observations, never evidence of delivery or
 permission to retry a send. SEEN advances only a separate maximum seenAt, never
 marks delivered, never invokes the Concierge and never queues a reply.
+HTTP SEEN/DLR ACKs and old inbound ACKs do not call the worker tick. Only a newly
+accepted inbound can request an immediate tick; the existing periodic scheduler
+can independently dispatch a previously authorized fresh held job.
 
 Each correlated report records a hashed per-item receipt in the existing state
 table, in the same transaction as the projection under the existing ledger lock.
 Only `cc-<64 lowercase hex>` can address an existing outbound ledger. Recipient
 hash, configured sender hash and attempt time must still match. Phone numbers or
 arbitrary callbackData cannot create a correlation. Unknown/unmatched ledgers
-are ignored. Receipt rows retain no phone, callbackData or message content.
+are ignored. A bounded provider ID outside the reserved `cc-` namespace is
+validated as a foreign report and ACKed without SQL, so a shared-profile batch
+can still process CrewCheck items. An invalid `cc-` identifier or malformed report
+still rejects the batch; foreign IDs never address a ledger. Receipt rows retain
+no phone, callbackData or message content.
 
 Delivered is sticky. Non-delivery observations use maximum original doneAt;
 status ID breaks equal-time ties deterministically, without interpreting ID as
@@ -76,8 +83,13 @@ adapter recreation, partial-success retry, old observations, SEEN before deliver
 48h/72h/nine-day/ten-day inbound ACK without replies, content deletion, tombstones
 and eventual cleanup. Existing raw-byte/case/Unicode HMAC and sealed-OFF tests
 remain. SQL fixture recreation proves adapter behavior, not real engine restart.
-The disposable MySQL harness has matching contracts; execution must be reported
-separately. No real MySQL restart result is claimed for this change yet.
+The disposable MySQL harness has matching contracts. Its dedicated CI job runs
+MySQL 8.4 under a unique owned /tmp root, no container network or published ports,
+checks datadir/socket/skip_networking, and restarts the actual server process.
+It checks transactional receipt/projection rollback, concurrent replay, nine-day
+ACK without content/reply, and both DLR/SEEN receipts/projections after restart.
+Execution results must be reported separately; no engine result is inferred from
+the fixture suite.
 
 Actual subscription/profile authentication and routing remain unverified. This implementation does not configure HMAC or establish authenticated
 production traffic.

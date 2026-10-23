@@ -134,7 +134,7 @@ export function createInfobipWhatsAppRuntime(options = {}) {
         const receive=kind==='delivery'?pipeline.receiveDelivery:kind==='seen'?pipeline.receiveSeen:pipeline.receive;
         const result=await receive({method:req.method,rawHeaders:req.rawHeaders,rawBody});
         respond(res,result.status,result.code);
-        if(result.status===200)void tick();
+        if(result.status===200&&kind==='inbound'&&result.accepted>0)void tick();
       })();
       active.add(task);try{await task;}catch{if(!res.writableEnded)respond(res,503,'UNAVAILABLE');}finally{active.delete(task);}return true;
     },

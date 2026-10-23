@@ -284,10 +284,24 @@ console.log('PASS Infobip OFF: canonical engine, existing authenticated consent,
     assert.equal(s.rows.get(stateKey).status,'delivered');
     assert.equal((await route(event,{body:reportBody([seen,seen])})).status,200,'HTTP routes every SEEN item independently');
     assert.equal(s.rows.get(stateKey).report.seenAt,epoch+2000);
+    await runtime.maintain();const beforeForeign=s.queries.length;
+    assert.equal((await route(event,{body:reportBody([{...dlr,messageId:'synthetic-foreign-item'}])})).status,200);
+    assert.equal(s.queries.length,beforeForeign,'foreign-only callbacks do not use SQL or tick worker');
+    assert.equal((await route(event,{body:reportBody([{...dlr,messageId:'synthetic-foreign-item'},dlr])})).status,200);
+    assert.equal((await route(event,{body:reportBody([{...dlr,messageId:'cc-invalid'},dlr])})).status,400,'malformed owned ID is not a foreign ID');
+
+    const unrelated={...event,messageId:'synthetic-unrelated-held'};
+    const injected=createOfflineInfobipReceiver({sender,username,password,store:createInfobipSqlStore({db,sender,encryptionKey,linkHashKey,now:()=>s.clock}),now:()=>s.clock});
+    assert.equal((await injected(request(unrelated))).accepted,1);
+    const beforeCallback=sends;
+    assert.equal((await route(event,{body:reportBody([seen,seen])})).status,200);
+    assert.equal((await route(event,{body:reportBody([dlr,dlr])})).status,200);
+    assert.equal(sends,beforeCallback,'report ACK cannot dispatch unrelated held inbound');
     await runtime.maintain();const queries=s.queries.length;
+
     assert.equal((await route(event,{body:reportBody([dlr,seen])})).status,400,'mixed event shapes fail before SQL');
     assert.equal(s.queries.length,queries);
-    await runtime.maintain();assert.equal(sends,1,'callbacks never enqueue a reply');
+    await runtime.maintain();assert.equal(sends,2,'only explicit scheduler maintenance dispatched unrelated job');
 
     await eraseWhatsAppAccountState(baseLink.email);assert.equal(s.rows.get(stateKey).ownerHash,null);assert.equal(s.link.consent_concierge,0);
     assert.throws(()=>createInfobipWhatsAppRuntime({enabled:true,db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password},request:async()=>{}}),/LIFECYCLE_OWNED/);

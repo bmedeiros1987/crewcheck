@@ -18,7 +18,9 @@ export function createOfflineInfobipDeliveryReceiver({username, password, authen
       if (!Array.isArray(payload?.results) || !payload.results.length || payload.results.length > 20) throw Error();
       reports = payload.results.map(item => {
         const sentAt = Date.parse(item?.sentAt), doneAt = Date.parse(kind === 'seen' ? item?.seenAt : item?.doneAt);
-        if (!/^cc-[a-f0-9]{64}$/.test(item?.messageId) || !/^[1-9]\d{7,14}$/.test(item?.to) ||
+        const owned = /^cc-[a-f0-9]{64}$/.test(item?.messageId);
+        const foreign = typeof item?.messageId === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(item.messageId) && !item.messageId.startsWith('cc-');
+        if ((!owned && !foreign) || !/^[1-9]\d{7,14}$/.test(item?.to) ||
             !Number.isFinite(sentAt) || !Number.isFinite(doneAt) || doneAt < sentAt ||
             doneAt > now() + 30_000 || now() - doneAt > 48 * 60 * 60_000 ||
             Object.hasOwn(item, 'message') ||
@@ -29,7 +31,7 @@ export function createOfflineInfobipDeliveryReceiver({username, password, authen
               typeof item.status?.name !== 'string' || !/^[A-Z][A-Z0-9_]{0,127}$/.test(item.status.name))) ||
             (kind === 'delivery' && infobipDeliveryState(item.status) === 'delivered' && item.error !== undefined && item.error?.id !== 0) ||
             (item.contact?.phoneNumber !== undefined && item.contact.phoneNumber !== item.to)) throw Error();
-        return {eventKey: item.messageId.slice(3), recipient: item.to, sentAt, doneAt, kind,
+        return {foreign, eventKey: owned ? item.messageId.slice(3) : null, recipient: item.to, sentAt, doneAt, kind,
           statusId:kind === 'delivery' ? item.status.id : undefined,
           deliveryState:kind === 'delivery' ? infobipDeliveryState(item.status) : undefined,
           receiptKey:kind === 'delivery' ? [item.messageId,item.status.id,item.doneAt] : [item.messageId,item.seenAt]};
@@ -38,6 +40,7 @@ export function createOfflineInfobipDeliveryReceiver({username, password, authen
     try {
       let recorded = 0, ignored = 0, seen = 0, observed = 0, duplicates = 0;
       for (const report of reports) {
+        if(report.foreign){ignored++;continue;}
         const result = await store.recordDelivery(report);
         if (result.status === 'delivered') recorded++;
         else if (result.status === 'seen') seen++;
