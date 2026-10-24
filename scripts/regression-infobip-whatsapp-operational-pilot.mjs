@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createOperationalPilotScope,operationalPilotCommand,validateInfobipOperationalPilotPolicy,INFOBIP_OPERATIONAL_PILOT_INPUTS} from '../server/infobip-whatsapp-operational-pilot.mjs';
-import {createInfobipWhatsAppSingleTestHost} from '../server/infobip-whatsapp-single-test.mjs';
+import {createInfobipWhatsAppSingleTestHost,validateInfobipRestrictedPolicy} from '../server/infobip-whatsapp-single-test.mjs';
+import {infobipCanonicalLinkStatus,infobipCanonicalLinkDestination} from '../server/infobip-whatsapp-link-policy.mjs';
 import {configureSyntheticOperationalPilot} from './fixtures/infobip-operational-pilot.mjs';
 import {epoch,sender,recipient} from './fixtures/infobip-production-sql.mjs';
 globalThis.fetch=()=>assert.fail('NO_NETWORK');
@@ -31,6 +32,10 @@ for(const source of ['operationalPilotPricing','operationalPilotBudget']){
 }
 const p={version:1,mode:'operational-pilot-v1',maxCostUsd:'0.05',configuration:c,admission:a};
 assert.throws(()=>validateInfobipOperationalPilotPolicy(p),/INFOBIP_OPERATIONAL_PILOT_POLICY/,'Synthetic recipient must not pass the real approved-recipient pin');
+assert.throws(()=>validateInfobipRestrictedPolicy(p),/INFOBIP_OPERATIONAL_PILOT_POLICY/,'Shared status/caller selector preserves recipient pin');
+const invalidEnvironment={CREWCHECK_INFOBIP_WHATSAPP_POLICY:JSON.stringify(p)};
+assert.equal((await infobipCanonicalLinkStatus({},{environment:invalidEnvironment,ownerReady:true,now:epoch})).canonicalVerified,false);
+assert.equal(await infobipCanonicalLinkDestination(invalidEnvironment,epoch),'');
 const blocked=createInfobipWhatsAppSingleTestHost({environment:{CREWCHECK_INFOBIP_WHATSAPP_POLICY:JSON.stringify(p),get CREWCHECK_INFOBIP_WHATSAPP_HMAC_SECRET(){assert.fail('NO_SECRET_READ');}}});
 assert.equal(blocked.health().enabled,false);await blocked.dispose();
 assert.equal(createInfobipWhatsAppSingleTestHost({environment:{}}).health().enabled,false);

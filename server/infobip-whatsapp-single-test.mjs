@@ -23,6 +23,10 @@ export function validateInfobipSingleTestPolicy(policy) {
     throw Error('INFOBIP_SINGLE_TEST_POLICY');
   return policy;
 }
+export function validateInfobipRestrictedPolicy(policy) {
+  return policy?.mode==='operational-pilot-v1'
+    ?validateInfobipOperationalPilotPolicy(policy):validateInfobipSingleTestPolicy(policy);
+}
 
 // Explicitly restricted caller: original neutral approval OR the separately
 // approved three-category operational pilot. Missing/malformed policy is OFF, without
@@ -34,9 +38,7 @@ export function createInfobipWhatsAppSingleTestHost(options={}) {
   try {
     const raw=environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY;
     if(!raw)return createInfobipWhatsAppHost();
-    const parsed=JSON.parse(raw);
-    policy=parsed?.mode==='operational-pilot-v1'
-      ?validateInfobipOperationalPilotPolicy(parsed):validateInfobipSingleTestPolicy(parsed);
+    policy=validateInfobipRestrictedPolicy(JSON.parse(raw));
   } catch {return createInfobipWhatsAppHost();}
   return createInfobipWhatsAppApplicationHost({...options,environment,enabled:true,policy});
 }

@@ -8,6 +8,8 @@ The existing prepared bootstrap keeps its restricted caller import and HTTP list
 
 The new mode pins its own approval, the SHA256 of the one approved normalized recipient (phone itself not embedded), maxAttempts exactly 3, maxCostUsd exactly `0.05`, and a validity interval at most 900000 ms. It requires `singleMessageTest:false`, `operationalPilot:true`, `canonicalLinkHandshake:false`, `canonicalLinkHandshakeOnly:false`. It cannot create links, accept proof codes or produce link-confirmation replies. Existing raw-body HMAC before parse/SQL, Render host/path/service binding, sealing, canonical link/account/consent checks, TTL, durable claim, no-retry marker, bounded transport, revocation and shutdown remain unchanged.
 
+The non-secret canonical link-status reader uses the same restricted policy validator as the caller so an existing verified link is not falsely hidden when the pilot mode is selected. Linking destination/start remains unavailable because both pilot handshake flags are false. Expired pilot windows do not erase the existing canonical link proof or allow a new paid reply.
+
 Only these text requests are admitted (trimmed, NFC, case-insensitive):
 
 1. `menu` → existing canonical `/menu`, one complete menu text.
