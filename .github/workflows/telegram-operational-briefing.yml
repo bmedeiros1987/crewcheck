@@ -11,6 +11,8 @@ on:
       - 'server/v139/notificationStateDeletion.mjs'
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/tests/*briefing*.mjs'
+      - 'scripts/tests/operational-history.test.mjs'
+      - 'scripts/regression-operational-history-mysql.mjs'
       - 'scripts/tests/telegram-operational-change.test.mjs'
       - 'scripts/regression-telegram-operational-change-mysql.mjs'
       - 'scripts/regression-telegram-briefing-mysql.mjs'
@@ -37,7 +39,7 @@ jobs:
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-wakeup-call-delivery.mjs
@@ -85,10 +87,23 @@ jobs:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
           CREWCHECK_QA_OLD_CHANGE_SOURCE_READ: '1'
+      - name: Actual history reader old-snapshot counterproof
+        run: |
+          set +e
+          node scripts/regression-operational-history-mysql.mjs > "$RUNNER_TEMP/history-old-snapshot.log" 2>&1
+          result=$?
+          set -e
+          test "$result" -ne 0
+          grep 'HISTORY_STALE_READ: durable observation must be current after owner wait' "$RUNNER_TEMP/history-old-snapshot.log"
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+          CREWCHECK_QA_OLD_HISTORY_READ: '1'
       - name: Real SQL consent, competing claims and uncertain outcome
         run: |
           node scripts/regression-telegram-briefing-mysql.mjs
           node scripts/regression-telegram-operational-change-mysql.mjs
+          node scripts/regression-operational-history-mysql.mjs
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
@@ -120,7 +135,7 @@ jobs:
         run: |
           node scripts/v139/apply.mjs
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-wakeup-call-delivery.mjs
@@ -128,6 +143,7 @@ jobs:
           node scripts/regression-elevenlabs-call-deadlines.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
           node scripts/regression-telegram-operational-change-mysql.mjs
+          node scripts/regression-operational-history-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
         env:
