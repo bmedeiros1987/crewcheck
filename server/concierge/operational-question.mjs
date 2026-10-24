@@ -10,7 +10,7 @@ export function operationalQuestion(text = '') {
   const van = /\b(?:van|pickup|transfer|traslado)\b/.test(value);
   const apz = /\bapz\b/.test(value);
   const clock = /\b(?:horas|horario|hora|quando|apz|apresentacao|apresento)\b/.test(value);
-  if (hotel && !van && !apz && /\b(?:academia|farmacia|hospital|wellhub)\b/.test(value)) return null;
+  if (hotel && !van && !apz && /\b(?:academias?|farmacias?|hospital|hospitais|wellhub)\b/.test(value)) return null;
   const question = apz || /\b(?:que|qual|quando|onde|como|ate|quero|preciso|saber|me|minha|meu)\b/.test(value);
   if (apz && /\baeroporto\b/.test(value) && !hotel && !van) return { kind: 'schedule', intent: 'presentation', rewrite: '' };
   if (apz && (van || !hotel || /\baeroporto\b/.test(value))) return { kind: 'logistics-question', subject: 'apz', direction: null };
@@ -25,7 +25,7 @@ export function operationalQuestion(text = '') {
   }
   if (hotel && question && clock) return { kind: 'logistics-question', subject: 'hotel-time', direction: null };
   if (hotel && /\b(?:qual|onde|que hotel|em que hotel)\b/.test(value)
-      && !/\b(?:academia|farmacia|hospital|perto|proximo|sugestao|buscar|pesquisar)\b/.test(value)) {
+      && !/\b(?:academias?|farmacias?|hospital|hospitais|perto|proximo|sugestao|buscar|pesquisar)\b/.test(value)) {
     return { kind: 'logistics-question', subject: 'hotel', direction: null };
   }
   if (!hotel && !van && /\b(?:que horas|qual horario|quando)\b.*\b(?:apresento|apresentacao|report)\b/.test(value)) return { kind: 'schedule', intent: 'presentation', rewrite: '' };
