@@ -1,49 +1,51 @@
-name: AIMS document browser
-
+name: AIMS pre-action comparative diagnosis (DO NOT MERGE)
 on:
   pull_request:
-    branches: [main]
+    branches: [fix/roster-daily-allowance-scope-20261024]
     paths:
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
-      - 'client/src/components/v1391/**'
-      - 'client/src/lib/rosterLayoutPreference.ts'
-      - 'scripts/regression-aims-document-browser.mjs'
+      - 'scripts/diagnose-aims-preaction.cjs'
+      - 'scripts/lib/aims-preaction-stability.cjs'
+      - 'scripts/regression-aims-preaction-stability.cjs'
       - 'scripts/regression-aims-document-app.cjs'
-      - 'scripts/regression-roster-layout-preference.mjs'
       - '.github/workflows/aims-document-browser.yml'
-  workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: aims-document-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  document-browser:
+  preaction-compare:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: stabilized-candidate
+            ref: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
+          persist-credentials: false
+      - name: Preserve diagnostic harness outside checkout
+        run: cp scripts/diagnose-aims-preaction.cjs "$RUNNER_TEMP/diagnose-aims-preaction.cjs"
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.target.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Prepare once and build the shipping app
+      - name: Reject perpetual motion and application layout shifts
+        run: node scripts/regression-aims-preaction-stability.cjs
+      - name: Prepare and build exact target
         run: |
           node scripts/v139/apply.mjs
           npx tsc --noEmit
           node scripts/p1-concierge-journey/compile.mjs
           npx vite build
-      - name: Verify account-scoped mode and existing layouts
-        run: node scripts/regression-roster-layout-preference.mjs
-      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
       - name: Prefer Ubuntu archive for browser system dependencies
         run: |
           python3 scripts/ci/test-prefer-ubuntu-archive.py
@@ -56,19 +58,14 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/aims-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/aims-browser/node_modules/playwright/cli.js" install --with-deps chromium
-      - name: Verify synthetic document zoom, gestures, exact events and accessibility
+      - name: Compare original, stabilization and non-activating actionability preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
-        run: |
-          node scripts/regression-aims-document-browser.mjs
-          node scripts/regression-aims-document-app.cjs
-      - name: Save synthetic document evidence
+        run: node "$RUNNER_TEMP/diagnose-aims-preaction.cjs"
+      - name: Save exact-ref synthetic evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-document-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            artifacts/aims-document
-            artifacts/aims-document-app
-          if-no-files-found: warn
-          retention-days: 7
+          name: aims-preaction-${{ matrix.target.name }}
+          path: artifacts/aims-preaction-compare/
+          if-no-files-found: error
