@@ -43,3 +43,6 @@ The real-browser fixture evaluates that same server expression and verifies offl
 image/icon/MP3/MP4 bytes plus refusal of unlisted media. Shell installation also
 rejects private/sensitive-Vary entry/asset responses before storing them; the
 verified navigation refresh cannot overwrite shell HTML with such a response.
+
+The actual build inventory also contains public sound attribution JSON. Exact
+manifest-listed JSON is preserved; arbitrary JSON remains excluded from runtime.

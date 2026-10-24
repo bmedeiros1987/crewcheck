@@ -218,15 +218,17 @@ function isPublicBuildRequest(request) {
     && !['authorization','proxy-authorization','cookie','x-api-key','x-auth-token'].some(name => request.headers?.has(name))
     && [...url.searchParams.keys()].every(name => ['v','brand'].includes(name))
     && (url.pathname === '/manifest.json' || (/^(?:\/assets\/|\/icons\/|\/fonts\/)/.test(url.pathname)
-      && /\.(?:m?js|css|woff2?|ttf|png|jpe?g|webp|svg|ico|mp3|mp4|ogg|wav|webm)$/.test(url.pathname)));
+      && /\.(?:m?js|css|woff2?|ttf|png|jpe?g|webp|svg|ico|mp3|mp4|ogg|wav|webm|json)$/.test(url.pathname)));
 }
 function isPublicRuntimeRequest(request) {
-  return isPublicBuildRequest(request) && !/\.(?:mp3|mp4|ogg|wav|webm)$/.test(new URL(request.url).pathname);
+  const pathname = new URL(request.url).pathname;
+  return isPublicBuildRequest(request) && (pathname === '/manifest.json' || !/\.(?:mp3|mp4|ogg|wav|webm|json)$/.test(pathname));
 }
 function isPublicAssetType(request, response, listedShell = false) {
   const pathname = new URL(request.url).pathname;
   const type = (response?.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   if (pathname === '/manifest.json') return type === 'application/json' || type === 'application/manifest+json';
+  if (/\.json$/.test(pathname)) return listedShell && type === 'application/json';
   if (/\.m?js$/.test(pathname)) return /^(?:text|application)\/(?:javascript|ecmascript)$/.test(type);
   if (/\.css$/.test(pathname)) return type === 'text/css';
   // The production static server uses octet-stream for public binary assets.
