@@ -9,7 +9,8 @@ export async function infobipCanonicalLinkStatus(link, {hashPhone, ownerReady=fa
     const {configuration:c,admission:a}=policy;
     if(c.authentication!=='hmac-sha256'||!/^[1-9]\d{7,14}$/.test(c.sender)||
       !c.allowedSenders?.includes(c.sender)||c.deploymentBinding?.sender!==c.sender||!Number.isFinite(now))return result;
-    result.testWindow=now<a.validFrom?'not_started':now>=a.validUntil?'expired':'active';
+    const execution=c.operationalPilotRenewal||a; // validated, bounded reauthorization; original quota identity stays unchanged
+    result.testWindow=now<execution.validFrom?'not_started':now>=execution.validUntil?'expired':'active';
     result.linkStartAvailable=Boolean(await infobipCanonicalLinkDestination(environment,now));
     // Status is scoped to the one approved recipient and the authenticated
     // account's row. A last-four display or an old row alone is not this proof.
