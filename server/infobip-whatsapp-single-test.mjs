@@ -1,5 +1,6 @@
 import {createInfobipWhatsAppApplicationHost} from './infobip-whatsapp-application.mjs';
 import {createInfobipWhatsAppHost} from './infobip-whatsapp-host.mjs';
+import {validateInfobipOperationalPilotPolicy} from './infobip-whatsapp-operational-pilot.mjs';
 export {createInfobipRenderHttpServer} from './infobip-whatsapp-host.mjs';
 
 export const INFOBIP_SINGLE_TEST_INPUT = 'Teste CrewCierge';
@@ -23,7 +24,8 @@ export function validateInfobipSingleTestPolicy(policy) {
   return policy;
 }
 
-// Explicitly restricted caller. Missing/malformed policy is OFF, without
+// Explicitly restricted caller: original neutral approval OR the separately
+// approved three-category operational pilot. Missing/malformed policy is OFF, without
 // resolving secrets, SQL, timers or HTTP. The general application host remains
 // no-options/OFF. No phone number or secret is embedded in source.
 export function createInfobipWhatsAppSingleTestHost(options={}) {
@@ -32,7 +34,9 @@ export function createInfobipWhatsAppSingleTestHost(options={}) {
   try {
     const raw=environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY;
     if(!raw)return createInfobipWhatsAppHost();
-    policy=validateInfobipSingleTestPolicy(JSON.parse(raw));
+    const parsed=JSON.parse(raw);
+    policy=parsed?.mode==='operational-pilot-v1'
+      ?validateInfobipOperationalPilotPolicy(parsed):validateInfobipSingleTestPolicy(parsed);
   } catch {return createInfobipWhatsAppHost();}
   return createInfobipWhatsAppApplicationHost({...options,environment,enabled:true,policy});
 }
