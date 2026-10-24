@@ -35,5 +35,5 @@ jobs:
           npx vite build
       - name: Prepared contracts
         run: |
-          node scripts/regression-concierge-links-tutorial.mjs
+          node scripts/regression-concierge-links-tutorial.mjs --prepared
           node scripts/regression-notification-navigation-session.mjs

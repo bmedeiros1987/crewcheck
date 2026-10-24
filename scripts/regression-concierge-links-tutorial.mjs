@@ -53,6 +53,10 @@ assert.match(steps,/Menu → Concierge → WhatsApp e Telegram/);assert.match(so
 assert.match(source,/PASSO \{stepIndex \+ 1\} DE \{STEPS.length\}/);
 const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
 assert.equal((home.match(/<ConciergeChannels\/>/g)||[]).length,1);assert(home.includes("['concierge','Concierge','Vínculos, briefing e consultas',Send]"));
+if(process.argv.includes('--prepared')){
+ assert(home.includes('className="cc-notification-channels"'),'real prepared canonical link section exists');
+ assert(home.includes('onClick={openTelegramBinding}')&&home.includes('onClick={openWhatsAppBinding}'),'existing channel handlers preserved');
+}
 const css=fs.readFileSync('client/src/components/concierge/concierge-channels.css','utf8');
 for(const contract of ['min-width:0','white-space:normal','min-height:48px',':focus-visible','overflow-wrap:anywhere'])assert(css.includes(contract));
 assert.equal(requests,0);assert.equal(writes,0);
