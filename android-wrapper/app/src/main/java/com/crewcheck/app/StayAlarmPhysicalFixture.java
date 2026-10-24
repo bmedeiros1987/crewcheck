@@ -58,6 +58,7 @@ public final class StayAlarmPhysicalFixture {
             button(box,"Programar / editar teste",this::confirmSchedule);
             button(box,"Cancelar teste",this::cancel);
             button(box,"Sair da conta fictícia",this::logout);
+            button(box,"Atualizar diagnóstico",this::render);
             button(box,"Suspender sessão / consultar estado",()->{session.revoke();result="Sessão suspensa; somente o alarme já confirmado pode continuar.";render();});
             ScrollView scroll=new ScrollView(activity);scroll.addView(box);activity.addContentView(scroll,new FrameLayout.LayoutParams(-1,-1));render();
         }
@@ -104,7 +105,13 @@ public final class StayAlarmPhysicalFixture {
         void render(){
             if(status==null)return;
             String detail="";try{if(account!=null){StayAlarmEngine.Record record=driver.read(key());if(record!=null)detail="\nEvento fictício: "+record.state+" • "+record.alarmAt;}}catch(Exception ignored){detail="\nJournal não pôde ser lido.";}
-            status.setText("\nConta: "+(ACCOUNT_A.equals(account)?"A":ACCOUNT_B.equals(account)?"B":"nenhuma")+"\nPermissões já concedidas: "+(driver.permitted()?"disponíveis":"insuficientes; não programado")+detail+"\n"+result+"\n");
+            StayAlarmPermissionState permissions=driver.permissionState();
+            status.setText("\nConta: "+(ACCOUNT_A.equals(account)?"A":ACCOUNT_B.equals(account)?"B":"nenhuma")
+                +"\nAndroid API: "+android.os.Build.VERSION.SDK_INT
+                +"\nPronto para tentar programar: "+(permissions.ready()?"sim (entrega ainda não comprovada)":"não")
+                +"\n"+permissions.describe(android.os.Build.VERSION.SDK_INT>=33,android.os.Build.VERSION.SDK_INT>=31)
+                +"\nEste painel apenas consulta. Não solicita acessos nem altera Configurações."
+                +detail+"\n"+result+"\n");
         }
     }
 }

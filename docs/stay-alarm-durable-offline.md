@@ -97,3 +97,29 @@ do certificado. Não há chave persistente nova, troca de certificado de produç
 instalação automática, desinstalação, limpeza de dados ou concessão de permissões.
 O erro relatado no artefato anterior ainda não tem causa confirmada no aparelho.
 Esta variante apenas oferece uma rota independente, sem alterar esse app anterior.
+
+## Diagnóstico de acessos do pacote separado
+
+Instalação/abertura não significa concessão de notificações ou alarmes exatos.
+O artefato12578257185 mostrou somente um estado agregado insuficiente no aparelho;
+o print não permite afirmar qual acesso falta. Nenhum alarme foi programado.
+
+O painel passa a mostrar separadamente: serviços Android, notificações do app,
+POST_NOTIFICATIONS (Android13+), alarmes e lembretes exatos (Android12+) e canal
+Teste local CrewCheck. O mesmo snapshot sustenta o guard `permitted()`: qualquer
+negação ou leitura não verificada continua bloqueando programação e entrega.
+Atualizar diagnóstico apenas relê esses estados; não pede grants nem agenda.
+
+Somente após autorização específica do operador para este app de teste: em
+Configurações → Aplicativos → CrewCheck Teste Offline Isolado → Notificações,
+permitir notificações e conferir o canal Teste local CrewCheck; em Acesso especial
+a apps → Alarmes e lembretes, permitir somente esse app se a opção existir.
+Os nomes dos menus variam por fabricante. O identificador exibido no painel deve
+corresponder ao app selecionado. Não conceder localização/arquivos/contatos,
+desativar segurança, autorizar sobreposição ou excluir otimização de bateria.
+
+Depois de voltar, atualizar o diagnóstico e confirmar um novo horário futuro.
+A autorização de notificações não programa nem envia nada sozinha. O alarme só
+existe após confirmação explícita e recibo scheduled; prontidão de capacidades
+não prova entrega. Bateria/carregamento e demais condições físicas precisam ser
+registrados como condições do ensaio, sem usar exceção de bateria como atalho.

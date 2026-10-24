@@ -76,3 +76,18 @@ test('acceptance identity is per run/attempt; verified artifact cannot replace p
  assert.ok(host.includes('acceptancePackage(context.getPackageName())&&StayAlarmPhysicalFixture.hasMarker(context)'));
  assert.doesNotMatch(workflow,/keytool|CREWCHECK_STORE_PASSWORD|signingConfigs\.release|installDebug|adb install/);
 });
+test('read-only diagnostic identifies individual missing capabilities without granting or scheduling',()=>{
+ const out=mkdtempSync(path.join(os.tmpdir(),'stay-capabilities-'));
+ try{
+  execFileSync('javac',['-d',out,'android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarmPermissionState.java','scripts/fixtures/StayAlarmPermissionStateFixture.java'],{stdio:'inherit'});
+  const value=execFileSync('java',['-cp',out,'com.crewcheck.app.StayAlarmPermissionStateFixture'],{encoding:'utf8'});
+  assert.match(value,/PASS 729 capability combinations/);
+ }finally{rmSync(out,{recursive:true,force:true});}
+ const driver=readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarmAndroid.java','utf8');
+ const fixture=readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarmPhysicalFixture.java','utf8');
+ assert.match(driver,/boolean permitted\(\)\s*\{\s*return permissionState\(\)\.ready\(\)/);
+ const diagnostic=driver.slice(driver.indexOf('public StayAlarmPermissionState permissionState()'),driver.indexOf('@Override public void replace'));
+ assert.doesNotMatch(diagnostic,/requestPermissions|startActivity|createNotificationChannel|setExact|\.notify\(|PowerManager|ACTION_REQUEST/);
+ assert.ok(fixture.includes('button(box,"Atualizar diagnóstico",this::render)'));
+ assert.ok(fixture.includes('permissions.describe(android.os.Build.VERSION.SDK_INT>=33,android.os.Build.VERSION.SDK_INT>=31)'));
+});

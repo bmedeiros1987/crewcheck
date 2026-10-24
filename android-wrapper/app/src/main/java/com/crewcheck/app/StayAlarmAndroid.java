@@ -42,14 +42,23 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     }
     @Override public long now(){return System.currentTimeMillis();}
     @Override public boolean permitted() {
-        NotificationManager notifications=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
-        AlarmManager alarms=(AlarmManager)context.getSystemService(Context.ALARM_SERVICE);
-        if(alarms==null||notifications==null||!notifications.areNotificationsEnabled())return false;
-        if(Build.VERSION.SDK_INT>=33&&context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return false;
-        if(Build.VERSION.SDK_INT>=31&&!alarms.canScheduleExactAlarms())return false;
-        // No channel creation/configuration or permission UI in this adapter.
-        NotificationChannel channel=notifications.getNotificationChannel(CHANNEL);
-        return channel!=null&&channel.getImportance()!=NotificationManager.IMPORTANCE_NONE;
+        return permissionState().ready();
+    }
+    /** Same capability snapshot feeds admission and the synthetic diagnostics.
+     * Reads only; no grants, settings intents, channel changes or battery bypass. */
+    public StayAlarmPermissionState permissionState() {
+        NotificationManager notifications=null;AlarmManager alarms=null;
+        int alarmService=-1,notificationService=-1,enabled=-1,post=-1,exact=-1,channel=-1;
+        try{alarms=(AlarmManager)context.getSystemService(Context.ALARM_SERVICE);alarmService=alarms==null?0:1;}catch(Exception ignored){}
+        try{notifications=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);notificationService=notifications==null?0:1;}catch(Exception ignored){}
+        if(notifications!=null){
+            try{enabled=notifications.areNotificationsEnabled()?1:0;}catch(Exception ignored){}
+            try{NotificationChannel value=notifications.getNotificationChannel(CHANNEL);
+                channel=value!=null&&value.getImportance()!=NotificationManager.IMPORTANCE_NONE?1:0;}catch(Exception ignored){}
+        }
+        try{post=Build.VERSION.SDK_INT<33||context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED?1:0;}catch(Exception ignored){}
+        try{exact=Build.VERSION.SDK_INT<31?1:alarms==null?0:alarms.canScheduleExactAlarms()?1:0;}catch(Exception ignored){}
+        return new StayAlarmPermissionState(alarmService,notificationService,enabled,post,exact,channel);
     }
     @Override public void replace(StayAlarmEngine.Record r) {
         if(!permitted())throw new SecurityException("permission unavailable");
