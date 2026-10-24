@@ -35,3 +35,11 @@ build cache pair, preserving the existing lifecycle contract when all requests h
 the shell. The OCR guard's old mutation counterproof expected unsafe global replay;
 it now requires network/no generic admission even with that guard removed, while
 the real guard still requires zero outer-worker cache/network operations.
+
+Review reconciliation: images/fonts/audio/video served as application/octet-stream
+by the actual production MIME expression are supported only for exact manifest-
+listed shell entries. Generic runtime admission stays strict and excludes media.
+The real-browser fixture evaluates that same server expression and verifies offline
+image/icon/MP3/MP4 bytes plus refusal of unlisted media. Shell installation also
+rejects private/sensitive-Vary entry/asset responses before storing them; the
+verified navigation refresh cannot overwrite shell HTML with such a response.
