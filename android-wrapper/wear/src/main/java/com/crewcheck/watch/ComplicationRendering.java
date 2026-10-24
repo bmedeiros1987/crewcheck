@@ -19,6 +19,7 @@ final class ComplicationRendering {
      * vazio desenhado a partir de silêncio é um dado de saúde inventado.
      */
     final Integer rangedValue;
+    final long validUntilEpochMs;
 
     ComplicationRendering(String shortText, String longText, String title, String description) {
         this(shortText, longText, title, description, null);
@@ -31,6 +32,11 @@ final class ComplicationRendering {
             String description,
             Integer rangedValue
     ) {
+        this(shortText, longText, title, description, rangedValue, 0L);
+    }
+    ComplicationRendering(String shortText, String longText, String title, String description,
+            Integer rangedValue, long validUntilEpochMs) {
+        this.validUntilEpochMs = validUntilEpochMs;
         this.shortText = shortText;
         this.longText = longText;
         this.title = title;

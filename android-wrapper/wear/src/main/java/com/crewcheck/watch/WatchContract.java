@@ -20,12 +20,17 @@ public final class WatchContract {
      *  3. LGPD: dado de saúde fica num canal separado, com guarda própria e
      *     podendo ser revogado sem derrubar a escala.
      */
-    public static final int CREWLIFE_SCHEMA_VERSION = 1;
+    public static final int CREWLIFE_SCHEMA_VERSION = 2;
     public static final int ROUTINE_SCHEMA_VERSION = 1;
 
     /** Ambos são agregados derivados; 4 KiB é folgado e limita superfície. */
     public static final int MAX_WELLBEING_BYTES = 4 * 1024;
 
+    public static final String CREWLIFE_V2_PATH = "/crewcheck/watch/crewlife/v2";
+    public static final String CREWLIFE_CONTROL_PATH = CREWLIFE_V2_PATH + "/control";
+    public static final String CREWLIFE_ACK_PATH = CREWLIFE_V2_PATH + "/ack";
+    public static final String CREWLIFE_CAPABILITY = "crewlife_metric_validity_v2";
+    /** Legacy path is deletion-only; values never regain validity. */
     public static final String CREWLIFE_PATH = "/crewcheck/watch/crewlife/v1";
     public static final String ROUTINE_PATH = "/crewcheck/watch/routine/v1";
     public static final String DATA_KEY_CREWLIFE_JSON = "crewLifeJson";
