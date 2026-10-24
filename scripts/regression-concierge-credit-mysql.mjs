@@ -89,6 +89,8 @@ try{
   await seed('uncertain');let loseAck=true;
   const ackDb={async getConnection(){const c=await db.getConnection();return {query:c.query.bind(c),beginTransaction:c.beginTransaction.bind(c),rollback:c.rollback.bind(c),release:c.release.bind(c),destroy:c.destroy.bind(c),async commit(){await c.commit();if(loseAck){loseAck=false;throw Error('SYNTHETIC_ACK_LOST_AFTER_REAL_COMMIT');}}};}};
   await assert.rejects(createInfobipSqlBudget(ackDb)(c=>candidate('uncertain').reserve(c,job(1))));assert.equal(await reserve('uncertain',1),false);assert.equal((await read(key('global',['uncertain','2032-10']))).reservedMicroUsd,12000);passed.push('lost real COMMIT acknowledgement retains reservation, no retry debit');
+  await seed('promotional-expiry',{balance:24000});let delayedClock=epoch;const expiring=createPromotionalConciergeAdmission({...promoPolicy,approvalId:'synthetic-expiring-approval',programId:'promotional-expiry',validUntil:epoch+10},{now:()=>delayedClock,resolveTrustedContext:async(c,j)=>{const r=await context(c,j);delayedClock=epoch+10;return r;}});
+  await assert.rejects(transaction(c=>expiring.reserve(c,promoJob(9))));assert.equal((await read(key('account',['promotional-expiry',account]))).reservedMicroUsd,0);assert.equal(await read(key('promotional-admission',['synthetic-expiring-approval'])),null);passed.push('expiry during awaited credit reservation rolls back all credit and quantity writes');
   await seed('promotional',{balance:24000});assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),true);
   assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),false);passed.push('integrated promotional quantity and credit reserve once in SQL');
   await seed('restart');assert.equal(await reserve('restart',1),true);

@@ -30,8 +30,11 @@ export function createPromotionalConciergeAdmission(options={},dependencies={}){
   // Scope is rechecked under the existing dispatch transaction; canonical link
   // and profile locks must already be held. No balance is granted here.
   if(!allows(j)||!await credit.reserve(c,{...j,accountKey:p.ownerAccountKey,channel:'whatsapp'}))return false;
+  // Writes may already exist: a false return would commit them in the caller.
+  if(!allows(j)||c.signal?.aborted)throw Error('PROMOTIONAL_ADMISSION_EXPIRED');
   const [result]=await c.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?',[JSON.stringify({...state,used:state.used+1}),stateKey]);
   if(result.affectedRows!==1)throw Error('PROMOTIONAL_ADMISSION_WRITE');
+  if(!allows(j)||c.signal?.aborted)throw Error('PROMOTIONAL_ADMISSION_EXPIRED');
   return true;
  }
  return Object.freeze({allows,reserve});
