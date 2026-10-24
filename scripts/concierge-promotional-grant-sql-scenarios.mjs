@@ -40,6 +40,14 @@ export async function runPromotionalGrantSqlScenarios({db,transaction,mode,epoch
  clock=epoch+900001;assert.equal(await transaction(c=>resolver(c,{...j,receivedAt:clock})),null);clock=epoch;
  await write(tariffKey,{...tariff,verifiedAt:epoch+1});assert.equal(await transaction(c=>resolver(c,j)),null);await write(tariffKey,{...tariff,recipientHash:'b'.repeat(64)});assert.equal(await transaction(c=>resolver(c,j)),null);await write(tariffKey,tariff);
  assert.equal(await transaction(c=>resolver({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(args?.[0]===tariffKey)clock=epoch+900001;return r;}},j)),null,'tariff expiring during SQL lookup denies');clock=epoch;
+ await write(tariffKey,{...tariff,validUntil:epoch+2});const beforeExpiry=await read(key('account',[p.programId,account]));
+ for(const phase of ['global-read','last-update']){
+  let updates=0;const expiryJob={...j,eventKey:hash('tariff-expiry-'+phase)};
+  const run=()=>transaction(c=>credit.reserve({...c,query:async(sql,args)=>{const result=await c.query(sql,args);if(phase==='global-read'&&sql.startsWith('SELECT payload')&&args[0]===key('global',[p.programId,'2032-10']))clock=epoch+2;if(phase==='last-update'&&sql.startsWith('UPDATE crewcheck_telegram_state')&&++updates===3)clock=epoch+2;return result;}},expiryJob));
+  if(phase==='global-read')assert.equal(await run(),false);else await assert.rejects(run());clock=epoch;
+  assert.deepEqual(await read(key('account',[p.programId,account])),beforeExpiry);assert.equal(await read(key('request',[p.programId,expiryJob.eventKey])),null);
+ }
+ await write(tariffKey,tariff);
  await db.query('UPDATE crewcheck_whatsapp_links SET consent_concierge=0 WHERE phone_hash=?',[phoneHash]);assert.equal(await transaction(c=>resolver(c,j)),null);await db.query('UPDATE crewcheck_whatsapp_links SET consent_concierge=1 WHERE phone_hash=?',[phoneHash]);
  const rollback={...p,approvalId:'synthetic-rollback-grant',programId:'synthetic-rollback-grant',validUntil:epoch+10};await seed(rollback);let updates=0;
  await assert.rejects(transaction(c=>grant(rollback,()=>clock)({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state')&&++updates===3)clock=epoch+10;return r;}},{ownerPublicId:owner})));clock=epoch;
