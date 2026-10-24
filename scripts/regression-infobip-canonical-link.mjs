@@ -15,8 +15,10 @@ const environment = { CREWCHECK_INFOBIP_WHATSAPP_POLICY: JSON.stringify(policy) 
 assert.equal(await infobipCanonicalLinkDestination(environment, now), sender);
 assert.equal(await infobipCanonicalLinkDestination({}, now), '');
 assert.equal(await infobipCanonicalLinkDestination(environment, now + 600000), '');
-assert.equal(await infobipCanonicalLinkDestination({ ...environment, CREWCHECK_WHATSAPP_NUMBER: '12025550102' }, now), '');
-for (const edit of [p => p.configuration.canonicalLinkHandshake = false, p => p.configuration.canonicalLinkHandshake = 'true', p => p.configuration.authentication = 'basic', p => p.configuration.allowedSenders = [], p => p.admission.id += '-reset']) {
+const mixedEnvironment={...environment,CREWCHECK_WHATSAPP_NUMBER:'12025550102',WHATSAPP_BUSINESS_NUMBER:sender};
+assert.equal(await infobipCanonicalLinkDestination(mixedEnvironment, now), sender,'explicit Infobip selection cannot inherit a different legacy Meta destination');
+assert.equal(await infobipCanonicalLinkDestination({...mixedEnvironment,WHATSAPP_BUSINESS_NUMBER:'12025550103'},now),sender);
+for (const edit of [p => p.configuration.canonicalLinkHandshake = false, p => p.configuration.canonicalLinkHandshake = 'true', p => p.configuration.authentication = 'basic', p => p.configuration.allowedSenders = [], p => p.configuration.deploymentBinding.sender = '12025550104', p => p.configuration.sender = '12025550104', p => p.admission.id += '-reset']) {
   const p = structuredClone(policy); edit(p);
   assert.equal(await infobipCanonicalLinkDestination({ CREWCHECK_INFOBIP_WHATSAPP_POLICY: JSON.stringify(p) }, now), '');
 }
@@ -92,6 +94,37 @@ assert.equal(state.enqueued, 0);
 
 // Execute the real status handler: authenticated, scoped SELECT only, no DDL.
 const whatsappSource = fs.readFileSync('server/whatsapp.mjs', 'utf8');
+// Execute the actual authenticated start handler for both provider branches.
+// Neither a request body number nor legacy aliases may override Infobip's
+// validated sender; omitted provider retains the original alias precedence.
+const startSource=whatsappSource.slice(whatsappSource.indexOf('async function handleLinkStart('),whatsappSource.indexOf('\nasync function handleLinkStatus('));
+const businessSource=whatsappSource.slice(whatsappSource.indexOf('function businessNumber('),whatsappSource.indexOf('\n}',whatsappSource.indexOf('function businessNumber('))+2);
+let starts=0,selectedEnvironment=mixedEnvironment;
+const legacyNumber=new Function('envAny',`return (${businessSource});`)(keys=>keys.map(key=>selectedEnvironment[key]).find(Boolean)||'');
+const startIdentity={email:'synthetic-start@example.invalid',db:{async query(sql,args){
+ starts++;assert(sql.startsWith('DELETE FROM crewcheck_whatsapp_link_codes')||sql.trim().startsWith('INSERT INTO crewcheck_whatsapp_link_codes'));
+ assert.equal(args[0],startIdentity.email);return [{affectedRows:1}];
+}}};
+const startHandler=new Function('sendJson','requireIdentity','readJsonBody','infobipCanonicalLinkDestination','normalizePhone','businessNumber','ensureWhatsAppTables','auditSecret','crypto','linkCodeHash','LINK_TTL_MINUTES',`return (${startSource});`)(
+ (_res,status,payload)=>({status,payload}),async req=>req.identity,async req=>req.body,
+ ()=>infobipCanonicalLinkDestination(selectedEnvironment,now),value=>String(value||'').replace(/\D/g,''),legacyNumber,
+ async db=>db,()=>secret,{randomInt:()=>123456},hash,10);
+const startRequest=body=>({method:'POST',identity:startIdentity,body:{consentConcierge:true,...body}});
+const infobipStart=await startHandler(startRequest({provider:'infobip',number:'12025550999'}),{});
+assert.equal(infobipStart.status,200);assert.equal(infobipStart.payload.openUrl,`https://wa.me/${sender}?text=123456`);
+assert.equal((await startHandler(startRequest({}),{})).payload.openUrl,'https://wa.me/12025550102?text=123456','legacy primary alias retains precedence');
+selectedEnvironment={...mixedEnvironment,CREWCHECK_WHATSAPP_NUMBER:''};
+assert.equal((await startHandler(startRequest({}),{})).payload.openUrl,`https://wa.me/${sender}?text=123456`,'legacy fallback alias is preserved');
+selectedEnvironment={...mixedEnvironment,CREWCHECK_INFOBIP_WHATSAPP_POLICY:''};
+const beforeRejected=starts;
+assert.equal((await startHandler(startRequest({provider:'infobip'}),{})).status,503);assert.equal(starts,beforeRejected,'missing Infobip policy rejects before challenge SQL');
+for(const edit of [p=>p.admission.validUntil=now,p=>p.configuration.deploymentBinding.sender='12025550104',p=>p.configuration.allowedSenders=[]]){
+ const p=structuredClone(policy);edit(p);selectedEnvironment={...mixedEnvironment,CREWCHECK_INFOBIP_WHATSAPP_POLICY:JSON.stringify(p)};
+ assert.equal((await startHandler(startRequest({provider:'infobip'}),{})).status,503);assert.equal(starts,beforeRejected,'expired or conflicting Infobip binding rejects before challenge SQL');
+}
+assert.equal((await startHandler(startRequest({provider:'meta'}),{})).status,400);assert.equal(starts,beforeRejected,'unknown explicit provider cannot fall through to Meta');
+assert.equal(await startHandler({...startRequest({provider:'infobip'}),identity:null},{}),undefined);assert.equal(starts,beforeRejected);
+
 const statusSource = whatsappSource.slice(whatsappSource.indexOf('async function handleLinkStatus('), whatsappSource.indexOf('\nasync function handleUnlink('));
 let reads = 0, broken = false;
 const identity = { email: 'synthetic@example.invalid', db: { query: async (sql, args) => {

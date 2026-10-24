@@ -32,9 +32,9 @@ export async function infobipCanonicalLinkDestination(environment = process.env,
         !/^[1-9]\d{7,14}$/.test(sender) || !configuration.allowedSenders?.includes(sender) ||
         configuration.deploymentBinding?.sender !== sender ||
         !Number.isFinite(now) || now < admission.validFrom || now >= admission.validUntil) return '';
-    const explicit = environment.CREWCHECK_WHATSAPP_NUMBER || environment.WHATSAPP_BUSINESS_NUMBER;
-    // An old Meta destination must not silently capture an Infobip challenge.
-    if (explicit && String(explicit).replace(/\D/g, '') !== sender) return '';
+    // The authenticated start action explicitly selects provider=infobip.
+    // Its destination is the policy-bound sender above, never a legacy Meta
+    // alias. Legacy callers keep their own existing alias precedence.
     return sender;
   } catch { return ''; }
 }
