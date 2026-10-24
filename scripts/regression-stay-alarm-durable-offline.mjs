@@ -15,7 +15,7 @@ test('durable local authority survives restart but not logout/APZ',()=>{
   ];
   execFileSync('javac',['-d',out,...sources],{stdio:'inherit'});
   const value=execFileSync('java',['-cp',out,'StayAlarmDurableAuthorityFixture'],{encoding:'utf8'});
-  assert.match(value,/PASS 26 durable StayAlarm authority checks/);
+  assert.match(value,/PASS 33 durable StayAlarm authority checks/);
  }finally{rmSync(out,{recursive:true,force:true});}
 });
 test('production remains OFF; only isolated mcctest package can install physical-test host',()=>{

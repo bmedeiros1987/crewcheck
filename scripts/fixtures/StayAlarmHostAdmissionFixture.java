@@ -32,6 +32,7 @@ public final class StayAlarmHostAdmissionFixture {
  static void durableHostCounterproofs()throws Exception{
   LocalFixture f=new LocalFixture();f.schedule("A");String epoch=f.saved.ownerEpoch;f.now+=310000;
   check(f.session.activeOwner()==null);check(StayAlarmHostAndroid.revokeLocal(f.session,f.durable,"A",epoch));
+  check(StayAlarmHostAndroid.revokeLocal(f.session,f.durable,"A",epoch));
   check(f.snapshot.revoked&&!f.receive()&&f.displayed==0);
   f=new LocalFixture();f.schedule("A");StayAlarmSessionHost restarted=f.newSession();
   check(StayAlarmHostAndroid.revokeLocal(restarted,f.durable,null,null));check(f.snapshot.revoked&&!f.receive());

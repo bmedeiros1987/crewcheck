@@ -42,3 +42,10 @@ restart, reauth A→A, A→B, falha antes de pending-cancel e falha do tombstone
 O pacote de teste precisa ser exatamente `com.crewcheck.app.mcctest` e debug;
 o receiver de produção recusa autoridade durável enquanto o gate permanecer OFF.
 Nenhum desses testes sintéticos substitui a matriz física do novo APK.
+
+O caminho real de logout via `auth-changed` preserva o escopo antes de detectar
+credencial ausente. O fixture de commit malsucedido também modela o comportamento
+de SharedPreferences: cache já alterado e disco ainda antigo. Enquanto houver
+incerteza, encontrar tombstone em memória exige nova gravação bem-sucedida antes
+do ACK; não limpa a quarentena pelo cache. Recibo idempotente de revogação só é
+permitido sem autoridade online e com ausência/tombstone durável confirmado.

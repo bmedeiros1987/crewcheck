@@ -28,6 +28,12 @@ test('native rejection cannot become a confirmed revocation receipt',async()=>{
  const revoke=f.runtime.revoke();f.reply(f.messages.at(-1),'rejected',null);
  assert.equal((await revoke).state,'revocation-unknown');assert.equal(f.runtime.ready(),false);
 });
+test('logout auth-changed reauthentication revokes the retained live owner scope',async()=>{
+ const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await auth;
+ f.logout();const reauthenticate=f.runtime.authenticate(),request=f.messages.at(-1);
+ assert.equal(request.action,'revoke');assert.equal(request.ownerId,'account-a');assert.equal(request.ownerEpoch,'epoch-1');
+ f.reply(request,'revoked',null);assert.equal(await reauthenticate,false);assert.equal(f.runtime.ready(),false);
+});
 test('wiring performs inspect/replace and edit invalidation cancels stable native identity',async()=>{
  const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await auth;
  const key='stay-hotel-apz:account-a:event-1',input={key,alarmAt:'2030-10-11T00:01:00Z',hotelReportAt:'2030-10-11T00:03:00Z',confirmed:true,apzConfirmed:true,mode:'relative'};

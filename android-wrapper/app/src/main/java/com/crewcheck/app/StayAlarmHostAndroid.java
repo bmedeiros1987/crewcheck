@@ -116,7 +116,10 @@ public final class StayAlarmHostAndroid {
                 confirmed[0]=durable.revokeCurrent();
             }else{
                 if(active!=null&&(!account.equals(active)||!epoch.equals(session.epoch())))return;
-                if(!durable.matches(account,epoch)&&!(account.equals(active)&&epoch.equals(session.epoch())))return;
+                if(!durable.matches(account,epoch)&&!(account.equals(active)&&epoch.equals(session.epoch()))){
+                    if(active==null)confirmed[0]=durable.confirmInactive();
+                    return; // idempotent tombstone receipt never revokes a foreign live scope
+                }
                 confirmed[0]=durable.revoke(account,epoch);
             }
             if(!confirmed[0])StayAlarmDurableAuthority.blockUncertain();

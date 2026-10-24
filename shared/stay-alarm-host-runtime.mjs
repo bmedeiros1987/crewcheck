@@ -31,7 +31,7 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
     if(activeScope!==scope&&inactiveScope!==scope)return {state:'superseded-session',cancelConfirmed:false};
     return revoke();
   }
-  async function authenticate(){reset();const captured=generation,account=readAccount(),token=readToken();
+  async function authenticate(){const retained=activeScope||inactiveScope;reset(retained);const captured=generation,account=readAccount(),token=readToken();
     if(!account||!token){await revoke();return false;}
     try{
       const raw=await send('authenticate',{token});const caps=JSON.parse(raw);

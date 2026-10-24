@@ -54,18 +54,26 @@ public final class StayAlarmDurableAuthority implements StayAlarmEngine.Owner {
     }
     /** Host-owned local scope, including after the short online lease expires. */
     public synchronized boolean revokeCurrent(){
-        try{Snapshot old=store.read();if(old==null||old.revoked){persistenceUncertain=false;return true;}return revoke(old.owner,old.epoch);}
+        try{Snapshot old=store.read();if(old==null||old.revoked)return !persistenceUncertain||commitTombstone(old);return revoke(old.owner,old.epoch);}
         catch(Exception error){persistenceUncertain=true;return false;}
+    }
+    public synchronized boolean confirmInactive(){
+        try{Snapshot old=store.read();return (old==null||old.revoked)&&revokeCurrent();}
+        catch(Exception error){persistenceUncertain=true;return false;}
+    }
+    private boolean commitTombstone(Snapshot old){
+        persistenceUncertain=true;
+        try{Snapshot next=new Snapshot(null,null,0,old==null?1:old.generation+1,true);
+            if(!store.write(next)||!same(next,store.read()))return false;
+            persistenceUncertain=false;return true;
+        }catch(Exception error){return false;}
     }
     public synchronized boolean revoke(String owner,String epoch){
         try{
-            Snapshot old=store.read();long generation=old==null?1:old.generation+1;
-            if(old==null||old.revoked){persistenceUncertain=false;return true;}
+            Snapshot old=store.read();
+            if(old==null||old.revoked)return !persistenceUncertain||commitTombstone(old);
             if(owner==null||epoch==null||!owner.equals(old.owner)||!epoch.equals(old.epoch))return false;
-            persistenceUncertain=true;
-            Snapshot next=new Snapshot(null,null,0,generation,true);
-            if(!store.write(next)||!same(next,store.read()))return false;
-            persistenceUncertain=false;return true;
+            return commitTombstone(old);
         }catch(Exception error){persistenceUncertain=true;return false;}
     }
     @Override public synchronized boolean enabled(){return current()!=null;}

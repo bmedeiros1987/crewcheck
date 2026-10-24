@@ -2,7 +2,7 @@ import com.crewcheck.app.*;
 public final class StayAlarmDurableAuthorityFixture {
   static int checks=0; static void ok(boolean value,String message){checks++;if(!value)throw new AssertionError(message);}
   static final class Clock implements StayAlarmDurableAuthority.Clock {long now=1000;public long now(){return now;}}
-  static final class Store implements StayAlarmDurableAuthority.Store {boolean fail;StayAlarmDurableAuthority.Snapshot value;public StayAlarmDurableAuthority.Snapshot read(){return value;}public boolean write(StayAlarmDurableAuthority.Snapshot v){if(fail)return false;value=v;return true;}}
+  static final class Store implements StayAlarmDurableAuthority.Store {boolean fail,updateOnFailure;StayAlarmDurableAuthority.Snapshot value,persisted;public StayAlarmDurableAuthority.Snapshot read(){return value;}public boolean write(StayAlarmDurableAuthority.Snapshot v){if(fail){if(updateOnFailure)value=v;return false;}value=v;persisted=v;return true;}}
   static StayAlarmEngine.Record record(String owner,String epoch,String event,long alarm,long apz,String state){
     return new StayAlarmEngine.Record(StayAlarmEngine.identity(owner,event),owner,epoch,event,"op-"+event,1,
       java.time.Instant.ofEpochMilli(alarm).toString(),alarm,apz,"absolute",state);
@@ -40,6 +40,14 @@ public final class StayAlarmDurableAuthorityFixture {
     ok(durable.grant(record("C","epoch-c","stay-c",3000,9000,"scheduled")),"new confirmed C after tombstone");
     ok(!durable.revoke("A","epoch-a"),"stale A cannot revoke C");
     ok("C".equals(durable.activeOwner()),"stale revocation leaves current account intact");
+    stable.fail=true;stable.updateOnFailure=true;
+    ok(!durable.revokeCurrent(),"failed SharedPreferences commit cannot confirm revoke");
+    ok(stable.value.revoked&&!stable.persisted.revoked,"fixture models memory tombstone with old authority still on disk");
+    ok(!durable.revokeCurrent(),"cached tombstone cannot acknowledge a failed retry");
+    ok(!durable.revoke("C","epoch-c"),"scoped retry also persists again while uncertain");
+    ok(StayAlarmDurableAuthority.deliveryBlocked()&&!stable.persisted.revoked,"failed retries remain blocked without pretending disk changed");
+    stable.fail=false;ok(durable.revokeCurrent(),"successful retry commits a fresh tombstone");
+    stable.value=stable.persisted;ok(stable.value.revoked&&!new StayAlarmDurableAuthority(stable,clock).enabled(),"disk restart cannot resurrect confirmed revoked authority");
     System.out.println("PASS "+checks+" durable StayAlarm authority checks");
   }
 }
