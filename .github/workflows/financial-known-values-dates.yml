@@ -1,0 +1,118 @@
+name: Financial known values and payment dates
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/*Salary*.ts'
+      - 'client/src/lib/salaryDisplayBasis.ts'
+      - 'scripts/regression-salary-display-basis*'
+      - 'client/src/lib/payrollPaymentComposition.ts'
+      - 'client/src/lib/nextFinancialPayment.ts'
+      - 'client/src/lib/financialLocalUpcoming.ts'
+      - 'client/src/lib/financialIntervalEvidence.ts'
+      - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/ownerPerDiemReview.ts'
+      - 'client/src/lib/financialStatementLearning.ts'
+      - 'scripts/regression-owner-per-diem-review.mjs'
+      - 'scripts/regression-owner-per-diem-browser.mjs'
+      - 'scripts/regression-owner-per-diem-caller.mjs'
+      - 'scripts/regression-financial-long-history.cjs'
+      - 'scripts/regression-financial-navigation-focus-browser.cjs'
+      - 'scripts/regression-financial-partial-flight-meals.mjs'
+      - 'scripts/regression-taxi-pending-row-browser.mjs'
+      - 'client/src/lib/salaryCalculationDiagnostic.ts'
+      - 'client/src/lib/airports.ts'
+      - 'client/src/components/finance/**'
+      - 'shared/spBankCalendar2026.mjs'
+      - 'shared/financial*.mjs'
+      - 'client/src/lib/cabinSalaryRateReference.ts'
+      - 'scripts/regression-financial-concierge-*'
+      - 'scripts/regression-financial-history-loading-ui.cjs'
+      - 'scripts/regression-financial-persisted-comparison.mjs'
+      - 'scripts/regression-cabin-rate-audit.mjs'
+      - 'scripts/regression-financial-known-values*'
+      - 'scripts/regression-financial-review-owner-negative.mjs'
+      - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
+      - '.github/workflows/financial-known-values-dates.yml'
+permissions:
+  contents: read
+jobs:
+  known-values-dates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Raw real-function contracts in three device timezones
+        run: |
+          TZ=UTC node scripts/regression-financial-known-values-dates.mjs
+          TZ=America/Sao_Paulo node scripts/regression-financial-known-values-dates.mjs
+          TZ=Asia/Tokyo node scripts/regression-financial-known-values-dates.mjs
+          node scripts/regression-owner-per-diem-caller.mjs
+          TZ=UTC node scripts/regression-salary-display-basis.mjs
+          TZ=America/Sao_Paulo node scripts/regression-salary-display-basis.mjs
+          TZ=Asia/Tokyo node scripts/regression-salary-display-basis.mjs
+      - run: npm run build
+      - run: npx tsc --noEmit
+      - name: Prepared real-function contracts and existing negative gates
+        run: |
+          node scripts/regression-financial-known-values-dates.mjs
+          node scripts/regression-next-financial-payment.mjs
+          node scripts/regression-payroll-payment-coverage.mjs
+          node scripts/regression-financial-monthly-foundation.mjs
+          node scripts/regression-financial-review-owner-negative.mjs
+          node scripts/regression-salary-prerequisite-diagnostic.mjs
+          node scripts/regression-salary-display-basis.mjs
+          node scripts/regression-financial-upcoming.mjs
+          node scripts/regression-financial-concierge-timing.mjs
+          node scripts/regression-financial-partial-flight-meals.mjs
+          node scripts/regression-owner-per-diem-review.mjs
+          node scripts/regression-owner-per-diem-caller.mjs
+          node scripts/regression-cabin-rate-audit.mjs
+          node scripts/regression-financial-persisted-comparison.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated UI browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/finance-known-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/finance-known-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Compiled application with synthetic accounts and all APIs intercepted
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/finance-known-ui/package.json
+        run: |
+          node scripts/regression-financial-navigation-focus-browser.cjs
+          node scripts/regression-financial-known-values-app.cjs
+          node scripts/regression-financial-concierge-origin.cjs
+          node scripts/regression-financial-history-loading-ui.cjs
+          node scripts/regression-owner-per-diem-browser.mjs
+          node scripts/regression-taxi-pending-row-browser.mjs
+          TZ=UTC node scripts/regression-finance-actionable-browser.mjs
+          TZ=America/Sao_Paulo node scripts/regression-finance-actionable-browser.mjs
+          TZ=Pacific/Auckland node scripts/regression-finance-actionable-browser.mjs
+          node scripts/regression-financial-long-history.cjs
+          node scripts/regression-salary-display-basis-browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: financial-known-values-synthetic
+          path: |
+            artifacts/financial-focus-probe/
+            artifacts/financial-known-values/
+            artifacts/financial-long-history/
+            artifacts/salary-display-basis/
+          if-no-files-found: ignore

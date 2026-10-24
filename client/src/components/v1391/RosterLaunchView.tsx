@@ -1,3 +1,4 @@
+import { rosterActivityLabel } from './rosterActivityLabel';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
@@ -8,6 +9,7 @@ import { AlertRosterNavigation } from '../alerts/AlertRosterNavigation';
 import type { CrewRoster } from '../../lib/pdfParser';
 import {
   Banknote,
+  GitCompareArrows,
   BedDouble,
   BriefcaseBusiness,
   Building2,
@@ -160,6 +162,8 @@ function workMode(event: RosterEvent): ProgramMode {
 }
 
 function cardTitle(event: RosterEvent, mode: ProgramMode) {
+  const compactLabel = rosterActivityLabel(String(event.day?.pairingCode || event.day?.type || ''));
+  if (compactLabel === 'Descanso' || (mode === 'stay' && compactLabel === 'Pernoite')) return compactLabel;
   const code = String(event.day?.type || event.day?.pairingCode || '').toUpperCase();
   if (mode === 'rest') {
     if (/(DO|DOF|DOP|OFF)/.test(code)) return `Folga publicada${code ? ` · ${code}` : ''}`;
@@ -368,7 +372,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     <V139Header title="Escala inteligente" detail="Programações e horários publicados."/>
     {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
-    <div className="cz-roster-actions cc-share-entry"><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
+    <div className="cz-roster-actions cc-share-entry"><a className="cc-roster-changes-link" href="?view=perdiem&fmode=allowance&fscreen=changes" aria-label="Alterações" title="Alterações"><GitCompareArrows size={18} aria-hidden="true"/></a><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
     <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
       <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
         <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">CrewCheck AIMS</option><option value="calendar">Calendário</option>
@@ -423,13 +427,13 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     {unconfirmed.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada">
       <h2>Data não confirmada</h2>
       <p>{unconfirmed.length} programações não puderam ser posicionadas no mês ou dia. Os dados e detalhes permanecem disponíveis abaixo; confirme a data na fonte.</p>
-      <AimsRosterTable events={unconfirmed} showHistory={false} focusEventId={focusedEventId} dayView title="Programações com data não confirmada"/>
+      <AimsRosterTable operationalEvents={allOrdered} events={unconfirmed} showHistory={false} focusEventId={focusedEventId} dayView title="Programações com data não confirmada"/>
     </section>}
 
     {(layout === 'aims' || layout === 'document')
-      ? <AimsDocumentView events={visibleEvents} onReturnToMonth={() => chooseZoom('month')} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
+      ? <AimsDocumentView events={visibleEvents} operationalEvents={allOrdered} onReturnToMonth={() => chooseZoom('month')} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
       : layout === 'calendar' && ordered.length
-        ? <CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
+        ? <CalendarRosterView operationalEvents={allOrdered} events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
         : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
       {visibleGroups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
@@ -520,7 +524,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     {layout !== 'calendar' && layout !== 'document' && civilOnlyEvents.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações sem instante confirmado">
       <h2>Data publicada, horário a confirmar</h2>
       <p>Estas programações têm data confirmada, mas não têm um instante confirmado para posicioná-las na sequência das jornadas. Estão listadas por data publicada.</p>
-      <AimsRosterTable events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
+      <AimsRosterTable operationalEvents={allOrdered} events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
     </section>}
 
     <details className="cc-roster-compact-legend"><summary>Legenda das programações</summary>

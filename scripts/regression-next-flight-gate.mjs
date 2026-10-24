@@ -2,6 +2,7 @@
 // Só fixtures sintéticas: nenhuma rede, credencial, Cirium, FlightAware ou relógio físico.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -31,7 +32,7 @@ function memoryStorage() {
 }
 function flight(id, number, startIso, origin = 'GRU', destination = 'REC', extra = {}) {
   return { id, kind: 'flight', flightNumber: number, origin, destination, presentation: '18:20', departure: '19:05', arrival: '22:10',
-    gate: 'A confirmar', status: '', date: new Date(startIso), canonical: { id: `c-${id}`, startDateTime: startIso, endDateTime: new Date(Date.parse(startIso) + 3 * H).toISOString() }, ...extra };
+    gate: 'A confirmar', status: '', date: new Date(startIso), canonical: { id: `c-${id}`, leg:{departureTime:'19:05',presentationTime:'18:20'},legIndex:0,showPresentation:true, startDateTime: startIso, endDateTime: new Date(Date.parse(startIso) + 3 * H).toISOString() }, ...extra };
 }
 
 // 1. Seleção do próximo voo: ordem por instante absoluto, ignora atividade em solo e voo já partido.
@@ -57,12 +58,16 @@ function flight(id, number, startIso, origin = 'GRU', destination = 'REC', extra
 }
 
 const next = flight('x', 'LA3377', new Date(NOW + 3 * H).toISOString());
-const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', scheduledDepartureUtc: new Date(NOW + 3 * H).toISOString(), departure: new Date(NOW + 3 * H).toISOString(), sourceOrigin: 'GRU', sourceDestination: 'REC', updatedAt: NOW - 5 * 60_000 };
+// Fixture proof is explicit and synthetic; receipt must never manufacture source observation.
+function observedFields(snapshot, sourceObservedAt) {
+  return {...snapshot, operationalEvidence:Object.fromEntries(['gate','status','registration'].filter(field=>typeof snapshot[field]==='string').map(field=>[field,{version:1,value:snapshot[field],sourceObservedAt,provenance:'synthetic-offline-field-proof'}]))};
+}
+const radarBase = observedFields({ ok: true, flight:'LA3377', gate: '9', terminal: '1', status: 'Programado', scheduledDepartureUtc: new Date(NOW + 3 * H).toISOString(), departure: new Date(NOW + 3 * H).toISOString(), sourceOrigin: 'GRU', sourceDestination: 'REC', updatedAt: NOW - 5 * 60_000 }, '2026-10-11T21:55:00Z');
 
 // 3. Portão de embarque ≠ posição da aeronave ≠ portão de outro trecho/dia.
 {
   const ok = m.resolveNextFlightGate({ event: next, radar: radarBase, now: NOW });
-  assert.equal(ok.gate, '9'); assert.equal(ok.gateSource, 'radar'); assert.equal(ok.terminal, '1'); assert.equal(ok.stale, false);
+  assert.equal(ok.gate, '9'); assert.equal(ok.gateSource, 'radar'); assert.equal(ok.terminal, '', 'terminal automático sem prova própria não é promovido'); assert.equal(ok.stale, false);
   for (const position of ['POS 12', 'STAND 5', 'Box 3', 'POS12', 'posição 4']) {
     const r = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: position }, now: NOW });
     assert.equal(r.gate, '', `posição "${position}" não pode virar portão`);
@@ -98,18 +103,29 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
 // 4. Dado ausente e dado antigo.
 {
   const missing = m.resolveNextFlightGate({ event: next, radar: null, now: NOW });
-  assert.equal(missing.gate, ''); assert.equal(missing.gateSource, null); assert.equal(m.gateDisplay(missing), 'Não informado');
+  assert.equal(missing.gate, ''); assert.equal(missing.gateSource, null); assert.equal(m.gateDisplay(missing), 'Não confirmado');
   assert.equal(missing.status, '', 'status ausente não é inventado');
+  assert.equal(m.statusSourceLabel(missing), 'Status operacional não confirmado');
+  const published = m.resolveNextFlightGate({ event: {...next,status:'Programado'}, radar:null, now:NOW });
+  assert.equal(published.statusSource, null);assert.equal(published.status,'');assert.equal(published.plannedStatus,'Programado');
+  assert.doesNotMatch(m.statusSourceLabel(published), /Escala publicada/);
+  const sourced = m.resolveNextFlightGate({event:next,radar:radarBase,now:NOW});
+  assert.equal(sourced.statusSource,'radar');
+  assert.match(m.statusSourceLabel(sourced), /fonte|Radar/i);
+  const receiptOnly=m.resolveNextFlightGate({event:next,radar:{...radarBase,operationalEvidence:undefined},now:NOW});assert.equal(receiptOnly.gate,'');assert.equal(receiptOnly.status,'','receipt does not prove status observation');
+  const staleObservation=m.resolveNextFlightGate({event:next,radar:observedFields(radarBase,'2026-10-11T20:00:00Z'),now:NOW});assert.equal(staleObservation.gate,'');
+  const planned=m.resolveNextFlightGate({event:{...next,gate:'77',status:'Programado',registration:'PR-PLAN'},now:NOW});assert.equal(planned.gate,'');assert.equal(planned.status,'');assert.equal(planned.registration,'');assert.equal(planned.plannedGate,'77');
+  const legacyManual={gate:'24',flight:'LA3377',date:m.flightOperationalDate(next),origin:'GRU',destination:'REC',setAtEpochMs:NOW,author:'Legacy'};const legacyResult=m.resolveNextFlightGate({event:next,manual:legacyManual,now:NOW});assert.equal(legacyResult.gate,'');assert.equal(legacyResult.manualGateUnlinked,true);assert.equal(legacyManual.scheduledDepartureUtc,undefined,'legacy object must not receive inferred UTC');
   const stale = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, updatedAt: NOW - 45 * 60_000 }, now: NOW });
-  assert.equal(stale.gate, '9'); assert.equal(stale.stale, true, 'Radar com mais de 30 min fica desatualizado');
+  assert.equal(stale.gate, '');assert.equal(stale.status,''); assert.equal(stale.gateSource, null, 'Radar antigo não é fonte operacional');
   const future = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, updatedAt: NOW + 10 * 60_000 }, now: NOW });
-  assert.equal(future.stale, true, 'carimbo futuro não conta como atualizado');
+  assert.equal(future.gate,'','carimbo futuro não conta como atualizado');assert.equal(future.status,'');assert.equal(future.gateSource,null);
 }
 
 // 5. Mudança de aeronave/portão e janela de alerta (descanso).
 {
   const before = m.resolveNextFlightGate({ event: next, radar: radarBase, now: NOW });
-  const after = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '12', registration: 'PR-XYZ', aircraft: 'A321' }, now: NOW });
+  const after = m.resolveNextFlightGate({ event: next, radar: observedFields({ ...radarBase, gate: '12', registration: 'PR-XYZ', aircraft: 'A321' },'2026-10-11T21:55:00Z'), now: NOW });
   assert.notEqual(before.gate, after.gate);
   assert.equal(m.gateChangeAlertAllowed(Date.parse(next.canonical.startDateTime), NOW), true, 'dentro da janela operacional vibra');
   assert.equal(m.gateChangeAlertAllowed(NOW + 20 * H, NOW), false, 'longe do voo é período de descanso: sem notificação');
@@ -167,6 +183,19 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   assert.equal(m.readCachedRadarForFlight(storage, next, NOW), null);
 }
 
+// Future gate enrichment preserves date/zone and never promotes a future flight to now.
+{
+  const f = flight('future-temporal', 'QA123', '2032-10-19T03:05:00Z', 'GRU', 'REC', {presentation:'23:18', departure:'00:05'});
+  const now = Date.parse('2032-10-18T12:00:00Z');
+  const info = m.resolveNextFlightGate({event:f, now});
+  const base = m.buildCrewCheckWatchSnapshot([f], f, null, now);
+  const out = m.applyNextFlightToWatchSnapshot(base, info, {primaryEventId:f.id, nextFlightScheduleId:f.canonical.id});
+  assert.equal(out.currentFlight, '');
+  assert.equal(out.gate, '');
+  assert.equal(out.presentationTime, '');
+  assert.match(out.nextDetail, /19\/10 00:05 BRT/);
+}
+
 // 9. Consistência celular-relógio: o snapshot usa exatamente a decisão do card.
 {
   const duty = { id: 'pres', kind: 'duty', flightNumber: 'APRES', origin: 'GRU', destination: 'GRU', presentation: '18:20', canonical: { id: 'c-pres', startDateTime: new Date(NOW + H).toISOString(), endDateTime: new Date(NOW + 2 * H).toISOString() } };
@@ -179,7 +208,7 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   assert.ok(snap.validUntilEpochMs <= radarBase.updatedAt + m.RADAR_GATE_STALE_MS, 'validade nunca supera o Radar');
   assert.ok(snap.validUntilEpochMs >= snap.generatedAtEpochMs);
   // Primário é atividade em solo: o relógio ainda mostra o próximo voo com o mesmo portão.
-  const infoManual = m.resolveNextFlightGate({ event: next, radar: radarBase, manual: { gate: '24', flight: 'LA3377', date: m.flightOperationalDate(next), origin: 'GRU', destination: 'REC', setAtEpochMs: NOW, author: 'Ana' }, now: NOW });
+  const infoManual = m.resolveNextFlightGate({ event: next, radar: radarBase, manual: { gate: '24', scheduledDepartureUtc:next.canonical.startDateTime, flight: 'LA3377', date: m.flightOperationalDate(next), origin: 'GRU', destination: 'REC', setAtEpochMs: NOW, author: 'Ana' }, now: NOW });
   const snap2 = m.applyNextFlightToWatchSnapshot(m.buildCrewCheckWatchSnapshot(events, duty, null, NOW, false), infoManual, { primaryEventId: duty.id, nextFlightScheduleId: next.canonical.id });
   assert.equal(snap2.nextFlight, 'LA3377');
   assert.match(snap2.nextDetail, /GRU → REC • P24/);
@@ -187,11 +216,11 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   // Portão ausente aparece como não informado, nunca como valor inventado.
   const snap3 = m.applyNextFlightToWatchSnapshot(m.buildCrewCheckWatchSnapshot(events, duty, null, NOW, false), m.resolveNextFlightGate({ event: next, now: NOW }), { primaryEventId: duty.id, nextFlightScheduleId: next.canonical.id });
   assert.match(snap3.nextDetail, /Portão não informado/);
-  // Radar antigo deixa o relógio em "Dados antigos" (validade = geração).
+  // Radar antigo não publica o portão; os dados canônicos planejados mantêm validade própria.
   const staleInfo = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, updatedAt: NOW - 50 * 60_000 }, now: NOW });
   const snap4 = m.applyNextFlightToWatchSnapshot(m.buildCrewCheckWatchSnapshot([next], next, null, NOW, false), staleInfo, { primaryEventId: next.id, nextFlightScheduleId: next.canonical.id });
-  assert.equal(snap4.validUntilEpochMs, snap4.generatedAtEpochMs);
-  assert.match(snap4.detail, /Radar desatualizado/);
+  assert.equal(snap4.gate,'','expired operational gate cannot reach watch');assert.equal(snap4.schedule.find(item=>item.id===next.canonical.id)?.gate,'');
+  assert.doesNotMatch(snap4.detail, /portão 9|P9/,'watch cannot describe old gate as operational');
   // Divergência também chega ao relógio.
   const snap5 = m.applyNextFlightToWatchSnapshot(m.buildCrewCheckWatchSnapshot([next], next, null, NOW, false), infoManual, { primaryEventId: next.id, nextFlightScheduleId: next.canonical.id });
   assert.equal(snap5.gate, '24'); assert.match(snap5.detail, /Fonte indica portão 9/);
@@ -208,7 +237,7 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   const event = {...real,canonical:real,date:new Date(real.startDateTime),gate:'7'};
   const now = Date.parse(real.startDateTime)-10*60_000;
   const storage = memoryStorage();
-  const radar = {...radarBase,flight:'QA3377',gate:'9',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:real.startDateTime,departure:real.startDateTime,updatedAt:now-60_000,operationalDate:'2032-10-11'};
+  const radar = observedFields({...radarBase,flight:'QA3377',gate:'9',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:real.startDateTime,departure:real.startDateTime,updatedAt:now-60_000,operationalDate:'2032-10-11'},new Date(now-60000).toISOString());
   const originalTZ=process.env.TZ;
   try {
     process.env.TZ='America/Sao_Paulo';
@@ -256,14 +285,14 @@ fs.rmSync(out, { recursive: true, force: true });
 {
   const ev = flight('r', 'LA3377', '2032-10-13T23:00:00Z');
   const now = Date.parse('2032-10-13T20:00:00Z');
-  const base = { ok: true, gate: '9', status: 'Programado', sourceOrigin: 'GRU', sourceDestination: 'REC', updatedAt: now - 60_000 };
+  const base = observedFields({ ok: true, flight:'LA3377', gate: '9', status: 'Programado', sourceOrigin: 'GRU', sourceDestination: 'REC', updatedAt: now - 60_000 },new Date(now-60000).toISOString());
   const unproven = ['2032-10-13 00:01', '2032-10-13T99:99Z', '2032-10-13T23:00:00+99:00', '2032-10-13 00:01 garbage',
     '2032-02-30T23:00:00Z', '2032-10-13T23:00:00+14:30', '2032-10-13T23:00', '23:00', '', null, undefined];
   for (const departure of unproven) {
     const r = m.resolveNextFlightGate({ event: ev, radar: { ...base, scheduledDepartureUtc: departure }, now });
     assert.equal(r.gate, '', `"${departure}" não pode liberar o portão Radar`);
     assert.notEqual(r.gateSource, 'radar'); assert.equal(r.radarRejected, 'unproven-day', String(departure));
-    const manual = { gate: '24', terminal: '', author: 'Ana', setAtEpochMs: now - 5 * 60_000, flight: 'LA3377', date: m.flightOperationalDate(ev) };
+    const manual = { gate: '24', scheduledDepartureUtc:ev.canonical.startDateTime, origin:'GRU',destination:'REC', terminal: '', author: 'Ana', setAtEpochMs: now - 5 * 60_000, flight: 'LA3377', date: m.flightOperationalDate(ev) };
     const withManual = m.resolveNextFlightGate({ event: ev, radar: { ...base, scheduledDepartureUtc: departure }, manual, now });
     assert.equal(withManual.gate, '24', 'portão manual continua valendo'); assert.equal(withManual.gateSource, 'manual');
     assert.equal(withManual.divergence, null, 'fonte recusada não gera divergência');
@@ -296,6 +325,12 @@ fs.rmSync(out, { recursive: true, force: true });
     const onlyInternalId = ctxVm.normalizeFlightAwareFlight({ fa_flight_id: 'LAN3377-1697000000-airline-0123', gate_origin: '9', scheduled_out: '2032-10-13T23:00:00Z' }, ctx);
     assert.equal(m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: onlyInternalId.flight, gate: '9', departure: onlyInternalId.departure }, now }).radarRejected, 'other-flight', 'fa_flight_id sem ident falha fechado');
   }
+}
+
+for (const TZ of ['UTC', 'America/Sao_Paulo', 'Pacific/Auckland']) {
+  const result = spawnSync(process.execPath, ['scripts/regression-watch-source-pipeline.mjs'], { env: { ...process.env, TZ }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  process.stdout.write(result.stdout);
 }
 
 console.log(`[next-flight-gate] seleção, virada de data, portão/posição, ausente/antigo, manual, conta e celular-relógio OK (TZ=${process.env.TZ || 'local'})`);

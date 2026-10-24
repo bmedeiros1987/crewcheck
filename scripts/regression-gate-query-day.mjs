@@ -1,7 +1,9 @@
+import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 // Actual client request + actual server race/handler; all transports fictional.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import ts from 'typescript';
 import * as policy from '../shared/gate-query-day.mjs';
 import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs';
@@ -30,7 +32,7 @@ function functions(file,names){
 const FakeDate=class extends Date {static now(){return now;}};
 let serverCalls=0, exports=0, credentialFactories=0;
 const fake=async()=>{serverCalls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z'};};
-const server=vm.createContext({...policy,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FakeDate,process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
+const server=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FakeDate,process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
  ciriumRadarInjectionEnabled:o=>o?.enabled===true,runCiriumRadarInjection:fake,publicRadarPayload:x=>x,scoreRadar:()=>95,configuredProviders:()=>[],
  providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),defaultCiriumRadarOptions:()=>{credentialFactories++;return undefined;},ciriumRadarIdentity:()=>({}),
@@ -57,7 +59,8 @@ let account='id:fictional-a',token='fixture-session-a',fetches=0,saves=0,resolve
 const event={id:'f1',kind:'flight',flightNumber:'LA100',origin:'GRU',destination:'REC',canonical:{date,startDateTime:new Date(identity.scheduledDepartureUtc).toISOString()}};
 const cache={ok:true,gate:'cached-12'};
 let cacheReadable=true;
-const client=vm.createContext({...policy,RADAR_GATE_STALE_MS:30*60*1000,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FakeDate,Map,URLSearchParams,
+const radarAdmission=await loadRadarReadAdmission();
+const client=vm.createContext({...radarAdmission,...policy,RADAR_GATE_STALE_MS:30*60*1000,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FakeDate,Map,URLSearchParams,
  getStoredUser:()=>({account}),manualGateAccountKey:u=>u.account,getToken:()=>token,manualGateIdentity:()=> 'LA100|2032-10-14|GRU|REC',
  flightOperationalDate:e=>e.canonical.date,eventStartDateTime:()=>new Date(identity.scheduledDepartureUtc),readRadarSnapshot:()=>cacheReadable?cache:null,telegramConciergeIdentity:()=>({}),
  authFetch:(url)=>{lastQueryUrl=new URL(url,'https://fixture.invalid');fetches++;return new Promise(r=>{resolve=r;});},fetch:()=>{throw Error('legacy fetch forbidden');},

@@ -4,10 +4,49 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/regulation/**'
       - 'client/src/components/CanonicalDutyCard.tsx'
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationDeadlineSummary.mjs'
+      - 'shared/regulationOperationalArrival.mjs'
+      - 'client/src/lib/authClient.ts'
+      - 'client/src/lib/operationalRadarAdmission.ts'
+      - 'client/src/lib/watchContext.ts'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'scripts/stay-editor/apply.mjs'
+      - 'server/cirium-flight-adapter.mjs'
+      - 'server/cirium-radar-provider.mjs'
+      - 'server/cirium-radar-injection.mjs'
+      - 'scripts/regression-home-operational-admission-browser.mjs'
+      - 'scripts/regression-regulation-operational-arrival*.mjs'
+      - 'scripts/regression-regulation-arrival-provider-projection.mjs'
+      - 'scripts/regression-cirium-arrival-milestones.mjs'
+      - 'scripts/regression-watch-overnight.mjs'
+      - 'scripts/regression-regulation-deadline-*.mjs'
+      - 'scripts/regression-regulation-review-gates*.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationAircraftEvidence.ts'
+      - 'client/src/lib/useRegulationOperationalArrival.ts'
+      - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-native-composition-browser.mjs'
+      - 'scripts/regression-regulation-selected-source-browser.mjs'
+      - 'scripts/regression-regulation-no-roster-home-browser.mjs'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
+      - 'scripts/regression-regulation-window-selection.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
@@ -29,6 +68,42 @@ on:
       - 'client/src/components/CanonicalDutyCard.tsx'
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationDeadlineSummary.mjs'
+      - 'shared/regulationOperationalArrival.mjs'
+      - 'client/src/lib/authClient.ts'
+      - 'client/src/lib/operationalRadarAdmission.ts'
+      - 'client/src/lib/watchContext.ts'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'scripts/stay-editor/apply.mjs'
+      - 'server/cirium-flight-adapter.mjs'
+      - 'server/cirium-radar-provider.mjs'
+      - 'server/cirium-radar-injection.mjs'
+      - 'scripts/regression-home-operational-admission-browser.mjs'
+      - 'scripts/regression-regulation-operational-arrival*.mjs'
+      - 'scripts/regression-regulation-arrival-provider-projection.mjs'
+      - 'scripts/regression-cirium-arrival-milestones.mjs'
+      - 'scripts/regression-watch-overnight.mjs'
+      - 'scripts/regression-regulation-deadline-*.mjs'
+      - 'scripts/regression-regulation-review-gates*.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationAircraftEvidence.ts'
+      - 'client/src/lib/useRegulationOperationalArrival.ts'
+      - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-native-composition-browser.mjs'
+      - 'scripts/regression-regulation-selected-source-browser.mjs'
+      - 'scripts/regression-regulation-no-roster-home-browser.mjs'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
+      - 'scripts/regression-regulation-window-selection.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
@@ -49,7 +124,7 @@ permissions:
 
 defaults:
   run:
-    shell: bash -o pipefail {0}
+    shell: bash -e -o pipefail {0}
 
 concurrency:
   group: p1-roster-regulation-${{ github.ref }}
@@ -77,6 +152,15 @@ jobs:
         run: node scripts/regression-p1-565-roster-regulation-navigation.mjs
       - name: Roster focus compatibility
         run: node scripts/regression-p1-548-dynamic-calendar.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated regulation browser
         run: |
           npm install --prefix "$RUNNER_TEMP/regulation-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -87,9 +171,36 @@ jobs:
         run: node scripts/regression-rbac-sector-input.cjs
       - name: Current conditional temporal scenario regression
         run: |
+          node scripts/regression-regulation-automatic-scenario.mjs
+          node scripts/regression-regulation-window-selection.mjs
+          node scripts/regression-regulation-prefill.mjs
+          node scripts/regression-regulation-source-hydration.mjs
+          node scripts/regression-regulation-context-explanation.mjs
+          node scripts/regression-canonical-journey-label.mjs
           node scripts/regression-regulation-temporal-scenario.mjs
+          node scripts/regression-regulation-deadline-summary.mjs
+          node scripts/regression-regulation-review-gates.mjs
+          node scripts/regression-regulation-operational-arrival.mjs
+          node scripts/regression-cirium-arrival-milestones.mjs
+          node scripts/regression-regulation-arrival-provider-projection.mjs
+          node scripts/regression-watch-overnight.mjs
+          node scripts/regression-watch-source-pipeline.mjs
           npx vite build
       - name: Current compiled scenario UI and Home shortcut
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
-        run: node scripts/regression-regulation-scenario-ui.cjs
+        run: |
+          [[ $- == *e* ]] || { echo 'Browser regression shell must propagate failures'; exit 1; }
+          node scripts/regression-regulation-native-composition-browser.mjs
+          node scripts/regression-regulation-review-arrival-composition-browser.mjs
+          node scripts/regression-regulation-selected-source-browser.mjs
+          node scripts/regression-regulation-automatic-browser.mjs
+          REGULATION_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-regulation-automatic-browser.mjs
+          node scripts/regression-regulation-no-roster-home-browser.mjs
+          node scripts/regression-regulation-deadline-browser.mjs
+          node scripts/regression-regulation-review-gates-browser.mjs
+          node scripts/regression-regulation-operational-arrival-browser.mjs
+          node scripts/regression-home-operational-admission-browser.mjs
+          node scripts/regression-regulation-prefill-browser.mjs
+          node scripts/regression-regulation-context-explanation-browser.mjs
+          node scripts/regression-regulation-scenario-ui.cjs

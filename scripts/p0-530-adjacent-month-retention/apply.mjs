@@ -215,6 +215,24 @@ if (!home.includes('const rosterEvents = useMemo(() => buildLegs(rosterWindow)')
   home = home.replace(eventsPattern, `${match[1]}  const rosterEvents = useMemo(() => buildLegs(rosterWindow), [rosterWindow]);\n`);
 }
 
+// A regulation query opened by Escala must resolve against that same display
+// collection. Global entry still receives the active operational `event`.
+if (home.includes('const regulationContext =')) {
+  for (const [before, after] of [
+    ['resolveRegulationProgram(events, event, regulationContext)', 'resolveRegulationProgram(rosterEvents, event, regulationContext)'],
+    ['regulationProgramDay(events, regulationEvent)', 'regulationProgramDay(rosterEvents, regulationEvent)'],
+  ]) {
+    if (home.includes(after)) continue;
+    if (!home.includes(before)) throw new Error(`[${marker}] regulation display selection anchor missing`);
+    home = home.replace(before, after);
+  }
+}
+
+// A scoped departure query uses the owner/publication-fenced displayed window;
+// global departure selection remains on the active operational publication.
+home = home.replace('departureEventForContext(events, departureContext)',
+  'departureEventForContext(departureContext?.programId ? rosterEvents : events, departureContext)');
+
 if (!home.includes('RosterLaunchView events={rosterEvents}')) {
   const rosterPattern = /<RosterLaunchView\s+events=\{events\}(\s+finance=\{financeSnapshot\(bundle\.roster\)\})?\s+setView=\{setView\}\s*\/>/;
   if (!rosterPattern.test(home)) throw new Error(`[${marker}] render da Escala não localizado`);

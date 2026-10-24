@@ -12,3 +12,13 @@ const midnight=projectRegulationScenario({...input,takeoffAt:'2026-10-17T21:00:0
 const localMidnight=projectRegulationScenario({...input,takeoffAt:'2026-10-17T21:00-03:00',normalDutyEndAt:'2026-10-18T01:00-03:00'});assert.equal(localMidnight.crossesReferenceDate,true);assert.equal(localMidnight.crossesUtcDate,false);
 assert.equal(projectRegulationScenario({...input,additionalTasksMinutes:31}).state,'exceeds_temporal_reference');
 console.log('PASS temporal scenario: exact boundary/+1min, timezone/calendar/overnight, explicit taxi/post-flight, landing != duty end, no automatic flight extension/authorization/rest, missing inputs fail closed, immutable base');
+
+const partial=projectRegulationScenario({...input,taxiInMinutes:null});
+assert.equal(partial.state,'indeterminate');
+assert.equal(partial.scenario?.landing,r.scenario.landing,'missing taxi must retain known landing');
+assert.equal(partial.scenario?.engineStop,null);
+assert.equal(partial.scenario?.dutyEnd,null);
+assert.equal(partial.marginMinutes,undefined,'partial clocks must not imply compliance');
+const noLimit=projectRegulationScenario({...input,limitReviewed:false});
+assert.equal(noLimit.scenario?.dutyEnd,r.scenario.dutyEnd,'missing legal confirmation must not erase temporal projection');
+assert.equal(noLimit.marginMinutes,undefined);

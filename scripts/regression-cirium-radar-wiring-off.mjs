@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as gatePolicy from '../shared/gate-query-day.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import { prepareConciergeCanonicalBridge } from './p1-concierge-journey/bridge.mjs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +50,7 @@ function harness(text, forbidLegacy = false, overrides = {}) {
   const counters = { provider: 0, auth: 0, load: 0, apply: 0, save: 0, env: 0, fetch: 0 };
   const roster = structuredClone(overrides.roster || (forbidLegacy ? ciriumRoster : legacyRoster));
   const now = overrides.now ?? Date.parse(forbidLegacy ? '2026-11-01T04:00:00Z' : '2026-10-12T00:00:00Z');
-  const sandbox = { ...injection, ...gatePolicy, buildCanonicalRosterEvents,
+  const sandbox = { ...injection, ...gatePolicy, ...radarEvidence, buildCanonicalRosterEvents,
     gateQueryDay: (identity, instant) => gatePolicy.gateQueryDay(identity, instant ?? now), radarHealth: new Map(), console, setTimeout, clearTimeout, URL,
     Date: class extends Date { static now() { return now; } },
     process: { env: new Proxy({}, { get() { counters.env++; if (forbidLegacy) throw Error('Synthetic path read env'); return undefined; } }) },

@@ -2,9 +2,14 @@ name: CrewLocker validity review
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/lib/crewlocker*.ts'
       - 'client/src/components/v1435/CrewLockerView.tsx'
       - 'client/src/components/v1435/CrewValidityEditor.tsx'
+      - 'client/src/components/v1435/CrewLocalPreview.tsx'
+      - 'scripts/regression-crewlocker-cht*.mjs'
       - 'client/src/components/v1435/crewlocker.css'
       - 'scripts/regression-crewlocker-validity*.mjs'
       - '.github/workflows/crewlocker-validity.yml'
@@ -22,6 +27,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated regression tools
         run: |
           npm install --prefix "$RUNNER_TEMP/locker-test" --ignore-scripts --no-audit --no-fund playwright@1.55.0 fake-indexeddb@6.2.4
@@ -31,6 +45,9 @@ jobs:
           CREWLOCKER_TEST_PACKAGE: ${{ runner.temp }}/locker-test/package.json
           CREWLOCKER_STATE: raw
         run: |
+          node scripts/regression-crewlocker-cht-document-type.mjs
+          node scripts/regression-crewlocker-cht-text.mjs
+          node scripts/regression-crewlocker-cht-browser.mjs
           node scripts/regression-crewlocker-validity.mjs
           node scripts/regression-crewlocker-validity-browser.mjs
           npx tsc --noEmit
@@ -45,6 +62,9 @@ jobs:
           CREWLOCKER_TEST_PACKAGE: ${{ runner.temp }}/locker-test/package.json
           CREWLOCKER_STATE: prepared
         run: |
+          node scripts/regression-crewlocker-cht-document-type.mjs
+          node scripts/regression-crewlocker-cht-text.mjs
+          node scripts/regression-crewlocker-cht-browser.mjs
           node scripts/regression-crewlocker-validity.mjs
           node scripts/regression-crewlocker-validity-browser.mjs
           npx tsc --noEmit
@@ -52,5 +72,7 @@ jobs:
         if: always()
         with:
           name: crewlocker-validity-synthetic
-          path: artifacts/crewlocker-validity/
+          path: |
+            artifacts/crewlocker-validity/
+            artifacts/crewlocker-cht/
           if-no-files-found: error

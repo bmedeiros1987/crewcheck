@@ -15,6 +15,13 @@ let serverAfter = replaceOnce(
 import { infobipElevenLabsAudioEnabled, startInfobipElevenLabsCall } from './server/v14405/infobip-elevenlabs.mjs';`,
   'import ElevenLabs para Infobip',
 );
+serverAfter = serverAfter.replace(
+  `    if (privateCall.ok) { result = privateCall; usedElevenLabsAudio = true; }`,
+  `    if (privateCall.configured) {
+      infobipLastAttempt = { ok: Boolean(privateCall.ok), status: Number(privateCall.status || 0), at: new Date().toISOString(), message: privateCall.message };
+      return { ...privateCall, uncertain: !privateCall.ok, delivered: null };
+    }`,
+);
 serverAfter = replaceOnce(
   serverAfter,
   `  let result = await fetchVoiceProvider(request.url, {
@@ -27,7 +34,10 @@ serverAfter = replaceOnce(
   let result = null;
   if (infobipElevenLabsAudioEnabled()) {
     const privateCall = await startInfobipElevenLabsCall(phone, cleanVoiceCallText(text) || 'Despertador CrewCheck. Abra o aplicativo agora.');
-    if (privateCall.ok) { result = privateCall; usedElevenLabsAudio = true; }
+    if (privateCall.configured) {
+      infobipLastAttempt = { ok: Boolean(privateCall.ok), status: Number(privateCall.status || 0), at: new Date().toISOString(), message: privateCall.message };
+      return { ...privateCall, uncertain: !privateCall.ok, delivered: null };
+    }
   }
   if (!result?.ok) {
     result = await fetchVoiceProvider(request.url, {
@@ -55,6 +65,18 @@ let fastAfter = replaceOnce(
 import { handleInfobipCallsEvent, infobipElevenLabsAudioEnabled, startInfobipElevenLabsCall } from './v14405/infobip-elevenlabs.mjs';`,
   'import ElevenLabs no scheduler',
 );
+const boundedCall = fastAfter.includes('return sendInfobipWakeupCall({ phone, text: message, locale });') ? '  return sendInfobipWakeupCall({ phone, text: message, locale });' : '  return sendInfobipWakeupCall({ phone, text: message });';
+if (fastAfter.includes(boundedCall)) {
+  fastAfter = replaceOnce(fastAfter,
+    boundedCall,
+    `  if (infobipElevenLabsAudioEnabled() && (typeof locale === 'undefined' || wakeupPrivateModelSupportsLocale(locale))) {
+    const privateCall = await startInfobipElevenLabsCall(phone, message);
+    // A lost ACK must not fall through into another paid call.
+    if (privateCall.configured) return { ...privateCall, uncertain: !privateCall.ok, delivered: null };
+  }
+${boundedCall}`,
+    'one-attempt private audio policy');
+} else {
 fastAfter = replaceOnce(
   fastAfter,
   `  const controller = new AbortController();
@@ -67,7 +89,8 @@ fastAfter = replaceOnce(
   const timer = setTimeout(() => controller.abort(), 15_000);`,
   'audio ElevenLabs no scheduler',
 );
-fastAfter = replaceOnce(
+
+}fastAfter = replaceOnce(
   fastAfter,
   `    try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);`,

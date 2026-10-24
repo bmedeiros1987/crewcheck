@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createRequire} from 'node:module';import {buildSync} from 'esbuild';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'manual-legacy-review-')),file=path.join(dir,'gate.cjs');
+buildSync({entryPoints:['client/src/lib/nextFlightGate.ts'],bundle:true,platform:'node',format:'cjs',outfile:file,alias:{'@':path.resolve('client/src')},logLevel:'silent'});
+try {
+ const m=createRequire(import.meta.url)(file),now=Date.parse('2032-10-20T09:01:00Z'),account='synthetic-owner';
+ const event={id:'synthetic-A',kind:'flight',flightNumber:'QA4002',origin:'BSB',destination:'GRU',canonical:{startDateTime:'2032-10-20T12:30:00Z'}},other={...event,id:'synthetic-B',canonical:{startDateTime:'2032-10-20T15:30:00Z'}};
+ for(const action of ['keep','accept']) {
+  const storage={map:new Map(),getItem(key){return this.map.get(key)||null;},setItem(key,value){this.map.set(key,value);}};
+  const legacy={gate:'11',terminal:'1',flight:event.flightNumber,date:'2032-10-20',origin:'BSB',destination:'GRU',author:'Original author',setAtEpochMs:now-5*60000,scheduledDepartureUtc:event.canonical.startDateTime,status:'PRIVATE-V1-STATUS',registration:'PRIVATE-V1-REG',operationalStatus:{value:'PRIVATE-V1-OP',author:'Old',setAtEpochMs:now}};
+  const v1='crewcheck:manual-gate:v1:'+account,v2='crewcheck:manual-gate:v2:'+account;storage.setItem(v1,JSON.stringify({[m.manualGateIdentity(event)]:legacy}));const legacyBytes=storage.getItem(v1);
+  assert(m.patchManualOperationalFields(storage,account,event,{status:'Embarcando',registration:'PR-ABC'},'Current author',now).ok);assert(m.writeManualGate(storage,account,other,{gate:'22',author:'Sibling'},now).ok);
+  const radar={ok:true,flight:event.flightNumber,origin:'BSB',destination:'GRU',sourceOrigin:'BSB',sourceDestination:'GRU',operationalDate:'2032-10-20',scheduledDepartureUtc:event.canonical.startDateTime,gate:'17',updatedAt:now-60000,gateUpdate:{version:1,provider:'custom',kind:'departure-gate-update',sourceUpdatedAt:'2032-10-20T08:59:00Z',gate:'17',flight:event.flightNumber,origin:'BSB',destination:'GRU',scheduledDepartureUtc:event.canonical.startDateTime}};
+  storage.setItem(m.radarSnapshotStorageKey(event),JSON.stringify(radar));const manual=m.readManualGate(storage,account,event),info=m.resolveNextFlightGate({event,manual,radar,now});assert.equal(info.manualReview.state,'newer','bound legacy gate offers a valid source review');
+  const input={action,expectedManualRevision:m.manualGateRevision(manual,account),expectedSourceFingerprint:info.manualReview.candidate.fingerprint,author:'Review author'};
+  const result=m.writeManualGateReview(storage,account,event,input,now);assert.equal(result.ok,true,'every offered bound-legacy review action must be executable');
+  const reloaded=m.readManualGate(storage,account,event);assert.equal(reloaded.gate,action==='keep'?'11':'17');assert.equal(reloaded.sourceReview.action,action);assert.equal(reloaded.operationalStatus.value,'Embarcando');assert.equal(reloaded.operationalRegistration.value,'PR-ABC');assert.equal(m.readManualGate(storage,account,other).gate,'22');assert.equal(storage.getItem(v1),legacyBytes);assert.doesNotMatch(storage.getItem(v2),/PRIVATE-V1/,'migration copies only gate fields');
+  assert.equal(m.writeManualGateReview(storage,account,event,input,now).ok,false,'old rendered action cannot replay after migration');assert.equal(m.writeManualGateReview(storage,'other-owner',event,input,now).ok,false);
+  assert(m.patchManualOperationalFields(storage,account,event,{status:null,registration:null},'Current author',now).ok);assert.equal(m.readManualGate(storage,account,event).operationalStatus,undefined);assert.equal(m.readManualGate(storage,account,event).operationalRegistration,undefined);assert.equal(storage.getItem(v1),legacyBytes);
+  assert(m.writeManualGate(storage,account,event,{gate:'',author:'Current author'},now).ok);assert.equal(m.readManualGate(storage,account,event),null);const before=storage.getItem(v2);assert.equal(m.writeManualGateReview(storage,account,event,input,now).ok,false,'a tombstone cannot be undone by an old review');assert.equal(storage.getItem(v2),before);assert.equal(m.readManualGate(storage,account,other).gate,'22');
+ }
+ console.log('PASS bound legacy gate review: explicit keep/accept migrates gate-only to exact v2, v1 immutable, sibling fields/occurrences preserved, replay/account/tombstone fences.');
+} finally {fs.rmSync(dir,{recursive:true,force:true});}

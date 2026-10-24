@@ -22,11 +22,11 @@ const GROUPS = [
   { title: 'Hoje', views: ['cockpit', 'roster', 'compare'] },
   { title: 'Preparação', views: ['departure', 'wakeup', 'presentation', 'weather', 'mycar'] },
   { title: 'Em operação', views: ['radar', 'alerts', 'regulation', 'load', 'emergency'] },
+  { title: 'Rotina e apoio', views: ['routine', 'life', 'hotels', 'gyms', 'concierge', 'community'] },
   { title: 'Escala e planejamento', views: ['import', 'iflight', 'bids', 'map', 'database'] },
   { title: 'Financeiro', views: ['perdiem', 'salary', 'currency', 'crew'] },
-  { title: 'Rotina e apoio', views: ['routine', 'life', 'hotels', 'gyms', 'concierge', 'community'] },
   { title: 'Documentos', views: ['crewlocker', 'crewlock', 'reports', 'calendar', 'exports'] },
-  { title: 'Conta, ajuda e segurança', views: ['notifications', 'settings', 'plans', 'guardian', 'manual', 'support'] },
+  { title: 'Conta, ajuda e segurança', views: ['notifications', 'guardian', 'plans', 'settings', 'manual', 'support'] },
 ];
 
 const ADMIN_GROUP = { title: 'Administração', views: ['updates', 'maintenance', 'admin'] };
@@ -76,7 +76,7 @@ const OVERRIDES = {
   life: ['CrewCheck Life', 'Bem-estar e dados pessoais opcionais', 'HeartPulse'],
   hotels: ['Hotéis', 'Pernoite e entorno', 'Hotel'],
   gyms: ['Locais próximos', 'Academias, saúde e serviços', 'MapPin'],
-  concierge: ['Concierge', 'Perguntas sobre a escala', 'MessageCircle'],
+  concierge: ['Concierge', 'Vínculos, briefing e consultas', 'MessageCircle'],
   community: ['Pessoas e visitantes', 'Compartilhar escala, adicionar colegas e visitantes', 'UserPlus'],
 
   // Crew Locker e CrewLock são telas diferentes com nomes quase iguais, e estavam em

@@ -103,6 +103,15 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser test runner
         run: |
           npm install --prefix "$RUNNER_TEMP/emergency-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0 jsdom@22.1.0
@@ -124,6 +133,14 @@ jobs:
           node scripts/regression-web-push-device-browser.mjs
       - name: Prepare canonical application and build shipping CSS for layout fixtures
         run: npm run build
+      - name: Verify built Notifications navigation with synthetic accounts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+        run: node scripts/regression-whatsapp-link-navigation-browser.cjs
+      - name: Verify spoken wakeup choice does not revive across editor/session/source changes
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+        run: node scripts/regression-wakeup-spoken-consent-browser.mjs
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
@@ -151,16 +168,20 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Private payroll counterproofs before preparation
+        run: |
+          node scripts/regression-private-payroll-extraction.mjs
+          node scripts/regression-private-payroll-review.mjs
       - name: Validate CI pipeline exit propagation
         run: node scripts/ci/check-workflow-pipefail.mjs
       - name: Validate public editorial pages before preparation
-        run: node tests/public-editorial.cjs
+        run: node tests/public-editorial.cjs && node tests/comparison-display-name.cjs
       - name: Validate account identity harness before preparation
         run: node scripts/regression-p1-active-roster-identity-scope.mjs
       - name: Validate patched development dependency compatibility
         run: node scripts/regression-dependency-dev-security.mjs
       - name: Audit all dependencies including development and iOS
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=high --loglevel=http 2>&1 | tee "$RUNNER_TEMP/npm-audit-all.log"
       - name: Validate notification safety with fictional recipients before preparation
         run: |
           node scripts/regression-bids-delivery.mjs
@@ -176,6 +197,10 @@ jobs:
           node scripts/regression-web-push-api.mjs
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-elevenlabs-call-deadlines.mjs
+          node scripts/regression-wakeup-spoken-program.mjs
+          node scripts/regression-notification-navigation-session.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
           node scripts/regression-free-day-source-queue.mjs
@@ -200,7 +225,11 @@ jobs:
       - name: Prepare current CrewCheck sources
         run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
       - name: Validate public editorial pages after preparation
-        run: node tests/public-editorial.cjs
+        run: node tests/public-editorial.cjs && node tests/comparison-display-name.cjs
+      - name: Private payroll counterproofs after preparation
+        run: |
+          node scripts/regression-private-payroll-extraction.mjs
+          node scripts/regression-private-payroll-review.mjs
       - name: TypeScript check
         run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/typescript.log"
       - name: Validate patched DOM sanitizer and actual PDF export after preparation
@@ -222,6 +251,10 @@ jobs:
           node scripts/regression-web-push-api.mjs
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-elevenlabs-call-deadlines.mjs --prepared
+          node scripts/regression-wakeup-spoken-program.mjs
+          node scripts/regression-notification-navigation-session.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
           node scripts/regression-free-day-source-queue.mjs
@@ -249,7 +282,9 @@ jobs:
           node scripts/regression-transit-availability-ui.mjs
           node scripts/regression-transit-review-blockers.mjs
       - name: Build web client
-        run: npx vite build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
+        # Use the shipping build, including pinned public OCR assets, before the
+        # existing no-egress build/start smoke. Never relax the smoke's network guard.
+        run: npm run build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
       - name: Validate SOS after source preparation
         run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
       - name: Smoke configured Render build and start without credentials or egress
@@ -312,6 +347,8 @@ jobs:
         run: node scripts/regression-p1-menu-premium.mjs 2>&1 | tee "$RUNNER_TEMP/menu-premium-regression.log"
       - name: Compile canonical Concierge server artifact
         run: node scripts/p1-concierge-journey/compile.mjs
+      - name: Verify spoken wakeup against canonical source and engine
+        run: node scripts/regression-wakeup-spoken-program.mjs --prepared
       - name: Test server
         run: node test-server.mjs
       - name: Publish functional audit report
@@ -330,6 +367,7 @@ jobs:
         with:
           name: CrewCheck-web-diagnostics
           path: |
+            ${{ runner.temp }}/npm-audit-all.log
             ${{ runner.temp }}/crewcheck-prepare.log
             ${{ runner.temp }}/typescript.log
             ${{ runner.temp }}/vite-build.log

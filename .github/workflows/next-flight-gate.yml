@@ -2,7 +2,19 @@ name: Next flight gate (phone + CrewWatch)
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server.mjs'
+      - 'server/gate-source-update.mjs'
+      - 'shared/radar-field-evidence.mjs'
+      - 'scripts/regression-radar-field-evidence.mjs'
+      - 'client/src/lib/manualGateNotices.ts'
+      - 'scripts/regression-manual-gate-review*.mjs'
+      - 'scripts/regression-manual-gate-legacy-review.mjs'
+      - 'scripts/regression-mobile-watch-publish-cadence.mjs'
+      - 'scripts/regression-watch-automatic-field-expiry.mjs'
+      - 'scripts/regression-manual-operational-fields*.mjs'
       - 'shared/gate-query-day*'
       - 'shared/timezone-choice.mjs'
       - 'shared/airport-timezones.mjs'
@@ -15,6 +27,7 @@ on:
       - 'scripts/regression-radar-availability-browser.mjs'
       - 'scripts/regression-radar-provider-provenance.mjs'
       - 'scripts/regression-radar-source-occurrence.mjs'
+      - 'scripts/regression-flightaware-response-selection.mjs'
       - 'scripts/regression-gate-query-day.mjs'
       - 'scripts/regression-gate-query-proof.mjs'
       - 'scripts/regression-gate-query-binding.mjs'
@@ -25,6 +38,8 @@ on:
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-next-flight-gate.mjs'
+      - 'scripts/regression-next-flight-gate-pulse.mjs'
+      - 'scripts/regression-next-flight-gate-pulse-browser.mjs'
       - 'scripts/regression-next-flight-gate-prepared.mjs'
       - 'client/src/lib/canonicalRoster.ts'
       - 'client/src/lib/rosterDisplayDate.ts'
@@ -47,6 +62,10 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-radar-field-evidence.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
@@ -57,6 +76,12 @@ jobs:
           TZ=UTC node scripts/regression-gate-query-proof.mjs
           TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
           TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
+          node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-gate-legacy-review.mjs
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
+          node scripts/regression-manual-operational-fields.mjs
+          TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate.mjs
           TZ=Pacific/Auckland node scripts/regression-next-flight-gate.mjs
@@ -66,6 +91,10 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-radar-field-evidence.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
@@ -76,9 +105,24 @@ jobs:
           TZ=UTC node scripts/regression-gate-query-proof.mjs
           TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
           TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
+          node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-gate-legacy-review.mjs
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
+          node scripts/regression-manual-operational-fields.mjs
+          TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate-prepared.mjs
           TZ=Pacific/Auckland node scripts/regression-next-flight-gate-prepared.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser for actual RadarView responses
         run: |
           npm install --prefix "$RUNNER_TEMP/radar-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -87,3 +131,10 @@ jobs:
         env:
           RADAR_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/radar-browser/package.json
         run: node scripts/regression-radar-availability-browser.mjs
+      - name: Verify automatic boarding pulse and manual precedence offline
+        env:
+          GATE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/radar-browser/package.json
+        run: |
+          node scripts/regression-next-flight-gate-pulse-browser.mjs
+          node scripts/regression-manual-gate-review-browser.mjs
+          node scripts/regression-manual-operational-fields-browser.mjs

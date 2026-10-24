@@ -326,6 +326,7 @@ public final class WatchContextSnapshot {
     public String complicationShortText(long nowEpochMs) {
         if (isStale(nowEpochMs)) return "ABRIR";
         if (changed) return "MUDOU";
+        if ("OVERNIGHT".equals(state)) return "PERNOIT";
         if (remoteStand) return "REMOTA";
 
         String normalized = headline.toUpperCase(Locale.ROOT);
@@ -373,8 +374,8 @@ public final class WatchContextSnapshot {
                     + (eta.isBlank() ? "" : " • ETA " + eta);
             case "CONNECTION" -> firstNonBlank(nextFlight, headline)
                     + (connection.isBlank() ? "" : " • " + connection);
-            case "OVERNIGHT" -> firstNonBlank(overnight, headline)
-                    + (hotelPickup.isBlank() ? "" : " • " + hotelPickup);
+            case "OVERNIGHT" -> "Pernoite"
+                    + (hotelPickup.isBlank() ? " • APZ hotel não informada" : " • " + hotelPickup);
             default -> headline + (primaryTime.isBlank() ? "" : " • " + primaryTime);
         }, 48);
     }

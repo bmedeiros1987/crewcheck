@@ -1,3 +1,4 @@
+import { infobipCanonicalLinkDestination, infobipCanonicalLinkStatus } from './infobip-whatsapp-link-policy.mjs';
 import crypto from 'node:crypto';
 import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
@@ -34,6 +35,11 @@ function auditSecret() {
     'CREWCHECK_AUTH_SECRET',
     'META_APP_SECRET',
   ]);
+}
+
+// Startup-only compatibility check; never returns or logs the canonical key.
+export function matchesCanonicalWhatsAppLinkSecret(value) {
+  return typeof value==='string' && Boolean(auditSecret()) && secureCompare(value,auditSecret());
 }
 
 function accessToken() {
@@ -303,18 +309,48 @@ async function claimPersistentEvent(event, rawHash) {
   }
 }
 
+export function isWhatsAppConciergeConfigured() { return typeof whatsappConciergeHandler === 'function'; }
+
 export function configureWhatsAppConcierge(handler) {
   whatsappConciergeHandler = typeof handler === 'function' ? handler : null;
+}
+
+// Active Infobip invocations are tracked by owner until the actual handler
+// settles, including handlers/capabilities that do not honor cancellation.
+const activeConciergeInvocations=new Set(),quiescingOwners=new Map();
+const conciergeOwner=email=>typeof email==='string'?email.trim().toLowerCase():'';
+export async function withWhatsAppConciergeQuiesced(email,run) {
+  const owner=conciergeOwner(email);
+  if(!owner||typeof run!=='function')throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+  quiescingOwners.set(owner,(quiescingOwners.get(owner)||0)+1);
+  try {
+    const active=[...activeConciergeInvocations].filter(entry=>entry.owner===owner);
+    for(const entry of active)entry.controller.abort();
+    await Promise.allSettled(active.map(entry=>entry.work));
+    return await run();
+  } finally {
+    const count=quiescingOwners.get(owner)-1;
+    if(count)quiescingOwners.set(owner,count);else quiescingOwners.delete(owner);
+  }
 }
 
 // Shared canonical engine only; no linking, provider fallback or transport.
 // Caller must supply an authenticated, currently revalidated owner binding.
 export async function invokeConfiguredWhatsAppConcierge({email, text, messageId, signal}) {
-  if (signal?.aborted || typeof whatsappConciergeHandler !== 'function' ||
-      typeof email !== 'string' || !email || typeof text !== 'string' || !text.trim()) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
-  const result = await whatsappConciergeHandler({email, text, location: null, messageType: 'text', messageId});
-  if (signal?.aborted) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
-  return typeof result === 'string' ? result : String(result?.text || result?.reply || '');
+  const owner=conciergeOwner(email),handler=whatsappConciergeHandler;
+  if (signal?.aborted || typeof handler !== 'function' || !owner || quiescingOwners.has(owner) ||
+      typeof text !== 'string' || !text.trim()) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+  const controller=new AbortController(),combined=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
+  const work=Promise.resolve().then(()=>{
+    if(combined.aborted||quiescingOwners.has(owner))throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+    return handler({email, text, location:null, messageType:'text', messageId, signal:combined});
+  });
+  const entry={owner,controller,work};activeConciergeInvocations.add(entry);
+  try {
+    const result=await work;
+    if(combined.aborted||quiescingOwners.has(owner))throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+    return typeof result==='string'?result:String(result?.text||result?.reply||'');
+  } finally {activeConciergeInvocations.delete(entry);}
 }
 
 export async function sendWhatsAppText(to, text, options = {}) {
@@ -450,6 +486,9 @@ function webhookHealth() {
   const inbound = Boolean(verifyToken() && appSecret());
   const outbound = Boolean(accessToken() && phoneNumberId());
   return {
+    provider: 'meta_cloud_api',
+    configurationOnly: true,
+    deliveryProof: 'not_checked',
     ok: inbound,
     configured: inbound,
     inbound,
@@ -466,10 +505,10 @@ function webhookHealth() {
     conciergeText: true,
     clientCertificateRequired: false,
     message: inbound && outbound
-      ? 'WhatsApp oficial pronto para receber, vincular e responder por texto.'
+      ? 'Configuração da Meta presente; envio e entrega não verificados.'
       : inbound
-        ? 'Webhook pronto. Configure token permanente e Phone Number ID para responder mensagens.'
-        : 'Configure WHATSAPP_VERIFY_TOKEN e META_APP_SECRET no Render.',
+        ? 'Webhook Meta configurado; configuração de saída ausente.'
+        : 'Webhook Meta sem configuração completa.',
   };
 }
 
@@ -528,6 +567,11 @@ async function handleLinkStart(req, res) {
   if (body?.consentConcierge !== true) {
     return sendJson(res, 400, { ok: false, message: 'Confirme que deseja usar o Concierge pelo WhatsApp.' });
   }
+  if (body?.provider !== undefined && body.provider !== 'infobip') return sendJson(res, 400, { ok: false, message: 'Provedor de vínculo inválido.' });
+  const number = body.provider === 'infobip'
+    ? await infobipCanonicalLinkDestination()
+    : normalizePhone(businessNumber());
+  if (body.provider === 'infobip' && !number) return sendJson(res, 503, { ok: false, message: 'Recebimento restrito da Infobip ainda não está disponível para vincular. Nenhum código foi criado.' });
   const db = await ensureWhatsAppTables(identity.db);
   if (!db || !auditSecret()) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
 
@@ -549,7 +593,6 @@ async function handleLinkStart(req, res) {
     }
   }
   if (!code) return sendJson(res, 503, { ok: false, message: 'Não consegui gerar o código agora. Tente novamente.' });
-  const number = normalizePhone(businessNumber());
   const openUrl = number ? `https://wa.me/${number}?text=${encodeURIComponent(code)}` : '';
   return sendJson(res, 200, {
     ok: true,
@@ -560,25 +603,36 @@ async function handleLinkStart(req, res) {
   });
 }
 
-async function handleLinkStatus(req, res) {
+async function handleLinkStatus(req, res, url) {
   if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   const identity = await requireIdentity(req, res);
   if (!identity) return;
-  const db = await ensureWhatsAppTables(identity.db);
+  const provider=url?.searchParams.get('provider')||'';
+  if(provider&&provider!=='infobip')return sendJson(res,400,{ok:false,message:'Provedor de vínculo inválido.'});
+  const db = identity.db;
   if (!db) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
-  const [rows] = await db.query(
-    `SELECT phone_last4,consent_concierge,consent_alerts,linked_at
+  let rows;
+  try { [rows] = await db.query(
+    `SELECT phone_hash,phone_last4,consent_concierge,consent_alerts,linked_at,updated_at,revoked_at
      FROM crewcheck_whatsapp_links WHERE email=? AND revoked_at IS NULL LIMIT 1`,
     [identity.email],
-  );
+  ); } catch { return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' }); }
   const link = rows[0];
+  let diagnosis;
+  if(provider==='infobip') {
+    let owners=[];
+    try {if(link)[owners]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 2',[identity.email]);}
+    catch {return sendJson(res,503,{ok:false,message:'Vínculo do WhatsApp temporariamente indisponível.'});}
+    diagnosis=await infobipCanonicalLinkStatus(link,{hashPhone:privateHash,ownerReady:owners.length===1&&Boolean(owners[0].public_id)});
+  }
   return sendJson(res, 200, {
     ok: true,
     linked: Boolean(link),
-    last4: link?.phone_last4 || '',
-    consentConcierge: Boolean(link?.consent_concierge),
-    consentAlerts: Boolean(link?.consent_alerts),
+    last4: /^\d{4}$/.test(String(link?.phone_last4 || '')) ? String(link.phone_last4) : '',
+    consentConcierge: Number(link?.consent_concierge) === 1,
+    consentAlerts: Number(link?.consent_alerts) === 1,
     linkedAt: link?.linked_at || null,
+    ...diagnosis,
   });
 }
 
@@ -593,7 +647,8 @@ async function handleUnlink(req, res) {
     [identity.email],
   );
   await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?', [identity.email]);
-  await eraseWhatsAppAccountState(identity.email);
+  try {await eraseWhatsAppAccountState(identity.email,{db});}
+  catch {return sendJson(res,503,{ok:false,linked:false,code:'WHATSAPP_REVOCATION_PENDING',message:'Novas respostas foram bloqueadas; a conclusão da desvinculação está pendente.'});}
   return sendJson(res, 200, { ok: true, linked: false, message: 'WhatsApp desvinculado da sua conta.' });
 }
 
@@ -611,7 +666,7 @@ export async function handleWhatsAppRoute(req, res, url) {
     return true;
   }
   if (url.pathname === '/api/whatsapp/link/status') {
-    await handleLinkStatus(req, res);
+    await handleLinkStatus(req, res, url);
     return true;
   }
   if (url.pathname === '/api/whatsapp/link/unlink') {

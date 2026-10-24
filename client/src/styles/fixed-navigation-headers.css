@@ -170,6 +170,8 @@ html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile :is(stron
 html body #root .cz-app[data-version] .cz-menu-header .cz-menu-avatar { font-size:16px!important;line-height:1!important;white-space:nowrap!important; }
 
 /* Product preference: normal-flow header/Pulse and content-sized menu, safe area once. */
+/* The in-flow header owns the top inset; its parent must not reserve it again. */
+html body #root .cz-app[data-version]:has(> .cz-global-header) { padding-top:0!important; }
 html body #root .cz-app[data-version] > .cz-global-header { position:relative!important;top:auto!important;left:auto!important;right:auto!important;transform:none!important;width:100%!important;max-width:none!important;margin:0!important;z-index:auto!important; }
 html body #root .cz-app[data-version] > .cz-global-header::before { content:none!important; }
 html body #root .cz-app[data-version] .cz-global-header > .cc-header-notice { position:static!important;margin:0!important;padding:0 8px 8px!important; }

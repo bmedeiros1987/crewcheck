@@ -2,11 +2,20 @@ name: Exported PDF approved brand
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/lib/brand.ts'
       - 'client/src/lib/pdfExport.ts'
+      - 'client/src/lib/blobDownload.ts'
+      - 'client/src/lib/calendarExport.ts'
+      - 'client/src/components/v139/api.ts'
+      - 'client/src/components/v1435/CrewLockerView.tsx'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/premium/CabinChiefAssistant.tsx'
       - 'scripts/regression-export-approved-brand.mjs'
+      - 'scripts/regression-blob-download.mjs'
+      - 'scripts/regression-blob-download-browser.mjs'
       - 'scripts/verify-export-brand-pdfs.py'
       - '.github/workflows/export-approved-brand.yml'
   workflow_dispatch:
@@ -24,6 +33,15 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Isolated browser and PDF validators
         run: |
           npm install --prefix "$RUNNER_TEMP/export-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -32,8 +50,11 @@ jobs:
       - name: Generate raw synthetic PDFs and compare approved pixels
         env:
           EXPORT_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/export-browser/package.json
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/export-browser/package.json
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
+          node scripts/regression-blob-download.mjs
+          node scripts/regression-blob-download-browser.mjs
           git worktree add --detach "$RUNNER_TEMP/export-base" "$BASE_SHA"
           ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/export-base/node_modules"
           cp scripts/regression-export-approved-brand.mjs "$RUNNER_TEMP/export-base/scripts/"
@@ -43,10 +64,13 @@ jobs:
       - name: Prepare production sources and repeat artifact validation
         env:
           EXPORT_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/export-browser/package.json
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/export-browser/package.json
         run: |
           node scripts/v139/apply.mjs
           npx vite build
           npx tsc --noEmit
+          node scripts/regression-blob-download.mjs
+          node scripts/regression-blob-download-browser.mjs
           (cd "$RUNNER_TEMP/export-base" && node scripts/v139/apply.mjs && EXPORT_BASELINE=1 node scripts/regression-export-approved-brand.mjs)
           node scripts/regression-export-approved-brand.mjs
           python scripts/verify-export-brand-pdfs.py artifacts/export-brand --baseline "$RUNNER_TEMP/export-base/artifacts/export-brand"

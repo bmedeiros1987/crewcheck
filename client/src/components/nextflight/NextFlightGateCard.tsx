@@ -1,8 +1,9 @@
 import { useId, useState } from 'react';
 import { ChevronDown, Clock, DoorOpen, Pencil, Plane, Watch } from 'lucide-react';
 import { setPendingNavigationContext } from '@/lib/navigationContext';
-import { gateDisplay, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
+import { gateDisplay, statusSourceLabel, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
 import { useNextFlightGate, useWatchSyncState } from './useNextFlightGate';
+import { ManualGateReview, sourceGateUpdateLabel } from './ManualGateReview';
 import './next-flight-gate.css';
 
 function clock(epochMs: number): string {
@@ -20,10 +21,10 @@ function flightDate(info: NextFlightGateInfo): string {
 }
 
 export function gateSourceLabel(info: NextFlightGateInfo): string {
-  if (info.gateSource === 'manual') return `Informado por ${info.manual?.author || 'você'} às ${clock(info.manual?.setAtEpochMs || 0)}`;
-  if (info.gateSource === 'radar') return `Radar · atualizado ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'}`;
+  if (info.gateSource === 'manual') return `${info.manual?.sourceReview?.action === 'accept' ? 'Aceito' : 'Informado'} por ${info.manual?.author || 'você'} em ${sourceGateUpdateLabel(info.manual?.setAtEpochMs || 0)}`;
+  if (info.gateSource === 'radar') return `Fonte operacional · resposta recebida ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'}`;
   if (info.gateSource === 'roster') return 'Escala publicada';
-  return 'Nenhuma fonte informou o portão';
+  return 'Portão automático ainda não confirmado';
 }
 
 function openRadar(event: NextFlightLike, info: NextFlightGateInfo) {
@@ -53,42 +54,47 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
   if (!nextFlight || !info) return null;
 
   const gate = gateDisplay(info);
-  const status = info.status || 'Não informado';
+  const status = info.status || 'Não confirmado';
   const state = info.stale ? 'stale' : info.gate ? 'ok' : 'missing';
 
   return <section className="cc-next-gate" data-gate-state={state} data-divergent={info.divergence ? 'true' : 'false'} aria-label="Próximo voo">
     <button type="button" className="cc-next-gate-summary" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen((value) => !value)}>
       <span className="cc-next-gate-head">
         <small><Plane aria-hidden="true"/> PRÓXIMO VOO</small>
-        <strong>{info.flight}</strong>
-        <span>{flightDate(info)}</span>
         <ChevronDown className="cc-next-gate-chevron" aria-hidden="true"/>
       </span>
+      <span className="cc-next-gate-identity"><strong>{info.flight}</strong><span>{flightDate(info)}</span></span>
+      <span className="cc-next-gate-route">{info.origin || '—'} <span aria-label="para">→</span> {info.destination || '—'}</span>
       <span className="cc-next-gate-main">
+        <span className="cc-next-gate-departure"><small>Partida</small><b role={!info.departure ? 'img' : undefined} aria-label={!info.departure ? 'Partida não informada' : undefined}>{info.departure || '-'}</b></span>
         <span className="cc-next-gate-gate">
-          <small><DoorOpen aria-hidden="true"/> Portão de embarque</small>
-          <b>{gate}</b>
+          <small><DoorOpen aria-hidden="true"/> Portão</small>
+          <b role={!info.gate ? 'img' : undefined} aria-label={!info.gate ? 'Portão de embarque não confirmado' : undefined}>{info.gate ? gate : '-'}</b>
           {info.terminal && <em>Terminal {info.terminal}</em>}
         </span>
-        <span className="cc-next-gate-facts">
-          <span><small>Partida</small><b>{info.departure || 'Não informada'}</b></span>
-          <span><small>Status</small><b>{status}</b></span>
-        </span>
+        <span className="cc-next-gate-facts"><small>Status</small><b role={!info.status ? 'img' : undefined} aria-label={!info.status ? 'Status operacional não confirmado' : undefined}>{info.status || '-'}</b></span>
       </span>
+      {info.manualGateUnlinked && <span role="note">Portão informado anteriormente preservado. Confirme o vínculo com este horário de voo no editor.</span>}
+      {Boolean(info.operationalConflicts?.length) && <span role="note">Há divergência nos dados operacionais. Valores manuais foram preservados; dados automáticos conflitantes não confirmam a informação.</span>}
       {info.divergence && <span className="cc-next-gate-divergence" role="note">
-        Você informou {info.divergence.manualGate}; {info.divergence.source === 'radar' ? 'o Radar' : 'a escala'} indica {info.divergence.sourceGate}. Confirme no aeroporto.
+        {info.manualReview.state === 'newer' ? 'Possível mudança. ' : info.manualReview.state === 'kept' ? 'Manual mantido. ' : ''}Você informou {info.divergence.manualGate}; {info.divergence.source === 'radar' ? 'o Radar' : 'a escala'} indica {info.divergence.sourceGate}. {info.manualReview.state === 'kept' ? 'Essa atualização já foi revisada.' : info.manualReview.state === 'newer' ? 'Abra os detalhes para aceitar ou manter.' : 'Atualização posterior não comprovada; confirme no aeroporto.'}
       </span>}
       <span className="cc-next-gate-source">
         {info.stale && <b className="cc-next-gate-stale"><Clock aria-hidden="true"/> Desatualizado</b>}
-        <span>{gateSourceLabel(info)}</span>
+        {info.gateSource === 'manual' && <span>Portão manual</span>}
+        {info.gateSource === 'radar' && <span>Portão · fonte operacional</span>}
+        {info.gateSource === 'roster' && <span>Portão · escala publicada</span>}
+        {info.statusSource && <span>Status · {info.statusSource === 'manual' ? 'manual' : 'fonte operacional'}</span>}
+        <span className="cc-next-gate-disclosure">{open ? 'Fechar detalhes' : 'Ver detalhes'}</span>
       </span>
     </button>
     {open && <div className="cc-next-gate-details" id={detailsId}>
       <dl>
+        <div><dt>Portão de embarque</dt><dd>{gate}</dd></div>
         <div><dt>Trecho</dt><dd>{info.origin || '—'} → {info.destination || '—'}</dd></div>
         <div><dt>Apresentação</dt><dd>{info.presentation || 'Não informada'}</dd></div>
         <div><dt>Terminal</dt><dd>{info.terminal || 'Não informado'}</dd></div>
-        <div><dt>Status</dt><dd>{status}{info.statusSource === 'radar' ? ' · Radar' : info.statusSource === 'roster' ? ' · escala' : ''}</dd></div>
+        <div><dt>Status operacional</dt><dd>{status} · {statusSourceLabel(info)}</dd></div><div><dt>Matrícula</dt><dd>{info.registration || 'Não confirmada'}{info.registrationSource === 'manual' ? ' · informado por você' : info.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}</dd></div>{info.plannedStatus && <div><dt>Planejamento da escala</dt><dd>{info.plannedStatus}</dd></div>}{info.plannedGate && <div><dt>Portão publicado na escala</dt><dd>{info.plannedGate} · não confirma portão atual</dd></div>}
         <div><dt>Fonte do portão</dt><dd>{gateSourceLabel(info)}</dd></div>
         {info.radarRejected && <div><dt>Radar</dt><dd>{info.radarRejected === 'position'
           ? 'A fonte informou posição da aeronave, não portão. Ignorada.'
@@ -101,8 +107,9 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
           ? (sync.ok ? `Sincronizado às ${clock(sync.at)}` : `Falha na sincronização às ${clock(sync.at)}`)
           : sync.message}</dd></div>}
       </dl>
+      <ManualGateReview event={nextFlight} info={info}/>
       <p>Portão de embarque deste voo. Não é a posição da aeronave nem o portão do voo anterior. Confirme sempre nas comunicações oficiais.</p>
-      <button type="button" onClick={() => openRadar(nextFlight, info)}><Pencil aria-hidden="true"/> Abrir Radar e informar portão</button>
+      <button type="button" onClick={() => openRadar(nextFlight, info)}><Pencil aria-hidden="true"/> Abrir Radar e informar dados</button>
     </div>}
   </section>;
 }

@@ -96,9 +96,10 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   }
 
   const isFlight = event.kind === 'flight';
-  const gate = safe(radar?.gate || event.gate, 'A confirmar');
-  const terminal = safe(radar?.terminal || event.terminal, '');
-  const status = safe(radar?.status || event.status, 'Programado');
+  const operationalInfo = radarGateInfo(event, radar);
+  const gate = safe(operationalInfo.gate, 'Não confirmado');
+  const terminal = operationalInfo.gate ? safe(operationalInfo.terminal, '') : '';
+  const status = isFlight ? safe(operationalInfo.status, 'Não confirmado') : safe(event.status, 'Programação publicada');
   const route = isFlight ? `${safe(event.origin, '—')} → ${safe(event.destination, '—')}` : safe(city(event.origin), safe(event.origin, 'Local a confirmar'));
   const programTitle = isFlight ? safe(event.flightNumber, rosterEventTitle(event)) : rosterEventTitle(event);
   const countdown = flyDeckCountdownV14353(event, nowMs);
@@ -109,7 +110,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   return <><Brand onMenu={openMenu}/><main className="cc-flydeck-premium-v14353" data-flydeck-v14353="premium-briefing">
     <header className="cc-flydeck-topline">
       <div><small>FLYDECK</small><h1>Briefing operacional</h1></div>
-      <span className="cc-flydeck-live" aria-live="polite"><i/> ATUALIZADO {flyDeckLiveClockV14353(nowMs)}</span>
+      <span className="cc-flydeck-live" role="group" aria-label={`Hora local do aparelho ${flyDeckLiveClockV14353(nowMs)}; não indica atualização da fonte operacional`}><i/> HORA LOCAL {flyDeckLiveClockV14353(nowMs)}</span>
     </header>
 
     <article className="cc-flydeck-briefing">

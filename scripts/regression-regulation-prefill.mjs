@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import {regulationScenarioSeed,regulationDraftForm,resolveRegulationProgram,regulationProgramDay} from '../shared/regulationScenarioPrefill.mjs';
+const day={date:'20/10/2032',type:'VOO',dutyReport:'06:00',legs:[{departureTime:'07:00',duration:120}],flyingHours:2};
+const reference={startTime:'06:00',maxDutyMinutes:780,source:'Perfil ACT existente'};
+const seed=regulationScenarioSeed(day,reference);
+assert.equal(seed.takeoff,'2032-10-20T07:00');assert.equal(seed.normalEnd,'2032-10-20T19:00');assert.match(seed.limitSource,/Perfil ACT existente/);
+for(const field of ['flight','taxi','tasks','operation','composition','offset'])assert.equal(seed[field],'',field+' remains unknown without evidence');
+assert.equal(seed.acclimatization,'unknown');assert.equal(seed.reviewed,false);
+const event={id:'flight-2',kind:'flight',leg:{departureTime:'23:40'},startDateTime:'2032-10-22T02:40:00.000Z'};
+const selected=regulationScenarioSeed(day,reference,event);assert.equal(selected.takeoff,'2032-10-21T23:40');assert.equal(selected.offset,'-03:00');
+assert.equal(resolveRegulationProgram([event],{id:'other'},{programId:event.id}),event);
+assert.equal(resolveRegulationProgram([event],event,{programId:'removed'}),null);
+const draft={key:'account-A|flight-2',basis:'v1',overrides:{taxi:'5',takeoff:'2032-10-21T23:55',reviewed:true}};
+const changed=regulationDraftForm(draft,draft.key,{...selected,normalEnd:'2032-10-22T19:00'},'v2');
+assert.equal(changed.taxi,'5');assert.equal(changed.takeoff,'2032-10-21T23:55');assert.equal(changed.normalEnd,'2032-10-22T19:00');assert.equal(changed.reviewed,false);
+for(const key of ['account-B|flight-2','account-A|flight-3'])assert.deepEqual(regulationDraftForm(draft,key,seed,'v1'),seed);
+assert.equal(regulationScenarioSeed({...day,date:'31/02/2032'},reference).normalEnd,'');
+assert.equal(regulationScenarioSeed(day,null).normalEnd,'');
+assert.deepEqual(day.legs,[{departureTime:'07:00',duration:120}]);
+console.log('PASS regulation hydration: published clocks/profile reference, selected program/rollover, per-field overrides, owner/program isolation, unknown evidence, immutable source');
+
+const sharedDay={...day,dutyReportSource:'published',dutyDebrief:'23:30',dutyDebriefSource:'published',legs:[{departureTime:'07:00'},{departureTime:'22:00',presentationTime:'21:00'}]};
+const make=(id,index,journeyId)=>({id,kind:'flight',day:sharedDay,canonical:{id,kind:'flight',journeyId,date:day.date,publishedDay:sharedDay,leg:sharedDay.legs[index],legIndex:index,startDateTime:'2032-10-20T'+(index?'23:00':'10:00')+':00.000Z',isNextDay:false}});
+const first=make('one',0,'first'),second=make('two',1,'second');
+const own=regulationProgramDay([first,second],second);
+assert.equal(own.dutyReport,'21:00');assert.equal(own.legs.length,1);assert.equal(own.legs[0],sharedDay.legs[1]);assert.equal(own.dutyHours,null);
+const withoutReport=make('unproved',1,'second');withoutReport.canonical={...withoutReport.canonical,leg:{departureTime:'22:00'}};
+assert.equal(regulationProgramDay([first,withoutReport],withoutReport).dutyReportSource,'unknown');

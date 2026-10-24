@@ -1,4 +1,10 @@
+import { extractFinancialPdfPages, financialPdfPagesText } from '@/lib/financialPdfText';
+import type { PayrollPage } from '@/lib/privatePayrollExtraction';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from './FinancialPrivacy';
+import OwnerPerDiemConfirmation from './OwnerPerDiemConfirmation';
+import PersonalAllowanceReference from './PersonalAllowanceReference';
+import PayrollDeductionsReview from './PayrollDeductionsReview';
+import PrivatePayrollPreview from './PrivatePayrollPreview';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FileSearch, History, ShieldCheck, Upload, X } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -14,26 +20,26 @@ import {
   type StatementLearningResult,
 } from '@/lib/financialStatementLearning';
 
-export async function extractPdfText(file: File): Promise<string> {
+export async function extractPdfPages(file: File): Promise<PayrollPage[]> {
   const module: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = module.default || module;
   if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
-  const pages: string[] = [];
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const content = await page.getTextContent();
-    pages.push(content.items.map((item: any) => String(item.str || '')).join(' '));
-  }
-  return pages.join('\n');
+  const task = pdfjs.getDocument({ data: bytes });
+  const pdf = await task.promise;
+  try { return await extractFinancialPdfPages(pdf); }
+  finally { await task.destroy(); }
+}
+
+export async function extractPdfText(file: File): Promise<string> {
+  return financialPdfPagesText(await extractPdfPages(file));
 }
 
 function formatMoney(value: number, currency = 'BRL') {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency, maximumFractionDigits: 6 }).format(value);
 }
 
-export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' | 'payroll' }) {
+export default function FinancialStatementImporter({ mode, prepared }: { mode: 'per_diem' | 'payroll'; prepared?: {session:string; result:StatementLearningResult} }) {
   const privacy = useFinancialPrivacy();
   const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
   const input = useRef<HTMLInputElement>(null);
@@ -43,19 +49,26 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
   const [sourceConfirmed, setSourceConfirmed] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
   useEffect(() => {
-    const reset = () => { epoch.current++; reviewSession.current = null; setResult(null); setRates(readConfirmedFinancialRates()); setBusy(false); setError(''); setCycleConfirmed(false); setSourceConfirmed(false); setAuthRevision(value => value + 1); };
+    const reset = () => { epoch.current++; reviewSession.current = null; setResult(null); setDocumentFingerprint(''); setRates(readConfirmedFinancialRates()); setBusy(false); setError(''); setCycleConfirmed(false); setSourceConfirmed(false); setAuthRevision(value => value + 1); };
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) reset(); };
     window.addEventListener('crewcheck:auth-changed', reset); window.addEventListener('crewcheck:auth-expired', reset); window.addEventListener('storage', storage);
     return () => { epoch.current++; window.removeEventListener('crewcheck:auth-changed', reset); window.removeEventListener('crewcheck:auth-expired', reset); window.removeEventListener('storage', storage); };
   }, []);
+  const [documentFingerprint,setDocumentFingerprint]=useState('');
   const [result, setResult] = useState<StatementLearningResult | null>(null);
   const [rates, setRates] = useState<LearnedRate[]>(readConfirmedFinancialRates);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    if (!prepared || prepared.session !== financialRateSession() || prepared.result.kind !== mode) return;
+    epoch.current++; reviewSession.current = prepared.session;
+    setResult(prepared.result); setSourceConfirmed(false); setCycleConfirmed(false); setError('');
+  }, [prepared, mode]);
   const visibleRates = useMemo(
     () => rates.filter((item) => mode === 'per_diem' ? item.key.startsWith('per_diem.') : item.key.startsWith('salary.')),
     [rates, mode, authRevision]
   );
+  const payrollTotalsMismatch = mode === 'payroll' && result?.payrollExtraction?.reconciliation === 'mismatch';
   const reviewRates = result ? (mode === 'payroll' && cycleConfirmed ? applyReviewedPayrollCycle(result) : result.rates) : [];
   const label = mode === 'per_diem' ? 'demonstrativo de diárias' : 'demonstrativo de pagamento';
 
@@ -69,11 +82,13 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
     setError('');
     setResult(null);
     try {
-      const learned = learnFinancialStatement(await extractPdfText(file), file.name);
+      const pages = await extractPdfPages(file);
+      const learned = learnFinancialStatement(financialPdfPagesText(pages), file.name, pages);
       if (learned.kind !== mode) {
         throw new Error(mode === 'per_diem' ? 'Escolha um demonstrativo de diárias.' : 'Escolha um demonstrativo de pagamento.');
       }
-      if (version === epoch.current && identity === financialRateSession()) setResult(learned);
+      const digest = mode === 'payroll' ? await crypto.subtle.digest('SHA-256',await file.arrayBuffer()).then(bytes=>'sha256:'+Array.from(new Uint8Array(bytes)).map(value=>value.toString(16).padStart(2,'0')).join('')) : '';
+      if (version === epoch.current && identity === financialRateSession()) { setDocumentFingerprint(digest); setResult(learned); }
     } catch (cause) {
       if (version === epoch.current && identity === financialRateSession()) setError(cause instanceof Error ? cause.message : 'Não foi possível analisar este documento.');
     } finally {
@@ -83,7 +98,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
   }
 
   function confirm() {
-    if (!result || result.warnings.some(item => item.includes('obrigatória')) || !sourceConfirmed || !reviewSession.current || reviewSession.current !== financialRateSession() || (mode === 'payroll' && !cycleConfirmed)) return;
+    if (!result || payrollTotalsMismatch || result.warnings.some(item => item.includes('obrigatória')) || !sourceConfirmed || !reviewSession.current || reviewSession.current !== financialRateSession() || (mode === 'payroll' && !cycleConfirmed)) return;
     const reviewed = mode === 'payroll' ? applyReviewedPayrollCycle(result) : result.rates;
     const confirmed = reviewed.filter(item => item.valueOrigin !== 'derived').map((item) => ({ ...item, confirmed: true }));
     if (!confirmed.length) { setError('Nenhuma tarifa impressa e revisada está disponível. Valores derivados não são aplicados.'); return; }
@@ -113,16 +128,21 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
 
     {result && <div className="finance-learning-review" aria-live="polite">
       <header><div><small>Revisão obrigatória</small><h3>{result.competence || 'Competência não identificada'}</h3></div></header>
+      {mode === 'payroll' && result.payrollExtraction && <><PrivatePayrollPreview extraction={result.payrollExtraction}/><PayrollDeductionsReview key={documentFingerprint} extraction={result.payrollExtraction} documentFingerprint={documentFingerprint}/></>}
+      {mode === 'payroll' && <small data-payroll-dsr-review>{result.payrollDsrDraft ? `DSR · ${result.payrollDsrDraft.regime === 'NB' ? '22/8' : '21/9'} · holerite conciliado` : 'DSR · evidência pendente'}</small>}
       {result.warnings.map((warning) => <div className="finance-learning-notice warning" key={warning}>{privacy.text(warning)}</div>)}
       <div className="finance-learning-table-wrap"><table><thead><tr><th>Rubrica</th><th>Valor encontrado</th><th>Vigência</th><th>Confiança</th></tr></thead><tbody>
         {reviewRates.map((item) => <tr key={item.key + '-' + item.effectiveFrom}><td>{item.label}</td><td>{money(item.value, item.currency)} / {item.unit}</td><td>{item.effectiveFrom || 'Revisar'} até {item.effectiveTo || 'Revisar'}</td><td>{item.valueOrigin === 'derived' ? 'Derivado — não aplicado' : item.confidence === 'high' ? 'Alta' : item.confidence === 'medium' ? 'Conferir' : 'Revisar'}</td></tr>)}
       </tbody></table></div>
+      {payrollTotalsMismatch && <p role="alert">Aplicação bloqueada: os totais impressos divergem. Confira o documento e importe uma versão corrigida antes de confirmar.</p>}
       <label><input type="checkbox" checked={sourceConfirmed} onChange={event => setSourceConfirmed(event.target.checked)}/> Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.</label>
       {mode === 'payroll' && <label><input type="checkbox" checked={cycleConfirmed} onChange={event => setCycleConfirmed(event.target.checked)}/> Confirmo para esta conta: fixos do mês da folha, variáveis do mês anterior e crédito esperado no mês seguinte. Orientação empresarial fornecida pelo usuário; a data exata depende do calendário/documento.</label>}
       <p>Confirmar tarifa não confirma recebimento bancário. A aplicação fica limitada ao período do documento nesta conta.</p>
-      <div className="finance-learning-actions"><button type="button" onClick={() => setResult(null)}><X size={16}/>Descartar</button><button type="button" className="primary" disabled={!sourceConfirmed || (mode === 'payroll' && !cycleConfirmed) || !result.rates.length || result.warnings.some((item) => item.includes('obrigatória'))} onClick={confirm}><Check size={16}/>Confirmar valores</button></div>
+      <div className="finance-learning-actions"><button type="button" onClick={() => setResult(null)}><X size={16}/>Descartar</button><button type="button" className="primary" disabled={payrollTotalsMismatch || !sourceConfirmed || (mode === 'payroll' && !cycleConfirmed) || !result.rates.length || result.warnings.some((item) => item.includes('obrigatória'))} onClick={confirm}><Check size={16}/>Confirmar valores</button></div>
     </div>}
 
+    {mode === 'per_diem' && prepared && <PersonalAllowanceReference onSaved={() => setRates(readConfirmedFinancialRates())}/>}
+    {mode === 'per_diem' && <OwnerPerDiemConfirmation key={financialRateSession() || 'signed-out'} onSaved={() => setRates(readConfirmedFinancialRates())}/>}
     <details className="finance-learning-history" open={visibleRates.length > 0}>
       <summary><History size={16}/> Histórico de tarifas revisadas ({visibleRates.length})</summary>
       {visibleRates.length ? <div className="finance-learning-table-wrap"><table><thead><tr><th>Rubrica</th><th>Valor</th><th>Período</th><th>Origem</th></tr></thead><tbody>

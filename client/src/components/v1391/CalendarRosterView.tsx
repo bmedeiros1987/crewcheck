@@ -62,9 +62,9 @@ export function buildCalendarDates(month: string) {
   return Array.from({ length: total }, (_, index) => new Date(year, monthNumber - 1, index - leading + 1));
 }
 
-export function CalendarRosterView({ events, month, zoom = 'month', selectedDay, onSelectDay }: { events: CalendarRosterEvent[]; month: string; zoom?: RosterZoom; selectedDay?: string; onSelectDay?: (iso: string) => void }) {
+export function CalendarRosterView({ events, operationalEvents = events, month, zoom = 'month', selectedDay, onSelectDay }: { events: CalendarRosterEvent[]; operationalEvents?: CalendarRosterEvent[]; month: string; zoom?: RosterZoom; selectedDay?: string; onSelectDay?: (iso: string) => void }) {
   const unconfirmed = events.filter(event => !isoOf(event));
-  const unconfirmedView = unconfirmed.length ? <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada"><h2>Data não confirmada</h2><p>Estas programações não puderam ser posicionadas no calendário; seus detalhes permanecem disponíveis.</p><AimsRosterTable events={unconfirmed} dayView title="Programações com data não confirmada"/></section> : null;
+  const unconfirmedView = unconfirmed.length ? <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada"><h2>Data não confirmada</h2><p>Estas programações não puderam ser posicionadas no calendário; seus detalhes permanecem disponíveis.</p><AimsRosterTable operationalEvents={operationalEvents} events={unconfirmed} showHistory={false} dayView title="Programações com data não confirmada"/></section> : null;
   const byDate = new Map<string, CalendarRosterEvent[]>();
   for (const event of events) {
     const iso = isoOf(event);
@@ -78,7 +78,7 @@ export function CalendarRosterView({ events, month, zoom = 'month', selectedDay,
   if (zoom === 'day') {
     const dayEvents = byDate.get(selectedDay || '') || [];
     return <>{dayEvents.length
-      ? <AimsRosterTable events={dayEvents} dayView title={`Programações de ${(selectedDay || '').split('-').reverse().join('/')}`}/>
+      ? <AimsRosterTable operationalEvents={operationalEvents} events={dayEvents} showHistory={false} dayView title={`Programações de ${(selectedDay || '').split('-').reverse().join('/')}`}/>
       : <section className="cc-roster-empty-v1397" role="status"><h2>Nenhuma programação neste dia</h2><p>Escolha outro dia ou volte ao mês completo.</p></section>}{unconfirmedView}</>;
   }
 

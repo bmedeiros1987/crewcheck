@@ -3,12 +3,16 @@ name: CrewCheck notification settings UI
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/notifications/**'
       - 'client/src/components/v139/BidsAlertPreferences.tsx'
       - 'client/src/lib/crewcheckPushRuntime.ts'
       - 'client/src/lib/crewcheckPushActivation.ts'
       - 'scripts/regression-web-push-cancellation-contract.mjs'
       - 'scripts/regression-web-push-lifecycle.mjs'
+      - 'scripts/regression-web-push-user-gesture.mjs'
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
@@ -26,6 +30,7 @@ on:
       - 'client/src/lib/crewcheckPushActivation.ts'
       - 'scripts/regression-web-push-cancellation-contract.mjs'
       - 'scripts/regression-web-push-lifecycle.mjs'
+      - 'scripts/regression-web-push-user-gesture.mjs'
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
@@ -55,6 +60,15 @@ jobs:
           distribution: temurin
           java-version: '17'
       - run: npm ci
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Use existing synthetic browser test versions
         run: |
           npm install --prefix "$RUNNER_TEMP/notification-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0 jsdom@22.1.0
@@ -66,6 +80,7 @@ jobs:
         run: |
           node scripts/regression-native-settings-return.mjs
           node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -84,6 +99,7 @@ jobs:
         run: |
           node scripts/regression-native-settings-return.mjs
           node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs

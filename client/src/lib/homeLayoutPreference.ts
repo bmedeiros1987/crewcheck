@@ -15,7 +15,7 @@ export const REQUIRED_HOME_SLOTS: HomeSlotId[] = ['summary', 'next', 'limits'];
 
 export const DEFAULT_HOME_LAYOUT: HomeLayoutPreference = {
   version: 1,
-  mode: 'standard',
+  mode: 'roster-mixed',
   order: [...HOME_SLOT_ORDER],
   visible: [...HOME_SLOT_ORDER],
 };
@@ -38,7 +38,7 @@ export function normalizeHomeLayout(value: unknown): HomeLayoutPreference {
   const candidate = value as Partial<HomeLayoutPreference>;
   const mode: HomeMode = candidate.version === 1 && ['standard', 'personalized', 'mixed', 'roster', 'shortcuts', 'roster-mixed'].includes(String(candidate.mode))
     ? candidate.mode as HomeMode
-    : 'standard';
+    : DEFAULT_HOME_LAYOUT.mode;
   const order = normalizeSlots(candidate.order, HOME_SLOT_ORDER);
   const visible = normalizeSlots(candidate.visible, REQUIRED_HOME_SLOTS);
   return { version: 1, mode, order, visible };

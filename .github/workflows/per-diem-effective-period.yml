@@ -15,6 +15,9 @@ on:
       - 'client/src/lib/financialRules.ts'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-p1-demonstrated-per-diem-effective-period.mjs'
+      - 'scripts/regression-financial-rate-precedence.mjs'
+      - 'scripts/regression-financial-rate-archive.mjs'
+      - 'client/src/components/finance/FinancialHistoryExplorer.tsx'
       - '.github/workflows/per-diem-effective-period.yml'
   workflow_dispatch:
 
@@ -40,6 +43,8 @@ jobs:
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
             TZ="$zone" node scripts/regression-taxi-base-apz.mjs
+            TZ="$zone" node scripts/regression-financial-rate-precedence.mjs
+            TZ="$zone" node scripts/regression-financial-rate-archive.mjs
           done
           node scripts/regression-operational-finance-clock.mjs
           node scripts/regression-taxi-import-confirmation.mjs
@@ -52,6 +57,8 @@ jobs:
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
             TZ="$zone" node scripts/regression-taxi-base-apz.mjs
+            TZ="$zone" node scripts/regression-financial-rate-precedence.mjs
+            TZ="$zone" node scripts/regression-financial-rate-archive.mjs
           done
           node scripts/regression-operational-finance-clock.mjs
           node scripts/regression-taxi-import-confirmation.mjs

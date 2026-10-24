@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
+import { createTelegramMenuTransport } from '../server/concierge/telegram-menu-transport.mjs';
+import { createTelegramMenu, menuTemplate, requestedWeatherAirport, missingFinanceReply, financeUrl } from '../server/concierge/telegram-menu.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   normalizeConciergeNaturalTextV14341 as normalizeConciergeNaturalTextV14338,
@@ -12,6 +14,7 @@ import {
   isConciergeContextFreshV14341 as isConciergeContextFreshV14338,
 } from '../server/v14341/concierge-semantic.mjs';
 import { stayMenuReply } from '../server/concierge/stay-menu.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import * as wellhub from '../server/v14407/wellhub.mjs';
 import * as preferences from '../server/v14410/wellhub-concierge.mjs';
 import * as personality from '../server/v14336/concierge-personality.mjs';
@@ -29,7 +32,7 @@ function extract(source, name) {
   return source.slice(start, end);
 }
 const materialized = process.argv.includes('--materialized');
-let source = read('server.mjs');
+let source = read(process.env.CONCIERGE_ROUTING_SOURCE || 'server.mjs');
 let whatsapp = read('server/whatsapp.mjs');
 if (!materialized) {
   // Assemble actual committed wrapper/core/semantic/persistence/channel sources,
@@ -67,17 +70,22 @@ if (materialized) {
 }
 
 const clone = x => JSON.parse(JSON.stringify(x));
-function harness({ realFortalezaCatalog = false } = {}) {
+function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}) {
   const profile = { email: 'route-a@example.invalid', name: 'Synthetic A', chatId: '9001', linked: true, authenticated: true };
+  if (operationalProbe) Object.assign(profile, { channel: 'telegram', chatType: 'private' });
   const other = { ...profile, email: 'route-b@example.invalid', name: 'Synthetic B', chatId: '9002' };
   let activeProfile = profile;
   let local = { snapshots: { [profile.email]: { key: profile.email, email: profile.email, name: profile.name, roster: { base: 'GRU', days: [] }, preferences: { gymPlan: 'wellhub', wellhubPlan: 'basic', mode: 'formal', preferredName: 'Synthetic A', onboardingStep: 'complete' } } } };
   local.snapshots[other.email] = { ...clone(local.snapshots[profile.email]), key: other.email, email: other.email, name: other.name };
   const database = new Map(Object.values(local.snapshots).map(value => [`snapshot:${value.key}`, clone(value)]));
-  const trace = { input: [], core: [], gyms: [], saves: [], search: [], output: [] };
+  const trace = { input: [], core: [], gyms: [], saves: [], search: [], output: [], transports: [], voices: [] };
+  let sequence = 100;
   const partner = { id: 'synthetic', name: 'Synthetic gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'basic', activities: ['Pilates'], openingHours: [], sourceUrl: 'https://example.invalid/synthetic' };
   let appResponse;
   const context = vm.createContext({
+    ...radarEvidence,
+    crewcheckMenu: createTelegramMenu({}),
+    requestedWeatherAirport,
     normalizeConciergeNaturalTextV14338, interpretConciergeNaturalTextV14338, buildConciergeContextV14338, isConciergeContextFreshV14338,
     ...wellhub, ...preferences, ...language, ...human, ...premium, ...intents,
     normalizeConciergePreferencesV14336: personality.normalizeConciergePreferences,
@@ -103,7 +111,12 @@ function harness({ realFortalezaCatalog = false } = {}) {
     handleV139Telegram: async () => false, handlePlatformVisitorTelegram: async () => false,
     telegramTryBindFromWebhook: async () => false, telegramMessagePdfDocument: () => null,
     telegramProfileForChatAsync: async () => activeProfile,
-    sendTelegramChatAction: async () => {}, sendTelegramMessage: async (_chat, reply) => { trace.output.push(reply); },
+    sendTelegramChatAction: async () => {}, sendTelegramMessage: async (_chat, reply, extra = {}) => {
+      const prepared = operationalProbe ? await context.crewcheckMenu.markup(_chat, extra) : extra;
+      const result = { message_id: ++sequence, date: Math.floor(Date.now() / 1000) };
+      trace.output.push(reply); trace.transports.push({ chat: _chat, reply, extra: prepared, result });
+      return { ok: true, data: { result } };
+    },
     conciergeKeyboard: {}, conciergeFunctionKeyboard: {}, conciergeSettingsKeyboard: {}, airportIcao: () => '',
     readJsonBody: async req => req.body, telegramRequestUser: () => activeProfile,
     telegramAppRequestAllowed: () => true, conciergeAccessMatches: () => true,
@@ -117,7 +130,7 @@ function harness({ realFortalezaCatalog = false } = {}) {
   });
   const functions = [
     'conciergeSafeKey', 'conciergeSnapshotForProfile', 'conciergeMinimizeRoster', 'conciergeRosterDiagnostics', 'conciergeSaveSnapshot', 'conciergeSaveSnapshotAsync', 'conciergeLoadSnapshot',
-    'normalizeConciergeButtonText', 'conciergePreferencesV14336', 'conciergeVoiceOptionsV14336', 'conciergePreferenceCommandV14336',
+    'normalizeConciergeButtonText', 'conciergePreferencesV14336', 'conciergeVoiceOptionsV14336', 'conciergePreferenceSummaryV14336', 'conciergePreferenceCommandV14336',
     'conciergeSemanticInputContextV14338', 'conciergeSemanticCommandIntentV14338', 'conciergeSemanticFindRecordV14338', 'conciergeSemanticRecordExtraV14338', 'conciergeSemanticRecordKeyV14338', 'conciergeSemanticClarificationV14338', 'conciergeSemanticResolveV14338',
     'conciergeIdentityFlow', 'conciergeEasterEggNormalize', 'conciergeEasterEggPick', 'conciergeEasterEggReply',
     'conciergeGymsReply', 'buildTelegramConciergeReplyCore', 'buildTelegramConciergeReply', 'processTelegramUpdate', 'handleTelegramConciergeAsk',
@@ -126,13 +139,45 @@ function harness({ realFortalezaCatalog = false } = {}) {
     if (source.includes(`function ${name}(`)) functions.push(name);
   }
   for (const name of functions) vm.runInContext(extract(source, name), context);
+  if (operationalProbe) {
+    const next = { legs: [{ flightNumber: 'LA9999', origin: 'SBBR', destination: 'SBSP' }] };
+    const event = flight => ({ kind: 'flight', flightNumber: flight, origin: 'SBGR', destination: 'SBSP', startDateTime: '2026-10-19T12:00:00Z' });
+    Object.assign(context, {
+      conciergeNextProgram: () => next,
+      conciergeRecordDateKey: () => '2026-10-19',
+      conciergeContextualRoutineReply: () => '',
+      conciergeFindFlight: (_roster, requested) => { trace.input.push({ boundary: 'findFlight', requested }); return { leg: next.legs[0] }; },
+      normalizeFlightRaw: value => value.replace(/\s/g, ''),
+      buildFlightContext: flight => ({ raw: flight, iata: flight }),
+      buildCanonicalRosterEvents: () => [event('LA1234'), event('LA9999')],
+      findPublishedGateLeg: (_roster, query) => ({ identity: { eventId: 'synthetic-event', flight: query.flight }, leg: { flightNumber: query.flight, origin: 'SBGR', destination: 'SBSP' } }),
+      originFlightDate: () => '2026-10-19', gateQueryDay: () => ({ allowed: true }),
+      gateQuerySuppressed: () => ({ message: 'Dados sintéticos insuficientes' }),
+      runRadarRace: async query => { trace.search.push({ boundary: 'radar', flight: query.raw }); return { ok: true, status: 'SYNTHETIC', gate: '', departure: '09:00', arrival: '10:00' }; },
+      conciergeApplyRadar: () => {}, airportIcao: value => /^[A-Z]{4}$/.test(value) ? value : '',
+      fetchAviationWeatherReport: async (station, type) => { trace.search.push({ boundary: 'weather', station, type }); return { ok: true, raw: 'SYNTHETIC REPORT', source: 'fixture', cache: 'live' }; },
+      decodeTafPtBr: () => ['Fixture TAF'], decodeMetarPtBr: () => ['Fixture METAR'],
+      buildCrewCheckAtis: station => `ATIS meteorológico ${station} · fixture`,
+      crewCheckAtisVoiceText: reply => `Voz: ${reply}`,
+      sendHumanTelegramVoiceReply: async (chat, text, _query, snapshot) => trace.voices.push({ chat, text, owner: snapshot.email }),
+      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport, createTelegramMenuTransport, missingFinanceReply,
+      telegramApiUrl: () => '', // This harness probes producers; edit I/O is covered by telegram-navigation-reuse.
+      openEmergencyTelegramMenu: async () => { throw Error('emergency entry is tested separately with its actual handler'); },
+      conciergeKeyboard: menuTemplate(),
+    });
+    for (const name of ['conciergeExtractFlight', 'conciergeRadarReply', 'conciergeWeatherReply', 'conciergeAtisReply', 'conciergeWeatherKeyboard', 'conciergePerDiemReply']) vm.runInContext(extract(source, name), context);
+    const runtimeStart = source.indexOf('const crewcheckMenu = createTelegramMenu(');
+    const runtimeEnd = source.indexOf('\n});', runtimeStart) + 4;
+    assert.ok(runtimeStart >= 0 && runtimeEnd > runtimeStart, 'actual prepared menu runtime');
+    vm.runInContext(source.slice(runtimeStart, runtimeEnd).replace('const crewcheckMenu =', 'globalThis.crewcheckMenu ='), context);
+  }
   for (const [name, events] of [['buildTelegramConciergeReplyCore', 'core'], ['conciergeGymsReply', 'gyms']]) {
     const actual = context[name];
     context[name] = (...args) => { trace[events].push(name === 'conciergeGymsReply' ? args[1] : args[0]); return actual(...args); };
   }
   const actualSave = context.conciergeSaveSnapshotAsync;
   context.conciergeSaveSnapshotAsync = (...args) => { trace.saves.push(clone(args[2] || {})); return actualSave(...args); };
-  const binding = source.match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);/);
+  const binding = source.match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);/);
   assert.ok(binding, 'real WhatsApp binding is present');
   vm.runInContext(binding[0], context);
   vm.runInContext(extract(whatsapp, 'handleInboundMessage'), context);
@@ -141,10 +186,17 @@ function harness({ realFortalezaCatalog = false } = {}) {
     load: async (owner = profile) => clone(await context.conciergeLoadSnapshot(owner)),
     seed: preferences => { local.snapshots[profile.email].preferences = { ...local.snapshots[profile.email].preferences, ...clone(preferences) }; },
     restart: () => { local = { snapshots: {} }; },
+    openInline: () => context.sendTelegramMessage(profile.chatId, 'Menu de teste', { reply_markup: menuTemplate() }),
+    tap: async label => {
+      const last = trace.transports.at(-1);
+      const button = last.extra.reply_markup.inline_keyboard.flat().find(item => item.text.replace(/^[^\p{L}]+/u, '') === label);
+      assert.ok(button?.callback_data, label);
+      await context.processTelegramUpdate({ callback_query: { id: `callback-${sequence}`, data: button.callback_data, from: { id: profile.chatId }, message: { chat: { id: profile.chatId, type: 'private' }, ...last.result } } });
+    },
     send: async (channel, text, owner = profile) => {
       activeProfile = owner;
       trace.input.push({ channel, text });
-      if (channel === 'telegram') await context.processTelegramUpdate({ message: { chat: { id: owner.chatId }, text } });
+      if (channel === 'telegram') await context.processTelegramUpdate({ message: { chat: { id: owner.chatId, type: 'private' }, from: { id: owner.chatId }, text, message_id: ++sequence, date: Math.floor(Date.now() / 1000) } });
       else if (channel === 'whatsapp') await context.handleInboundMessage({ from: owner === profile ? '5511000000000' : '5511000000001', text, type: 'text', id: String(trace.input.length), phoneNumberId: 'synthetic-receiver' });
       else { await context.handleTelegramConciergeAsk({ method: 'POST', body: { text } }, {}); assert.equal(appResponse.status, 200); trace.output.push(appResponse.body.reply); }
       return trace.output.at(-1);
@@ -225,6 +277,92 @@ test('preserving gym text also preserves location and prevents negated/third-par
   for (const phrase of ['Wellhub não quero Pilates', 'Wellhub quero Pilates para meu amigo', 'Meu amigo disse Wellhub quero Pilates', 'Wellhub modalidade Pilates para meu amigo', 'Wellhub modalidade Pilates quando eu puder', 'Wellhub modalidade Pilates do João', 'Wellhub atividade da minha irmã', 'Wellhub modalidade Pilates caso eu possa']) {
     await h.send('app', phrase);
     assert.equal((await h.load()).preferences.gymActivity, undefined);
+  }
+});
+
+test('prepared full handler preserves explicit flight/station and weather kind through normalizer, semantics and actual producers', { skip: !materialized }, async () => {
+  const cases = [
+    ['/radar LA1234', 'radar', 'LA1234'], ['/portao LA1234', 'radar', 'LA1234'],
+    ['/metar SBGR raw', 'weather', 'SBGR', 'metar'], ['/taf SBGR raw', 'weather', 'SBGR', 'taf'],
+    ['/atis SBGR', 'atis', 'SBGR'], ['radar do voo LA1234', 'radar', 'LA1234'], ['ATIS de SBGR', 'atis', 'SBGR'],
+    ['/metar KJFK raw', 'weather', 'KJFK', 'metar'], ['/taf SCEL raw', 'weather', 'SCEL', 'taf'],
+    ['/atis FACT', 'atis', 'FACT'], ['METAR de KJFK', 'weather', 'KJFK', 'metar'], ['ATIS de SCEL', 'atis', 'SCEL'],
+  ];
+  for (const [text, kind, expected, weatherType] of cases) {
+    const h = harness({ operationalProbe: true });
+    const snapshot = await h.load();
+    await h.context.buildTelegramConciergeReply(text, h.profile, snapshot);
+    if (kind === 'radar') assert.equal(h.trace.search.find(item => item.boundary === 'radar')?.flight, expected, `${text} reaches actual Radar producer with requested flight, not roster fallback LA9999`);
+    else {
+      const reports = h.trace.search.filter(item => item.boundary === 'weather');
+      assert.ok(reports.length > 0, text);
+      assert.ok(reports.every(item => item.station === expected), `${text} keeps explicit station instead of fallback SBBR`);
+      assert.deepEqual(reports.map(item => item.type).sort(), kind === 'atis' ? ['metar', 'taf'] : [weatherType]);
+    }
+  }
+});
+
+test('prepared Telegram slash and guided buttons call the same actual producers, weather keyboard and ATIS voice adapter', { skip: !materialized }, async () => {
+  for (const [label, command, input] of [['Radar', 'radar', 'LA1234'], ['Portão', 'portao', 'LA1234'], ['METAR', 'metar', 'SBGR'], ['TAF', 'taf', 'SBGR'], ['ATIS', 'atis', 'SBGR'], ['METAR', 'metar', 'KJFK'], ['TAF', 'taf', 'SCEL'], ['ATIS', 'atis', 'FACT']]) {
+    const slash = harness({ operationalProbe: true });
+    await slash.send('telegram', `/${command} ${input}`);
+    const guided = harness({ operationalProbe: true });
+    await guided.openInline(); await guided.tap(['radar', 'portao'].includes(command) ? 'Programação' : 'Mais');
+    if (['metar', 'taf', 'atis'].includes(command)) await guided.tap('Meteorologia');
+    await guided.tap(label); await guided.send('telegram', input);
+    assert.deepEqual(guided.trace.search.filter(item => item.boundary), slash.trace.search.filter(item => item.boundary), `${command} IO-boundary arguments`);
+    assert.equal(guided.trace.output.at(-1), slash.trace.output.at(-1), `${command} actual formatted response`);
+    assert.deepEqual(guided.trace.voices, slash.trace.voices, `${command} deterministic voice effect parity`);
+    if (['metar', 'taf'].includes(command)) {
+      const stableKeyboard = markup => {
+        const copy=clone(markup);
+        for(const button of copy.inline_keyboard.flat()) if(button.callback_data?.startsWith('cc_nav:')) {
+          assert.match(button.callback_data,/^cc_nav:v1:[a-f0-9]{24}:home$/, 'fresh return must be an issued ticket');
+          button.callback_data='cc_nav:v1:<nonce>:home';
+        }
+        return copy;
+      };
+      assert.deepEqual(stableKeyboard(guided.trace.transports.at(-1).extra.reply_markup), stableKeyboard(slash.trace.transports.at(-1).extra.reply_markup), `${command} exact weather controls and ticketed return`);
+    }
+    assert.equal(slash.trace.voices.length, command === 'atis' ? 1 : 0);
+  }
+});
+
+test('prepared full handler ATIS reaches both actual weather reads for the requested station', { skip: !materialized }, async () => {
+  const h = harness({ operationalProbe: true });
+  await h.context.buildTelegramConciergeReply('/atis SBGR', h.profile, await h.load());
+  const reports = h.trace.search.filter(item => item.boundary === 'weather');
+  assert.deepEqual(reports.map(item => [item.station, item.type]).sort(), [['SBGR', 'metar'], ['SBGR', 'taf']]);
+});
+
+test('prepared settings/direct weather transitions remove only persistent keyboards and keep weather controls', { skip: !materialized }, async () => {
+  for (const settingsFirst of [false, true]) {
+    const h = harness({ operationalProbe: true });
+    // Use the actual settings keyboard declaration from the prepared source.
+    const at = source.indexOf('const conciergeSettingsKeyboard = {');
+    const end = source.indexOf('\n};', at) + 3;
+    assert.ok(at >= 0 && end > at);
+    vm.runInContext(source.slice(at, end).replace('const conciergeSettingsKeyboard =', 'globalThis.conciergeSettingsKeyboard ='), h.context);
+    if (settingsFirst) {
+      await h.send('telegram', '/configuracoes');
+      assert.ok(h.trace.transports.at(-1).extra.reply_markup.keyboard);
+    }
+    const before = h.trace.transports.length;
+    await h.send('telegram', '/metar SBGR');
+    const transition = h.trace.transports.slice(before);
+    assert.equal(transition.length, 2, 'separate ReplyKeyboardRemove precedes first weather inline');
+    assert.equal(transition[0].extra.reply_markup.remove_keyboard, true);
+    assert.ok(transition[1].extra.reply_markup.inline_keyboard.flat().some(button => button.callback_data === 'cc_weather:metar:SBGR:raw'));
+    assert.ok(transition[1].extra.reply_markup.inline_keyboard.flat().some(button => button.callback_data === 'cc_weather:metar:SBGR:decoded'));
+    const weatherBefore = h.trace.transports.length;
+    await h.send('telegram', '/taf SBGR');
+    assert.equal(h.trace.transports.length, weatherBefore + 1, 'weather-to-weather does not repeatedly remove input');
+    for (const reply_markup of [{ force_reply: true, selective: true }, { keyboard: [[{ text: 'Enviar localização', request_location: true }]], one_time_keyboard: true }]) {
+      const count = h.trace.transports.length;
+      await h.context.sendTelegramMessage(h.profile.chatId, 'Entrada explícita', { reply_markup });
+      assert.equal(h.trace.transports.length, count + 1);
+      assert.deepEqual(clone(h.trace.transports.at(-1).extra.reply_markup), reply_markup);
+    }
   }
 });
 
@@ -336,4 +474,28 @@ test('Fortaleza official catalog through actual Telegram, WhatsApp and app routi
       assert.equal(h.trace.search.at(-1).plan, 'silver-plus');
     }
   }
+});
+
+
+test('prepared typed Diárias and callback share financial content and app destination', {skip:!materialized}, async () => {
+  const typed = harness({operationalProbe:true});
+  const typedReply = await typed.send('telegram', '/diarias');
+  assert(typedReply.includes(financeUrl), 'actual typed route retains its app link');
+  const button = harness({operationalProbe:true}); await button.openInline(); await button.tap('Diárias');
+  assert.equal(button.trace.output.at(-1), missingFinanceReply());
+  // Preserve the existing text-wrapper footer; compare the complete response
+  // rather than stripping arbitrary content or changing the shared decorator.
+  assert.equal(typedReply, `${missingFinanceReply()}\n\nSe houver divergência, vale a escala oficial.`);
+  assert.equal(button.trace.transports.at(-1).extra.reply_markup.inline_keyboard.flat().find(x=>x.url)?.url, financeUrl);
+  assert.deepEqual(typed.trace.search, []); assert.deepEqual(button.trace.search, []);
+});
+
+test('prepared revoked binding denies Diárias callback and grants no private controls to typed reply', {skip:!materialized}, async () => {
+  const h = harness({operationalProbe:true}); await h.openInline();
+  h.profile.linked = false; h.profile.authenticated = false;
+  const before = h.trace.transports.length; await h.tap('Diárias'); assert.equal(h.trace.transports.length, before);
+  await h.send('telegram','/diarias');
+  assert(h.trace.output.at(-1).includes(financeUrl), 'public fallback destination is still available for sign-in');
+  assert(!h.trace.transports.at(-1).extra.reply_markup?.inline_keyboard, 'revoked profile receives no private menu');
+  assert.deepEqual(h.trace.search, []);
 });

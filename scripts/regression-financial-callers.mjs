@@ -30,7 +30,7 @@ try {
   let activeEvents = [];
   let fxUSD = 0;
   const iso = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const context = vm.createContext({FinancialScreen:p=>p.children, React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
+  const context = vm.createContext({FinancialScreen:p=>p.children, PersonalAllowanceReference:()=>React.createElement("div",{"data-personal-reference-control":"reachable"}), React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
     useMemo: React.useMemo, useState: React.useState,
     useFinancialPrivacy: () => ({ hidden:false, text:value=>value, amount:value=>value }), FinancialPrivacyToggle: () => null,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1',
@@ -38,6 +38,11 @@ try {
         { key: 'domestic', label: 'Synthetic domestic', currency: 'BRL', mainMeal: 100 },
         { key: 'other_international', label: 'Synthetic foreign', currency: 'USD', mainMeal: 20 },
       ] }),
+    confirmedPerDiemReferencesAt: date => {
+      const at = key => { consultedDates.push(date); return learning.rateAt(learned, key, date); };
+      return { state: 'ready', mainMeal: at('per_diem.lunch') ?? at('per_diem.dinner') ?? at('per_diem.supper'), breakfast: at('per_diem.breakfast')?.value ?? null, taxi: at('per_diem.taxi')?.value ?? null };
+    },
+    confirmedRateAt: (key, date) => { consultedDates.push(date); return learning.rateAt(learned, key, date); },
     confirmedRateValueAt: (key, date) => { consultedDates.push(date); return learning.rateAt(learned, key, date)?.value ?? null; },
     readOptionalNumberSetting: () => null,
     readNumberSetting: key => key === 'crewcheck_fx_usd_brl' ? fxUSD : 0,
@@ -103,7 +108,7 @@ try {
   assert.equal(outside.weekly, 100);
   assert.equal(outside.weeklySummary.convertedComplete, true);
   fxUSD = 2;
-  assert.equal(calculatePerDiem([event('2032-01-31', 'INT'), event('2032-02-01')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weekly, 140);
+  assert.equal(calculatePerDiem([event('2032-01-31', 'INT'), event('2032-02-01')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weekly, null,'an undated raw setting cannot convert native entitlements; use the shared validated FX projection');
   fxUSD = 0;
   assert.equal(calculatePerDiem([event('2032-02-01', 'UNKNOWN')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weeklySummary.state, 'unclassified');
   const empty = calculatePerDiem([], roster(2032, 2), new Date('2032-02-02T12:00:00'));
@@ -137,11 +142,18 @@ try {
   }
   findCompare(compareFunction);
   assert.equal(actualCompareStatements.length, 2);
-  const comparisonCode = ts.transpileModule(actualCompareStatements.join('\n') + '\nglobalThis.comparisonText = perDiemDeltaText;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-  const salary = {production:0,reserve:0,standby:0,chief:0,instructorPay:0,config:{requiresManualFunction:false}};
+  const comparisonCode = ts.transpileModule(actualCompareStatements.join('\n') + '\nglobalThis.comparisonText = perDiemDeltaText;globalThis.financialSubject=financial;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const salary = {production:0,reserve:0,standby:0,chief:0,instructorPay:0,dsr:{inventoryComplete:false},config:{requiresManualFunction:false}};
   for (const [before, after, expected] of [[mixed, foreign, 'Não calculável'], [foreign, invalidRate, 'Não calculável'], [empty, foreign, 'Não calculável'], [foreign, foreign, 'Sem diferença']]) {
     const c = vm.createContext({...periods, useMemo: f=>f(), planned:{roster:'before'},bundle:{roster:'after'},comparison:{summary:{periodMatches:true}},financeSnapshot:r=>({salary,perdiem:r==='before'?before:after}),moneyCurrency:()=>{throw Error('unavailable delta must never be formatted as a monetary total');}});
     vm.runInContext(comparisonCode,c); assert.equal(c.comparisonText,expected);
+  }
+  for(const inventoryComplete of [false,true]){
+    const beforeSalary={...salary,configured:true,production:20,rows:[],dsr:{inventoryComplete}},afterSalary={...beforeSalary,production:10};
+    const c=vm.createContext({...periods,useMemo:f=>f(),planned:{roster:'before'},bundle:{roster:'after'},comparison:{summary:{periodMatches:true}},financeSnapshot:r=>({salary:r==='before'?beforeSalary:afterSalary,perdiem:foreign}),moneyCurrency:()=>{throw Error('same currency delta must not format missing money');}});
+    vm.runInContext(comparisonCode,c);assert.equal(c.financialSubject.salaryReady,inventoryComplete);
+    assert.equal(c.financialSubject.variableDelta,inventoryComplete?-10:null,'incomplete category inventory cannot claim integral variable difference');
+    assert.equal(c.financialSubject.plannedGuaranteeReview,inventoryComplete?true:null,'known work alone cannot prove planned guarantee');
   }
   // Compact roster and detailed view share the completeness-aware display string.
   const rosterFunction = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'Roster');
@@ -163,6 +175,7 @@ try {
   const many=calculatePerDiem(activeEvents,roster(2032,2));
   assert.ok(many.monthlyRows.length>40,'synthetic canonical windows produce more than forty monthly items');
   const manyHtml=renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
+  assert.match(manyHtml,/data-personal-reference-control="reachable"/,'real statement host keeps reference change/revoke controls reachable without pending taxi');
   assert.equal((manyHtml.match(/class="cz-finance-row"/g)||[]).length,many.monthlyRows.length,'selected monthly items must not be truncated or borrowed from adjacent months');
   assert.ok([...manyHtml.matchAll(/data-financial-iso="([^"]+)"/g)].every(match=>match[1].startsWith('2032-02-')));
   assert.doesNotMatch(manyHtml,/<details[^>]*\bopen/,'details start folded');

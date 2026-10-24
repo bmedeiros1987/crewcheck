@@ -1,5 +1,11 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
+import os from 'node:os';import path from 'node:path';import {createRequire} from 'node:module';import {build} from 'esbuild';
+const depDir=fs.mkdtempSync(path.join(os.tmpdir(),'salary-clock-deps-')),depFile=path.join(depDir,'deps.cjs');
+await build({stdin:{contents:`export * from './client/src/lib/salaryDsrConsumer';export {salaryDisplaySummary} from './client/src/lib/salaryDisplayBasis';export {captureAuthSession} from './client/src/lib/authClient';export {financialRateOwner,confirmedPayrollDsrContext,confirmedRateAt} from './client/src/lib/financialStatementLearning';export {readMonthlyFinancialSettings} from './client/src/lib/financialMonthlySettings';export {rosterFingerprint} from './client/src/lib/rosterComparison';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:depFile});
+const syntheticStorage=new Map([['crewcheck_auth_token','synthetic-clock-token'],['crewcheck_auth_user',JSON.stringify({id:'synthetic-clock-owner'})]]);globalThis.localStorage={getItem:key=>syntheticStorage.get(key)??null,setItem:(key,value)=>syntheticStorage.set(key,value),removeItem:key=>syntheticStorage.delete(key)};
+const dependencies=createRequire(import.meta.url)(depFile);
+
 import assert from 'node:assert/strict';
 import ts from 'typescript';
 import {execFileSync} from 'node:child_process';
@@ -8,10 +14,10 @@ import { loadClientModules } from './lib/ts-module-harness.mjs';
 const modules=loadClientModules({files:['client/src/lib/salaryCalculationDiagnostic.ts','client/src/lib/financialHistoryPeriods.ts','client/src/lib/financialReserveCredits.ts','client/src/lib/salaryActivityEvidence.ts','client/src/lib/aimsParser.ts','client/src/lib/canonicalRoster.ts','client/src/lib/rosterDisplayDate.ts','client/src/lib/financialIntervalEvidence.ts','client/src/lib/compensationPolicy.ts','client/src/lib/financialJourneyGrouping.ts','client/src/lib/financialForecastPeriods.ts','client/src/lib/financialAmounts.ts'],prefix:'independent-extra-financial-'});
 try {
  const parser=modules.load('aimsParser'),canonical=modules.load('canonicalRoster');
- const names=['buildLegs','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','flightWorkType','financialEventCode','financialFlightRule','durationHours','nightHoursInsideWindow','isSundayOrConfiguredHoliday','calculateSalary','calculatePerDiem','moneyBRL'];
+ const names=['buildLegs','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','flightWorkType','financialEventCode','financialFlightRule','durationHours','nightHoursInsideWindow','isSundayOrConfiguredHoliday','calculateSalary','calculatePerDiem','moneyBRL','rosterFinancialDate'];
  const home=ts.createSourceFile('Home.tsx',fs.readFileSync('client/src/pages/Home.tsx','utf8'),99,true,4);
  const functions=home.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));assert.equal(functions.length,names.length);
- const context=vm.createContext({...modules.load('salaryActivityEvidence'),console,Date,Intl,...canonical,...modules.load('rosterDisplayDate'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialJourneyGrouping'),...modules.load('financialForecastPeriods'),...modules.load('financialAmounts'),
+ const context=vm.createContext({...dependencies,...modules.load('salaryActivityEvidence'),console,Date,Intl,...canonical,...modules.load('rosterDisplayDate'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialJourneyGrouping'),...modules.load('financialForecastPeriods'),...modules.load('financialAmounts'),
    storage:{get:(_k,f)=>f},pad2:n=>String(n).padStart(2,'0'),safe:(v,f='—')=>String(v??'').trim()||f,city:v=>v,normalizedAirlineCode:()=> 'LA',airlineNameFor:()=> 'SYNTHETIC',addMinutesToTime:()=>'',applyPresentationManagement:x=>x,
    dateChip:d=>d.toISOString().slice(0,10),moneyCurrency:(v,c)=>`${c} ${v}`,
    loadActCompensationConfig:()=>({basePay:1000,fixedAdditions:0,dayKmMetric:1,nightKmMetric:2,chiefPerSector:0,instructorPerSector:0,reserveHourMetric:1,standbyHourMetric:1,inssDeduction:0,irrfDeduction:0,otherDeductions:0,fgtsRate:0,configured:true,source:'SYNTHETIC NOT A TARIFF'}),
@@ -31,7 +37,7 @@ try {
  const outputs=[];
  for(const timezone of ['UTC','America/Sao_Paulo','Asia/Tokyo']){
   process.env.TZ=timezone;
-  const complete=run(roster([literalReserve,literalStandby]));assert.equal(complete.reserveHours,6);assert.equal(complete.standbyHours,4);assert.equal(complete.gross,1010);
+  const complete=run(roster([literalReserve,literalStandby]));assert.equal(complete.reserveHours,6);assert.equal(complete.standbyHours,4);assert.ok(Number.isNaN(complete.gross),'proved reserve/standby durations do not prove complete salary inventory');assert.equal(complete.reserve,6);assert.equal(complete.standby,4);
   for(const type of ['ASB','HSB','HSBE'])for(const [name,report,release,source] of [['absent',null,null,'absent'],['report-missing',null,'13:00','published'],['release-missing','09:00',null,'published'],['invalid','bad','13:00','published'],['estimated','09:00','13:00','estimated'],['unknown','09:00','13:00','unknown'],['legacy','09:00','13:00',undefined]]){
    const day=activity('22/10/2032',type,report,release,source);if(name==='legacy'){delete day.dutyReportSource;delete day.dutyDebriefSource;}
    const raw=roster([day]),before=JSON.stringify(raw),events=context.subject.buildLegs(raw),salary=context.subject.calculateSalary(events,raw),assessment=type==='ASB'?salary.reserveAssessment:salary.standbyAssessment;
@@ -57,4 +63,4 @@ try {
  const base=ts.createSourceFile('baselineHome.tsx',execFileSync('git',['show','be292f81a7945c9a038d0cac95b53b8a8b421463:client/src/pages/Home.tsx'],{encoding:'utf8'}),99,true,4);const baselineFunction=base.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='calculateSalary');vm.runInContext(ts.transpileModule(baselineFunction.getText(base).replace('function calculateSalary(','function baselineSalary(')+'\nglobalThis.baselineSalary=baselineSalary;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
  const previous=context.baselineSalary(events,raw),corrected=context.subject.calculateSalary(events,raw);assert.ok(Math.abs(previous.standbyHours-(23+59/60))<1e-10);assert.ok(Math.abs(previous.gross-(1000+23+59/60))<1e-10);assert.ok(Number.isNaN(corrected.gross));outputs.push({name:'published-base-counterproof',raw,events,previous:{standbyHours:previous.standbyHours,gross:previous.gross},corrected:{standbyHours:corrected.standbyHours,gross:corrected.gross,assessment:corrected.standbyAssessment}});
  fs.mkdirSync('artifacts/salary-activity-evidence',{recursive:true});fs.writeFileSync('artifacts/salary-activity-evidence/report.json',JSON.stringify({synthetic:true,outputs},null,2));console.log('PASS real parser/canonical/Home salary: unknown ASB/HSB/HSBE origin/timing blocks aggregate across3TZ, valid subtotals retained, no zero masking, dedup/overnight/nominal periods/activation credit and published23h59 counterproof');
-}finally{modules.cleanup();}
+}finally{modules.cleanup();fs.rmSync(depDir,{recursive:true,force:true});}

@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 const file='client/src/pages/Home.tsx';let source=fs.readFileSync(file,'utf8');
+const linkStatusImport="import { WhatsAppLinkStatus } from '@/components/notifications/WhatsAppLinkStatus';";
+if(!source.includes(linkStatusImport))source=linkStatusImport+'\n'+source;
 const start=source.indexOf('function WakeupView('),end=source.indexOf('\nfunction ',start+10);if(start<0||end<0)throw Error('Wakeup presentation boundary missing');
 if(!source.includes("import {WakeDiagnostic}"))source="import {WakeDiagnostic} from '@/components/notifications/WakeDiagnostic';\n"+source;
 let block=source.slice(source.indexOf('function WakeupView('),source.indexOf('\nfunction ',source.indexOf('function WakeupView(')+10));
@@ -45,6 +47,84 @@ if(!block.includes('className="cc-wakeup-history"')){
 }
 if(!block.includes('className="cc-wakeup-page"'))block=block.replace('<Brand back/>','<Brand back/><div className="cc-wakeup-page">').replace('</>;','</div></>;');
 if(!block.includes('<WakeDiagnostic/>'))block=block.replace('<WakeupChannelSelection ', '<WakeDiagnostic/><WakeupChannelSelection ');
+// Keep the existing generated WakeupView and its account/session fences. This is
+// its final presentation and receipt boundary, not a second route or scheduler.
+if (activate==='activateServerAlarm') {
+ if(!source.includes("import {WakeClockOptions}")) source="import {WakeClockOptions} from '@/components/notifications/WakeClockOptions';\n"+source;
+ if(!source.includes("import {WakeupSimpleCard}")) source="import {WakeupSimpleCard} from '@/components/notifications/WakeupSimpleCard';\n"+source;
+ if(!source.includes("import {wakeCivilDate")) source="import {wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeReceiptState,wakeNextConfirmed} from '@shared/wakeupPlan.mjs';\n"+source;
+ block=block.replace('  const [health, setHealth]',`  const [wakeDraft,setWakeDraft]=useState<any>(null);
+  const [wakeJobsOwner,setWakeJobsOwner]=useState<string|null>(null);
+  const wakeSubmitting=useRef<{generation:number;operation:number}|null>(null);
+  const wakeOperation=useRef(0);
+  const [wakeNow,setWakeNow]=useState(()=>Date.now());
+  useEffect(()=>{const clock=window.setInterval(()=>setWakeNow(Date.now()),30000);return()=>window.clearInterval(clock);},[]);
+  const [health, setHealth]`);
+ block=block.replace('  const planned = (() => {','  const scalePlanned = (() => {');
+ block=block.replace('  const scalePlanned = (() => {', `  const scalePlanned = (() => {\n    if(event.stayWakeup) { const value=event.stayWakeup.plannedAt?new Date(event.stayWakeup.plannedAt):null; return value&&Number.isFinite(value.getTime())?value:null; }`);
+ const editor=`  const scaleFields=wakeDateFields(scalePlanned);
+  const wakeOwner=getStoredUser()?.id;
+  const wakeEditor=wakeDraft && Boolean(wakeOwner) && wakeDraft.ownerId===wakeOwner?wakeDraft:{ownerId:wakeOwner,automatic:true,directMessage:true,...scaleFields};
+  const planned=wakeEditor.automatic?scalePlanned:wakeCivilDate(wakeEditor.day,wakeEditor.time);
+  const wakeScopeId=wakeEditor.automatic?String(event.id||''):'manual:'+wakeEditor.day;
+  const wakeScopeInstant=wakeEditor.automatic?wakeInstant:(planned?.toISOString()||'');
+  const wakePrefix='wakeup:'+wakeScopeId.replace(/[^a-zA-Z0-9:_-]+/g,'_')+':';
+  const wakeJobsCurrent=Boolean(wakeOwner) && wakeJobsOwner===wakeOwner;
+  const wakeSnapshot=wakeNextConfirmed(scheduledJobs,jobsState,wakeNow);
+  const wakeConflict=wakePlanConflict(scheduledJobs,wakePrefix);
+  const wakeChannelReason=wakeChannelDecision.channels.length>1?'Escolha o canal.':wakeChannelDecision.channels[0]==='phone-call'?'Agendamento de ligação ainda não liberado nesta tela. O teste manual é separado.':wakeChannelDecision.reason;
+  const wakeScopeReady=wakeChannelDecision.ownerId===wakeOwner && wakeChannelDecision.eventId===wakeScopeId && wakeChannelDecision.instant===wakeScopeInstant;
+  const wakeReason=(!wakeJobsCurrent||jobsState!=='ready'||wakeSnapshot.kind==='unavailable')?'Estado não confirmado. Atualize.':wakeConflict?'Já existe uma solicitação para esta programação. Consulte o histórico em Mais opções.':!planned&&event.stayWakeup?'Confira a APZ e a antecedência no pernoite.':!planned?'Confira um horário e uma data válidos. Horários ambíguos de mudança de fuso exigem a opção pela escala.':planned.getTime()<=wakeNow?'O horário escolhido já passou. Escolha outro dia ou horário.':!wakeScopeReady?'Verificando canal.':!wakeChannelDecision.ready?wakeChannelReason:wakeEditor.directMessage===false?'Nenhum envio selecionado. O alarme local e a ligação automática ainda não estão liberados nesta tela.':'';
+  function editWake(patch:any) {
+    if(wakeSubmitting.current)return;
+    setWakeDraft({...wakeEditor,...(wakeEditor.automatic?scaleFields:{}),...patch,ownerId:getStoredUser()?.id});
+    setWakeNow(Date.now());
+  }
+`;
+ block=block.replace('  const hotel =',editor+'  const hotel =');
+ block=block.replace("if (!owner) { setJobsState('unavailable'); return; }", "if (!owner || navigator.onLine===false) { setJobsState('unavailable'); return; }");
+ block=block.replace('    const onStorage = (event: StorageEvent)', "    const onOffline=()=>{jobsRequest.current++;wakeJobsReady.current=false;setScheduledJobs([]);setJobsState('unavailable');setScheduleBusy(false);};\n    window.addEventListener('offline',onOffline);\n    const onStorage = (event: StorageEvent)");
+ block=block.replace("      window.removeEventListener('storage', onStorage);", "      window.removeEventListener('storage', onStorage);\n      window.removeEventListener('offline',onOffline);");
+ // A successful read returns the same account-bound snapshot used by the page.
+ block=block.replace('const version = wakeSession.current, owner = getToken(), request = ++jobsRequest.current;', 'const version = wakeSession.current, owner = getToken(), ownerId=getStoredUser()?.id, request = ++jobsRequest.current;');
+ block=block.replaceAll('!sameWakeSession(version, owner) || jobsRequest.current !== request', '!sameWakeSession(version, owner) || jobsRequest.current !== request || ownerId!==getStoredUser()?.id');
+ block=block.replace("setWakeReadiness(payload.readiness||null); setJobsState('ready');","setWakeReadiness(payload.readiness||null); setJobsState('ready'); setWakeJobsOwner(ownerId||null); setWakeNow(Date.now()); return payload.jobs;");
+ block=block.replace('  async function activateServerAlarm() {',`  async function activateServerAlarm() {
+    if(wakeSubmitting.current)return;
+    if(wakeReason)return toast.info(wakeReason);`);
+ block=block.replace('wakeChannelDecision.eventId!==event.id || wakeChannelDecision.instant!==wakeInstant','wakeChannelDecision.eventId!==wakeScopeId || wakeChannelDecision.instant!==wakeScopeInstant');
+ block=block.replace("const alarmPrefix='wakeup:'+String(event.id).replace(/[^a-zA-Z0-9:_-]+/g,'_')+':';","const alarmPrefix=wakePrefix;");
+ block=block.replace('    setScheduleBusy(true);\n    try {\n      const normalizedChannel', '    const submission={generation:version,operation:++wakeOperation.current};\n    wakeSubmitting.current=submission;\n    setScheduleBusy(true);\n    try {\n      const normalizedChannel');
+ const begin=block.indexOf('  async function activateServerAlarm()'), finish=block.indexOf('\n  async function cancelScheduledJob',begin);
+ let action=block.slice(begin,finish);
+ action=action.replace("const eventKey = [event.id, programDateLabel(event), presentation, lead, normalizedChannel].join(':').replace(/[^a-zA-Z0-9:_-]+/g, '_');", "const eventKey = wakeEditor.automatic?[event.id, programDateLabel(event), presentation, lead, normalizedChannel].join(':').replace(/[^a-zA-Z0-9:_-]+/g, '_'):wakeScopeId+':'+planned.getTime()+':'+normalizedChannel;");
+ action=action.replace("      const payload = await postCrewCheckJson('/api/alarm/schedule', {",'      const request = {');
+ action=action.replace("        message: 'Despertador CrewCheck: confira sua preparação no aplicativo.',\n      });", "        message: 'Despertador CrewCheck: confira sua preparação no aplicativo.',\n      };\n      const payload = await postCrewCheckJson('/api/alarm/schedule',request);");
+ action=action.replace('      await refreshScheduledJobs();','      const confirmationRead=refreshScheduledJobs();\n      const confirmationSequence=jobsRequest.current;\n      const confirmedJobs=await confirmationRead;');
+ action=action.replace("      window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));\n      toast.success(payload?.message || 'Solicitação registrada no servidor; entrega não confirmada.');", "      if(confirmedJobs===undefined && confirmationSequence!==jobsRequest.current)return toast.info('Consulta de confirmação substituída por uma atualização mais recente. Confira o estado atual na tela.');\n      if(!wakeReceiptConfirmed(request,payload,confirmedJobs)) { const receiptState=wakeReceiptState(request,payload,confirmedJobs); if(receiptState==='unconfirmed')return toast.error('Não foi possível confirmar este agendamento. Consulte o estado antes de tentar novamente.'); return toast.info(receiptState==='terminal'?'Registro persistido já encerrado. Consulte o status real no histórico.':receiptState==='uncertain'?'Registro persistido com resultado não confirmado. Consulte o histórico antes de tentar novamente.':receiptState==='sending'?'Registro persistido com envio em andamento; entrega não confirmada.':'Registro persistido com horário passado; envio não confirmado.'); }\n      window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));\n      toast.success('Registro confirmado no servidor. Recebimento ainda não confirmado.');");
+ action=action.replace('    } finally {','    } finally {\n      if(wakeSubmitting.current===submission)wakeSubmitting.current=null;');
+ if(!action.includes('wakeReceiptConfirmed(request,payload,confirmedJobs)') || !action.includes('const payload = await postCrewCheckJson'))throw Error('Wake receipt boundary not materialized');
+ block=block.slice(0,begin)+action+block.slice(finish);
+ // Identity change invalidates the old latch; its finally owns only its own operation.
+ block=block.replace('wakeIdentity.current = {token:owner,userId};','wakeIdentity.current = {token:owner,userId}; wakeSubmitting.current=null;');
+ // Refresh on return to the page; this is a GET, never an activation or retry.
+ block=block.replaceAll("'crewcheck:auth-expired', 'online']","'crewcheck:auth-expired', 'online', 'focus']");
+ const historyStart=block.indexOf('<details className="cz-toolbox cc-wakeup-history">'),historyEnd=block.indexOf('</details>',historyStart)+10;
+ if(historyStart<0||historyEnd<10)throw Error('Existing Wake history missing');
+ const history=block.slice(historyStart,historyEnd);
+ const returnStart=block.indexOf('  return <><Brand back/>');
+ if(returnStart<0)throw Error('Existing Wake return missing');
+ block=block.slice(0,returnStart)+`  return <><Brand back/><div className="cc-wakeup-page"><StayNavigationContext targetView="wakeup"/><section className="cz-panel-head"><h1>Despertador</h1></section>
+    <WakeupSimpleCard automaticLabel={event.stayWakeup?'Usar APZ do hotel':undefined} automatic={wakeEditor.automatic} day={wakeEditor.day||''} time={wakeEditor.time||''} onEdit={editWake} planned={planned} jobs={wakeJobsCurrent?scheduledJobs:[]} jobsState={wakeJobsCurrent?jobsState:jobsState==='unavailable'?'unavailable':'loading'} now={wakeNow} reason={wakeReason} busy={scheduleBusy} onActivate={activateServerAlarm} onRefresh={refreshScheduledJobs} channelSelection={<WakeupChannelSelection compact onTelegramSelected={()=>editWake({directMessage:true})} busy={scheduleBusy} eventId={wakeScopeId} instant={wakeScopeInstant} readiness={wakeReadiness} onDecision={setWakeChannelDecision}/>} >
+      <WakeClockOptions messageSelected={wakeEditor.directMessage!==false&&wakeChannelDecision.channels.includes('telegram')} messageAvailable={wakeScopeReady&&wakeChannelDecision.ready&&wakeChannelDecision.channel==='telegram'} onMessageChange={selected=>editWake({directMessage:selected})} busy={scheduleBusy} planned={planned}/>
+      <section aria-label="Ajustes da escala">{event.stayWakeup?<><h2>APZ do hotel</h2><p>{event.stayWakeup.hotelName || 'Hotel a confirmar'} · {event.stayWakeup.apzAt ? new Date(event.stayWakeup.apzAt).toLocaleString('pt-BR',{timeZone:event.stayWakeup.timeZone})+' · '+event.stayWakeup.timeZone : 'APZ a confirmar'}</p><p>Ajuste a antecedência no pernoite. Alarmes salvos permanecem iguais.</p></>:<><h2>Automático pela escala</h2><p>{programDateLabel(event)} · apresentação {presentation} · {hotel}</p><label>Antecedência da escala<select value={lead} onChange={event=>setLead(event.target.value)} disabled={scheduleBusy}>{[60,75,90,120].map(value=><option key={value} value={String(value)}>{value} minutos</option>)}</select></label><p>Este ajuste vale para a próxima solicitação; não altera alarmes salvos.</p></>}</section>
+      ${history}
+      <details><summary>Diagnóstico da conta</summary><WakeDiagnostic/><NotificationReadiness/></details>
+      <details className="cc-wakeup-channel-details"><summary>Testes e soneca</summary><p>São ações separadas. Ligações podem consumir a franquia.</p><div className="cz-tool-actions"><button onClick={()=>testAlarm('telegram-message')} disabled={Boolean(activeTest)}>Testar Telegram</button><button onClick={()=>testAlarm('telegram-call')} disabled={Boolean(activeTest)}>Testar ligação via Telegram</button>{admin&&<button onClick={()=>testAlarm('phone-call')} disabled={Boolean(activeTest)}>Testar Infobip Premium</button>}<button onClick={snoozeTelegram}>Soneca 10 min</button></div></details>
+    </WakeupSimpleCard></div></>;
+}
+`;
+}
 source=source.replace(source.slice(source.indexOf('function WakeupView('),source.indexOf('\nfunction ',source.indexOf('function WakeupView(')+10)),block);
-source=source.replace('deviceSettings={<><NotificationReadiness/>','deviceSettings={<><details className="cc-notification-channels"><summary>Vínculos de canais</summary><p>Vincular é uma ação explícita, distinta de salvar preferências.</p><button onClick={openTelegramBinding}>Vincular Telegram</button><button onClick={openWhatsAppBinding}>Vincular WhatsApp</button></details><NotificationReadiness/>');
+source=source.replace('deviceSettings={<><NotificationReadiness/>','deviceSettings={<><details className="cc-notification-channels"><summary>Vínculos de canais</summary><p>Vincular é uma ação explícita, distinta de salvar preferências.</p><button onClick={openTelegramBinding}>Vincular Telegram</button><button onClick={openWhatsAppBinding}>Vincular WhatsApp</button><WhatsAppLinkStatus/></details><NotificationReadiness/>');
 fs.writeFileSync(file,source);

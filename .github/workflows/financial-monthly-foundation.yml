@@ -6,6 +6,9 @@ on:
       - 'client/src/lib/financialReferenceCatalog.ts'
       - 'client/src/lib/financialTaxReferences.ts'
       - 'client/src/lib/financialMonthlySettings.ts'
+      - 'client/src/components/finance/Payroll*.tsx'
+      - 'client/src/lib/reviewedPayrollDeductions.ts'
+      - 'scripts/regression-reviewed-payroll-*.mjs'
       - 'shared/financialReadModel.mjs'
       - 'scripts/regression-financial-monthly-foundation.mjs'
       - '.github/workflows/financial-monthly-foundation.yml'
@@ -23,6 +26,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/regression-financial-monthly-foundation.mjs
+      - run: node scripts/regression-reviewed-payroll-deductions.mjs
+      - run: node scripts/regression-reviewed-payroll-save.mjs
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-owner-periods.mjs
       - run: node scripts/v139/apply.mjs
@@ -30,4 +35,5 @@ jobs:
       - run: node scripts/regression-financial-monthly-foundation.mjs
         env:
           TZ: America/Sao_Paulo
+      - run: node scripts/regression-reviewed-payroll-save.mjs
       - run: npx vite build

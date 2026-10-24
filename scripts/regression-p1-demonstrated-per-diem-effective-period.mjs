@@ -70,8 +70,8 @@ try {
     learnedBreakfast: null,
     breakfastPercent: 0.25,
   });
-  check('refeição aprendida prevalece e café é derivado coerentemente',
-    learned.source === 'learned' && learned.mainMeal === 111.11 && learned.breakfast === 27.78,
+  check('refeição aprendida não altera café sem preço revisado próprio',
+    learned.source === 'learned' && learned.mainMeal === 111.11 && learned.breakfast === 26.26 && learned.breakfastSource === 'act',
     JSON.stringify(learned));
 
   const learnedBreakfast = amounts.resolveDomesticPerDiemRate({

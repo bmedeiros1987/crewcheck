@@ -1,3 +1,4 @@
+import { requestBlobDownload } from './blobDownload';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { CrewRoster } from './pdfParser';
@@ -39,18 +40,6 @@ const COLOR = {
 
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
-function triggerBlobDownload(blob: Blob, fileName: string): string {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = 'noopener';
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  window.setTimeout(() => { try { anchor.remove(); } catch {} }, 250);
-  return url;
-}
 
 function rememberLastPdfExport(fileName: string, blob: Blob) {
   try {
@@ -435,6 +424,6 @@ export async function exportReport(
     sizeKb: Math.max(1, Math.round(blob.size / 1024)),
     createdAt: new Date().toISOString(),
     open: () => window.open(url, '_blank', 'noopener,noreferrer'),
-    download: () => { triggerBlobDownload(blob, fileName); rememberLastPdfExport(fileName, blob); },
+    download: () => { requestBlobDownload(blob, fileName); rememberLastPdfExport(fileName, blob); },
   };
 }

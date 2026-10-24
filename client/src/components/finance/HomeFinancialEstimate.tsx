@@ -8,6 +8,7 @@ import {estimateAllowanceBrl} from '@shared/financialFx.mjs';
 import {formatFinancialMinor} from '@shared/financialMoney.mjs';
 import {FinancialPrivacyToggle,useFinancialPrivacy} from './FinancialPrivacy';
 const Context=createContext<NextPayment|null>(null);
+export const useHomeFinancialEstimate=()=>useContext(Context);
 const account=()=>String(getStoredUser()?.id||getStoredUser()?.email||'');
 export function HomeFinancialEstimateProvider({roster,calculate,children,accessKey}:{accessKey?:string;roster:CrewRoster;calculate:(roster:CrewRoster)=>NextPayment|null;children:ReactNode}){
  const [,refresh]=useState(0),owner=account(),token=getToken(),bound=useRef({owner,roster});

@@ -134,7 +134,7 @@ export function careStateForScheduleActivity(activity: ScheduleActivityLike): Sc
   // Only a published pairing code may specialize that wrapper; arbitrary labels
   // and raw text remain incapable of creating grief/vacation semantics.
   if (formalState === 'FOLGA' && pairingSensitiveState !== 'NONE') {
-    const coarseDayOff = [...formalTokens].some((token) => ['DO', 'FOLGA'].includes(token));
+    const coarseDayOff = [...formalTokens].some((token) => token === 'DO');
     if (coarseDayOff) return pairingSensitiveState;
   }
   if (formalState !== 'NONE') return formalState;
@@ -149,7 +149,8 @@ export function careStateForScheduleActivity(activity: ScheduleActivityLike): Sc
   // allowed to be specialized by a published pairing code.
   if (formalTokens.size > 0) return 'NONE';
   if (pairingSensitiveState !== 'NONE') return pairingSensitiveState;
-  return resolveCareState(tokensOfValues(fallbackCodeValues(activity)));
+  const fallbackState = resolveCareState(tokensOfValues(fallbackCodeValues(activity)));
+  return fallbackState === 'LUTO' || fallbackState === 'FERIAS' ? 'NONE' : fallbackState;
 }
 
 export function carePresentationForScheduleActivity(

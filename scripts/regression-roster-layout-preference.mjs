@@ -38,7 +38,7 @@ assert.match(prepared, /<select aria-label="Formato da escala" value=\{layout\}/
 for (const layout of ['cards','list','aims','calendar']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
 assert.ok(prepared.includes('<AimsDocumentView events={visibleEvents}'), 'AIMS uses the existing document projection');
 assert.ok(!prepared.includes('<option value="document">'), 'no duplicate Document option');
-assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
+assert.ok(prepared.includes('<CalendarRosterView operationalEvents={allOrdered} events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
 
 assert.ok(prepared.includes('data-roster-iso={group.iso}'), 'date navigation remains reachable');
 const aimsTable = fs.readFileSync('client/src/components/v1391/AimsRosterTable.tsx', 'utf8');
@@ -74,4 +74,3 @@ assert.equal(zoom(blocked, 'A'), 'month');
 assert.equal(save(storage, null, 'aims', 'day'), false);
 assert.equal(save(storage, 'A', 'aims', 'week'), false);
 console.log('PASS: backward-compatible month/day preference, reload, reset, account isolation and blocked storage');
-

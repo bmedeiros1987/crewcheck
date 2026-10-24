@@ -1,4 +1,7 @@
+import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
+import { customGateSourceUpdate } from './server/gate-source-update.mjs';
+import { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS, retainAgreeingRadarGateProof } from './shared/radar-field-evidence.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
@@ -54,9 +57,11 @@ function buildFlightContext(value) {
   if (/^JJ\d+$/i.test(raw)) icao = `TAM${raw.replace(/^JJ/i, '')}`;
   return { raw, iata, icao, flightAware: icao };
 }
-function publicRadarPayload(item = {}) {
+function publicRadarPayload(item = {}, now = Date.now()) {
   if (item.querySuppressed) return gateQuerySuppressed({reason:item.queryReason || 'source-unverified'});
   return {
+    // Unproven gate/status/registration carry a fixed reason; proof itself stays in gateUpdate.
+    ...radarFieldEvidenceGaps(item, now),
     ...ciriumRadarProjection(item),
     ok: Boolean(item.ok),
     configured: Boolean(item.configured),
@@ -67,6 +72,9 @@ function publicRadarPayload(item = {}) {
     departure: firstKnown(item.departure),
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
+    ...(item.gateEvidenceReceivedAt !== undefined ? { gateEvidenceReceivedAt: item.gateEvidenceReceivedAt } : {}),
+    gateUpdate: item.gateUpdate?.provider === 'custom' ? item.gateUpdate : null,
+    operationalConflicts: Array.isArray(item.operationalConflicts) ? item.operationalConflicts.filter(field => ['gate','status','registration'].includes(field)) : [],
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -75,7 +83,7 @@ function publicRadarPayload(item = {}) {
     latencyMs: Number(item.latencyMs || 0),
     quality: Number(item.quality || item.score || 0),
     alternatives: Number(item.alternatives || 0),
-    message: firstKnown(item.message, item.ok ? 'Radar atualizado.' : 'Radar aguardando fonte operacional.'),
+    message: item.ok ? 'Resposta da fonte recebida; confirmação operacional depende da evidência de cada campo.' : firstKnown(item.message, 'Radar aguardando fonte operacional.'),
   };
 }
 function scoreRadar(item = {}, ctx = {}) {
@@ -155,10 +163,13 @@ async function providerFlightAware(ctx, timeoutMs) {
     markProvider('flightaware', false);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' };
   }
-  const flights = Array.isArray(payload?.flights) ? payload.flights : [];
+  const sourceFlights = Array.isArray(payload?.flights) ? payload.flights : [];
+  // Reuse #1143's response-owned occurrence filter on the existing production path.
+  const exactFlights = ctx.gateQueryEvidence ? sourceFlights.filter(item => radarResultDecision(normalizeFlightAwareFlight(item, ctx), ctx.gateQueryEvidence, Date.now()).allowed) : null;
+  const flights = exactFlights ? exactFlights.length === 1 ? exactFlights : [] : sourceFlights;
   const row = flights.find((item) => !item.cancelled && !item.actual_in) || flights[0];
   if (!row) {
-    markProvider('flightaware', false);
+    // Successful no-data/ambiguity is not a provider outage.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('flightaware', true);
@@ -181,6 +192,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao),
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
+    gateUpdate: payload?.departureGateUpdate?.schema === 'crewcheck.departure-gate-update.v1' ? customGateSourceUpdate(payload) : null,
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
     scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),
@@ -338,7 +350,9 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
         return;
       }
-      resolve(publicRadarPayload({ ...best, alternatives: okResults.length || results.filter(Boolean).length }));
+      const operationalConflicts = ['gate', 'status', 'registration'].filter(field =>
+        new Set(okResults.map(row => String(row[field] || '').trim().toUpperCase()).filter(Boolean)).size > 1);
+      resolve(publicRadarPayload(retainAgreeingRadarGateProof({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }, okResults, evidence, Date.now())));
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;
@@ -2439,12 +2453,14 @@ function conciergeFindFlight(roster = {}, requested = '') {
 }
 function conciergeApplyRadar(snapshot, flightInfo, radar) {
   if (!snapshot?.roster || !flightInfo?.leg || !radar) return snapshot;
+  // Radar never overwrites the published gate/status/registration. A proven gate is
+  // kept apart with its source instant and expiry, so it cannot outlive its proof.
+  const verified = verifiedRadarFields(radar, flightInfo.identity, Date.now());
+  const observed = verified.gate ? Date.parse(verified.observedAt.gate) : NaN;
   Object.assign(flightInfo.leg, {
-    gate: radar.gate || flightInfo.leg.gate || '',
     terminal: radar.terminal || flightInfo.leg.terminal || '',
-    status: radar.status || flightInfo.leg.status || '',
     aircraft: radar.aircraft || flightInfo.leg.aircraft || flightInfo.leg.aircraftType || '',
-    registration: radar.registration || flightInfo.leg.registration || '',
+    radarEvidence: Number.isFinite(observed) ? { gate: verified.gate, sourceObservedAt: verified.observedAt.gate, validUntil: new Date(observed + RADAR_FIELD_FRESH_MS).toISOString() } : null,
     radarUpdatedAt: new Date().toISOString(),
     radarQuality: Number(radar.quality || 0),
   });
@@ -2485,17 +2501,19 @@ async function conciergeRadarReply(text, profile, snapshot) {
     await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
   }
   if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  const verified = verifiedRadarFields(radar, queryContext.gateQueryEvidence, Date.now());
+  const shown = field => verified[field] || (verified.gaps[field] ? `indisponível (${radarEvidenceGapLabel(verified.gaps[field])})` : 'a confirmar');
   const lines = [
     `Radar ${buildFlightContext(flight).iata || flight}`,
     `${info?.leg?.origin || radar.origin || '—'} → ${info?.leg?.destination || radar.destination || '—'}`,
-    `Status: ${radar.status || 'a confirmar'}`,
-    `Portão: ${radar.gate || 'a confirmar'}${radar.terminal ? ` · Terminal ${radar.terminal}` : ''}`,
+    `Status: ${shown('status')}`,
+    `Portão: ${shown('gate')}${radar.terminal ? ` · Terminal ${radar.terminal}` : ''}`,
     `Partida: ${radar.departure || info?.leg?.departureTime || 'a confirmar'}`,
     `Chegada: ${radar.arrival || info?.leg?.arrivalTime || 'a confirmar'}`,
     `Qualidade da consulta: ${Number(radar.quality || 0)}% · ${Number(radar.alternatives || 0)} fonte(s) útil(eis)`,
   ];
   if (!radar.ok) lines.push(radar.message || 'As fontes não confirmaram dados ao vivo agora.');
-  else if (radar.gate) lines.push('O portão foi sincronizado com o card da próxima programação.');
+  else if (verified.gate) lines.push('Portão comprovado pela fonte nesta consulta; a escala publicada não foi alterada.');
   return lines.join('\n');
 }
 async function conciergeWeatherReply(text, snapshot) {
@@ -3615,11 +3633,13 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
           : await conciergeDbPut(stateKey, nextState);
         if (canary && !observationPersisted) { summary.failures += 1; continue; }
         if (!shouldSend) continue;
-        messages.push({ stateKey, nextState, text: [
-          `${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`,
-          ...alertReasons.slice(0, 4).map((reason) => `• ${reason}`),
-          `METAR/SPECI: ${report.raw}`,
-          `Fonte: ${report.source || 'fonte meteorológica oficial disponível'}`,
+        // Bound display only: keep full evidence/state and room for all three blocks + opt-out.
+        const excerpt = (value, limit, marker = '…') => { const text = String(value); return text.length > limit ? `${text.slice(0, limit - marker.length)}${marker}` : text; };
+        messages.push({ stateKey, nextState, report: { ...report }, candidate, previous, change, text: [
+          excerpt(`${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`, 120),
+          `• ${formatWeatherNoticeDetails({ raw: report.raw, observedAt: report.observedAt, station: candidate.station })}`,
+          `METAR/SPECI: ${excerpt(report.raw, 600, '… [boletim abreviado]')}`,
+          `Fonte: ${excerpt(report.source || 'fonte meteorológica oficial disponível', 80)}`,
         ].join('\n') });
       } catch {
         summary.failures += 1;
@@ -3639,6 +3659,18 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         if (!reserved) { summary.failures += 1; continue; }
         // Recheck after durable intent writes. A later revocation can still race transport.
         if (!await canaryLease.isHeld() || !await canary.canDispatch(selection)) { summary.skipped += 1; continue; }
+      }
+      if (canary) {
+        // No await between this final evidence/window check and transport. A
+        // later airport query or consent/intent write may have consumed the TTL.
+        const dispatchNow = observationNow();
+        const currentCandidates = conciergeWeatherCandidates(snapshot, new Date(dispatchNow));
+        const valid = Number.isFinite(dispatchNow) && messages.slice(0, 3).every((message) =>
+          currentCandidates.some((candidate) => candidate.key === message.candidate.key &&
+            candidate.role === message.candidate.role && candidate.station === message.candidate.station) &&
+          evaluateCriticalWeatherDelivery({ report: message.report, station: message.candidate.station,
+            previous: message.previous, change: message.change, now: dispatchNow }).accepted);
+        if (!valid) { summary.skipped += 1; continue; }
       }
       const result = await sendTelegramMessage(snapshot.chatId, [
         '⚠️ Mudança meteorológica crítica na sua escala',

@@ -1,9 +1,11 @@
+import { StayOperationalDetails } from './StayOperationalDetails';
 import { rosterDisplayIso, rosterLabelDate, rosterUnconfirmedDateText, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { currentPublicationReview, publicationOwner, publicationReviewStatus, subscribePublicationReview } from '@/lib/rosterPublicationRuntime';
 import { publication, type PublishedEvent } from '@/lib/rosterPublicationReview';
 import { PublicationChangeDetail } from './PublicationChangeDetail';
 import './aims-vertical.css';
+import { rosterActivityLabel } from './rosterActivityLabel';
 type AimsRosterEvent = {
   id: string;
   operationalTimeZone?: string;
@@ -41,14 +43,14 @@ function publishedClock(value?: string | null) {
 }
 
 function activityCode(event: AimsRosterEvent) {
-  return String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação');
+  return rosterActivityLabel(String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação'));
 }
 
 function details(event: AimsRosterEvent) {
   return String(event.subtitle || event.hotel || event.title || event.kind || '—');
 }
 
-export function AimsRosterTable({ events, title = 'Escala publicada por dia', dayView = false, showHistory = true, focusEventId, focusEventIndex }: { focusEventIndex?: number; focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
+export function AimsRosterTable({ events, operationalEvents = events, title = 'Escala publicada por dia', dayView = false, showHistory = true, focusEventId, focusEventIndex }: { focusEventIndex?: number; focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; operationalEvents?: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
   const [storedReview,setReview] = useState(currentPublicationReview);
   const review = storedReview?.owner === publicationOwner() ? storedReview : null;
   const [runtimeStatus,setRuntimeStatus] = useState(publicationReviewStatus);
@@ -139,8 +141,10 @@ export function AimsRosterTable({ events, title = 'Escala publicada por dia', da
                 <div className="cc-aims-source-details"><dt>Detalhes publicados</dt><dd>{details(event)}</dd></div>
               </dl>
               {expanded && <div id={detailId} className="cc-aims-activity-detail">
-                <strong>Detalhes publicados</strong>
-                <p>{details(event)}</p>
+                {event.kind === 'stay' ? <StayOperationalDetails event={event} events={operationalEvents}/> : <>
+                  <strong>Detalhes publicados</strong>
+                  <p>{details(event)}</p>
+                </>}
                 {review && changes.map(change => <PublicationChangeDetail key={`${review.owner}:${change.id}`} owner={review.owner} change={change}/>)}
               </div>}
             </li>;

@@ -46,8 +46,10 @@ try{
  await pool.query('INSERT INTO crewcheck_platform_profiles(email) VALUES(?),(?)',[A.ownerId,B.ownerId]);
  await assert.rejects(store.list(A.ownerId),{code:'ER_NO_SUCH_TABLE'});
  const migration=readFileSync(new URL('../migrations/20261017_020_financial_ledger_mysql.sql',import.meta.url),'utf8');
+ const channelMigration=readFileSync(new URL('../migrations/20261020_021_financial_channel_preparation_mysql.sql',import.meta.url),'utf8');
+ for(const sql of channelMigration.split(';').map(s=>s.trim()).filter(Boolean))await pool.query(sql);
  for(let replay=0;replay<2;replay++)for(const sql of migration.split(';').map(s=>s.trim()).filter(Boolean))await pool.query(sql);
- const [tables]=await pool.query("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME LIKE 'crewcheck_financial_%'",[schema]);assert.equal(tables.length,2);assert(tables.every(t=>t.ENGINE==='InnoDB'));
+ const [tables]=await pool.query("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME LIKE 'crewcheck_financial_%'",[schema]);assert.equal(tables.length,4);assert(tables.every(t=>t.ENGINE==='InnoDB'));
  const append=(value,identity=A,target=store)=>appendFinancialRecord({store:target,identity,input:value});
  const receipt=await append(input());assert.equal(receipt.revision,1);assert.equal((await append(input())).replayed,true);
  await stop();await start();store=connect();assert.equal((await store.list(A.ownerId))[0].amountMinor,1234,'actual server restart persists original currency snapshot');

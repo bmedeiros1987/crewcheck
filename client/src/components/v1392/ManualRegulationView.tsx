@@ -1,3 +1,6 @@
+import type {RegulationOperationalArrivalInput} from '@/components/regulation/RegulationScenarioView';
+import type {ScheduleDayLike} from '@/components/v1432/ManualRegulationView';
+import type {CanonicalRosterEvent} from '@/lib/canonicalRoster';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Calculator, CheckCircle2, Clock3, Plane, RotateCcw, ShieldCheck } from 'lucide-react';
 import './v1392.css';
@@ -97,7 +100,7 @@ function loadForm(): FormState {
   }
 }
 
-export default function ManualRegulationView({ compliance }: { compliance?: ComplianceLike }) {
+export default function ManualRegulationView({ compliance }: { compliance?: ComplianceLike; scheduleDay?: ScheduleDayLike | null; program?: CanonicalRosterEvent | null; operationalArrival?: RegulationOperationalArrivalInput | null }) {
   const [form, setForm] = useState<FormState>(loadForm);
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(form)); }, [form]);
 

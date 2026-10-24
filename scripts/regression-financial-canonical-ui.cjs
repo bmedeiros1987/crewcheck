@@ -10,7 +10,7 @@ const serverSource=fs.readFileSync(path.resolve('server.mjs'),'utf8');
 const staticAst=ts.createSourceFile('server.mjs',serverSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const staticFunctions=staticAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='serveStatic');
 assert.equal(staticFunctions.length,1,'exactly one production static handler must exist');
-const staticContext=vm.createContext({fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
+const staticContext=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
 vm.runInContext(staticFunctions[0].getText(staticAst)+'\nglobalThis.respond=serveStatic;',staticContext);
 let handler; const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://localhost');if(handler&&await handler(req,res,url))return;staticContext.respond(req,res,url);});
 const day = (date, airport = 'BSB', short = false) => ({date, dayOfWeek:'SYN', type:'CRM', pairingCode:'CRM', dutyReport:short?'11:00':'05:00', dutyDebrief:short?'11:15':'21:00', dutyReportSource:'published',dutyDebriefSource:'published', legs:[], dutyHours:short ? 0.25 : 16, flyingHours:0, isNextDay:false, hotel:null, base:airport, rawText:'SYNTHETIC UI QA ONLY'});
@@ -27,6 +27,8 @@ function seed({theme,kind,amount,history,salaryBase}) {
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
   localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+  // This canonical finance scenario requires the explicitly selected detailed Home.
+  localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa',JSON.stringify({version:1,mode:'standard',order:['summary','finance','next','limits','smart'],visible:['summary','finance','next','limits','smart']}));
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
   localStorage.setItem('crewcheck_demo_mode_seen','1');
   localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
@@ -37,7 +39,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
   if(salaryBase!==undefined)localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_base_brl',String(salaryBase));
   localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
 }
-async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'← Voltar ao resumo',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
 
 
 async function capture(page, name) {
@@ -99,7 +101,7 @@ async function capture(page, name) {
  }
  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await page.locator('.cz-menu-btn').first().click();await page.locator('.cc-menu-destination[data-menu-label="Concierge"]').click();
  await page.getByRole('heading',{name:'Próximas previsões financeiras',exact:true}).waitFor();
- await page.getByText('Resumo parcial: há dados, datas ou valores a conferir no Financeiro.',{exact:true}).waitFor();
+ await page.getByText('Parcial · conferir valores e datas.',{exact:true}).waitFor();
  if(scenario==='multi')await page.locator('.cc-concierge-finance time[datetime="2032-03-01"]').waitFor();
  await capture(page,`canonical-${width}-${scenario}-concierge`);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'capture flow stays within the viewport');

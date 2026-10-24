@@ -1,3 +1,4 @@
+import { requestBlobDownload } from '@/lib/blobDownload';
 export async function v139Api(path: string, options: RequestInit = {}) {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...options });
   const contentType = response.headers.get('content-type') || '';
@@ -11,13 +12,7 @@ export async function v139Api(path: string, options: RequestInit = {}) {
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = 'noopener';
-  anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  requestBlobDownload(blob, fileName);
 }
 
 export function notifyLocal(title: string, body: string) {

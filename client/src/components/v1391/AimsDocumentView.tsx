@@ -1,21 +1,22 @@
 import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { rosterDisplayIso } from '@/lib/rosterDisplayDate';
+import { rosterDisplayIso, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { getStoredUser } from '@/lib/authClient';
 import { AimsRosterTable } from './AimsRosterTable';
 import './aims-document.css';
+import { rosterActivityLabel } from './rosterActivityLabel';
 
 type Event = ComponentProps<typeof AimsRosterTable>['events'][number];
 type Description = { mode: string; label: string };
 const MIN_ZOOM = .01, MAX_ZOOM = 2;
 const bounded = (value: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
-const code = (event: Event) => event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação';
+const code = (event: Event) => rosterActivityLabel(String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação'));
 // Keep source clocks intact: suffixes such as (+1) and explicit unknowns matter.
 const clock = (value?: string) => String(value || '').trim() || '—';
 
 /** Read-only document projection. Array positions identify duplicate IDs without
  * guessing a match, creating events, or using coordinates from a private PDF. */
-export function AimsDocumentView({ events, month, day, describe, focusEventId, onReturnToMonth }: {
-  events: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string; onReturnToMonth?: () => void;
+export function AimsDocumentView({ events, operationalEvents = events, month, day, describe, focusEventId, onReturnToMonth }: {
+  events: Event[]; operationalEvents?: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string; onReturnToMonth?: () => void;
 }) {
   const id = useId(), viewport = useRef<HTMLDivElement>(null), sheet = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | HTMLSelectElement | null>(null);
@@ -27,6 +28,22 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId, o
   const pinch = useRef<{ distance: number; zoom: number; anchor: number; center: number } | null>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const [fit, setFit] = useState(false);
+  // Match the existing civil-date display convention, never the selected day or
+  // the device's timezone. Recheck after suspension as timers may be throttled.
+  const [today, setToday] = useState(() => rosterInstantIso(new Date(), ROSTER_DISPLAY_TIME_ZONE));
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const update = () => {
+      clearTimeout(timer);
+      setToday(rosterInstantIso(new Date(), ROSTER_DISPLAY_TIME_ZONE));
+      timer = setTimeout(update, 60000 - Date.now() % 60000 + 20);
+    };
+    update();
+    window.addEventListener('focus', update);
+    window.addEventListener('pageshow', update);
+    document.addEventListener('visibilitychange', update);
+    return () => { clearTimeout(timer); window.removeEventListener('focus', update); window.removeEventListener('pageshow', update); document.removeEventListener('visibilitychange', update); };
+  }, []);
   const returnPosition = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const dates = useMemo(() => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return [];
@@ -102,7 +119,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId, o
         <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})`, '--doc-width': `calc(${groups.length} * 7.5rem * var(--cc-text-scale, 1) + 24px)`, '--doc-days':groups.length } as React.CSSProperties}>
           {<div className="cc-doc-strip">
             {groups.map(group => <section key={group.iso} className="cc-doc-day" data-roster-iso={group.iso} aria-label={`Dia ${group.iso}`}>
-              <h3><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
+              <h3 aria-current={group.iso === today ? 'date' : undefined}><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
               {group.entries.map(({ event, index }) => { const meta = describe(event); return <div className="cc-doc-entry cc-roster-legend-v1397" key={index}>
                 <span data-mode={meta.mode} className="cc-doc-token"><button type="button" data-roster-event-id={event.id} data-event-index={index} aria-label={`${meta.label}: ${code(event)}, dia ${group.iso}. Abrir detalhes publicados`} aria-expanded={selected === event} onClick={e => open(event, e.currentTarget)}>
                   {meta.mode === 'stay' ? <span className="cc-doc-stay-line">{event.destination || event.origin || '—'} · {sourceStart(event)}–{sourceEnd(event)}</span> : <>
@@ -120,11 +137,11 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId, o
         </div>
       </div>
     </div>
-    {outside.length > 0 && <AimsRosterTable events={outside} showHistory={false} title="Programações sem posição confirmada no documento"/>}
+    {outside.length > 0 && <AimsRosterTable operationalEvents={operationalEvents} events={outside} showHistory={false} title="Programações sem posição confirmada no documento"/>}
     </div>
     {selected && <div className="cc-doc-detail" tabIndex={-1} ref={detail} role="region" aria-label="Dia ampliado" onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
       <button type="button" onClick={close}>← Voltar à escala inteira</button>
-      <AimsRosterTable key={events.indexOf(selected)} events={selectedDayEvents} focusEventIndex={selectedDayEvents.indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
+      <AimsRosterTable operationalEvents={operationalEvents} key={events.indexOf(selected)} showHistory={false} events={selectedDayEvents} focusEventIndex={selectedDayEvents.indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
     </div>}
     <p className="cc-doc-help">Horários e códigos preservados da escala. Campo — indica dado não informado; nenhuma atividade é inferida para os dias vazios. As cores seguem a legenda CrewCheck; os rótulos identificam cada tipo.</p>
   </section>;

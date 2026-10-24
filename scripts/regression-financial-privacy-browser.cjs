@@ -10,7 +10,7 @@ const serverSource=fs.readFileSync(path.resolve('server.mjs'),'utf8');
 const staticAst=ts.createSourceFile('server.mjs',serverSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const staticFunctions=staticAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='serveStatic');
 assert.equal(staticFunctions.length,1,'exactly one production static handler must exist');
-const staticContext=vm.createContext({fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
+const staticContext=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
 vm.runInContext(staticFunctions[0].getText(staticAst)+'\nglobalThis.respond=serveStatic;',staticContext);
 const server=http.createServer((req,res)=>staticContext.respond(req,res,new URL(req.url,'http://localhost')));
 const day = (date, airport = 'BSB', short = false) => ({date, dayOfWeek:'SYN', type:'CRM', pairingCode:'CRM', dutyReport:short?'11:00':'05:00', dutyDebrief:short?'11:15':'21:00', dutyReportSource:'published',dutyDebriefSource:'published', legs:[], dutyHours:short ? 0.25 : 16, flyingHours:0, isNextDay:false, hotel:null, base:airport, rawText:'SYNTHETIC UI QA ONLY'});
@@ -49,9 +49,16 @@ async function checkHidden(page){
  assert(!moneyPattern.test(attrs),'no monetary attributes/tooltips');
  assert.equal(await root.locator('.cc-financial-bar-track').count(),0,'proportional bars are not exposed');
  assert(!moneyPattern.test(await root.ariaSnapshot()),'accessibility tree has no amounts');
- assert.match(await root.textContent(),/Valor oculto|Não calculável|Sem itens previstos/);
+ assert.match(await root.textContent(),/R\$ •••|Não calculável|Sem itens previstos/);
 }
-async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'← Voltar ao resumo',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};
+ // expand() deliberately exposes every details body for privacy assertions,
+ // including this overlay. Dismiss it through its real accessible control
+ // before navigating, just as a user would; never bypass pointer hit testing.
+ const help=root.locator('.cc-payment-help[open]');
+ while(await help.count()){await help.first().locator('summary').click();}
+ assert.equal(await root.locator('.cc-payment-help[open]').count(),0,'forecast help dismissed before financial navigation');
+ await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
 
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
@@ -68,11 +75,11 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);await showFinancial(page,'charts');
   if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);
   const before=await page.locator('.cc-per-diem-content').textContent();
-  const persistedBefore=await page.evaluate(()=>JSON.stringify(localStorage));
+  const persistedBefore=await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>!key.startsWith('crewcheck:financial-privacy:v2:')))));
   const toggle=page.getByRole('button',{name:'Ocultar valores financeiros'}).first();await toggle.focus();await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().waitFor();await checkHidden(page);
   assert.equal(await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().getAttribute('aria-pressed'),'true');
-  assert.equal(await page.evaluate(()=>JSON.stringify(localStorage)),persistedBefore,'display toggle never writes data/settings');
+  assert.equal(await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>!key.startsWith('crewcheck:financial-privacy:v2:'))))),persistedBefore,'display toggle writes only the account/device privacy preference; financial data/settings unchanged');
   if(kind==='domestic')await page.evaluate(()=>scrollTo(0,0));
   if(kind==='domestic')await page.screenshot({path:path.join(out,'hidden-mobile.png'),fullPage:false});
   await page.getByLabel('Filtro financeiro').selectOption('year');await checkHidden(page);await page.getByLabel('Filtro financeiro').selectOption('month');
@@ -86,11 +93,53 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();await checkHidden(page);await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();
   assert.equal(await page.locator('.cc-salary-history').textContent(),salaryBefore,'salary amount round trip is exact');
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
-  if(kind==='domestic'){
+  if(kind==='domestic'||kind==='multi'){
    await showFinancial(page,'payment');const importer=page.locator('.finance-learning-panel');
-   await importer.locator('input[type=file]').setInputFiles({name:'synthetic-payroll.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032','Salario 4321,67','TOTAIS 4321,67 123,45','Liquido 4198,22'])});
+   await importer.locator('input[type=file]').setInputFiles({name:'synthetic-payroll.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032','Salario-base mensal 4321,67','TOTAIS 4321,67 123,45','Liquido 4198,22'])});
    await importer.locator('.finance-learning-review').waitFor();await checkHidden(page);
-   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();assert.match(await importer.locator('table').first().textContent(),/4.321,67/);
+   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();
+   const preview=importer.getByRole('region',{name:'Prévia privada do holerite',exact:true});
+   assert.match(await preview.innerText(),/2032-02/);assert.match(await preview.innerText(),/4.321,67/);assert.match(await preview.innerText(),/Totais impressos conciliados/);
+   assert.match(await preview.innerText(),/Página PDF 1, linha/);assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
+   const storedBeforePreview=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key))));
+   const header=['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032'];
+   for(const [name,lines,expected] of [
+    ['proportional',['Salario-base mensal 3000,00','PROVENTOS','Salario 16 dias 1600,00','DESCONTOS','INSS 100,00','TOTAIS 1600,00 100,00','Liquido 1500,00'],/Proporcional/],
+    ['zero',['Salario-base mensal 0,00','DESCONTOS','INSS 0,00','TOTAIS 0,00 0,00','Liquido 0,00'],/Zero explícito/],
+    ['missing',['PROVENTOS','Adicional 100,00'],/Conciliação indisponível/],
+    ['conflict',['Salario-base mensal 3000,00','Salario-base mensal 4000,00'],/Conflito/],
+    ['mismatch',['Salario-base mensal 3000,00','TOTAIS 3000,00 100,00','Liquido 2800,00'],/Totais impressos divergentes/],
+   ]){
+    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-'+name+'.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,...lines])});
+    await importer.locator('.finance-learning-review').waitFor();assert.match(await preview.innerText(),expected,name);
+    assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
+    assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview,'preview never adopts values: '+name);
+    if(name==='mismatch'){
+     await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
+     assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false,'both consents cannot override proven mismatch');
+     assert.match(await importer.getByRole('alert').innerText(),/Aplicação bloqueada/);
+     assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview,'mismatch with both consents writes nothing');
+    }
+   }
+   await page.screenshot({path:path.join(out,'private-preview-'+width+'.png'),fullPage:true});
+   // Missing totals are unknown, not contradictory and never converted to zero.
+   await importer.locator('input[type=file]').setInputFiles({name:'synthetic-missing-totals.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,'Salario-base mensal 3000,00'])});
+   await preview.waitFor();assert.match(await preview.innerText(),/Conciliação indisponível/);assert.doesNotMatch(await preview.innerText(),/Zero explícito|Totais impressos divergentes/);
+   await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
+   assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),true,'missing totals do not masquerade as proven mismatch');
+   assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview);
+   // A new, corrected document resets consent and can follow normal scoped adoption.
+   await importer.locator('input[type=file]').setInputFiles({name:'synthetic-corrected.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,'Salario-base mensal 3000,00','TOTAIS 3000,00 100,00','Liquido 2900,00'])});
+   await preview.waitFor();assert.match(await preview.innerText(),/Totais impressos conciliados/);
+   assert.equal(await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).isChecked(),false);assert.equal(await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).isChecked(),false);
+   assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
+   await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
+   await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await preview.waitFor({state:'hidden'});
+   const savedRates=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')).rates);
+   assert.equal(savedRates.length,1);assert.equal(savedRates[0].key,'salary.base');assert.equal(savedRates[0].value,3000);
+   assert.equal(savedRates[0].effectiveFrom,'2032-02-01');assert.equal(savedRates[0].effectiveTo,'2032-02-29');assert.equal(savedRates[0].payrollCompetence,'2032-02');
+   assert.equal(savedRates[0].sourceDocument,'synthetic-corrected.pdf');
+
    await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
    await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);
    await showFinancial(page,'payment');const reconciliation=page.locator('.cc-financial-reconciliation');
@@ -109,7 +158,8 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'other-synthetic-account',role:'user'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   assert.equal(await page.getByRole('button',{name:'Mostrar valores financeiros'}).count(),0,'other account does not inherit hidden state');
   await page.reload();await page.locator('.cz-app').waitFor();await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();
-  await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().waitFor();
+  await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().waitFor();
+  await checkHidden(page); // seed restores original owner; its hidden device preference survives reload.
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile layout fits');
   assert.deepEqual(errors,[]);results.push({kind,width,keyboard:true,accessibility:true,roundTrip:true,accountIsolation:true,reload:true});await context.close();
  }

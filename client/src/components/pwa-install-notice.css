@@ -1,0 +1,6 @@
+.cc-pwa-install-notice{bottom:calc(var(--cc-bottom-nav-space,132px) + 8px + env(safe-area-inset-bottom,0px));max-height:calc(100dvh - var(--cc-bottom-nav-space,132px) - 100px - env(safe-area-inset-bottom,0px));overflow:auto;overflow-wrap:anywhere}
+.cc-pwa-install-notice .cc-play-update-actions{flex-wrap:wrap}
+@media(prefers-reduced-motion:reduce){.cc-pwa-install-notice{scroll-behavior:auto}}
+/* This global notice sits outside .cz-app; honor the same persisted preference. */
+.cc-pwa-install-notice.cc-play-update-notice{font-size:calc(14px * var(--cc-text-scale,1))}
+.cc-pwa-install-notice.cc-play-update-notice strong{font-size:calc(15px * var(--cc-text-scale,1))}

@@ -1333,6 +1333,23 @@ export type PublishedDutyLimitSummary = {
   source: string;
 };
 
+/** Read-only reference: a missing release prevents measuring usage, not looking
+ * up the existing B.1 ceiling. Applicability (simple/acclimatized) is conditional. */
+export function getScheduledDutyLimitReference(day: RosterDay, profile?: LegalProfileSummary | null) {
+  if (!day || day.type !== 'VOO' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(day.dutyReport || '') || !day.legs?.length) return null;
+  // The transposed parser uses departure as a placeholder when APZ is absent.
+  if (day.dutyReportSource !== 'published' && minutesOfDay(day.dutyReport) === minutesOfDay(day.legs[0]?.departureTime?.trim().replace(/\s*\(\+\d+\)$/, ''))) return null;
+  const sectors = day.legs.length;
+  const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(day.dutyReport, sectors), profile);
+  const presentationSource = day.dutyReportSource === 'published' ? 'published' : 'estimate';
+  return limit ? {startTime: day.dutyReport!, sectors, maxDutyMinutes: limit.maxDutyHours * 60, presentationSource, source: limit.appliedRule + (presentationSource === 'estimate' ? ' · apresentação estimada; origem publicada não confirmada' : '')} : null;
+}
+
+// Strict reader retains its published-only contract for other consumers.
+export function getPublishedDutyLimitReference(day: RosterDay, profile?: LegalProfileSummary | null) {
+  return day?.dutyReportSource === 'published' ? getScheduledDutyLimitReference(day, profile) : null;
+}
+
 export function getPublishedDutyLimitSummary(day: RosterDay, profile?: LegalProfileSummary | null): PublishedDutyLimitSummary | null {
   if (!day || day.type !== 'VOO') return null;
   const startTime = getFirstOperationalStart(day).time;

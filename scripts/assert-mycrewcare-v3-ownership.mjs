@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { mccChangedPaths } from './ci/mcc-comparison.mjs';
 import { reconcileMyCrewCareLogistics, normalizeMyCrewCareStays } from '../shared/myCrewCareLogistics.mjs';
 import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersistentSession.mjs';
 
 const read = (path) => readFileSync(path, 'utf8');
 const allowed = [
+  'scripts/ci/mcc-comparison.mjs',
+  'scripts/regression-mcc-comparison.mjs',
   // Explicit OFF-only contract/fixture/regression additions; no directory wildcard.
   'docs/mycrewcare-concierge-wake-handoff-off.md',
   'docs/mycrewcare-partial-hotel-review-off.md',
@@ -75,18 +78,11 @@ const allowed = [
 ];
 
 function changedFiles() {
-  try {
-    const base = execFileSync('git', ['merge-base', 'HEAD', 'origin/main'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return execFileSync('git', ['diff', '--name-only', `${base}..HEAD`], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim().split('\n').filter(Boolean);
-  } catch {
-    return [];
-  }
+  return [...mccChangedPaths({
+    baseSha: process.env.CREWCHECK_MCC_BASE_SHA,
+    headSha: process.env.CREWCHECK_MCC_HEAD_SHA,
+    checkoutSha: process.env.CREWCHECK_MCC_CHECKOUT_SHA,
+  })];
 }
 
 const changed = changedFiles();

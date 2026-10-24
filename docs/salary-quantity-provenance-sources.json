@@ -1,0 +1,30 @@
+{
+  "reviewedOn": "2026-10-19",
+  "purpose": "Quantity provenance and tariff-group labels only; no remuneration formula change or automatic account calibration.",
+  "sources": [
+    {
+      "document": "Lei 13.475/2017",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2017/lei/l13475.htm",
+      "findings": "Art.39 distinguishes working-time night definitions: ground22–05 local, flight18–06 contractual-base time. Art.59 concerns remuneration: night flight21–09 UTC, observing legislation, contract and collective instruments. Do not treat ground, working-time and remuneration windows as interchangeable."
+    },
+    {
+      "document": "ACT SNA/TAM comissários 2025/2027",
+      "url": "https://aeronautas.org.br/wp-content/uploads/2025/12/20251208-ACT-Aeronautas-Comissarios-25-27_v9-site.pdf",
+      "validity": "2025-12-01/2027-11-30",
+      "findings": "3.2.6 doubles Sunday/holiday KM and allows a UTC day convention.3.2.8 supplies day/night KM rates with company-established criteria and a work/payroll/payment lag.3.2.11 requires itemized remunerated KM.3.3.13 uses22–05 for ground time between legs at contractual-base time; it does not establish that window for remunerated flight KM. These provisions do not supply a route-by-route KM table or internal precision/rate-allocation method."
+    },
+    {
+      "document": "CCT SNA/SNEA aviação regular 2025/2026",
+      "url": "https://aeronautas.org.br/wp-content/uploads/2026/01/2025.12.30-CCT-25-26-AERONAUTAS-para-site-1.pdf",
+      "validity": "2025-12-01/2026-11-30",
+      "findings": "3.2.6 treats Sunday/holiday flight hours separately and reserves different collective-agreement conditions.3.2.8 uses variable flight-hour remuneration, subject to more favorable conditions; do not replace the specific TAM KM model with this generic hour model.3.3.13 defines22–05 for ground time between legs. No route KM table was identified."
+    }
+  ],
+  "missingCorporateEvidence": [
+    "LATAM/TAM payroll remunerable-KM table by route, equipment/direction where applicable, with effective version/date and source",
+    "Company criteria referenced in ACT3.2.8: remunerated day/night split, time basis, mixed-leg allocation and internal precision",
+    "Company UTC/base calendar convention for Sunday/holiday classification and treatment of overlapping premiums"
+  ],
+  "absenceLimit": "No public corporate table was located; this is not proof that one does not exist. A sample payroll or geographic airport coordinates cannot reconstruct or certify it.",
+  "compatibility": "Existing km/dayKm/nightKm numeric fields retain their values and tariff-bucket meaning. Additive metadata says geographic_estimate/unavailable, confirmedRemunerableKm=null, and base_and_premium_tariff. No physical remunerated-night quantity is invented."
+}

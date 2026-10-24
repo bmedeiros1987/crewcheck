@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { dispatchClaimedJob, safeScheduleJob, safeCancelJob } from '../server/notification-job-safety.mjs';
+import { wakeupSelectionReadiness } from '../shared/wakeupChannelSelection.mjs';
+import { dispatchClaimedJob, safeScheduleJob, safeCancelJob, phoneScheduleCapability } from '../server/notification-job-safety.mjs';
 globalThis.fetch = () => { throw new Error('Network forbidden'); };
 const now = Date.now();
 const makeJob = () => ({ id: 1, email: 'fixture@example.invalid', job_key: 'fixture', status: 'processing', attempts: 1, scheduled_at: new Date(now - 1000), created_at: new Date(now - 20_000), locked_at: new Date(now), channel: 'telegram', chat_id: 'fictional-chat', telegram_username: '', phone: '', message: 'Fixture' });
@@ -66,3 +67,19 @@ for (const status of ['sent', 'cancelled', 'uncertain', 'expired', 'dispatching'
 assert.equal((await request({ cancel: true, existing: { ...initial.saved, status: 'dispatching' } })).res.status, 409);
 assert.equal((await request({ cancel: true, existing: { ...initial.saved, status: 'pending' } })).res.payload.cancelled, 1);
 console.log('Queue safety: fake delivery/DB cancellation races, scope changes, expiry, unknown outcome and repeat requests passed.');
+
+assert.deepEqual(phoneScheduleCapability().available, false);
+assert.equal(phoneScheduleCapability().reason, 'phone_binding_unavailable');
+for (const channel of ['phone-call','phone','infobip','both','all','telegram+phone-call','telegram-call+phone-call','telegram+telegram-call+phone-call']) {
+  const admission = await request({body:{channel,phone:'+12025550123',verified:true,ownerId:'current',phoneBinding:{verified:true}}});
+  assert.equal(admission.res.status,409,channel);
+  assert.equal(admission.res.payload.code,'phone_binding_unavailable');assert.equal(admission.writes,0);
+  const other = await request({ownerId:'another-owner',body:{channel,phone:'+12025550123'}});assert.equal(other.res.status,401);
+  const legacy = await dispatch({job:{channel,phone:'+12025550123',phone_verified:true},repeat:true});
+  assert.equal(legacy.sends,0,channel);assert.equal(legacy.state,'cancelled');assert.equal(legacy.outcome.reason,'phone_binding_unavailable');
+}
+console.log('Phone binding fail-closed: aliases/combinations, forged client proof, cross-owner, legacy/forged job and replay blocked; Telegram baseline preserved; zero provider calls.');
+
+const phoneDecision = wakeupSelectionReadiness(['phone-call'], {phoneCall:phoneScheduleCapability()});
+assert.equal(phoneDecision.ready,false);assert.match(phoneDecision.reason,/falta vínculo de telefone verificado no servidor/);
+assert.equal(wakeupSelectionReadiness(['phone-call'],{phoneCall:{available:true}}).ready,false,'client capability cannot activate voice');

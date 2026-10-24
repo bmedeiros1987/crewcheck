@@ -14,3 +14,16 @@
 @media(max-height:640px){.cc-stay-editor-header .cc139-head p{display:none}.cc-stay-editor-header .cc139-brand{margin-bottom:6px}}
 .cc-stay-editor-anchor{width:100%;min-width:0}
 .cc-stay-editor{z-index:800;background:var(--cc-review-surface,#0c1d34)}
+.cc-stay-screenshot{margin-block:16px;padding:12px;border:1px solid currentColor;border-radius:12px;min-width:0}
+.cc-stay-screenshot img{display:block;max-width:100%;max-height:320px;object-fit:contain;margin-block:12px}
+.cc-stay-screenshot fieldset{min-width:0;margin-block:12px;padding:0;border:0}
+.cc-stay-screenshot legend label{display:flex;align-items:center;gap:8px;margin:0}
+.cc-stay-screenshot input[type=checkbox]{width:18px;height:18px;min-height:18px;margin:0;padding:0;flex:none}
+.cc-stay-screenshot input[type=checkbox]:focus-visible,.cc-stay-screenshot summary:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+.cc-stay-screenshot label,.cc-stay-transport label{display:block;margin-block:8px;overflow-wrap:anywhere}
+.cc-stay-screenshot input:not([type=checkbox]),.cc-stay-transport input{display:block;width:100%;max-width:100%;min-height:40px}
+.cc-stay-screenshot button{min-height:44px;margin:4px;max-width:100%}
+/* Consent copy must not inherit the legacy globally muted paragraph palette. */
+.cc-stay-editor .cc-stay-editor-content .cc-stay-screenshot p{overflow-wrap:anywhere;color:inherit!important;opacity:1}
+/* Keep new OCR labels readable instead of inheriting legacy muted form labels. */
+.cc-stay-editor .cc-stay-editor-content .cc-stay-screenshot label{color:var(--cc-text,#163047)!important;opacity:1}

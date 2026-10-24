@@ -10,7 +10,7 @@ const serverSource=fs.readFileSync(path.resolve('server.mjs'),'utf8');
 const staticAst=ts.createSourceFile('server.mjs',serverSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const staticFunctions=staticAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='serveStatic');
 assert.equal(staticFunctions.length,1,'exactly one production static handler must exist');
-const staticContext=vm.createContext({fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
+const staticContext=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
 vm.runInContext(staticFunctions[0].getText(staticAst)+'\nglobalThis.respond=serveStatic;',staticContext);
 const server=http.createServer((req,res)=>staticContext.respond(req,res,new URL(req.url,'http://localhost')));
 const day = (date, airport = 'BSB', short = false) => ({date, dayOfWeek:'SYN', type:'CRM', pairingCode:'CRM', dutyReport:short?'11:00':'05:00', dutyDebrief:short?'11:15':'21:00', dutyReportSource:'published',dutyDebriefSource:'published', legs:[], dutyHours:short ? 0.25 : 16, flyingHours:0, isNextDay:false, hotel:null, base:airport, rawText:'SYNTHETIC UI QA ONLY'});
@@ -36,17 +36,19 @@ function seed({theme,kind,amount,history,salaryBase}) {
   // they are not ACT rules, copied statement figures or a production tariff.
   for(const key of ['domestic','north_america','mexico','south_america_caribbean','argentina','chile','england','europe','africa','other_international'])localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_perdiem_rate_'+key,String(amount));
   if(history)localStorage.setItem('crewcheck_local_history_v11_financial-ui-qa',JSON.stringify(history));
-  if(salaryBase!==undefined)localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_base_brl',String(salaryBase));
+  if(salaryBase!==undefined){localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_base_brl',String(salaryBase));localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_fixed_additions_brl','0');} // Explicit synthetic zero; absence remains unknown.
   localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
 }
 async function settle(page) {
- await page.evaluate(async()=>{
-  await document.fonts.ready;
-  const finite=document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime));
-  await Promise.allSettled(finite.map(animation=>animation.finished));
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
- });
+ // Observe current animation state instead of awaiting captured `finished`
+ // promises: replaced/replayed UI animations can leave those promises pending.
+ await page.waitForFunction(()=>document.fonts.status==='loaded'&&
+  document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime))
+   .every(animation=>animation.playState==='finished'||animation.playState==='idle'),
+  null,{timeout:10000});
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 }
+
 async function measureMoney(page) {
  return page.evaluate(()=>{
   const violations=[],amounts=[],intersections=[],splitAmounts=[],splitCurrencyTokens=[];
@@ -98,7 +100,7 @@ async function contrast(page) {
   return results;
  });
 }
-async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'← Voltar ao resumo',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
 
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
@@ -153,7 +155,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    if(label==='desktop'&&kind==='domestic') {
     for(const month of [1,3]){
      await page.evaluate(payload=>{const value=JSON.stringify({owner:'financial-ui-qa',roster:payload,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic selected period'});localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',value);window.dispatchEvent(new StorageEvent('storage',{key:'crewcheck_roster_choice_v1_financial-ui-qa',newValue:value}));},roster('domestic',month));
-     await page.waitForFunction(m=>document.querySelector('[aria-label="Competência de referência"]')?.value==='2032-'+String(m).padStart(2,'0'),month);
+     await page.waitForFunction(m=>document.querySelector('[aria-label="Competência de referência"]')?.value==='2032-'+String(m).padStart(2,'0'),month).catch(async error=>{console.error('ROSTER MONTH DEBUG',page.url(),await page.locator('.cc-per-diem-content').innerText());throw error;});
      await page.waitForFunction(prefix=>Array.from(document.querySelectorAll('[data-financial-iso]')).length>0&&Array.from(document.querySelectorAll('[data-financial-iso]')).every(e=>e.dataset.financialIso.startsWith(prefix)),'2032-'+String(month).padStart(2,'0'));
      assert.equal(await rows.count(),2,'actual owner selection updates visible monthly items');
     }
@@ -208,7 +210,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    assert.equal(await page.locator('.cc-financial-bar-track').count(),0,'one partial period cannot be a100% comparison bar');assert.equal(await page.locator('[data-financial-iso]').count(),2);assert.match(await page.locator('.cc-financial-bars').innerText(),/200,00/,'graph and selected detail use the same interval');await page.getByLabel('Agrupamento do gráfico',{exact:true}).selectOption('month');const clipped=page.locator('.cc-financial-bars>button').first();assert.match(await clipped.innerText(),/recorte parcial/);await clipped.click();assert.equal(await page.getByLabel('Filtro financeiro',{exact:true}).inputValue(),'custom');assert.equal(await page.getByLabel('Início financeiro',{exact:true}).inputValue(),'2032-02-10');assert.equal(await page.getByLabel('Fim financeiro',{exact:true}).inputValue(),'2032-02-10');assert.equal(await page.locator('[data-financial-iso]').count(),2,'partial monthly click preserves exact contributing rows');
    await page.getByLabel('Início financeiro',{exact:true}).fill('2032-02-11');await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary')?.textContent.includes('Não calculável'));
    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-salary-history').waitFor();await showFinancial(page,'statement');await settle(page);
-   assert.match(await page.locator('.cc-per-diem-summary').textContent(),/900,00/);await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('week');await settle(page);
+   assert.match(await page.locator('.cc-per-diem-summary').textContent(),/Não calculável/,'manual base alone does not prove full variable inventory');await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('week');await settle(page);
    assert.match(await page.locator('.cc-per-diem-summary').textContent(),/Não calculável/,'monthly salary is not prorated into a week');
    await page.screenshot({path:path.join(out,theme+'-history-'+width+'-salary-week.png')});
    assert.equal(await page.locator('.cc-per-diem-competence').count(),0,'reference competence must not masquerade as the selected work interval');
@@ -240,10 +242,10 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();
    assert.match(await importer.locator('.finance-learning-review').innerText(),/2032-01-28 até 2032-02-03/);
    assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isDisabled(),true,'document review requires owner confirmation');
-   await importer.locator('input[type=checkbox]').check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
+   await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
    const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')));
    assert.equal(stored.ownerId,'financial-ui-qa');assert.equal(stored.rates.length,1);assert.equal(stored.rates[0].effectiveTo,'2032-02-03');
-   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();await importer.locator('input[type=checkbox]').check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
+   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')).rates.length),1,'actual repeat import deduplicates');
    await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();
    await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'different-admin',name:'OTHER SYNTHETIC',role:'admin'}));localStorage.setItem('crewcheck_auth_token','other-synthetic');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
@@ -256,11 +258,11 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
    const march={...roster('domestic',3),days:[day('01/03/2032')]};
    await context.addInitScript(seed,{theme:'light',kind:roster('domestic'),amount:100,history:[{id:'local-fixed-march',checksum:'synthetic-fixed-march',createdAt:'2032-03-02T00:00:00Z',roster:march,sourceFileName:'Synthetic March'}]});
-   await context.addInitScript(()=>{const source={ownerId:'financial-ui-qa',currency:'BRL',sourceDocument:'synthetic-payroll.pdf',sourceFingerprint:'synthetic-separated-competences',confidence:'high',valueOrigin:'printed',confirmed:true,revision:1,payrollCompetence:'2032-03',cycleSource:'user-reported-absa-tam'};localStorage.setItem('crewcheck_financial_learned_rates_v2:financial-ui-qa',JSON.stringify({version:2,ownerId:'financial-ui-qa',rates:[{...source,key:'salary.base',label:'Synthetic base',unit:'month',value:2400,effectiveFrom:'2032-03-01',effectiveTo:'2032-03-31'},{...source,key:'salary.dayKm',label:'Synthetic variable',unit:'km',value:.07,effectiveFrom:'2032-02-01',effectiveTo:'2032-02-29'}]}));});
+   await context.addInitScript(()=>{localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_fixed_additions_brl','0');const source={ownerId:'financial-ui-qa',currency:'BRL',sourceDocument:'synthetic-payroll.pdf',sourceFingerprint:'synthetic-separated-competences',confidence:'high',valueOrigin:'printed',confirmed:true,revision:1,payrollCompetence:'2032-03',cycleSource:'user-reported-absa-tam'};localStorage.setItem('crewcheck_financial_learned_rates_v2:financial-ui-qa',JSON.stringify({version:2,ownerId:'financial-ui-qa',rates:[{...source,key:'salary.base',label:'Synthetic base',unit:'month',value:2400,effectiveFrom:'2032-03-01',effectiveTo:'2032-03-31'},{...source,key:'salary.dayKm',label:'Synthetic variable',unit:'km',value:.07,effectiveFrom:'2032-02-01',effectiveTo:'2032-02-29'}]}));});
    const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-salary-history').waitFor();await showFinancial(page,'statement');await page.waitForFunction(()=>document.querySelector('[aria-label="Competência de referência"]')?.options.length===2);
    assert.match(await page.locator('.cc-per-diem-summary').textContent(),/Não calculável/,'February operational variables cannot consume the March fixed base');
    const details=page.locator('.cc-salary-history details').filter({has:page.locator('summary').filter({hasText:'Composição mensal'})});await showFinancial(page,'payment');await details.locator(':scope>summary').click();assert.match(await details.innerText(),/Salário-base: Não informado/);assert.match(await details.innerText(),/Variáveis operacionais:2032-02|Variáveis operacionais: 2032-02/);
-   await showFinancial(page,'statement');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-03');await showFinancial(page,'payment');await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary')?.textContent.includes('2.400,00'));assert.match(await details.innerText(),/Salário-base: R\$\s*2\.400,00/);
+   await showFinancial(page,'statement');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-03');await showFinancial(page,'payment');await page.waitForFunction(()=>document.querySelector('.cc-salary-history')?.textContent.includes('2.400,00'));assert.match(await details.innerText(),/Salário-base: R\$\s*2\.400,00/);assert.match(await page.locator('.cc-per-diem-summary').textContent(),/Não calculável/,'source-confirmed base remains separate from incomplete gross');
    await page.screenshot({path:path.join(out,'fixed-base-once-'+width+'.png')});historyResults.push({scenario:'one-fixed-base-separated-from-operational-variables',width,synthetic:true});await context.close();
   }
   for (const width of [320,1440]) for(const theme of ['light','dark']) for(const size of [150,200]) {

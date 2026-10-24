@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/pulse/**'
       - 'client/src/components/alerts/**'
       - 'client/src/components/v1391/RosterLaunchView.tsx'
@@ -49,6 +52,15 @@ jobs:
         run: node scripts/regression-p1-546-pulse-foundation.mjs
       - name: Validate Pulse live queue and notifications
         run: node scripts/regression-p1-546-pulse-live.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/pulse-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -56,7 +68,10 @@ jobs:
       - name: Account review and integrated header browser regression
         env:
           PULSE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/pulse-browser/package.json
-        run: node scripts/regression-pulse-alert-experience.mjs
+        run: |
+          node scripts/regression-pulse-alert-experience.mjs
+          node scripts/regression-pulse-alert-experience.mjs --case=header-close
+          node scripts/regression-pulse-alert-experience.mjs --case=mark-standard
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Build web

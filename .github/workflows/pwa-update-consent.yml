@@ -1,0 +1,89 @@
+name: Explicit PWA update consent
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'client/src/lib/pwaUpdateCoordinator.ts'
+      - 'client/src/components/PwaUpdateNotice.tsx'
+      - 'client/src/components/NativePlayUpdateNotice.tsx'
+      - 'client/src/components/pwa-update-notice.css'
+      - 'client/public/sw.js'
+      - 'vite.config.ts'
+      - 'server/static-html-guard.mjs'
+      - 'scripts/v1426/apply.mjs'
+      - 'scripts/regression-pwa-canonical-static.mjs'
+      - 'scripts/regression-pwa-worker-build-scope.mjs'
+      - 'scripts/ci/stamp-service-worker-build.mjs'
+      - 'scripts/regression-pwa-update-*.mjs'
+      - 'scripts/regression-pwa-cache-retirement-guards.mjs'
+      - 'scripts/regression-pwa-private-runtime*.mjs'
+      - '.github/workflows/pwa-update-consent.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/update-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/update-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Raw explicit consent, failure and real worker contracts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json
+          PLAY_UPDATE_EVIDENCE_DIR: ${{ runner.temp }}/pwa-play-update-evidence
+        run: |
+          node scripts/regression-pwa-update-failures.mjs
+          node scripts/regression-pwa-update-consent.mjs
+          node scripts/regression-pwa-update-cache-lifecycle.mjs
+          node scripts/regression-pwa-cache-retirement-guards.mjs
+          node scripts/regression-pwa-private-runtime.mjs
+          node scripts/regression-pwa-private-runtime-browser.mjs
+          node scripts/regression-native-play-update-ui.cjs
+          node scripts/regression-mobile-pwa-safe-update.mjs
+          node scripts/regression-sw-version-sync.mjs
+      - name: Canonical build including served worker fingerprint
+        run: |
+          node scripts/v139/apply.mjs
+          npx tsc --noEmit
+          npx vite build
+      - name: Canonical startup preparation and actual served HTML parity
+        run: node scripts/regression-pwa-canonical-static.mjs
+      - name: Preserve production seal across SSR and library builds
+        run: |
+          node scripts/regression-pwa-worker-build-scope.mjs
+          node scripts/regression-p1-journey-identity-client-parity.mjs
+      - name: Prepared contracts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json
+          PLAY_UPDATE_EVIDENCE_DIR: ${{ runner.temp }}/pwa-play-update-evidence
+        run: |
+          node scripts/regression-pwa-update-failures.mjs
+          node scripts/regression-pwa-update-consent.mjs
+          node scripts/regression-pwa-update-cache-lifecycle.mjs
+          node scripts/regression-pwa-cache-retirement-guards.mjs
+          node scripts/regression-pwa-private-runtime.mjs
+          node scripts/regression-pwa-private-runtime-browser.mjs
+          node scripts/regression-native-play-update-ui.cjs
+          node scripts/regression-mobile-pwa-safe-update.mjs
+          node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs

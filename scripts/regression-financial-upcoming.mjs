@@ -6,7 +6,11 @@ const now = new Date('2032-12-20T12:00:00Z');
 const record = (id, fields = {}) => ({ id: id.toString(16).padStart(64, '0'), ownerId: identity.ownerId,
   revision: 1, category: 'allowance', aggregationLevel: 'item', periodStart: '2032-12-01', periodEnd: '2032-12-01',
   sourceId: 'synthetic-' + id, timezone: 'UTC', ruleVersion: 'reviewed-synthetic', currency: 'USD', amountMinor: 12345,
-  status: 'forecast', expectedPaymentDate: '2032-12-21', expectedPaymentTimezone: 'UTC', ...fields });
+  status: 'forecast', expectedPaymentDate: '2032-12-21', expectedPaymentTimezone: 'UTC', ...fields,
+  ...((fields.currency || 'USD') !== 'BRL' && (fields.category || 'allowance') === 'allowance' ? {
+    flightDate: fields.expectedPaymentDate === undefined && !Object.hasOwn(fields,'expectedPaymentDate') ? '2032-12-21' : fields.expectedPaymentDate,
+    flightDateTimezone: fields.expectedPaymentTimezone || 'UTC', flightAirport: 'EZE', timingRuleId: 'synthetic-owner-rule',
+  } : {}) });
 const read = records => query({ identity, records, now });
 assert.equal(query({ identity: { authenticated: false }, records: [record(1)], now }).access, 'denied');
 assert.equal(read([]).state, 'no_data');
@@ -16,7 +20,7 @@ assert.equal(read([record(8, { expectedPaymentDate: '2033-02-21', amountMinor: n
 assert.equal(read([record(8, { expectedPaymentDate: '2031-12-21', amountMinor: 'invalid' }), record(9)]).state, 'available', 'rejected historical record is scoped outside horizon');
 let result = read([record(1), record(2, { ownerId: 'b@example.invalid', amountMinor: 999999 })]);
 assert.equal(result.events.length, 1); assert(!JSON.stringify(result).includes('999999'));
-assert(!JSON.stringify(result).includes('sourceId')); assert(!JSON.stringify(result).includes('history'));
+assert.equal(result.events[0].sourceId, record(1).sourceId); assert.equal(result.events[0].revision, 1); assert(!JSON.stringify(result).includes('history'));
 const multi = [record(1), record(2, { currency: 'JPY', amountMinor: 500, expectedPaymentDate: '2032-12-22' }),
   record(3, { currency: 'KWD', amountMinor: 1234, expectedPaymentDate: '2032-12-23' }), record(4, { expectedPaymentDate: '2032-12-24' })];
 result = read(multi); assert.equal(result.events.length, 3); assert.equal(result.hasMore, true);
@@ -39,7 +43,7 @@ result = read([record(1), record(2, { aggregationLevel: 'week', periodStart: '20
 assert.equal(result.state, 'incomplete'); assert.equal(result.events.length, 0, 'overlapping aggregation levels never double count');
 result = read([record(1), record(2, { aggregationLevel: 'week', periodStart: '2032-12-01', periodEnd: '2032-12-07', status: 'payment_confirmed', paymentDate: '2032-12-20', evidence: { kind: 'settlement', reference: 'synthetic-only' } })]);
 assert.equal(result.events.length, 0, 'settled aggregate cannot leave an overlapping finer forecast presented as a new payment');
-result = read([record(1), record(2, { aggregationLevel: 'week', periodStart: '2032-12-08', periodEnd: '2032-12-14' })]);
+result = read([record(1, { currency: 'BRL' }), record(2, { currency: 'BRL', aggregationLevel: 'week', periodStart: '2032-12-08', periodEnd: '2032-12-14' })]);
 assert.equal(result.events.length, 2, 'nonoverlapping levels remain separate');
 const monthly = record(9, { category: 'vacation', aggregationLevel: 'month', periodStart: '2033-01-01', periodEnd: '2033-01-31', amountBasis: 'net_credit', currency: 'BRL', expectedPaymentDate: '2033-01-04' });
 assert.equal(read([monthly]).events[0].category, 'vacation', 'full competence outside 30-day window still considered by payment date');

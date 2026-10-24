@@ -237,8 +237,12 @@ export function currentCrewCheckPulseState(): PulseSessionState {
   return runtimeState;
 }
 
-export function dismissCrewCheckPulse(): boolean {
+export function dismissCrewCheckPulse(expectedMessage?: CrewCheckPulseMessage): boolean {
   const message = runtimeState.message;
+  // A second click from the old render must never acknowledge its successor,
+  // a newer material revision, or an occurrence from another account.
+  if (expectedMessage && expectedMessage !== message) return true;
+  if (!message || message.dismissible === false || message.account !== alertAccount()) return false;
   const saved = Boolean(message?.review && saveAlertReview({ ...message.review, state: 'dismissed', title: message.title, category: message.category }, message.account || null));
   stopCrewCheckNotificationSound();
   if (!saved && message?.account) return false;

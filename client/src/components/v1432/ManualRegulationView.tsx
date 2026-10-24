@@ -1,4 +1,7 @@
+import type {CanonicalRosterEvent} from '@/lib/canonicalRoster';
+import type {LegalProfileSummary} from '@/lib/actRules';
 import RegulationScenarioView from '@/components/regulation/RegulationScenarioView';
+import type {RegulationOperationalArrivalInput} from '@/components/regulation/RegulationScenarioView';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Calculator, CheckCircle2, Clock3, Plane, RotateCcw, ShieldCheck } from 'lucide-react';
 import '../v1392/v1392.css';
@@ -212,7 +215,7 @@ export function regulationForScheduleDay(day?: ScheduleDayLike | null): DayRegul
   };
 }
 
-function LegacyManualRegulationView({ compliance, scheduleDay }: { compliance?: ComplianceLike; scheduleDay?: ScheduleDayLike | null }) {
+function LegacyManualRegulationView({ compliance, scheduleDay }: { compliance?: ComplianceLike & {legalProfile?:LegalProfileSummary}; scheduleDay?: ScheduleDayLike | null; program?:CanonicalRosterEvent|null }) {
   const [form, setForm] = useState<FormState>(loadForm);
   const [sectorsDraft, setSectorsDraft] = useState(() => String(form.sectors));
   const validSectorsDraft = /^[1-9]$/.test(sectorsDraft);
@@ -325,4 +328,4 @@ function LegacyManualRegulationView({ compliance, scheduleDay }: { compliance?: 
 }
 
 // New read-only scenario UI; legacy helpers remain unchanged for canonical callers.
-export default function ManualRegulationView(props: { compliance?: ComplianceLike; scheduleDay?: ScheduleDayLike | null }) { return <RegulationScenarioView {...props}/>; }
+export default function ManualRegulationView(props: { compliance?: ComplianceLike & {legalProfile?:LegalProfileSummary}; scheduleDay?: ScheduleDayLike | null; program?:CanonicalRosterEvent|null;operationalArrival?:RegulationOperationalArrivalInput|null }) { return <RegulationScenarioView {...props}/>; }

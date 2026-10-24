@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/styles/**'
       - 'client/src/components/preferences/**'
       - 'shared/timezone-choice*'
@@ -14,6 +15,9 @@ on:
       - 'client/src/components/MoneyText.tsx'
       - 'scripts/regression-financial-ui-browser.cjs'
       - 'scripts/regression-ui-reading-overlays.cjs'
+      - 'scripts/regression-quick-roster-cards-browser.mjs'
+      - 'client/src/components/v1391/HomeRosterPreview.tsx'
+      - 'client/src/components/v1391/home-roster-preview.css'
       - 'scripts/regression-fixed-navigation-headers.cjs'
       - 'scripts/regression-pulse-content-space.cjs'
       - 'scripts/fixed-navigation-headers.mjs'
@@ -29,6 +33,7 @@ on:
       - 'android-wrapper/app/src/main/res/**'
       - 'client/src/components/navigation/InternalHeaderFrame.tsx'
       - 'client/src/components/v1391/HomeLayoutShell.tsx'
+      - 'client/src/components/v1391/home-layout.css'
       - 'client/src/components/v1391/MenuPersonalization.tsx'
       - 'scripts/v14387d/apply.mjs'
       - 'scripts/p1-home-layout/apply.mjs'
@@ -58,6 +63,8 @@ on:
       - 'scripts/regression-menu-favorites-interaction.mjs'
       - 'scripts/regression-shell-navigation-browser.mjs'
       - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - '.github/workflows/mobile-menu-responsive.yml'
   workflow_dispatch:
 
@@ -105,6 +112,16 @@ jobs:
           npx vite build
       - name: Verify approved PR936 art, offline aliases and Android resource inputs
         run: node scripts/regression-approved-brand-assets.mjs
+      # Azure can trickle APT archives for the entire job timeout. Keep the
+      # runner's existing signed HTTPS Ubuntu fallbacks; no test/gate changes.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/menu-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -138,6 +155,11 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-fixed-navigation-headers.cjs
+      - name: Verify quick roster card presentation with synthetic events
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
+        run: node scripts/regression-quick-roster-cards-browser.mjs
       - name: Verify normal content canvas with long expanded Pulse
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -175,6 +197,7 @@ jobs:
             artifacts/favorite-editor-app
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
+            artifacts/quick-roster-cards
             artifacts/pulse-content-space
             artifacts/menu-density
             artifacts/brand-footer
