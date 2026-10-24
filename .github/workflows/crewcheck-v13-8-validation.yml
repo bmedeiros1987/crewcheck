@@ -183,6 +183,7 @@ jobs:
           node scripts/regression-web-push-api.mjs
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
           node scripts/regression-free-day-source-queue.mjs
@@ -233,6 +234,7 @@ jobs:
           node scripts/regression-web-push-api.mjs
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
           node scripts/regression-free-day-source-queue.mjs

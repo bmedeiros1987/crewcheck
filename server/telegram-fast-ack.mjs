@@ -1,3 +1,4 @@
+import { sendInfobipWakeupCall } from './wakeup-call-delivery.mjs';
 import { runTelegramBriefingCycle, handleTelegramBriefingConsent } from './concierge/telegram-briefing.mjs';
 import { handleNotificationDiagnostic } from './notification-diagnostic.mjs';
 import { runCrewCheckPushQueue } from './web-push/bidsProducer.mjs';
@@ -171,19 +172,7 @@ async function recordSchedulerHeartbeat(db, patch) {
 }
 
 async function sendInfobipPhone(phone, message) {
-  const request = buildInfobipTtsRequest({ phone, text: message });
-  if (!request.ok) return request;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(request.url, {
-      method: 'POST', headers: request.headers, body: JSON.stringify(request.body), signal: controller.signal,
-    });
-    const raw = await response.text().catch(() => '');
-    return { ok: response.ok, configured: true, provider: 'infobip', status: response.status, raw: raw.slice(0, 500) };
-  } catch (error) {
-    return { ok: false, configured: true, provider: 'infobip', raw: error?.name === 'AbortError' ? 'Tempo limite na ligação.' : String(error?.message || 'Falha Infobip.') };
-  } finally { clearTimeout(timer); }
+  return sendInfobipWakeupCall({ phone, text: message });
 }
 
 async function deliverJob(job) {

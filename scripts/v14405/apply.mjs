@@ -55,6 +55,17 @@ let fastAfter = replaceOnce(
 import { handleInfobipCallsEvent, infobipElevenLabsAudioEnabled, startInfobipElevenLabsCall } from './v14405/infobip-elevenlabs.mjs';`,
   'import ElevenLabs no scheduler',
 );
+if (fastAfter.includes('return sendInfobipWakeupCall({ phone, text: message });')) {
+  fastAfter = replaceOnce(fastAfter,
+    '  return sendInfobipWakeupCall({ phone, text: message });',
+    `  if (infobipElevenLabsAudioEnabled()) {
+    const privateCall = await startInfobipElevenLabsCall(phone, message);
+    // A lost ACK must not fall through into another paid call.
+    if (privateCall.configured) return { ...privateCall, uncertain: !privateCall.ok, delivered: null };
+  }
+  return sendInfobipWakeupCall({ phone, text: message });`,
+    'one-attempt private audio policy');
+} else {
 fastAfter = replaceOnce(
   fastAfter,
   `  const controller = new AbortController();
@@ -67,7 +78,8 @@ fastAfter = replaceOnce(
   const timer = setTimeout(() => controller.abort(), 15_000);`,
   'audio ElevenLabs no scheduler',
 );
-fastAfter = replaceOnce(
+
+}fastAfter = replaceOnce(
   fastAfter,
   `    try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);`,
