@@ -12,14 +12,17 @@ import {fixture,sender,recipient,other,epoch,secrets} from './fixtures/infobip-p
 globalThis.fetch=()=>assert.fail('EXTERNAL_NETWORK_FORBIDDEN');
 const hash=s=>createHash('sha256').update(s).digest('hex'),owner='synthetic-owner',ownerKey=hash(owner),baseUrl='https://synthetic.api.infobip.com',publicOrigin='https://crewcheck.example.invalid';
 function setup(){
- const {state,db}=fixture();let engine=0,sends=0;const seen=[];
+ const {state,db}=fixture();let engine=0,sends=0,engineEffect=()=>{};const seen=[];
  const admission={enabled:true,version:1,approvalId:'synthetic-specific-beta-approval',programId,ownerAccountKey:ownerKey,sender,recipient,validFrom:epoch-1000,validUntil:epoch+7*86400000,maxReplies:2,maxCreditMicroUsd:24000,monthlyBudgetMicroUsd:20000000};
  const configuration={promotionalBeta:true,sender,baseUrl,allowedSenders:[sender],allowedBaseUrls:[baseUrl],authentication:'hmac-sha256',credentialReferences:{apiKey:'fixture/api',encryptionKey:'fixture/content',linkHashKey:'fixture/link',webhookSecret:'fixture/webhook'},deploymentBinding:{profileId:'synthetic-profile',subscriptionIds:['synthetic-subscription'],sender,baseUrl,publicOrigin,linkHashKeyReference:'fixture/link'}};
  const policy={version:1,mode:'promotional-beta-v1',maxCostUsd:'0.024',configuration,admission};
  state.rows.set(key('account',[programId,ownerKey]),{v:1,kind:'account-credit',accountKey:ownerKey,availableMicroUsd:24000,reservedMicroUsd:0,grantApprovalId:admission.approvalId,grantManifest:promotionalGrantManifest({...admission,amountMicroUsd:24000}),validFrom:admission.validFrom,expiresAt:admission.validUntil});
+ const manifest=promotionalGrantManifest({...admission,amountMicroUsd:24000});
+ state.rows.set(key('grant-authorization',[admission.approvalId]),{v:1,kind:'promotional-grant-authorization',status:'approved',manifest,approvedAt:epoch-2000});
+ state.rows.set(key('grant-receipt',[admission.approvalId]),{v:1,kind:'promotional-grant-receipt',state:'granted',manifest});
  state.rows.set(key('global',[programId,'2032-01']),{v:1,kind:'global-credit',period:'2032-01',budgetMicroUsd:20000000,knownSpentMicroUsd:4000000,reservedMicroUsd:0,reconciled:true,reconciledAt:epoch});
  const tariffKey=key('tariff',[programId,sender,'BR','service-text']);state.rows.set(tariffKey,{v:1,kind:'verified-tariff',channel:'whatsapp',currency:'USD',country:'BR',sender,recipientHash:createHmac('sha256',secrets.linkHashKey).update(recipient).digest('hex'),category:'service-text',sourceId:'synthetic-pricing-evidence',evidenceSha256:'a'.repeat(64),verifiedAt:epoch,validUntil:epoch+60000,unitMicroUsd:12000,setupMicroUsd:0,markupMicroUsd:0});
- configureWhatsAppConcierge(async input=>{engine++;seen.push(input.text);assert(isConciergeConversationWritesOnly({email:input.email}),'canonical invocation is inside conversation-writes-only scope');return 'SYNTHETIC OWN ROSTER';});
+ configureWhatsAppConcierge(async input=>{engine++;seen.push(input.text);engineEffect();assert(isConciergeConversationWritesOnly({email:input.email}),'canonical invocation is inside conversation-writes-only scope');return 'SYNTHETIC OWN ROSTER';});
  const options={enabled:true,configuration,admission,db,now:()=>state.clock,ingress:{mode:'direct-tls',publicOrigin},credentials:{resolve:async(_ref,{purpose})=>secrets[purpose]},scheduler:{set:()=>1,clear(){}},request:async(_url,{body})=>{sends++;const m=JSON.parse(body);assert.equal(m.to,recipient);return new Response(JSON.stringify({to:m.to,messageId:m.messageId,status:{groupId:1,groupName:'PENDING',id:26,name:'PENDING_ACCEPTED'}}));}};
  const eventKey=id=>hash(JSON.stringify(['infobip-inbound-v1',sender,id]));
  async function route(runtime,id,text,{validHmac=true,from=recipient}={}){
@@ -27,7 +30,7 @@ function setup(){
   const req=Readable.from([rawBody]);Object.assign(req,{method:'POST',rawHeaders:['x-hub-signature','SHA256='+(validHmac?createHmac('sha256',secrets.webhookSecret).update(rawBody).digest('hex'):'0'.repeat(64))],headers:{host:new URL(publicOrigin).host,'content-type':'application/json'},socket:{encrypted:true}});
   const res={writeHead(n){this.status=n;},end(){this.writableEnded=true;}};await runtime.handleRoute(req,res,new URL('/api/infobip/whatsapp/webhook',publicOrigin));return res.status;
  }
- return {policy,options,state,tariffKey,route,eventKey,stats:()=>({engine,sends,seen})};
+ return {policy,options,state,tariffKey,route,eventKey,stats:()=>({engine,sends,seen}),setEngineEffect:fn=>engineEffect=fn};
 }
 {
  const f=setup();assert.equal(validateInfobipRestrictedPolicy(f.policy),f.policy);
@@ -42,8 +45,13 @@ function setup(){
  }finally{await runtime.dispose();}
  const restarted=await createInfobipWhatsAppProduction(f.options);try{await f.route(restarted,'four','menu');await restarted.dispatch(f.eventKey('four'));assert.equal(f.stats().sends,2);}finally{await restarted.dispose();}
 }
-for(const issue of ['missing-grant','stale-tariff','future-tariff','wrong-owner','revoked','wrong-target','grant-scope']){
+for(const issue of ['missing-grant','stale-tariff','future-tariff','wrong-owner','revoked','wrong-target','grant-scope','approval-revoked']){
  const f=setup();if(issue==='missing-grant')f.state.rows.delete(key('account',[programId,ownerKey]));if(issue==='stale-tariff')f.state.rows.get(f.tariffKey).verifiedAt=epoch-900001;if(issue==='future-tariff')f.state.rows.get(f.tariffKey).verifiedAt=epoch+1;if(issue==='wrong-owner')f.state.owner='synthetic-other';if(issue==='revoked')f.state.link.consent_concierge=0;if(issue==='wrong-target')f.state.rows.get(f.tariffKey).recipientHash='b'.repeat(64);if(issue==='grant-scope')f.state.rows.get(key('account',[programId,ownerKey])).grantManifest='c'.repeat(64);
+ if(issue==='approval-revoked')f.state.rows.get(key('grant-authorization',[f.policy.admission.approvalId])).status='revoked';
  const runtime=await createInfobipWhatsAppProduction(f.options);try{await f.route(runtime,issue,'qual minha próxima jornada?');await runtime.dispatch(f.eventKey(issue));assert.equal(f.stats().engine,0,issue);assert.equal(f.stats().sends,0,issue);}finally{await runtime.dispose();}
+}
+for(const effect of ['revoke-approval','raise-price','expire-price']){
+ const f=setup();f.setEngineEffect(()=>{if(effect==='revoke-approval')f.state.rows.get(key('grant-authorization',[f.policy.admission.approvalId])).status='revoked';if(effect==='raise-price')f.state.rows.get(f.tariffKey).unitMicroUsd=24000;if(effect==='expire-price')f.state.clock=epoch+60000;});
+ const runtime=await createInfobipWhatsAppProduction(f.options);try{await f.route(runtime,effect,'qual minha próxima jornada?');await runtime.dispatch(f.eventKey(effect));assert.equal(f.stats().engine,1);assert.equal(f.stats().sends,0,'recheck approval/price immediately before provider');assert.equal(f.state.rows.get(key('account',[programId,ownerKey])).reservedMicroUsd,12000,'committed reservation retained on later denial');}finally{await runtime.dispose();}
 }
 console.log(JSON.stringify({suite:'Explicit restricted promotional caller through existing production composition',defaultPolicyUnchanged:true,fixedGlobalProgram:true,canonicalReadOnlyScope:true,finiteCreditAndQuantity:true,authOwnerConsentAndCostEvidenceFailClosed:true,externalCalls:0,providerCalls:0}));
