@@ -8,6 +8,8 @@ import {execFileSync,fork} from 'node:child_process';
 import {createHash,createHmac} from 'node:crypto';
 import {createOperationalPilotScope,INFOBIP_OPERATIONAL_PILOT_APPROVAL,INFOBIP_OPERATIONAL_PILOT_INPUTS} from '../server/infobip-whatsapp-operational-pilot.mjs';
 import {configureSyntheticOperationalPilot} from './fixtures/infobip-operational-pilot.mjs';
+import {seedSyntheticPilotRenewalLedger} from './fixtures/infobip-pilot-renewal-sql.mjs';
+import {createInfobipPilotRenewalAdmission} from '../server/infobip-whatsapp-pilot-renewal.mjs';
 import {createInfobipSendAdmission} from '../server/infobip-whatsapp-admission.mjs';
 import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
@@ -84,6 +86,15 @@ const passed=[];const run=async(name,fn)=>{await fn();passed.push(name);};
 const timeout=setTimeout(()=>{console.error('FAIL bounded synthetic SQL suite');process.exit(1);},45000);
 try{
  if(mode==='restart'){
+   const renewalFixture=JSON.parse(fs.readFileSync(path.join(root,'renewal-fixture.json'),'utf8'));
+   const renewalScope=createOperationalPilotScope(renewalFixture.configuration,renewalFixture.admission,{now:()=>renewalFixture.clock});
+   const renewalQuantity=createInfobipPilotRenewalAdmission(renewalFixture.configuration,renewalFixture.admission,{linkHashKey:salt,now:()=>renewalFixture.clock});
+   const [[renewalRow]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[renewalFixture.quotaKey]);
+   const renewalState=typeof renewalRow.payload==='string'?JSON.parse(renewalRow.payload):renewalRow.payload;
+   assert.equal(renewalState.used,3);assert.equal(renewalState.digest,renewalFixture.originalDigest);assert.equal(renewalState.execution.revision,1);
+   const renewalJob={sender:renewalFixture.configuration.sender,recipient,text:'Que horas a van me busca no hotel?',receivedAt:renewalFixture.clock,bindingStamp:JSON.stringify([owner])};
+   assert.equal(await createInfobipSqlBudget(db)(c=>renewalScope.reserve(c,renewalJob,renewalQuantity.reserve)),false,'actual restart cannot reuse renewed pickup slot');
+   assert.equal(createInfobipSendAdmission(renewalFixture.admission,{sender:renewalFixture.configuration.sender,now:()=>renewalFixture.clock}).allows(renewalJob),false,'original expired window cannot be replayed');
    assert.equal((await make().receive(packet())).duplicates,1);assert.equal((await read()).status,'held');
    const hmacBody=Buffer.from(JSON.stringify({results:[event]})),hmacKey='synthetic-hmac-after-engine-restart';
    const hmacReceive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:hmacKey},store:make().store,now:()=>clock});
@@ -110,7 +121,7 @@ try{
    const [[fence]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[preparingStateKey]);
    const active=typeof fence.payload==='string'?JSON.parse(fence.payload):fence.payload;assert.equal(active.engineActive,true);assert.equal(active.sealed,null);
    await assert.rejects(eraseWhatsAppAccountState(email,{db}));
-   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart','active engine fence survives restart and expired-content cleanup without permitting erasure','operational pilot uncertain slot and quantity survive actual MySQL/process restart without repeat'],externalCalls:0}));
+   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart','active engine fence survives restart and expired-content cleanup without permitting erasure','operational pilot uncertain slot and quantity survive actual MySQL/process restart without repeat','renewal revision audit original digest and consumed pickup survive actual MySQL/process restart'],externalCalls:0}));
  }else{
    await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
    await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64),created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
@@ -210,6 +221,10 @@ try{
    assert.equal((await make().store.exerciseDispatch(reportKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})})).status,'accepted_unconfirmed');
    assert.equal((await receiveReports('delivery')(reportsPacket([report]))).recorded,1);
    assert.equal((await receiveReports('seen')(reportsPacket([seen]))).seen,1);
+   const renewalFixture=await seedSyntheticPilotRenewalLedger(db,{sender:'12025550103',recipient,owner,salt,epoch:epoch+86400000});
+   const renewalBefore=await renewalFixture.read();assert.equal(await renewalFixture.reserve(),true);
+   fs.writeFileSync(path.join(root,'renewal-fixture.json'),JSON.stringify({configuration:renewalFixture.f.dependencies.configuration,
+    admission:renewalFixture.f.dependencies.admission,clock:renewalFixture.f.state.clock,quotaKey:renewalFixture.quotaKey,originalDigest:renewalBefore.digest}));
    assert.equal((await make().receive(packet(preparingEvent))).accepted,1);
    await createInfobipSqlBudget(db)(async c=>{
      assert.equal(await restartAdmission().reserve(c,{sender,recipient}),true);

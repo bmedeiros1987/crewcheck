@@ -21,11 +21,35 @@ import {createInfobipSqlStore,createInfobipProductionStore} from '../server/info
 import {createOperationalPilotScope,INFOBIP_OPERATIONAL_PILOT_INPUTS} from '../server/infobip-whatsapp-operational-pilot.mjs';
 import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
 import {configureSyntheticOperationalPilot} from './fixtures/infobip-operational-pilot.mjs';
+import {seedSyntheticPilotRenewalLedger} from './fixtures/infobip-pilot-renewal-sql.mjs';
 
 export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock}) {
  const packet=item=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
  const raw=async()=>{const [r]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);return typeof r[0]?.payload==='string'?JSON.parse(r[0].payload):r[0]?.payload;};
  const configuration={sender,encryptionKey:key,linkHashKey:salt,webhookUsername:'synthetic',webhookPassword:password,baseUrl:'https://synthetic.api.infobip.com',apiKey:'synthetic-api-key-not-real'};
+ await run('one explicit renewal preserves original quota digest under concurrent InnoDB CAS',async()=>{
+  await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch}),before=await x.read();
+  const results=await Promise.all(Array.from({length:8},()=>x.reserve()));assert.equal(results.filter(Boolean).length,1);
+  const after=await x.read();assert.equal(after.used,3);assert.equal(after.limit,3);assert.equal(after.digest,before.digest);assert.equal(after.validUntil,before.validUntil);
+  assert.equal(after.execution.revision,1);assert.equal(after.execution.previousRevision,0);assert.equal(after.execution.startingUsed,2);
+  assert.equal(await x.reserve(),false);assert.equal(x.scope.allows({...x.job,receivedAt:epoch}),false);
+ });
+ await run('renewal audit quantity and pickup slot roll back together under actual InnoDB',async()=>{
+  await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch});
+  await assert.rejects(x.tx(async c=>{assert.equal(await x.scope.reserve(c,x.job,x.quantity.reserve),true);throw Error('SYNTHETIC_POST_RENEWAL_FAILURE');}));
+  const after=await x.read();assert.equal(after.used,2);assert.equal(after.execution,undefined);
+  const [slots]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[x.pickupSlot]);assert.equal(slots.length,0);
+ });
+ await run('unknown prior attempt and actual failed revision CAS cannot renew or reset quantity',async()=>{
+  for(const status of ['uncertain','dispatching','preparing','accepted_unconfirmed']){
+   await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch});
+   await db.query("UPDATE crewcheck_telegram_state SET payload=JSON_SET(payload,'$.status',?) WHERE state_key=?",[status,x.historyKeys[0]]);
+   assert.equal(await x.reserve(),false);assert.equal((await x.read()).used,2);assert.equal((await x.read()).execution,undefined);
+  }
+  await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch});
+  await assert.rejects(x.tx(c=>x.scope.reserve(c,x.job,(conn,job)=>x.quantity.reserve({query:(sql,args)=>conn.query(sql,sql.includes("JSON_EXTRACT(payload,'$.used')=?")?[args[0],args[1],999]:args)},job))));
+  assert.equal((await x.read()).used,2);assert.equal((await x.read()).execution,undefined);
+ });
  await run('operational pilot slots and distinct quota commit atomically under concurrent InnoDB dispatch',async()=>{
   await reset();let engine=0,sends=0;
   const f=configureSyntheticOperationalPilot({state:{clock:epoch},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});

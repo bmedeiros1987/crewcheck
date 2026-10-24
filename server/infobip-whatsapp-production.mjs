@@ -10,6 +10,7 @@ import {createInfobipSendAdmission} from './infobip-whatsapp-admission.mjs';
 import {preflightInfobipWhatsAppStorage} from './infobip-whatsapp-preflight.mjs';
 import {invokeConfiguredWhatsAppConcierge,isWhatsAppConciergeConfigured,withWhatsAppConciergeQuiesced} from './whatsapp.mjs';
 import {createOperationalPilotScope} from './infobip-whatsapp-operational-pilot.mjs';
+import {createInfobipPilotRenewalAdmission} from './infobip-whatsapp-pilot-renewal.mjs';
 
 const singleTestInput='Teste CrewCierge',singleTestReply='Teste de conexão CrewCierge.';
 
@@ -72,16 +73,7 @@ export async function createInfobipWhatsAppProduction(options={}) {
     if(input.canonicalLinkHandshakeOnly!==undefined&&typeof input.canonicalLinkHandshakeOnly!=='boolean')fail();
     if(input.canonicalLinkHandshakeOnly===true&&!linkHandshake)fail();
     if(singleTest&&(options.admission?.maxAttempts!==1||options.admission?.recipients?.length!==1))fail();
-    const quantity=createInfobipSendAdmission(options.admission,{sender,now});
-    const testFrom=options.admission.validFrom;
-    const testInput=job=>!linkOnly&&job?.text===singleTestInput&&job.receivedAt>=testFrom;
-    const admission=pilot?Object.freeze({
-      allows:job=>pilot.allows(job)&&quantity.allows(job),
-      reserve:(c,job)=>pilot.reserve(c,job,quantity.reserve),
-    }):singleTest?Object.freeze({
-      allows:job=>testInput(job)&&quantity.allows(job),
-      reserve:(c,job)=>testInput(job)?quantity.reserve(c,job):Promise.resolve(false),
-    }):quantity;
+    const originalQuantity=createInfobipSendAdmission(options.admission,{sender,now});
     const scheduler=options.scheduler;
     if(typeof scheduler?.set!=='function'||typeof scheduler?.clear!=='function'||typeof options.request!=='function'||
       !isWhatsAppConciergeConfigured())fail();
@@ -91,6 +83,17 @@ export async function createInfobipWhatsAppProduction(options={}) {
     if(typeof sourceDb?.getConnection!=='function')fail();
     const db=Object.freeze({getConnection:sourceDb.getConnection.bind(sourceDb)});
     const credentials=await resolveCredentials(options.credentials,refs);
+    const quantity=pilot?.renewal?createInfobipPilotRenewalAdmission(input,options.admission,{linkHashKey:credentials.linkHashKey,now})
+      :originalQuantity;
+    const testFrom=options.admission.validFrom;
+    const testInput=job=>!linkOnly&&job?.text===singleTestInput&&job.receivedAt>=testFrom;
+    const admission=pilot?Object.freeze({
+      allows:job=>pilot.allows(job)&&quantity.allows(job),
+      reserve:(c,job)=>pilot.reserve(c,job,quantity.reserve),
+    }):singleTest?Object.freeze({
+      allows:job=>testInput(job)&&quantity.allows(job),
+      reserve:(c,job)=>testInput(job)?quantity.reserve(c,job):Promise.resolve(false),
+    }):quantity;
     const configuration=Object.freeze({sender,baseUrl,apiKey:credentials.apiKey,
       encryptionKey:Buffer.isBuffer(credentials.encryptionKey)?Buffer.from(credentials.encryptionKey):null,
       linkHashKey:credentials.linkHashKey,webhookAuthentication:Object.freeze({mode:'hmac-sha256',secretKey:credentials.webhookSecret})});
