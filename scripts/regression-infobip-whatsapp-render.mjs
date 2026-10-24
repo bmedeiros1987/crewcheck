@@ -46,6 +46,7 @@ function applicationOptions(f){
  configuration.deploymentBinding.linkHashKeyReference=configuration.credentialReferences.linkHashKey;
  const policy={version:1,ingress:f.options.ingress,configuration,admission:structuredClone(f.dependencies.admission)};
  if(f.singleTest){policy.mode='single-neutral-reply-v1';policy.maxCostUsd='0.02';configuration.singleMessageTest=true;policy.admission.id=INFOBIP_SINGLE_TEST_APPROVAL;policy.admission.maxAttempts=1;policy.admission.validUntil=epoch+600_000;}
+ if(f.linkHandshake)configuration.canonicalLinkHandshake=true;
  const environment={RENDER_SERVICE_ID:serviceId,CREWCHECK_INFOBIP_WHATSAPP_POLICY:JSON.stringify(policy),
   CREWCHECK_INFOBIP_WHATSAPP_API_KEY:secrets.apiKey,CREWCHECK_INFOBIP_WHATSAPP_CONTENT_KEY:secrets.encryptionKey.toString('base64'),
   CREWCHECK_WHATSAPP_AUDIT_SALT:secrets.linkHashKey,CREWCHECK_INFOBIP_WHATSAPP_HMAC_SECRET:secrets.webhookSecret};
@@ -186,6 +187,27 @@ for(const change of [s=>s.link.consent_concierge=0,s=>s.link.revoked_at='synthet
 {
  const f=setup(),s=await makeServer(f);const foreign=createInfobipRenderHttpServer(async(req,res)=>s.host.handleRoute(req,res,new URL(req.url,'http://'+req.headers.host)));
  await new Promise(r=>foreign.listen(0,'127.0.0.1',r));try{const before=f.state.queries.length;assert.equal((await post(foreign.address().port,JSON.stringify({results:[event('foreign-listener')]}))).status,503);assert.equal(f.state.queries.length,before);}finally{await new Promise(r=>foreign.close(r));await s.close();}
+}
+// Explicitly enabled canonical handshake uses no provider send or quota row.
+{
+ const f=setup();f.singleTest=true;f.linkHandshake=true;f.state.link=null;
+ f.state.linkChallenge={email:'synthetic@example.invalid',codeHash:createHmac('sha256',secrets.linkHashKey).update('crewcheck-whatsapp-link|123456').digest('hex'),expiresAt:epoch+600000};
+ let s=await makeServer(f);
+ const code=id=>JSON.stringify({results:[{...event(id),message:{type:'TEXT',text:'123456'}}]});
+ try{
+  const before=f.state.queries.length;
+  assert.equal((await post(s.port,code('bad-link-auth'),{signature:'SHA256='+'0'.repeat(64)})).status,401);
+  assert.equal((await post(s.port,JSON.stringify({results:[{...event('wrong-link-recipient'),from:'12025550102',message:{type:'TEXT',text:'123456'}}]}))).status,200);
+  assert.equal(f.state.queries.length,before,'HMAC/recipient denied before SQL');
+  await Promise.all(Array.from({length:4},()=>post(s.port,code('canonical-link'))));await nextTurn();
+  assert.equal(f.state.link.email,'synthetic@example.invalid');assert.equal(f.state.link.consent_alerts,0);assert.equal(f.state.linkChallenge,null);
+  assert.equal(f.stats.sends.length,0);assert.equal(f.stats.engine,0);
+  assert(![...f.state.rows.values()].some(row=>row.kind==='infobip_send_admission'||row.status==='held'));
+  await s.close();s=await makeServer(f);await post(s.port,code('canonical-link'));await nextTurn();
+  assert.equal(f.stats.sends.length,0,'link retry after restart is ACK only');
+  await post(s.port,JSON.stringify({results:[{...event('test-after-link'),message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}}]}));await drain(s,f.stats);
+  assert.equal(f.stats.sends.length,1);assert.equal(f.stats.sends[0].content.text,INFOBIP_SINGLE_TEST_REPLY);assert.equal(f.stats.engine,0);
+ }finally{await s.close();}
 }
 // Restricted caller: authenticated exact opt-in only, no account tools, one
 // durable reservation across concurrent callbacks and a full host restart.

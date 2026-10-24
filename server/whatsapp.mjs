@@ -1,3 +1,4 @@
+import { infobipCanonicalLinkDestination } from './infobip-whatsapp-link-policy.mjs';
 import crypto from 'node:crypto';
 import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
@@ -566,6 +567,11 @@ async function handleLinkStart(req, res) {
   if (body?.consentConcierge !== true) {
     return sendJson(res, 400, { ok: false, message: 'Confirme que deseja usar o Concierge pelo WhatsApp.' });
   }
+  if (body?.provider !== undefined && body.provider !== 'infobip') return sendJson(res, 400, { ok: false, message: 'Provedor de vínculo inválido.' });
+  const number = body.provider === 'infobip'
+    ? await infobipCanonicalLinkDestination()
+    : normalizePhone(businessNumber());
+  if (body.provider === 'infobip' && !number) return sendJson(res, 503, { ok: false, message: 'Recebimento restrito da Infobip ainda não está disponível para vincular. Nenhum código foi criado.' });
   const db = await ensureWhatsAppTables(identity.db);
   if (!db || !auditSecret()) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
 
@@ -587,7 +593,6 @@ async function handleLinkStart(req, res) {
     }
   }
   if (!code) return sendJson(res, 503, { ok: false, message: 'Não consegui gerar o código agora. Tente novamente.' });
-  const number = normalizePhone(businessNumber());
   const openUrl = number ? `https://wa.me/${number}?text=${encodeURIComponent(code)}` : '';
   return sendJson(res, 200, {
     ok: true,
@@ -602,20 +607,21 @@ async function handleLinkStatus(req, res) {
   if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   const identity = await requireIdentity(req, res);
   if (!identity) return;
-  const db = await ensureWhatsAppTables(identity.db);
+  const db = identity.db;
   if (!db) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
-  const [rows] = await db.query(
+  let rows;
+  try { [rows] = await db.query(
     `SELECT phone_last4,consent_concierge,consent_alerts,linked_at
      FROM crewcheck_whatsapp_links WHERE email=? AND revoked_at IS NULL LIMIT 1`,
     [identity.email],
-  );
+  ); } catch { return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' }); }
   const link = rows[0];
   return sendJson(res, 200, {
     ok: true,
     linked: Boolean(link),
-    last4: link?.phone_last4 || '',
-    consentConcierge: Boolean(link?.consent_concierge),
-    consentAlerts: Boolean(link?.consent_alerts),
+    last4: /^\d{4}$/.test(String(link?.phone_last4 || '')) ? String(link.phone_last4) : '',
+    consentConcierge: Number(link?.consent_concierge) === 1,
+    consentAlerts: Number(link?.consent_alerts) === 1,
     linkedAt: link?.linked_at || null,
   });
 }

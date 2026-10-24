@@ -5328,7 +5328,12 @@ export default function Home() {
   const activeViewRef = useRef(view); activeViewRef.current = view;
   useEffect(() => {
     const restoreFinancialView = () => { const linkedView = new URLSearchParams(window.location.search).get('view'); if (linkedView) setViewState(normalizeInitialView(linkedView)); };
-    const resetAccountNavigation = () => {
+    let navigationOwner = getStoredUser()?.id || null;
+    const resetAccountNavigation = (event: Event) => {
+      const currentOwner = getStoredUser()?.id || null;
+      const sameOwnerRefresh = event.type === 'crewcheck:auth-changed' && navigationOwner !== null && currentOwner === navigationOwner;
+      navigationOwner = currentOwner;
+      if (sameOwnerRefresh) return;
       const url = new URL(location.href); url.searchParams.set('view','cockpit');
       for (const key of ['fmode','fscreen','fkind','fmonth','fday','ffrom','fto','fcurrency','fcomparison']) url.searchParams.delete(key);
       history.replaceState({...history.state,ccFinancial:undefined,ccFinancialPosition:undefined,ccFinancialLists:undefined,ccFinancialScope:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:undefined},'',url);
