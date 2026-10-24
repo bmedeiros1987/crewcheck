@@ -4,6 +4,7 @@ import {EventEmitter} from 'node:events';
 import {createInfobipWhatsAppApplicationHost,createInfobipRenderHttpServer} from '../server/infobip-whatsapp-application.mjs';
 import {createInfobipWhatsAppHost,createInfobipDirectTlsListener} from '../server/infobip-whatsapp-host.mjs';
 import {createInfobipWhatsAppProduction} from '../server/infobip-whatsapp-production.mjs';
+import {INFOBIP_SINGLE_TEST_APPROVAL,INFOBIP_SINGLE_TEST_INPUT} from '../server/infobip-whatsapp-single-test.mjs';
 import {configureWhatsAppConcierge,invokeConfiguredWhatsAppConcierge,withWhatsAppConciergeQuiesced} from '../server/whatsapp.mjs';
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
 import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
@@ -74,6 +75,48 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
      assert.equal((await receive(packet({...event,message:{type:'TEXT',text:'654321'}}))).denied,1);
      const [links]=await db.query('SELECT email FROM crewcheck_whatsapp_links');assert.equal(links.length,scenario==='conflict'?1:0);if(links.length)assert.equal(links[0].email,email);
    }
+ });
+ await run('handshake-only production commits proof and fences prior held paid work under InnoDB recreation without reply or quota',async()=>{
+   await reset();await db.query('DELETE FROM crewcheck_whatsapp_links');
+   const code='654321',codeHash=createHmac('sha256',salt).update('crewcheck-whatsapp-link|'+code).digest('hex');
+   await db.query('INSERT INTO crewcheck_whatsapp_link_codes(email,code_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 10 MINUTE))',[email,codeHash]);
+   let calls=0,engineCalls=0;
+   configureWhatsAppConcierge(async()=>{engineCalls++;return 'SYNTHETIC';});
+   const publicOrigin='https://crewcheck.example.invalid',baseUrl='https://synthetic.api.infobip.com';
+   const options={enabled:true,db,now:()=>epoch,configuration:{sender,baseUrl,allowedSenders:[sender],allowedBaseUrls:[baseUrl],authentication:'hmac-sha256',singleMessageTest:true,canonicalLinkHandshake:true,canonicalLinkHandshakeOnly:true,
+     credentialReferences:{apiKey:'fixture/api',encryptionKey:'fixture/encryption',linkHashKey:'fixture/link',webhookSecret:'fixture/webhook'},
+     deploymentBinding:{profileId:'synthetic-profile',subscriptionIds:['synthetic-subscription'],sender,baseUrl,publicOrigin,linkHashKeyReference:'fixture/link'}},
+     credentials:{resolve:async(_ref,{purpose})=>({apiKey:'synthetic-not-real',encryptionKey:key,linkHashKey:salt,webhookSecret:password})[purpose]},
+     ingress:{mode:'direct-tls',publicOrigin},admission:{id:INFOBIP_SINGLE_TEST_APPROVAL,recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+60000},
+     scheduler:{set:()=>1,clear(){}},request:async()=>{calls++;throw Error('NO_PROVIDER_IN_HANDSHAKE_ONLY');}};
+   let runtime=await createInfobipWhatsAppProduction(options);
+   const post=async(id,text)=>{
+     const rawBody=Buffer.from(JSON.stringify({results:[{...event,messageId:id,message:{type:'TEXT',text}}]}));
+     const req=Readable.from([rawBody]);Object.assign(req,{method:'POST',headers:{host:new URL(publicOrigin).host,'content-type':'application/json'},rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')],socket:{encrypted:true}});
+     const res={writeHead(status){this.status=status;},end(body){this.payload=JSON.parse(body);this.writableEnded=true;}};
+     await runtime.handleRoute(req,res,new URL('/api/infobip/whatsapp/webhook',publicOrigin));return res;
+   };
+   try{
+     assert((await Promise.all(Array.from({length:4},()=>post('synthetic-link-only',code)))).every(r=>r.status===200));
+     const [links]=await db.query('SELECT email,consent_concierge,consent_alerts FROM crewcheck_whatsapp_links');assert.equal(links.length,1);assert.equal(links[0].email,email);assert.equal(links[0].consent_alerts,0);
+     await runtime.dispose();
+     const held={...event,messageId:'synthetic-prior-held-paid',message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}};
+     assert.equal((await make().receive(packet(held))).accepted,1);
+     const heldKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,held.messageId])).digest('hex');
+     const readHeld=async()=>{const [[row]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',['crewcheck-infobip-inbound-v1:'+heldKey]);return typeof row.payload==='string'?JSON.parse(row.payload):row.payload;};
+     assert.equal((await readHeld()).status,'held');assert((await readHeld()).sealed);
+     runtime=await createInfobipWhatsAppProduction(options);
+     assert.equal((await runtime.dispatch(heldKey)).status,'blocked');
+     assert.equal((await readHeld()).status,'cancelled');assert.equal((await readHeld()).sealed,null);
+     const [[before]]=await db.query('SELECT COUNT(*) n FROM crewcheck_telegram_state');
+     assert.equal((await post('synthetic-paid-denied',INFOBIP_SINGLE_TEST_INPUT)).status,200);
+     await runtime.dispose();runtime=await createInfobipWhatsAppProduction(options);
+     assert.equal((await runtime.dispatch(heldKey)).status,'cancelled');
+     assert.equal((await post('synthetic-paid-denied-recreated',INFOBIP_SINGLE_TEST_INPUT)).status,200);
+     const [[after]]=await db.query('SELECT COUNT(*) n FROM crewcheck_telegram_state');assert.equal(after.n,before.n);
+     const [[quota]]=await db.query("SELECT COUNT(*) n FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%'");assert.equal(quota.n,0);
+     assert.equal(calls,0);assert.equal(engineCalls,0);
+   }finally{await runtime.dispose();}
  });
  await run('real query deadline destroys waiting connection and pool remains usable',async()=>{
    await reset();const blocker=await db.getConnection();await blocker.beginTransaction();

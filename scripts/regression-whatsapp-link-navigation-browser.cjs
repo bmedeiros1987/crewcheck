@@ -46,7 +46,14 @@ const server = http.createServer((req, res) => context.respond(req, res, new URL
     await page.getByText('WhatsApp ainda não vinculado.',{exact:false}).waitFor();
     linkState={ok:true,linked:true,consentConcierge:true,last4:'0101'};
     await page.getByRole('button',{name:'Conferir vínculo WhatsApp',exact:true}).click();
-    await page.getByText('WhatsApp vinculado · final 0101.',{exact:false}).waitFor();
+    await page.getByText('Há um vínculo salvo · final 0101, mas a compatibilidade com o teste Infobip não foi confirmada.',{exact:false}).waitFor();
+    assert.equal(await page.getByText('WhatsApp vinculado',{exact:false}).count(),0,'legacy last-four display is not canonical proof');
+    linkState={ok:true,linked:false,recorded:true,provider:'infobip',canonicalVerified:false,consentConcierge:true,last4:'0101',testWindow:'expired',linkStartAvailable:false};
+    await page.getByRole('button',{name:'Conferir vínculo WhatsApp',exact:true}).click();
+    await page.getByText('Janela de vínculo Infobip encerrada.',{exact:false}).waitFor();
+    linkState={...linkState,linked:true,canonicalVerified:true};
+    await page.getByRole('button',{name:'Conferir vínculo WhatsApp',exact:true}).click();
+    await page.getByText('Vínculo compatível com o teste Infobip · final 0101.',{exact:false}).waitFor();
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })));
     await page.locator('.cc-notification-center').waitFor({ state: 'detached' });
     await page.getByLabel('Menu', { exact: true }).click();
@@ -58,7 +65,7 @@ const server = http.createServer((req, res) => context.respond(req, res, new URL
     await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-link-B', name: 'SYNTHETIC B', role: 'user' })); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
     await page.locator('.cc-notification-center').waitFor({ state: 'detached' });
     assert.equal(new URL(page.url()).searchParams.get('view'), 'cockpit');
-    assert.equal(await page.getByText('WhatsApp vinculado · final 0101.',{exact:false}).count(),0,'old-account status is removed');
+    assert.equal(await page.getByText('Vínculo compatível com o teste Infobip · final 0101.',{exact:false}).count(),0,'old-account status is removed');
     assert.equal(linkStarts, 0, 'navigation must never create a challenge automatically');
     assert.deepEqual(errors, []);
     await ctx.close();
