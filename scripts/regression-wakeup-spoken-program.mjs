@@ -33,10 +33,12 @@ const readPreview = async context => {
   assert.equal(context.email, email); assert.equal(context.publicId, id); calls++;
   return { status: 200, internal: { authority: { ownerScope: 'synthetic-scope', rosterId: 'synthetic-roster', fingerprint: 'a'.repeat(64), activeRevision: '2099-10-06T05:00:00Z' }, preview: { duty: changed ? { ...duty, presentationAt: '2099-10-06T07:30:00Z' } : duty } } };
 };
-const message = await createWakeupSpokenEnvelope({ db, account: { email, id }, eventId: duty.eventIds[0], now, readPreview });
+const message = await createWakeupSpokenEnvelope({ db, account: { email, id }, eventId: duty.eventIds[0], scheduledAt: now + 60000, now, readPreview });
 assert.doesNotMatch(message, /LA1234|GRU|BSB|05:30|06:30|synthetic-event/);
-await assert.rejects(createWakeupSpokenEnvelope({ db, account: { email, id }, eventId: 'foreign-event', now, readPreview }));
-const job = { job_key: 'wakeup:synthetic', email, message };
+await assert.rejects(createWakeupSpokenEnvelope({ db, account: { email, id }, eventId: duty.eventIds[0], scheduledAt: Date.parse(duty.presentationAt), now, readPreview }));
+assert.equal((await prepareScheduledWakeup({ job_key: 'wakeup:moved', email, message, scheduled_epoch: now + 120000 }, { getPool: async () => db, now, readPreview })).ok, false);
+await assert.rejects(createWakeupSpokenEnvelope({ db, account: { email, id }, eventId: 'foreign-event', scheduledAt: now + 60000, now, readPreview }));
+const job = { job_key: 'wakeup:synthetic', email, message, scheduled_epoch: now + 60000 };
 let result = await prepareScheduledWakeup(job, { getPool: async () => db, now, readPreview });
 assert.equal(result.ok, true); assert.equal(result.locale, 'es-ES'); assert.equal(result.sourceCurrent, true); assert.match(result.text, /Vuelo LA1234/);
 changed = true;
@@ -66,7 +68,7 @@ if (process.argv.includes('--prepared')) {
   const sourceDb = { query: async sql => sql.startsWith('SELECT p.public_id,p.locale') ? [[{ public_id: id, locale: 'pt-BR', timezone: 'America/Sao_Paulo', must_change_password: 0 }]] : [[{ account_email: email, account_public_id: id, id: 'synthetic-roster', owner_email: email, roster_key: '2099-10', roster, fingerprint: 'a'.repeat(64), active: 1, revision_seconds: (now - 60000) / 1000 }]] };
   const preview = await readOperationalBriefingPreview({ ok: true, db: sourceDb, email, publicId: id }, { now: () => now, includeInternal: true });
   assert.equal(preview.status, 200);
-  const message = await createWakeupSpokenEnvelope({ db: sourceDb, account: { email, id }, eventId: preview.internal.preview.duty.eventIds[0], now });
+  const message = await createWakeupSpokenEnvelope({ db: sourceDb, account: { email, id }, eventId: preview.internal.preview.duty.eventIds[0], scheduledAt: now + 60000, now });
   const actual = await prepareScheduledWakeup({ ...job, message }, { getPool: async () => sourceDb, now });
   assert.equal(actual.sourceCurrent, true); assert.match(actual.text, /LA1234/); assert.match(actual.text, /GMT-3/);
   let saved = null, response;

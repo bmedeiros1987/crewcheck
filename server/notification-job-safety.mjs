@@ -51,7 +51,7 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   if (body.spokenProgram !== undefined && typeof body.spokenProgram !== 'boolean') return sendJson(res, 400, { ok: false, message: 'Confirme explicitamente o conteúdo deste alerta.' });
   if (body.spokenProgram === true) {
     if (!jobKey.startsWith('wakeup:')) return sendJson(res, 400, { ok: false, message: 'A programação falada exige um despertador identificado.' });
-    try { message = await createWakeupSpokenEnvelope({ db, account: user, eventId: body.eventId }); }
+    try { message = await createWakeupSpokenEnvelope({ db, account: user, eventId: body.eventId, scheduledAt: scheduledAt.getTime() }); }
     catch { return sendJson(res, 409, { ok: false, message: 'Não foi possível confirmar essa programação na próxima jornada da escala ativa. Desmarque o roteiro ou confira a escala antes de ativar.' }); }
   } else if (isReservedWakeupMessage(message)) return sendJson(res, 400, { ok: false, message: 'Conteúdo reservado; use a escolha explícita de programação.' });
   const job = { email: user.email, job_key: jobKey, scheduled_at: scheduledAt, channel, chat_id: chatId, telegram_username: username, phone,

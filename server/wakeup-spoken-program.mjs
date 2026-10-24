@@ -56,12 +56,13 @@ async function source(db, account, now, readPreview) {
 
 // User explicitly opts into external narration for this authenticated alarm.
 // Persist identifiers/digest only, never a client roster or a monthly narrative.
-export async function createWakeupSpokenEnvelope({ db, account, eventId, now = Date.now(), readPreview = readOperationalBriefingPreview }) {
+export async function createWakeupSpokenEnvelope({ db, account, eventId, scheduledAt, now = Date.now(), readPreview = readOperationalBriefingPreview }) {
   if (typeof eventId !== 'string' || !eventId || eventId.length > 160) throw Error('WAKEUP_SOURCE_UNAVAILABLE');
   await profile(db, account);
   const current = await source(db, account, now, readPreview);
-  if (!current?.duty.eventIds.includes(eventId)) throw Error('WAKEUP_SOURCE_UNAVAILABLE');
-  return prefix + JSON.stringify({ v: 1, owner: account.id, event: digest(eventId), source: current.stamp, consent: true });
+  const boundary = Date.parse(current?.duty.presentationAt || current?.duty.legs?.[0]?.departureAt);
+  if (!current?.duty.eventIds.includes(eventId) || !Number.isSafeInteger(scheduledAt) || scheduledAt <= now || !Number.isFinite(boundary) || scheduledAt >= boundary) throw Error('WAKEUP_SOURCE_UNAVAILABLE');
+  return prefix + JSON.stringify({ v: 1, owner: account.id, event: digest(eventId), source: current.stamp, at: scheduledAt, consent: true });
 }
 export function isReservedWakeupMessage(value) { return String(value || '').startsWith(prefix); }
 
@@ -77,7 +78,7 @@ export async function prepareScheduledWakeup(job, { getPool, now = Date.now(), r
     const options = { locale: currentProfile.locale, timeZone: currentProfile.timezone };
     if (!isReservedWakeupMessage(job.message)) return { ok: true, ...(job.message === WAKEUP_NEUTRAL_MESSAGE ? buildSpokenWakeup(options) : { text: job.message, ...wakeupLocale(options.locale) }) };
     const envelope = JSON.parse(job.message.slice(prefix.length));
-    if (envelope.v !== 1 || envelope.owner !== account.id || envelope.consent !== true || !/^[a-f0-9]{64}$/.test(envelope.event) || !/^[a-f0-9]{64}$/.test(envelope.source)) throw Error('WAKEUP_OWNER_CHANGED');
+    if (envelope.v !== 1 || envelope.owner !== account.id || envelope.consent !== true || !Number.isSafeInteger(envelope.at) || envelope.at !== Number(job.scheduled_epoch) || !/^[a-f0-9]{64}$/.test(envelope.event) || !/^[a-f0-9]{64}$/.test(envelope.source)) throw Error('WAKEUP_OWNER_CHANGED');
     let current;
     try { current = await source(db, account, now, readPreview); } catch { current = null; }
     const verified = current && current.stamp === envelope.source && current.duty.eventIds.some(id => digest(id) === envelope.event);
