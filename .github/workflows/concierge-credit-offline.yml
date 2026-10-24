@@ -6,6 +6,7 @@ on:
       - 'server/concierge-promotional-admission.mjs'
       - 'scripts/regression-concierge-promotional-admission.mjs'
       - 'server/infobip-whatsapp-sql-budget.mjs'
+      - 'server/infobip-whatsapp-store.mjs'
       - 'scripts/regression-concierge-shared-credit-candidate.mjs'
       - 'scripts/regression-concierge-credit-mysql*'
       - 'docs/concierge-shared-credit-sql-off.md'
