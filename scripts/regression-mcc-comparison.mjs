@@ -83,9 +83,21 @@ test('actual CLI emits pinned plan and fails before emitting environment on Git 
  let r=spawnSync(process.execPath,[helper],{cwd:root,env,encoding:'utf8'});assert.equal(r.status,0,r.stderr);assert.match(fs.readFileSync(output,'utf8'),new RegExp(`CREWCHECK_MCC_BASE_SHA=${base}`));
  fs.writeFileSync(output,'');fs.writeFileSync(eventPath,JSON.stringify(event('f'.repeat(40),head)));r=spawnSync(process.execPath,[helper],{cwd:root,env,encoding:'utf8'});assert.notEqual(r.status,0);assert.equal(fs.readFileSync(output,'utf8'),'');
 }));
+
+test('exact PR-head checkout stays coherent when the base advances independently',()=>fixture(({root,git,write,commit,base})=>{
+ write('android-wrapper/app/build.gradle',"implementation 'com.google.firebase:firebase-messaging:25.1.3'\n");const head=commit();
+ git(['checkout','--detach',base]);write('base-only-comment','independent base advance');const advancedBase=commit();
+ git(['checkout','--detach',head]);
+ const plan=resolve(advancedBase,head,head);
+ assert.equal(plan.checkoutSha,head);
+ assert.deepEqual(mccChangedPaths(plan,root),['android-wrapper/app/build.gradle']);
+}));
 test('workflow retains all gates and broad unknown namespace discovery',()=>{
- assert.match(workflow,/types: \[opened, synchronize, reopened, edited\]/);assert.match(workflow,/ref: \$\{\{ github.sha \}\}/);
- assert.match(workflow,/Resolve immutable MCC comparison/);assert.match(workflow,/node scripts\/ci\/mcc-comparison.mjs/);
+ assert.match(workflow,/types: \[opened, synchronize, reopened, edited\]/);
+ assert.match(workflow,/ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/,'PR checkout must pin the immutable event head instead of a drifting synthetic merge');
+ assert.match(workflow,/Resolve immutable MCC comparison/);
+ assert.match(workflow,/run: GITHUB_SHA="\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}" node scripts\/ci\/mcc-comparison\.mjs/,'helper must receive the same immutable SHA that was checked out');
+ assert.match(workflow,/\['diff', '--merge-base', '--unified=0', base, head/,'Gradle proof must use the helper-compatible merge-base delta');
  assert.equal(workflow.split('node scripts/assert-mycrewcare-v3-ownership.mjs').length-1,2,'full auditor must remain raw + prepared');
  const broad="**/*[mM][yY][cC][rR][eE][wW][cC][aA][rR][eE]";
  assert.ok(workflow.includes(broad+"*'"));assert.ok(workflow.includes(broad+"*/**'"));
@@ -180,6 +192,28 @@ test('actual Gradle-only proof executes the workflow code and fails closed on un
  result=run(file=>fs.appendFileSync(file,'// applicationIdSuffix ".mcctest" decoy\nandroid.buildTypes.debug.applicationIdSuffix = ".shared"\n'));
  assert.notEqual(result.status,0,'comment decoy plus late applicationIdSuffix override must fail the no-MCC Gradle proof');
  assert.match(result.stderr,/Unproven shared Gradle delta/);
+
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'mcc-gradle-advanced-base-'));
+ const git=args=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+ try{
+  git(['init','-q']);git(['config','user.name','Synthetic Gate Test']);git(['config','user.email','synthetic@example.invalid']);
+  fs.mkdirSync(path.join(root,'android-wrapper/app'),{recursive:true});
+  const file=path.join(root,'android-wrapper/app/build.gradle');
+  fs.writeFileSync(file,"dependencies {\n    implementation 'androidx.webkit:webkit:1.17.1'\n}\n");
+  git(['add','.']);git(['commit','-qm','common']);const common=git(['rev-parse','HEAD']);
+  fs.appendFileSync(file,"    implementation 'com.google.firebase:firebase-messaging:25.1.3'\n");
+  git(['add','.']);git(['commit','-qm','head-fcm']);const head=git(['rev-parse','HEAD']);
+  git(['checkout','--detach',common]);
+  fs.appendFileSync(file,'// base-only comment that must not contaminate the head delta\n');
+  git(['add','.']);git(['commit','-qm','advanced-base']);const advancedBase=git(['rev-parse','HEAD']);
+  git(['checkout','--detach',head]);
+  const plan=resolve(advancedBase,head,head);
+  assert.deepEqual(mccChangedPaths(plan,root),['android-wrapper/app/build.gradle']);
+  const advanced=spawnSync(process.execPath,['--input-type=module','--eval',script],{
+   cwd:root,encoding:'utf8',env:{...process.env,CREWCHECK_MCC_BASE_SHA:advancedBase,CREWCHECK_MCC_HEAD_SHA:head},
+  });
+  assert.equal(advanced.status,0,advanced.stderr);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
 
  test('criss-cross merge bases are rejected instead of selecting an arbitrary ancestor',()=>fixture(({root,git,write,commit,base})=>{
