@@ -11,6 +11,8 @@ on:
       - 'client/src/lib/rosterLayoutPreference.ts'
       - 'scripts/regression-aims-document-browser.mjs'
       - 'scripts/regression-aims-document-app.cjs'
+      - 'scripts/lib/aims-preaction-stability.cjs'
+      - 'scripts/regression-aims-preaction-stability.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - '.github/workflows/aims-document-browser.yml'
   workflow_dispatch:
@@ -35,6 +37,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Reject unstable preparation and application layout shifts
+        run: node scripts/regression-aims-preaction-stability.cjs
       - name: Prepare once and build the shipping app
         run: |
           node scripts/v139/apply.mjs
