@@ -36,7 +36,27 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
       - name: Build isolated debug test APK only
         run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
+      - name: Verify physical-test APK identity and fingerprint
+        run: |
+          mkdir -p artifacts/stay-alarm-test
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging android-wrapper/app/build/outputs/apk/debug/app-debug.apk > "$RUNNER_TEMP/stay-test-badging.txt"
+          python3 - <<'PY'
+          import hashlib,json,os,re
+          from pathlib import Path
+          apk=Path('android-wrapper/app/build/outputs/apk/debug/app-debug.apk')
+          badging=(Path(os.environ['RUNNER_TEMP'])/'stay-test-badging.txt').read_text()
+          package=re.search(r"^package: name='([^']+)' versionCode='([^']+)'",badging,re.M)
+          assert package and package[1]=='com.crewcheck.app.mcctest','unexpected physical-test package'
+          assert re.search(r'^application-debuggable(?:\s|$)',badging,re.M),'test APK must be debuggable'
+          report={'head':os.environ['GITHUB_SHA'],'package':package[1],'versionCode':package[2],
+            'debuggable':True,'apkSha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
+            'physicalAccepted':False,'storeRelease':False,'nativeRemotePushImplemented':False}
+          Path('artifacts/stay-alarm-test/receipt.json').write_text(json.dumps(report,indent=2)+'\n')
+          print(json.dumps(report))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: CrewCheck-StayAlarm-Offline-Test
-          path: android-wrapper/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android-wrapper/app/build/outputs/apk/debug/app-debug.apk
+            artifacts/stay-alarm-test/receipt.json
