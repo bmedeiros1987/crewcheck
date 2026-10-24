@@ -52,7 +52,7 @@ for(const removed of ['30 minutos','alertas automáticos',"view: 'life'", "view:
 assert.match(steps,/Menu → Concierge → WhatsApp e Telegram/);assert.match(source,/Abrir Concierge e vínculos/);
 assert.match(source,/PASSO \{stepIndex \+ 1\} DE \{STEPS.length\}/);
 const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
-assert.equal((home.match(/<ConciergeChannels\/>/g)||[]).length,1);assert(home.includes("['concierge','Concierge','Vínculos, briefing e consultas',Send]"));
+assert.equal((home.match(/<ConciergeChannels\/>/g)||[]).length,1);assert.match(home,/\['concierge','Concierge','Vínculos, briefing e consultas',(?:Send|MessageCircle)\]/);
 if(process.argv.includes('--prepared')){
  assert(home.includes('className="cc-notification-channels"'),'real prepared canonical link section exists');
  assert(home.includes('onClick={openTelegramBinding}')&&home.includes('onClick={openWhatsAppBinding}'),'existing channel handlers preserved');

@@ -11,6 +11,7 @@ on:
       - 'scripts/regression-concierge-links-tutorial.mjs'
       - 'scripts/v1424/apply.mjs'
       - 'scripts/v14341/apply.mjs'
+      - 'scripts/p1-menu-premium/apply.mjs'
       - '.github/workflows/concierge-links-tutorial.yml'
 permissions:
   contents: read
