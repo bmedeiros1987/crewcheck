@@ -31,6 +31,21 @@ try {
  for(const owner of owners)await db.query('INSERT INTO crewcheck_platform_profiles(email,public_id) VALUES(?,?)',[owner.email,owner.ownerId]);
  const initial=input();const first=await mutate(initial);
  assertCheck(first.revision===1&&first.consentRevision===1&&first.active,'initial register');
+ const initialKey=nativeBindingKey(initial.identity,initial.installationId);
+ const storedInitial=(await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[initialKey]))[0][0].payload;
+ const initialClaims=(await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-native-push:token:%'"))[0];
+ const initialClaim=initialClaims.find(row=>JSON.parse(row.payload)?.bindingKey===initialKey);assert(initialClaim);
+ for(const malformed of [false,0,'']) {
+   await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(malformed),initialKey]);
+   await assert.rejects(readNativeInstallation(db,owners[0],initial.installationId),e=>e.code==='NATIVE_REGISTRY_STATE_INVALID');checks++;
+   await assert.rejects(mutate(initial),e=>e.code==='NATIVE_REGISTRY_STATE_INVALID');checks++;
+   await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[storedInitial,initialKey]);
+   await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(malformed),initialClaim.state_key]);
+   await assert.rejects(mutate(input(owners[1])),e=>e.code==='NATIVE_REGISTRY_STATE_INVALID');checks++;
+   await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[initialClaim.payload,initialClaim.state_key]);
+ }
+ await assert.rejects(mutate(input(owners[0],{expectedRevision:1,expectedConsentRevision:1,token:token+'SAME_VERSION_CHANGED'})),e=>e.code==='NATIVE_TOKEN_VERSION_REUSED');checks++;
+
  const duplicate=await mutate(initial);assertCheck(duplicate.duplicate&&duplicate.revision===1,'same mutation reconciles without revision bump');
  assertCheck(!JSON.stringify(await readNativeInstallation(db,owners[0],initial.installationId)).includes('sealed'),'GET is redacted');
  await assert.rejects(mutate({...initial,token:token+'CHANGED'}),e=>e.code==='NATIVE_MUTATION_REUSED');checks++;

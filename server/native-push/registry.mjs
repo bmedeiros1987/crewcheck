@@ -29,8 +29,8 @@ function checked(input) {
   return { ...input, tokenHash, fingerprint };
 }
 function bindingChecked(value, input) {
-  if (!value) return;
-  if (value.schema !== 1 || value.ownerId !== input.identity.ownerId || value.email !== input.identity.email
+  if (value === null || value === undefined) return;
+  if (typeof value !== 'object' || Array.isArray(value) || value.schema !== 1 || value.ownerId !== input.identity.ownerId || value.email !== input.identity.email
       || value.installationId !== input.installationId || !integer(value.revision)
       || !integer(value.consentRevision) || !integer(value.generation) || !integer(value.tokenRevision)
       || typeof value.active !== 'boolean' || value.revision < 1 || value.consentRevision < 1 || value.generation < 1 || value.tokenRevision < 1
@@ -48,6 +48,8 @@ export function nativeMutationPlan(previous, input, now) {
   if ((previous?.revision || 0) !== input.expectedRevision || (previous?.consentRevision || 0) !== input.expectedConsentRevision) fail('NATIVE_REVISION_CHANGED');
   if (previous && (input.generation < previous.generation || (input.generation === previous.generation && input.tokenRevision < previous.tokenRevision))) fail('NATIVE_STALE_GENERATION');
   if (previous && !previous.active && input.action !== 'revoke' && input.generation <= previous.generation) fail('NATIVE_GENERATION_REVOKED');
+  if (previous?.active && input.action !== 'revoke' && input.generation === previous.generation
+      && input.tokenRevision === previous.tokenRevision && input.tokenHash !== previous.tokenHash) fail('NATIVE_TOKEN_VERSION_REUSED');
   if (input.action === 'rotate' && (!previous?.active || input.generation !== previous.generation || input.tokenRevision <= previous.tokenRevision)) fail('NATIVE_ROTATION_STALE');
   if (input.action === 'register' && input.consent !== true) fail('NATIVE_EXPLICIT_CONSENT_REQUIRED', 400);
   const active = input.action !== 'revoke';
@@ -77,7 +79,11 @@ function envelopeChecked(value) {
 }
 function parse(value) {
   if (value === null || value === undefined) return null;
-  try { return typeof value === 'string' ? JSON.parse(value) : value; } catch { fail('NATIVE_REGISTRY_STATE_INVALID',503); }
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (parsed !== null && (typeof parsed !== 'object' || Array.isArray(parsed))) fail('NATIVE_REGISTRY_STATE_INVALID',503);
+    return parsed;
+  } catch { fail('NATIVE_REGISTRY_STATE_INVALID',503); }
 }
 async function lockState(connection, key) {
   await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',[key,'null']);
@@ -96,7 +102,7 @@ function storedBindingChecked(record, input) {
   if (record?.active) { try { envelopeChecked(record.sealedToken); } catch { fail('NATIVE_REGISTRY_STATE_INVALID',503); } }
 }
 function claimChecked(claim) {
-  if (claim && (claim.schema !== 1 || typeof claim.active !== 'boolean' || typeof claim.bindingKey !== 'string' || !claim.bindingKey.startsWith(PREFIX+'binding:') || claim.bindingKey.length > 190 || !integer(claim.revision) || claim.revision < 1)) fail('NATIVE_TOKEN_CLAIM_INVALID',503);
+  if (claim !== null && claim !== undefined && (typeof claim !== 'object' || Array.isArray(claim) || claim.schema !== 1 || typeof claim.active !== 'boolean' || typeof claim.bindingKey !== 'string' || !claim.bindingKey.startsWith(PREFIX+'binding:') || claim.bindingKey.length > 190 || !integer(claim.revision) || claim.revision < 1)) fail('NATIVE_TOKEN_CLAIM_INVALID',503);
 }
 async function verifyActiveClaim(connection, bindingKey, record) {
   if (!record?.active) return;

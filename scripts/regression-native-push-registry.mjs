@@ -16,6 +16,9 @@ for(const [input,code] of [
  [mutation({package:'untrusted.package'}),'NATIVE_INVALID_MUTATION'],
  [mutation({token:'secret\nbad'}),'NATIVE_INVALID_TOKEN'],
 ]) check(()=>assert.throws(()=>nativeMutationPlan(input.mutationId==='synthetic-mutation-1'&&code==='NATIVE_MUTATION_REUSED'?first:null,input,1200),e=>e.code===code));
+for(const malformed of [false,0,'']) check(()=>assert.throws(()=>nativeMutationPlan(malformed,mutation(),1250),e=>e.code==='NATIVE_REGISTRY_STATE_INVALID'));
+check(()=>assert.throws(()=>nativeMutationPlan(first,mutation({mutationId:'synthetic-token-version-reuse',expectedRevision:1,expectedConsentRevision:1,token:'SYNTHETIC_DIFFERENT_TOKEN_NOT_REAL'}),1250),e=>e.code==='NATIVE_TOKEN_VERSION_REUSED'));
+check(()=>assert(nativeMutationPlan(first,mutation({mutationId:'synthetic-reconsent-1',expectedRevision:1,expectedConsentRevision:1}),1250).next.active));
 const revoked=nativeMutationPlan(first,mutation({action:'revoke',mutationId:'synthetic-revoke-1',expectedRevision:1,expectedConsentRevision:1}),1300).next;
 check(()=>assert.equal(revoked.active,false));
 check(()=>assert.equal(revoked.sealedToken,null));
