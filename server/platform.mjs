@@ -1,3 +1,4 @@
+import { asaasEnvelope, receiveAsaasEvent, asaasInboxSummary } from './asaas-webhook-inbox.mjs';
 import {createFinancialFxHandler,FINANCIAL_FX_PATH} from './financial-fx.mjs';
 import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH, FINANCIAL_CAPTURE_PATH} from './financial-ledger-route.mjs';
 import {financialLedgerErasureStatements} from './financial-ledger-erasure.mjs';
@@ -287,6 +288,8 @@ const PLATFORM_OPTIONAL_TABLES = [
   'crewcheck_platform_chat_messages',
   'crewcheck_platform_gym_checkins',
   'crewcheck_platform_webhook_events',
+  'crewcheck_asaas_webhook_inbox',
+  'crewcheck_asaas_subscription_locks',
   'crewcheck_platform_emergencies',
   'crewcheck_telegram_state',
   'crewcheck_platform_auth_attempts',
@@ -326,6 +329,8 @@ async function platformSchemaReport(db) {
   const requiredColumns = {
     crewcheck_platform_profiles: ['email', 'public_id', 'display_name', 'locale', 'timezone', 'plan', 'share_presence'],
     crewcheck_platform_shares: ['id', 'owner_email', 'token_hash', 'kind', 'permissions', 'expires_at', 'created_at'],
+    crewcheck_asaas_webhook_inbox: ['event_id', 'payload_hash', 'event_name', 'subscription_ref', 'payment_ref', 'event_time', 'funded_period_end', 'decision_payload', 'disposition', 'reason', 'attempts', 'received_at', 'updated_at'],
+    crewcheck_asaas_subscription_locks: ['subscription_ref'],
   };
   const tableParams = tables.map((_table, index) => `$${index + 1}`).join(',');
   const result = await db.query(
@@ -346,6 +351,7 @@ async function platformSchemaReport(db) {
   const missingShareColumns = requiredColumns.crewcheck_platform_shares
     .filter((column) => !columns.has(`crewcheck_platform_shares.${column}`))
     .map((column) => `crewcheck_platform_shares.${column}`);
+  const missingAsaasColumns = ['crewcheck_asaas_webhook_inbox', 'crewcheck_asaas_subscription_locks'].flatMap(table => requiredColumns[table].filter(column => !columns.has(`${table}.${column}`)).map(column => `${table}.${column}`));
   const missingCore = [
     ...PLATFORM_CORE_TABLES.filter((table) => !ready.has(table)),
     ...missingProfileColumns,
@@ -353,10 +359,12 @@ async function platformSchemaReport(db) {
   const missingOptional = [
     ...PLATFORM_OPTIONAL_TABLES.filter((table) => !ready.has(table)),
     ...missingShareColumns,
+    ...missingAsaasColumns,
   ];
   return {
     coreReady: missingCore.length === 0,
     optionalReady: missingOptional.length === 0,
+    asaasInboxReady: ready.has('crewcheck_asaas_webhook_inbox') && ready.has('crewcheck_asaas_subscription_locks') && missingAsaasColumns.length === 0,
     profileIdReady: ready.has('crewcheck_platform_profiles') && missingProfileColumns.length === 0,
     qrShareReady: ready.has('crewcheck_platform_shares') && missingShareColumns.length === 0,
     missingCore,
@@ -374,6 +382,10 @@ async function platformSchemaReady(db) {
 }
 
 async function platformTableReady(db, tableName) {
+  if (['crewcheck_asaas_webhook_inbox', 'crewcheck_asaas_subscription_locks'].includes(tableName)) {
+    state.schemaReport = await platformSchemaReport(db);
+    return state.schemaReport.asaasInboxReady;
+  }
   if (![...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES].includes(tableName)) return false;
   if (tableName === 'crewcheck_platform_profiles' && state.schemaReport && !state.schemaReport.profileIdReady) return false;
   if (tableName === 'crewcheck_platform_shares' && state.schemaReport && !state.schemaReport.qrShareReady) return false;
@@ -921,6 +933,7 @@ async function handleDatabaseHealth(req, res) {
     provider: databaseDialect(),
     connected,
     coreReady: Boolean(report.coreReady),
+    asaasInboxReady: Boolean(connected && report.asaasInboxReady),
     profileIdReady,
     qrShareReady,
     degraded: connected && !report.optionalReady,
@@ -999,6 +1012,7 @@ const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/database\/health$/, ['GET']],
   [/^\/api\/platform\/profile$/, ['GET', 'PATCH']],
   [/^\/api\/platform\/billing\/status$/, ['GET']],
+  [/^\/api\/platform\/admin\/diagnostics\/asaas-webhooks$/, ['GET']],
   [/^\/api\/platform\/billing\/google-play\/verify$/, ['POST']],
   [/^\/api\/platform\/billing\/google-play\/rtdn$/, ['POST']],
   [/^\/api\/platform\/billing\/asaas\/checkout$/, ['POST']],
@@ -1450,48 +1464,37 @@ async function handleBillingCancel(req, res) {
   return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: subscription.current_period_end || null, message: keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período já pago.' : 'Assinatura web cancelada. Não haverá nova renovação.' });
 }
 
-function asaasEventStatus(eventName) {
-  const event = normalizeText(eventName, 100).toUpperCase();
-  if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'SUBSCRIPTION_REACTIVATED'].includes(event)) return 'active';
-  if (['PAYMENT_OVERDUE'].includes(event)) return 'past_due';
-  if (['PAYMENT_REFUNDED', 'PAYMENT_REFUND_IN_PROGRESS'].includes(event)) return 'refunded';
-  if (['PAYMENT_DELETED', 'SUBSCRIPTION_DELETED', 'SUBSCRIPTION_INACTIVATED'].includes(event)) return 'canceled';
-  return null;
-}
-
 async function handleAsaasWebhook(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   const expected = env('ASAAS_WEBHOOK_TOKEN');
   if (!expected || !safeEqual(req.headers['asaas-access-token'], expected)) return sendJson(res, 403, { ok: false, message: 'Webhook não autorizado.' });
   const body = await readBody(req, 1_000_000);
-  const eventId = normalizeText(body.id, 180);
-  const eventName = normalizeText(body.event, 100).toUpperCase();
-  const subscriptionRef = normalizeText(body.payment?.subscription || body.subscription?.id || body.subscription, 180);
-  if (!eventId || !eventName) return sendJson(res, 400, { ok: false, message: 'Evento Asaas inválido.' });
+  if (!asaasEnvelope(body)) return sendJson(res, 400, { ok: false, code: 'ASAAS_EVENT_INVALID' });
   const db = await pool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  const eventRow = await db.query(`INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash)
-    VALUES('asaas',$1,$2)`, [eventId, sha256(JSON.stringify(body))]);
-  if (!eventRow.rowCount) return sendJson(res, 200, { ok: true, duplicate: true });
-  if (!subscriptionRef) return sendJson(res, 200, { ok: true, ignored: true });
-  const current = await db.query("SELECT * FROM crewcheck_platform_subscriptions WHERE provider='asaas' AND provider_ref=$1 LIMIT 1", [subscriptionRef]);
-  const subscription = current.rows[0];
-  if (!subscription) {
-    await db.query("DELETE FROM crewcheck_platform_webhook_events WHERE provider='asaas' AND event_id=$1", [eventId]);
-    return sendJson(res, 503, { ok: false, message: 'Assinatura ainda não conciliada; tente novamente.' });
+  if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE' });
+  try {
+    if (!await platformTableReady(db, 'crewcheck_asaas_webhook_inbox')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', retryable: true });
+    const result = await receiveAsaasEvent(db, body);
+    if (result.body.disposition === 'quarantined') console.warn('[crewcheck:asaas-webhook]', 'quarantined', result.body.reason);
+    return sendJson(res, result.status, result.body);
+  } catch {
+    // Never acknowledge an uncommitted receipt, leak payloads or hide schema/storage failure.
+    return sendJson(res, 503, { ok: false, code: 'ASAAS_RECEIPT_NOT_COMMITTED', retryable: true });
   }
-  const status = asaasEventStatus(eventName);
-  if (!status) return sendJson(res, 200, { ok: true, ignored: true, message: 'Evento informativo registrado sem alterar a assinatura.' });
-  const due = parseDateOnly(body.payment?.confirmedDate || body.payment?.clientPaymentDate || body.payment?.paymentDate || body.payment?.dueDate || body.dateCreated);
-  const periodEnd = due ? new Date(`${due}T12:00:00.000Z`) : new Date();
-  periodEnd.setUTCDate(periodEnd.getUTCDate() + (subscription.plan === 'premium_annual' ? 366 : 31));
-  const nextMetadata = { ...(subscription.metadata && typeof subscription.metadata === 'object' ? subscription.metadata : {}), lastAsaasEvent: eventName, lastAsaasEventId: eventId };
-  await db.query('UPDATE crewcheck_platform_subscriptions SET status=$2,current_period_end=CASE WHEN $2=$3 THEN $4 ELSE current_period_end END,metadata=$5,updated_at=NOW() WHERE email=$1', [subscription.email, status, 'active', periodEnd.toISOString().slice(0, 23).replace('T', ' '), JSON.stringify(nextMetadata)]);
-  const profile = await db.query('SELECT plan FROM crewcheck_platform_profiles WHERE email=$1', [subscription.email]);
-  if (profile.rows[0]?.plan !== 'premium_unlimited') {
-    await db.query('UPDATE crewcheck_platform_profiles SET plan=$2,updated_at=NOW() WHERE email=$1', [subscription.email, status === 'active' ? subscription.plan : 'free']);
+}
+
+async function handleAdminAsaasInbox(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false });
+  const identity = mainIdentity(req);
+  if (!identity.authenticated || !identity.token || identity.token.aud === 'crewcheck-visitor' || identity.role === 'visitor') return sendJson(res, 401, { ok: false });
+  if (!identity.admin) return sendJson(res, 403, { ok: false });
+  const db = await pool();
+  if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE' });
+  try {
+    if (!await platformTableReady(db, 'crewcheck_asaas_webhook_inbox')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED' });
+    return sendJson(res, 200, await asaasInboxSummary(db));
   }
-  return sendJson(res, 200, { ok: true });
+  catch { return sendJson(res, 503, { ok: false, code: 'ASAAS_INBOX_UNAVAILABLE' }); }
 }
 
 async function handleGoogleRtdn(req, res) {
@@ -2488,6 +2491,8 @@ async function handleAccountDeletion(req, res) {
     if (await platformTableReady(client, 'crewcheck_platform_terms_acceptances')) {
       await client.query('DELETE FROM crewcheck_platform_terms_acceptances WHERE email=$1', [context.identity.email]);
     }
+    if (subscription?.provider === 'asaas' && subscription.provider_ref) await deleteIfTableExists(client, 'DELETE FROM crewcheck_asaas_webhook_inbox WHERE subscription_ref=$1', [subscription.provider_ref]);
+    if (subscription?.provider === 'asaas' && subscription.provider_ref) await deleteIfTableExists(client, 'DELETE FROM crewcheck_asaas_subscription_locks WHERE subscription_ref=$1', [subscription.provider_ref]);
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);
     for (const [sql, params] of notificationStateDeletionStatements(context.identity.email)) {
@@ -2581,6 +2586,7 @@ export async function handlePlatformRoute(req, res, url) {
     if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }
     if (url.pathname === '/api/platform/admin/terms') { await handleAdminTerms(req, res); return true; }
     if (url.pathname === '/api/platform/admin/unlimited') { await handleAdminUnlimited(req, res); return true; }
+    if (url.pathname === '/api/platform/admin/diagnostics/asaas-webhooks') { await handleAdminAsaasInbox(req, res); return true; }
     if (url.pathname === '/api/platform/admin/diagnostics/cirium') { await handleAdminCiriumDiagnostic(req, res); return true; }
     if (url.pathname === '/api/platform/admin/diagnostics/cirium/flight') { await handleAdminCiriumFlightDiagnostic(req, res, url); return true; }
     if (url.pathname === '/api/platform/health/amil') { await handleAmilHealth(req, res); return true; }
