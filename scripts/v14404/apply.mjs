@@ -52,6 +52,7 @@ let fastAckAfter = replaceOnce(
   `import { buildInfobipEnglishFallbackRequest, buildInfobipTtsRequest, infobipPublicStatus, infobipRejectedUnsupportedLanguage } from './v1396/infobip.mjs';`,
   'import do fallback no scheduler',
 );
+if (!fastAckBefore.includes("return sendInfobipWakeupCall({ phone, text: message });")) {
 fastAckAfter = replaceOnce(
   fastAckAfter,
   `    const response = await fetch(request.url, {
@@ -74,4 +75,5 @@ fastAckAfter = replaceOnce(
     return { ok: accepted, configured: true, provider: 'infobip', status: response.status, raw: raw.slice(0, 500) };`,
   'fallback de idioma no despertador persistente',
 );
-if (fastAckAfter !== fastAckBefore) fs.writeFileSync(fastAckPath, fastAckAfter, 'utf8');
+
+}if (fastAckAfter !== fastAckBefore) fs.writeFileSync(fastAckPath, fastAckAfter, 'utf8');
