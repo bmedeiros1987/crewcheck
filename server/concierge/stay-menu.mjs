@@ -88,6 +88,7 @@ export async function stayMenuReply(text, profile = {}, deps = {}) {
     };
     const reply = intent.subject === 'pickup'
       ? intent.direction ? `Pickup ${intent.direction === 'airport-hotel' ? 'aeroporto → hotel' : 'hotel → aeroporto'} não confirmado nesta leitura. Confira data, fuso e situação da reserva na fonte operacional.`
+        : intent.origin === 'hotel' ? 'O hotel é o ponto de partida informado. O pickup ainda não está confirmado nesta leitura. Confira data, fuso e reserva na fonte operacional.'
         : 'Você quer a van do aeroporto para o hotel ou do hotel para o aeroporto? O pickup ainda não está confirmado nesta leitura.'
       : replies[intent.subject];
     return { handled: true, reply };
