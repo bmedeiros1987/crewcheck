@@ -28,7 +28,7 @@ queue remains for normal retry/deduplication; no B request or write is started.
 A token renewal may stop the old operation conservatively and retry later.
 No credential is newly persisted; existing parser/fingerprint/sorting behavior is
 unchanged by this patch (canonical preparation still supplies its existing rules).
-The20-case actual-source regression passes; the unmodified baseline fails with
+The21-case actual-source regression passes; the unmodified baseline fails with
 Missing expected rejection, reproducing the missing account fence.
 
 ## Offline indication and provenance
@@ -63,7 +63,7 @@ fix is reviewed and accepted, global PWA privacy readiness remains HOLD.
 
 ## Reproduction and validation
 
-- `node scripts/regression-pwa-offline-account-fence.mjs`:20 cases with actual
+- `node scripts/regression-pwa-offline-account-fence.mjs`:21 cases with actual
   bundled functions, fake API/storage; no real network or message.
 - `node scripts/regression-p1-offline-history-identity-scope.mjs`:existing legacy
   ownerless/history-scope contract PASS.

@@ -255,6 +255,7 @@ export async function saveRosterOfflineFirst(payload: {
     }
     if (!queuedDuplicate) {
       await queueRosterOffline({ ...localPayload, checksum });
+      assertScope();
     }
     return { savedOnline: false, queued: true, deduplicatedLocal: queuedDuplicate, checksum, pendingCount: getPendingOfflineCount() };
   }
