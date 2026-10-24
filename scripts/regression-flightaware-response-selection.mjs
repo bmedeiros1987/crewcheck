@@ -1,3 +1,4 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,7 @@ globalThis.fetch=()=>{throw Error('Real network forbidden');};
 function extract(file,names,optional=false,jsx=false){const s=fs.readFileSync(path.join(root,file),'utf8'),ast=ts.createSourceFile(file,s,ts.ScriptTarget.Latest,true,jsx?ts.ScriptKind.TSX:ts.ScriptKind.JS);return names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);if(!fn&&optional)return '';assert(fn,name);return jsx?ts.transpileModule(fn.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText:fn.getText(ast);}).join('\n');}
 const now=Date.parse('2032-10-14T12:00:00Z'),roster={year:2032,month:10,base:'GRU',days:[{date:'14/10/2032',type:'VOO',legs:[{flightNumber:'LA100',origin:'GRU',destination:'REC',departureTime:'09:00',arrivalTime:'11:00',gate:'24'}]}]};
 let sourceDate='2032-10-15T12:00:00Z',saveCalls=0,providerCalls=0,estimated='',selectedNow=now,duplicateExact=false,customReply=null;const providerMarks=[];
-const scope=vm.createContext({...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??selectedNow),Date:class extends Date{static now(){return selectedNow;}},URL,setTimeout,clearTimeout,
+const scope=vm.createContext({beginRadarOperationalHistory,...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??selectedNow),Date:class extends Date{static now(){return selectedNow;}},URL,setTimeout,clearTimeout,
  process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},envAny:keys=>keys.includes('FLIGHTAWARE_AEROAPI_KEY')?'OFFLINE_ONLY':'',providerAvailable:()=>true,markProvider:(...args)=>providerMarks.push(args),
  jsonFetch:async()=>{providerCalls++;return{response:{ok:true},payload:{flights:[{ident:duplicateExact?'LAN100':'LAN999',gate_origin:'13',scheduled_out:sourceDate,origin:{code_iata:'GRU'},destination:{code_iata:'REC'}},{ident:'LAN100',status:'Programado',registration:'PR-ONE',gate_origin:'99',scheduled_out:sourceDate,estimated_out:estimated,origin:{code_iata:'GRU'},destination:{code_iata:'REC'}}]}};},
  providerCustom:async()=>customReply,providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,

@@ -1,3 +1,7 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
+import * as actualHistory from '../server/concierge/operational-history.mjs';
+import {telegramOperationalAuthority as authority} from '../server/concierge/telegram-briefing.mjs';
+import {customGateSourceUpdate} from '../server/gate-source-update.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
@@ -32,20 +36,24 @@ try{
  now=NOW+3000;const first=await Promise.all(Array.from({length:8},()=>record(db,context,input('24',1000),{enabled:true,clock:()=>now})));assert.equal(first.filter(x=>x.status==='baseline').length,1);
  await record(db,context,input('25',2000),{enabled:true,clock:()=>now});
  const restarted=await import('../server/concierge/operational-history.mjs?restart');assert.equal((await tx(c=>restarted.readOperationalGateHistory(c,context,options()))).source.observation.gate,'25');
+ const capture=await beginRadarOperationalHistory({},ticket.identity,{enabled:true,identify:async()=>identity,loadRuntime:async()=>({authority,history:{...actualHistory,OPERATIONAL_HISTORY_ENABLED:true}}),clock:()=>now});assert(capture);
+ const raw=observation(ticket.identity,'26',2500);assert.equal(capture.captureCustom(raw,now),now);
+ assert.equal((await capture.commit({...raw,sourceReceivedAt:now,gateUpdate:customGateSourceUpdate(raw,now)})).status,'advanced');
+ assert.equal((await tx(c=>read(c,context,options()))).source.observation.gate,'26');
  await Promise.all(Array.from({length:8},()=>runTelegramOperationalChangeCycle(db,{enabled:true,clock:()=>now,readSource:source})));
  const [jobs]=await db.query('SELECT * FROM crewcheck_notification_jobs');assert.equal(jobs.length,1);const job=jobs[0];await db.query("UPDATE crewcheck_notification_jobs SET status='processing',locked_at=NOW(3) WHERE id=?",[job.id]);
  const dispatch=()=>dispatchClaimedJob(db,job,{operationalChangeEnabled:true,readOperationalChangeSource:source,clock:()=>now,deliver:async()=>{sends++;return {ok:true};}});await Promise.all([dispatch(),dispatch()]);assert.equal(sends,1);
  // Actual reader under RR: snapshot precedes owner wait; writer changes the
  // durable source during that wait. Only the test wrapper can remove the lock.
  const [rows]=await db.query("SELECT * FROM crewcheck_telegram_state WHERE state_key LIKE 'operational-source-history:%'");assert.equal(rows.length,1);const revised=typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;
- revised.source.previousObservation=revised.source.observation;revised.source.observation=observation(ticket.identity,'26',2500);
+ revised.source.previousObservation=revised.source.observation;revised.source.observation=observation(ticket.identity,'27',2800);revised.source.observation.sourceReceivedAt=now;
  const writer=await db.getConnection();await writer.beginTransaction();await writer.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);await writer.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(revised),rows[0].state_key]);
  const reader=await db.getConnection();await reader.query('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');await reader.beginTransaction();await reader.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[rows[0].state_key]);const id=(await reader.query('SELECT CONNECTION_ID() AS id'))[0][0].id;
  const wrapped={query:(sql,args)=>reader.query(process.env.CREWCHECK_QA_OLD_HISTORY_READ==='1'&&sql.startsWith('SELECT payload FROM crewcheck_telegram_state')?sql.replace(' FOR UPDATE',''):sql,args)};
  const pending=read(wrapped,context,options());let blocked=false;
  for(let n=0;n<200;n++){const [w]=await db.query('SELECT t.PROCESSLIST_ID FROM performance_schema.data_lock_waits w JOIN performance_schema.threads t ON t.THREAD_ID=w.REQUESTING_THREAD_ID WHERE t.PROCESSLIST_ID=?',[id]);if(w.length){blocked=true;break;}await new Promise(r=>setTimeout(r,10));}
  assert(blocked);await writer.commit();writer.release();let result;try{result=await pending;}finally{await reader.rollback();reader.release();}
- assert.equal(result.source.observation.gate,'26','HISTORY_STALE_READ: durable observation must be current after owner wait');
+ assert.equal(result.source.observation.gate,'27','HISTORY_STALE_READ: durable observation must be current after owner wait');
  await db.query('UPDATE crewcheck_platform_rosters SET updated_at=? WHERE id=?',[new Date(NOW-30000),'synthetic-roster']);assert.equal(await tx(c=>read(c,context,options())),null);await assert.rejects(record(db,context,input('27',2700),{enabled:true,clock:()=>now}));
- console.log('PASS isolated SQL actual history reader/writer: eight writers, restart, real queue/dispatch with fake transport, current source after RR owner wait, stale ticket/revision refused; external calls=0.');
+ console.log('PASS isolated SQL actual history reader/writer: eight writers, original Radar capture callback, restart, real queue/dispatch with fake transport, current source after RR owner wait, stale ticket/revision refused; external calls=0.');
 }finally{await db.end();}
