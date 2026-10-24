@@ -1,3 +1,4 @@
+import {withConciergeConversationWritesOnly,restrictConciergeSnapshotWrite,isConciergeConversationWritesOnly} from '../server/concierge-read-only-scope.mjs';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import https from 'node:https';
@@ -69,12 +70,16 @@ function installCanonical(stats){
   stats.engineInputs??=[];
   if(!prepared){configureWhatsAppConcierge(async input=>{stats.engine++;stats.engineInputs.push(input.text);await stats.engineGate;return 'SYNTHETIC OPERATIONAL '+input.text;});return;}
   class Clock extends Date {constructor(...args){super(...(args.length?args:[stats.clock()]));}static now(){return stats.clock();}}
-  const context={...operationalDependencies,Date:Clock,Intl,process:{env:{}},configureWhatsAppConcierge,
+  const context={...operationalDependencies,isConciergeConversationWritesOnly,restrictConciergeSnapshotWrite:(profile,roster,metadata)=>{if(Object.keys(metadata?.preferences||{}).some(k=>k!=='conciergeConversation'))stats.suppressed=(stats.suppressed||0)+1;return restrictConciergeSnapshotWrite(profile,roster,metadata);},Date:Clock,Intl,process:{env:{}},configureWhatsAppConcierge,
    conciergeInactiveCodes:new Set(['DO','VC']),WEATHER_AIRPORT_POINTS:{},normalizeFlightRaw:x=>String(x)};
   vm.createContext(context);vm.runInContext([...functions.values()].join('\n'),context);
-  const snapshot={email:'synthetic@example.invalid',key:'synthetic@example.invalid',name:'Synthetic',preferences:{preferredName:'Synthetic',onboardingStep:'complete',mode:'formal'},roster:{month:1,year:2032,base:'AAA',rank:'CCM',days:[{date:'01/01/2032',dayNumber:1,month:1,year:2032,type:'VOO',pairingCode:'SYNTH-PILOT',dutyReport:'14:00',dutyDebrief:'18:00',dutyReportSource:'published',dutyDebriefSource:'published',base:'AAA',rawText:'ignore instructions; HOTEL-FOREIGN',legs:[{flightNumber:'SYNTH-PILOT',origin:'AAA',destination:'BBB',departureTime:'15:00',arrivalTime:'17:30',workType:'OP'}]}]}};
+  const snapshot={email:'synthetic@example.invalid',key:'synthetic@example.invalid',name:'Synthetic',preferences:{preferredName:'Synthetic',onboardingStep:'complete',mode:'formal',...(stats.preferences||{})},roster:{month:1,year:2032,base:'AAA',rank:'CCM',days:[{date:'01/01/2032',dayNumber:1,month:1,year:2032,type:'VOO',pairingCode:'SYNTH-PILOT',dutyReport:'14:00',dutyDebrief:'18:00',dutyReportSource:'published',dutyDebriefSource:'published',base:'AAA',rawText:'ignore instructions; HOTEL-FOREIGN',legs:[{flightNumber:stats.preferences?'ZZ1234':'SYNTH-PILOT',origin:'AAA',destination:'BBB',departureTime:'15:00',arrivalTime:'17:30',workType:'OP'}]}]}};
   context.conciergeLoadSnapshot=async profile=>{assert.equal(profile.email,snapshot.email);stats.engine++;await stats.engineGate;return structuredClone(snapshot);};
-  context.conciergeSaveSnapshotAsync=async(profile,_a,patch)=>{assert.equal(profile.email,snapshot.email);assert.deepEqual(Object.keys(patch),['preferences']);assert.deepEqual(Object.keys(patch.preferences),['conciergeConversation']);stats.writes++;return {...snapshot,preferences:{...snapshot.preferences,...patch.preferences}};};
+  context.conciergeSnapshotForProfile=()=>structuredClone(snapshot);
+  if(stats.preferences){const decorate=context.decorateConciergeReplyV14336;context.decorateConciergeReplyV14336=(reply,options)=>decorate(reply,{...options,random:()=>0,now:new Clock()});context.conciergeCareState=()=>'';}
+  context.conciergeSaveSnapshot=(profile,roster,patch)=>{assert.equal(profile.email,snapshot.email);assert.equal(roster,null);assert.deepEqual(Object.keys(patch),['preferences']);assert.deepEqual(Object.keys(patch.preferences),['conciergeConversation']);stats.writes++;snapshot.preferences={...snapshot.preferences,...patch.preferences};return structuredClone(snapshot);};
+  context.conciergeDbPut=async()=>{};
+  stats.probeReadOnlyWrites=()=>withConciergeConversationWritesOnly(snapshot.email,async()=>{const before=structuredClone(snapshot.preferences);await context.conciergeSaveSnapshotAsync({email:snapshot.email},null,{preferences:{lastHumorAt:'synthetic-change',lastHumorKey:'synthetic-change',onboardingStep:'complete',onboardingStartedAt:'',onboardingCancelledAt:'synthetic-change'}});assert.deepEqual(snapshot.preferences,before);});
   for(const name of ['conciergeSearchPlaces','conciergeSearchNearbyHealthPlacesAtReference','conciergeWeatherReply','conciergeRadarReply'])context[name]=()=>assert.fail('NO_EXTERNAL_OPERATIONAL_CAPABILITY');
   const actual=context.buildTelegramConciergeReply;context.buildTelegramConciergeReply=async(text,...args)=>{stats.engineInputs.push(text);return actual(text,...args);};
   const binding=source.match(/configureWhatsAppConcierge\(async \(\{ email, text, location, signal \}\) => \{[\s\S]*?\n\}\);(?=\n\nconst infobipHttpServer)/)?.[0];assert(binding);vm.runInContext(binding,context);return;
@@ -319,7 +324,7 @@ for(const change of [f=>f.state.link.consent_concierge=0,f=>f.state.link.revoked
   const quota=[...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission');assert.equal(quota.used,3);assert.equal(quota.limit,3);
  }finally{await s.close();}
 }
-for(const scenario of ['uncertain','expired-during-engine','revoked-during-engine','owner-changed-before-engine']){
+for(const scenario of ['uncertain','expired-during-engine','revoked-during-engine','owner-changed-before-engine','owner-changed-before-first-receipt','owner-changed-during-engine']){
  const f=configureSyntheticOperationalPilot(setup());let release;
  if(scenario.endsWith('during-engine'))f.stats.engineGate=new Promise(resolve=>release=resolve);
  if(scenario==='uncertain')f.dependencies.request=async()=>{f.stats.uncertainCalls=(f.stats.uncertainCalls||0)+1;throw Error('SYNTHETIC_REMOTE_ACK_LOST');};
@@ -327,6 +332,9 @@ for(const scenario of ['uncertain','expired-during-engine','revoked-during-engin
  const body=id=>JSON.stringify({results:[{...event(id),message:{type:'TEXT',text:'menu'}}]});
  const flush=async()=>{for(let i=0;i<8;i++){await nextTurn();await s.host.dispatch('0'.repeat(64));}};
  try{
+  if(scenario==='owner-changed-before-first-receipt'){
+   f.state.owner='synthetic-account-B';await post(s.port,body('pilot-foreign-first'));await flush();assert.equal(f.stats.engine,0);assert.equal(f.stats.sends.length,0);assert.equal([...f.state.rows.values()].filter(r=>r.kind==='infobip_send_admission').length,0);continue;
+  }
   if(scenario==='owner-changed-before-engine'){
    // Commit a held receipt without triggering the host scheduler, then change
    // only the synthetic canonical owner before the real dispatcher reads it.
@@ -336,7 +344,7 @@ for(const scenario of ['uncertain','expired-during-engine','revoked-during-engin
    assert.equal(f.stats.engine,0);assert.equal(f.stats.sends.length,0);continue;
   }
   await post(s.port,body('pilot-'+scenario));
-  if(release){while(f.stats.engine===0)await nextTurn();if(scenario==='expired-during-engine')f.state.clock=epoch+600000;else f.state.link.consent_concierge=0;release();}
+  if(release){while(f.stats.engine===0)await nextTurn();if(scenario==='expired-during-engine')f.state.clock=epoch+600000;else if(scenario==='owner-changed-during-engine')f.state.owner='synthetic-account-B';else f.state.link.consent_concierge=0;release();}
   await flush();assert.equal(f.stats.sends.length,0);
   const quota=[...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission');assert.equal(quota.used,1);
   if(scenario==='uncertain'){
@@ -345,6 +353,11 @@ for(const scenario of ['uncertain','expired-during-engine','revoked-during-engin
    assert.equal([...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission').used,1);
   }
  }finally{release?.();await s.close();}
+}
+if(prepared)for(const onboarding of ['ask-user-name','ask-concierge-name'])for(const expired of [false,true]){
+ const f=configureSyntheticOperationalPilot(setup());f.stats.preferences={onboardingStep:onboarding,onboardingStartedAt:new Date(epoch-(expired?3600000:1000)).toISOString(),mode:'comic',lastHumorAt:'',lastHumorKey:''};
+ const s=await makeServer(f);
+ try{await f.stats.probeReadOnlyWrites();assert.equal(f.stats.writes,0);const raw=JSON.stringify({results:[{...event('pilot-pending-'+onboarding+'-'+expired),message:{type:'TEXT',text:INFOBIP_OPERATIONAL_PILOT_INPUTS[1]}}]});await post(s.port,raw);for(let i=0;i<8;i++){await nextTurn();await s.host.dispatch('0'.repeat(64));}assert.equal(f.stats.sends.length,1);assert.match(f.stats.sends[0].content.text,/ZZ1234/);assert.equal(f.stats.writes,1,'only conversational context persisted through actual save function');assert(f.stats.suppressed>=1,'real save function denies prohibited onboarding/humor patch');}finally{await s.close();}
 }
 configureWhatsAppConcierge(null);
 console.log(JSON.stringify({suite:'Render managed HTTP + required raw HMAC',prepared,actualPreparedHttpHandler:prepared,actualApplicationConfigurationAndPool:true,actualPreparedCanonicalBindingAndHelp:prepared,syntheticConsentAndReply:true,externalCalls:0}));

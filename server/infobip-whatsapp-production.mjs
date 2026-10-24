@@ -1,3 +1,4 @@
+import {withConciergeConversationWritesOnly} from './concierge-read-only-scope.mjs';
 import {createHeldInfobipWhatsAppRuntime,bindInfobipWhatsAppRuntime} from './infobip-whatsapp-runtime.mjs';
 import {createInfobipRenderIngressPolicy} from './infobip-whatsapp-render-ingress.mjs';
 import {createInfobipWebhookAuthenticator} from './infobip-whatsapp-auth.mjs';
@@ -99,10 +100,10 @@ export async function createInfobipWhatsAppProduction(options={}) {
     // reservation, lifecycle and send locks, without invoking account tools.
     const concierge=pilot?async input=>{
       const text=pilot.command(input.text);
-      if(!text)throw Error('INFOBIP_OPERATIONAL_PILOT_DENIED');
-      return invokeConfiguredWhatsAppConcierge({...input,text});
+      if(!text||!pilot.allowsOwner(input.accountId))throw Error('INFOBIP_OPERATIONAL_PILOT_DENIED');
+      return withConciergeConversationWritesOnly(input.email,()=>invokeConfiguredWhatsAppConcierge({...input,text}));
     }:singleTest?async()=>singleTestReply:invokeConfiguredWhatsAppConcierge;
-    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge,
+    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge,...(pilot?{allowsOwner:pilot.allowsOwner}:{}),
       send:pilot?(proposal,context)=>pilot.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'})
         :singleTest?(proposal,context)=>!linkOnly&&proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
     await preflightInfobipWhatsAppStorage(db,sqlBudget); // SELECT only; never create or repair tables.

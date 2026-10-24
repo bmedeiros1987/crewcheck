@@ -34,7 +34,7 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
   const old=createInfobipSendAdmission({id:INFOBIP_SINGLE_TEST_APPROVAL,recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+600000},{sender,now:()=>epoch});
   assert.equal(await createInfobipSqlBudget(db)(c=>old.reserve(c,{sender,recipient})),true);
   const makePilot=()=>createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{
-   admission:{allows:j=>scope.allows(j)&&quantity.allows(j),reserve:(c,j)=>scope.reserve(c,j,quantity.reserve)},
+   allowsOwner:scope.allowsOwner,admission:{allows:j=>scope.allows(j)&&quantity.allows(j),reserve:(c,j)=>scope.reserve(c,j,quantity.reserve)},
    concierge:async input=>{assert(scope.command(input.text));engine++;return 'SYNTHETIC OPERATIONAL SQL';},
    send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
   let store=makePilot();
@@ -58,12 +58,26 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
   await reset();let engine=0,sends=0;
   const f=configureSyntheticOperationalPilot({state:{clock:epoch},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});
   const scope=createOperationalPilotScope(f.dependencies.configuration,f.dependencies.admission,{now:()=>epoch}),quantity=createInfobipSendAdmission(f.dependencies.admission,{sender,now:()=>epoch});
-  const store=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{admission:{allows:scope.allows,reserve:async(c,j)=>{assert(await scope.reserve(c,j,quantity.reserve));throw Error('SYNTHETIC_ROLLBACK_AFTER_SLOT');}},concierge:async()=>{engine++;return 'SYNTHETIC';},send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
+  const store=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{allowsOwner:scope.allowsOwner,admission:{allows:scope.allows,reserve:async(c,j)=>{assert(await scope.reserve(c,j,quantity.reserve));throw Error('SYNTHETIC_ROLLBACK_AFTER_SLOT');}},concierge:async()=>{engine++;return 'SYNTHETIC';},send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
   const receive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:password},store,now:()=>epoch,queueLinkConfirmation:false});
   const id='synthetic-pilot-rollback',rawBody=Buffer.from(JSON.stringify({results:[{...event,messageId:id,message:{type:'TEXT',text:'menu'}}]}));
   assert.equal((await receive({method:'POST',rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')],rawBody})).accepted,1);
   assert.equal((await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex'))).status,'uncertain');
   const [[count]]=await db.query("SELECT COUNT(*) n FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%' OR state_key LIKE 'crewcheck-infobip-pilot-v1:%'");assert.equal(count.n,0);assert.equal(engine,0);assert.equal(sends,0);
+ });
+ for(const phase of ['before-receipt','after-enqueue'])await run('operational owner pin rejects reassignment '+phase+' under InnoDB',async()=>{
+  await reset();let engine=0,sends=0;
+  const f=configureSyntheticOperationalPilot({state:{clock:epoch,owner},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});
+  const scope=createOperationalPilotScope(f.dependencies.configuration,f.dependencies.admission,{now:()=>epoch}),quantity=createInfobipSendAdmission(f.dependencies.admission,{sender,now:()=>epoch});
+  const store=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{allowsOwner:scope.allowsOwner,admission:{allows:scope.allows,reserve:(c,j)=>scope.reserve(c,j,quantity.reserve)},concierge:async()=>{engine++;return 'SYNTHETIC';},send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
+  const receive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:password},store,now:()=>epoch,queueLinkConfirmation:false});
+  const id='synthetic-owner-pin-'+phase,rawBody=Buffer.from(JSON.stringify({results:[{...event,messageId:id,message:{type:'TEXT',text:'menu'}}]}));
+  if(phase==='before-receipt')await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['synthetic-other-owner',email]);
+  const result=await receive({method:'POST',rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')],rawBody});
+  assert.equal(result.accepted,phase==='before-receipt'?0:1);
+  if(phase==='after-enqueue'){await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['synthetic-other-owner',email]);await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex'));}
+  assert.equal(engine,0);assert.equal(sends,0);
+  const [[count]]=await db.query("SELECT COUNT(*) n FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%' OR state_key LIKE 'crewcheck-infobip-pilot-v1:%'");assert.equal(count.n,0);
  });
  await run('HMAC raw inbound keeps durable SQL dedup across recreation and key rotation',async()=>{
    await reset();

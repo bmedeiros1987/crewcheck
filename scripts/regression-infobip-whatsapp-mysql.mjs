@@ -95,10 +95,10 @@ try{
    assert.equal((await receiveReports('seen')(reportsPacket([seen]))).duplicates,1);
    assert.equal(await reserveRestart(),false,'actual engine restart never resets quantity admission');
    const pilotAdmission=pilotRestartAdmission();
-   assert.equal(await createInfobipSqlBudget(db)(c=>pilotAdmission.reserve(c,{sender,recipient,receivedAt:epoch,text:'menu'})),false,'uncertain menu slot cannot be repeated after actual MySQL and process restart');
+   assert.equal(await createInfobipSqlBudget(db)(c=>pilotAdmission.reserve(c,{sender,recipient,receivedAt:epoch,bindingStamp:JSON.stringify([owner]),text:'menu'})),false,'uncertain menu slot cannot be repeated after actual MySQL and process restart');
    const pilotStore=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{admission:pilotAdmission,concierge:async()=>assert.fail('NO_PILOT_ENGINE_RETRY'),send:async()=>assert.fail('NO_PILOT_PROVIDER_RETRY')});
    assert.equal((await pilotStore.dispatch(pilotRestartKey)).status,'uncertain');
-   assert.equal(await createInfobipSqlBudget(db)(c=>pilotAdmission.reserve(c,{sender,recipient,receivedAt:epoch,text:INFOBIP_OPERATIONAL_PILOT_INPUTS[1]})),true,'only another approved category may use a remaining slot after restart');
+   assert.equal(await createInfobipSqlBudget(db)(c=>pilotAdmission.reserve(c,{sender,recipient,receivedAt:epoch,bindingStamp:JSON.stringify([owner]),text:INFOBIP_OPERATIONAL_PILOT_INPUTS[1]})),true,'only another approved category may use a remaining slot after restart');
    const pilotQuotaKey='crewcheck-infobip-admission-v1:'+createHash('sha256').update(JSON.stringify([sender,INFOBIP_OPERATIONAL_PILOT_APPROVAL])).digest('hex');
    const [[pilotQuota]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[pilotQuotaKey]);assert.equal((typeof pilotQuota.payload==='string'?JSON.parse(pilotQuota.payload):pilotQuota.payload).used,2);
    const production=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},

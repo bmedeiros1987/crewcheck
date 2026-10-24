@@ -623,7 +623,7 @@ async function handleLinkStatus(req, res, url) {
     let owners=[];
     try {if(link)[owners]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 2',[identity.email]);}
     catch {return sendJson(res,503,{ok:false,message:'Vínculo do WhatsApp temporariamente indisponível.'});}
-    diagnosis=await infobipCanonicalLinkStatus(link,{hashPhone:privateHash,ownerReady:owners.length===1&&Boolean(owners[0].public_id)});
+    diagnosis=await infobipCanonicalLinkStatus(link,{hashPhone:privateHash,ownerReady:owners.length===1&&Boolean(owners[0].public_id),ownerPublicId:owners.length===1?owners[0].public_id:undefined});
   }
   return sendJson(res, 200, {
     ok: true,

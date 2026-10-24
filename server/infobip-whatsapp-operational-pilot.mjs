@@ -19,6 +19,7 @@ export function createOperationalPilotScope(configuration,admission,{now=Date.no
  if(configuration?.operationalPilot!==true||!phone(configuration.sender)||configuration.singleMessageTest!==false||
   configuration.canonicalLinkHandshake!==false||configuration.canonicalLinkHandshakeOnly!==false||
   admission?.id!==INFOBIP_OPERATIONAL_PILOT_APPROVAL||admission.maxAttempts!==3||
+  typeof admission.ownerSha256!=='string'||! /^[a-f0-9]{64}$/.test(admission.ownerSha256)||
   !Array.isArray(admission.recipients)||admission.recipients.length!==1||!phone(admission.recipients[0])||
   !integer(admission.validFrom)||!integer(admission.validUntil)||admission.validUntil<=admission.validFrom||admission.validUntil-admission.validFrom>900000||
   typeof now!=='function'||
@@ -29,6 +30,9 @@ export function createOperationalPilotScope(configuration,admission,{now=Date.no
   budget?.currency!=='USD'||budget.monthlyLimitMicroUsd!==20000000||budget.allChannelsIncluded!==true||
   !integer(budget.remainingMicroUsd)||budget.remainingMicroUsd<50000||budget.remainingMicroUsd>20000000||
   !integer(budget.verifiedAt)||!integer(budget.validUntil)||budget.validUntil<admission.validUntil)fail();
+ const ownerSha256=admission.ownerSha256;
+ const allowsOwner=accountId=>typeof accountId==='string'&&accountId.length>0&&createHash('sha256').update(accountId).digest('hex')===ownerSha256;
+ const ownsStamp=value=>{try{return allowsOwner(JSON.parse(value)[0]);}catch{return false;}};
  const scope=Object.freeze({recipient:admission.recipients[0],sender:configuration.sender,from:admission.validFrom,until:admission.validUntil,
   pricing:Object.freeze({...pricing}),budget:Object.freeze({...budget})});
  // Quote/budget fields are operator assertions, not proof of provider billing.
@@ -40,9 +44,9 @@ export function createOperationalPilotScope(configuration,admission,{now=Date.no
    Number.isSafeInteger(job.receivedAt)&&job.receivedAt>=scope.from&&job.receivedAt<scope.until&&operationalPilotCommand(job.text)!==null,
   slotKey=job=>'crewcheck-infobip-pilot-v1:'+createHash('sha256').update(JSON.stringify([scope.sender,INFOBIP_OPERATIONAL_PILOT_APPROVAL,scope.recipient,operationalPilotCommand(job.text)])).digest('hex');
  return Object.freeze({
-  allows,
+  allows,allowsOwner,
   async reserve(c,job,reserveQuantity){
-   if(!allows(job))return false;
+   if(!allows(job)||!ownsStamp(job.bindingStamp))return false;
    const key=slotKey(job);
    await c.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',[key,JSON.stringify({v:1,kind:'infobip_operational_pilot_slot',used:false})]);
    const [rows]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key]);
@@ -53,7 +57,7 @@ export function createOperationalPilotScope(configuration,admission,{now=Date.no
    return true;
   },
   command:text=>active()?operationalPilotCommand(text):null,
-  allowsProposal:proposal=>active()&&proposal?.sender===scope.sender&&proposal.recipient===scope.recipient,
+  allowsProposal:proposal=>active()&&proposal?.sender===scope.sender&&proposal.recipient===scope.recipient&&ownsStamp(proposal.bindingStamp),
  });
 }
 
