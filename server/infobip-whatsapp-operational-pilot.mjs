@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {operationalQuestion} from './concierge/operational-question.mjs';
 
 export const INFOBIP_OPERATIONAL_PILOT_APPROVAL='Sentinel_366aa9592b448191bea5d2f60bebb46a';
 export const INFOBIP_OPERATIONAL_PILOT_RECIPIENT_SHA256='a95f7f4c078ba9a1b5d7a27cdd212beb571d1d496a19178d1c070932b09aa5b6';
@@ -9,7 +10,14 @@ const integer=x=>Number.isSafeInteger(x)&&x>=0;
 const phone=x=>typeof x==='string'&&/^[1-9]\d{7,14}$/.test(x);
 export function operationalPilotCommand(text) {
  if(typeof text!=='string'||text.length>100)return null;
- return commands.get(text.normalize('NFC').trim().toLowerCase())??null;
+ const value=text.normalize('NFC').trim().toLowerCase().replace(/\s+/g,' ');
+ const exact=commands.get(value);if(exact)return exact;
+ // Bounded aliases for the same approved pickup category, never general routing.
+ // Anchoring excludes negation, multiple requests and instruction suffixes.
+ if(!/^(?:q|que) (?:hr|hrs|hora|horas) a van me (?:pega|busca) no hotel\??$/.test(value))return null;
+ const question=operationalQuestion(value);
+ return question?.kind==='logistics-question'&&question.subject==='pickup'&&question.direction===null
+  ? INFOBIP_OPERATIONAL_PILOT_INPUTS[2]:null;
 }
 
 // Lower-level explicitly injected production composition is also exercised with
