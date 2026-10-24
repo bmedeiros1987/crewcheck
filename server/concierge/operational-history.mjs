@@ -45,8 +45,8 @@ function checked(observation,current,now) {
   const result=inspectOperationalChange(source,current,'gate',now);
   if(result.status!=='baseline')throw deny();
   const proof=observation.departureGateUpdate;
-  const kept={ok:true,provider:observation.provider,flight:observation.flight,origin:observation.origin,destination:observation.destination,
-    scheduledDepartureUtc:observation.scheduledDepartureUtc,gate:observation.gate,sourceReceivedAt:observation.sourceReceivedAt,
+  const kept={ok:true,provider:observation.provider,flight:result.current.flight,origin:result.current.origin,destination:result.current.destination,
+    scheduledDepartureUtc:result.current.scheduledDepartureUtc,gate:result.current.gate,sourceReceivedAt:result.current.sourceReceivedAt,
     departureGateUpdate:Object.fromEntries(['schema','flight','origin','destination','scheduledDepartureUtc','gate','updatedAt'].map(k=>[k,proof[k]]))};
   return {observation:kept,at:Date.parse(result.current.sourceUpdatedAt),receipt:result.current.sourceReceivedAt};
 }

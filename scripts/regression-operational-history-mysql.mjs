@@ -26,7 +26,7 @@ try{
  const roster={year:2032,month:10,base:'GRU',rank:'CCM',rawText:'',days:[{date:'06/10/2032',dayNumber:6,month:10,year:2032,dayOfWeek:'',type:'VOO',pairingCode:'TEST123',dutyReport:'05:30',dutyDebrief:'10:00',isNextDay:false,continuityInferred:false,base:'GRU',rawText:'',legs:[{id:'synthetic-leg',flightNumber:'LA1234',origin:'GRU',destination:'BSB',departureTime:'06:30',arrivalTime:'08:30',workType:'OP'}]}]};
  await db.query('INSERT INTO crewcheck_platform_rosters VALUES(?,?,?,?,?,1,?,?)',['synthetic-roster',email,'2032-10',JSON.stringify(roster),'a'.repeat(64),new Date(NOW-60000),new Date(NOW-86400000)]);
  const link={email,chatId,code:'synthetic-code',linkedAt:new Date(NOW-86400000).toISOString()};for(const k of ['link-email:'+email,'link-chat:'+chatId])await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[k,JSON.stringify(link)]);
- const ticket=await currentScope();const input=(gate,offset)=>({expectedScope:ticket,field:'gate',observation:observation(ticket.identity,gate,offset)});
+ const ticket=await currentScope();const input=(gate,offset)=>{const value=observation(ticket.identity,gate,offset);value.departure={gate};delete value.gate;return {expectedScope:ticket,field:'gate',observation:value};};
  const identity={db,email,profile:{public_id:owner},payload:{iss:'crewcheck',aud:'crewcheck-web',sub:owner,email,exp:(NOW+86400000)/1000}};
  await changeTelegramOperationalConsent(db,identity,{field:'gate',enabled:true,confirmed:true,expectedRevision:0},{enabled:true,clock:()=>now});
  now=NOW+3000;const first=await Promise.all(Array.from({length:8},()=>record(db,context,input('24',1000),{enabled:true,clock:()=>now})));assert.equal(first.filter(x=>x.status==='baseline').length,1);

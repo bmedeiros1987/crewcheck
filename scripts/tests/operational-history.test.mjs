@@ -20,9 +20,9 @@ export function fixture(){
  const context={email,owner};const opts=()=>({enabled:true,now,lockSource:true});
  return {db,context,states,queries,roster,set now(v){now=v;},set revision(v){revision=v;},set owner(v){publicId=v;},
  scope:()=>scope(db,context,opts()),read:()=>read(db,context,opts()),
- async write(gate,offset,expectedScope){const current=expectedScope||await scope(db,context,opts());const i=current.identity;const at=NOW+offset;
+ async write(gate,offset,expectedScope,transform=x=>x){const current=expectedScope||await scope(db,context,opts());const i=current.identity;const at=NOW+offset;
   const observation={ok:true,provider:'custom',...i,gate,sourceReceivedAt:at+100,secret:'MUST_NOT_PERSIST',departureGateUpdate:{schema:'crewcheck.departure-gate-update.v1',...i,gate,updatedAt:new Date(at).toISOString(),secret:'MUST_NOT_PERSIST'}};
-  return record(db,context,{expectedScope:current,field:'gate',observation},{enabled:true,clock:()=>now});}
+  return record(db,context,{expectedScope:current,field:'gate',observation:transform(observation)},{enabled:true,clock:()=>now});}
  };
 }
 test('OFF before DB; explicit transaction current-read required; no shipping caller or status enrollment',async()=>{
@@ -52,3 +52,12 @@ test('stale data and malformed previous record do not become fresh',async()=>{
  const fresh=fixture();fresh.now=NOW+3000;await fresh.write('24',1000);[...fresh.states.values()][0].source.observation=null;await assert.rejects(fresh.write('25',2000));
 });
 test('account erasure includes history namespace',async()=>{const {notificationStateDeletionStatements}=await import('../../server/v139/notificationStateDeletion.mjs');assert.match(notificationStateDeletionStatements(email).map(x=>x[0]).join(' '),/operational-source-history/);});
+
+test('admitted departure gate and source route aliases remain valid after durable projection',async()=>{
+ const f=fixture();f.now=NOW+3000;
+ const aliases=o=>{o.departure={gate:o.gate,iata:o.origin};o.arrival={iata:o.destination};o.sourceOrigin=o.origin;o.sourceDestination=o.destination;delete o.gate;delete o.origin;delete o.destination;return o;};
+ assert.equal((await f.write('24',1000,undefined,aliases)).status,'baseline');
+ assert.equal((await f.read()).source.observation.gate,'24');
+ assert.equal((await f.write('25',2000,undefined,aliases)).status,'advanced');
+ const h=await f.read();assert.equal(inspectOperationalChange(h.source,h.scope,'gate',NOW+3000).status,'change');
+});
