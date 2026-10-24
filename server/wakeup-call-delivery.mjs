@@ -62,4 +62,3 @@ export async function sendInfobipWakeupCall({ phone, text, environment = process
     return { ok: true, configured: true, provider, accepted: true, delivered: null };
   } catch { return failed(provider, 'CALL_RESULT_UNCERTAIN'); }
 }
-
