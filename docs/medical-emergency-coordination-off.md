@@ -109,3 +109,15 @@ Cobre concorrência de aceites/cancelamento, duplicatas, múltiplos ajudantes,
 fechamento/mais ajuda, esgotamento global, conta/sessão/consentimento/expiração,
 resultado incerto, ausência de hotel e override/descanso. Não comprova SQL
 distribuído, crash/restart, transporte, aparelho físico ou entrega a terceiros.
+
+## Revisão do primeiro HEAD
+
+As contraprovas P2 verificam confirmação no TTL total do alerta mesmo quando o
+prazo do rascunho é posterior, inclusive vencimento durante a reserva, e rejeitam
+override ON sem identidade/revisão presentes. Revisão numérica zero é um valor
+explícito válido; ausência, booleanos, NaN e strings vazias não são autoridade.
+Também foi reproduzido override vencido mantendo influência depois de checkout
+ou nova seleção: o registro válido expirado agora volta à preferência habitual
+mesmo sem o pernoite anterior carregado. Cancelar um rascunho não depende de ledger
+de entregas inexistentes e continua sem reserva/avisos. A suíte final tem 17 grupos,
+com contraprovas RED antes e GREEN após as correções, sempre sem rede real.

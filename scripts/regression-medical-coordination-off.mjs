@@ -8,8 +8,8 @@ const { emergencyAvailability } = await import('../shared/emergency-availability
 test.after(() => { globalThis.fetch = originalFetch; assert.equal(externalCalls,0); });
 
 // In-memory atomic repository proves the coordinator contract, NOT real SQL durability.
-function fixture() {
-  let state = medicalCoordinationDraft({ alertId:'alertA',ownerId:'ownerA',previewId:'previewA',recipientIds:['helperA','helperB','helperC'],createdAt:1000,draftExpiresAt:2000 });
+function fixture({draftExpiresAt=2000}={}) {
+  let state = medicalCoordinationDraft({ alertId:'alertA',ownerId:'ownerA',previewId:'previewA',recipientIds:['helperA','helperB','helperC'],createdAt:1000,draftExpiresAt });
   let outbox = [], reservations = 0, clock = 1100, version = 1, budget = true, tail = Promise.resolve(), afterReserve;
   const policy = {maxRecipients:3,maxRounds:3,minRepeatMs:100,alertTtlMs:1000}; // invented test values only
   const repository = {transact:(_id, update)=>{
@@ -26,7 +26,7 @@ function fixture() {
     admit:async command=>Object.freeze({ownerId:options.ownerId||'ownerA',actorId,version,alertId:options.alertId||command.alertId,
       channel:'whatsapp',previewId:'previewA',authorizedRecipientIds:options.recipients||['helperA','helperB','helperC'],
       recipientConsentCurrent:options.consent!==false,recipientIntentCurrent:options.intent!==false,availableNow:options.available!==false,
-      contactedRecipientIds:options.contacted||['helperA','helperB'],plan:options.plan||'basic',ordinaryQuota:0,
+      contactedRecipientIds:options.omitLedger?undefined:options.contacted||['helperA','helperB'],plan:options.plan||'basic',ordinaryQuota:0,
       round:options.round??1,confirmation:options.confirm===false?null:{action:command.action,alertId:command.alertId,revision:options.revision??state.revision},
     }),isCurrent:auth=>auth.version===version});
   return {actor,repository,state:()=>state,outbox:()=>outbox,reservations:()=>reservations,
@@ -67,7 +67,7 @@ test('multiple additional helpers have distinct effect identities; each offer re
 });
 test('cancel draft sends nothing; only owner can cancel/assist; terminal alert stays closed',async()=>{
   const f=fixture();assert.equal((await f.actor()(command('assist','notactive'))).code,'NOT_ACTIVE');
-  assert.equal((await f.actor()(command('cancel','abort'))).notificationState,'not_required');assert.equal(f.outbox().length,0);assert.equal(f.reservations(),0);
+  assert.equal((await f.actor('ownerA',{omitLedger:true})(command('cancel','abort'))).notificationState,'not_required');assert.equal(f.outbox().length,0);assert.equal(f.reservations(),0);
   const g=fixture();await g.actor()(command('confirm','start'));assert.equal((await g.actor('helperA')(command('assist','fakeclose'))).code,'CONFIRMATION_REQUIRED');
   await g.actor()(command('assist','close'));assert.equal(g.state().phase,'assisted');assert.equal((await g.actor('helperB')(command('offer-help','late'))).code,'CLOSED');
 });
@@ -112,6 +112,10 @@ test('consent/availability/account/expiry changes fail closed and reservation ro
   const g=fixture();g.reserveHook(async()=>g.invalidate());await g.actor()(command('confirm','start'));assert.equal(g.reservations(),0);assert.equal(g.outbox().length,0);assert.equal(g.state().phase,'draft');
   const h=fixture();h.reserveHook(async()=>h.time(2000));await h.actor()(command('confirm','start'));assert.equal(h.outbox().length,0);assert.equal(h.state().phase,'draft');
 });
+test('initial confirmation and its final reservation check obey alert TTL even if the draft deadline is later',async()=>{
+  const f=fixture({draftExpiresAt:10000});f.time(2000);assert.equal((await f.actor()(command('confirm','late'))).code,'DRAFT_EXPIRED');assert.equal(f.outbox().length,0);assert.equal(f.reservations(),0);
+  const g=fixture({draftExpiresAt:10000});g.time(1999);g.reserveHook(async()=>g.time(2000));await g.actor()(command('confirm','crossing'));assert.equal(g.state().phase,'draft');assert.equal(g.outbox().length,0);assert.equal(g.reservations(),0);
+});
 test('street/trusted contacts need no hotel; no arbitrary medical/location/room payload is accepted or emitted',async()=>{
   const f=fixture();await f.actor()(command('confirm','start',{medical:'must-not-copy',location:'must-not-copy',room:'must-not-copy',plan:'basic',ordinaryQuota:0}));
   assert.equal(f.state().phase,'requesting');assert(!JSON.stringify(f.outbox()).includes('must-not-copy'));
@@ -128,4 +132,23 @@ test('habitual/per-stay override, canonical expiry, owner scope and explicit res
   assert.equal(read({stay,override:{...override,revision:'old'}}).available,false);assert.equal(read({ownerId:'B'}).available,false);
   assert.equal(read({stay,override:{...override,expiresAt:201}}).available,false);assert.equal(read({stay,override:{...override,value:'on'},rest:'resting'}).available,false,'stay ON does not authorize disturbing rest');
   assert.equal(read({preferences:{...preferences,available:false,whatsappConsent:true,medicalConsent:true}}).available,false,'consents cannot create availability');
+});
+test('an expired old stay override cannot silence or enable a later stay or street availability',()=>{
+  const preferences={ownerId:'A',available:true},override={ownerId:'A',stayId:'oldStay',revision:'old',value:'off',expiresAt:200};
+  const read=extra=>emergencyAvailability({ownerId:'A',preferences,override,rest:'awake',at:350,...extra});
+  assert.equal(read().available,true,'no current hotel after checkout uses habitual setting');
+  assert.equal(read({stay:{ownerId:'A',id:'newStay',revision:'new',startsAt:300,endsAt:400}}).available,true,'old expired override does not affect new occurrence');
+  assert.equal(read({preferences:{...preferences,available:false},override:{...override,value:'on'}}).available,false);
+  assert.equal(read({override:{...override,ownerId:'B'}}).available,false);
+  assert.equal(read({stay:{ownerId:'B'}}).available,false);
+});
+test('active override cannot gain authority from missing, empty or invalid occurrence/revision identities',()=>{
+  const preferences={ownerId:'A',available:false},stay={ownerId:'A',startsAt:100,endsAt:200},override={ownerId:'A',value:'on',expiresAt:200};
+  const read=(s,o)=>emergencyAvailability({ownerId:'A',preferences,stay:s,override:o,rest:'awake',at:150});
+  assert.equal(read(stay,override).available,false);
+  for(const bad of [undefined,null,'',' ',NaN,Infinity,false]){
+    assert.equal(read({...stay,id:bad,revision:'r'},{...override,stayId:bad,revision:'r'}).available,false);
+    assert.equal(read({...stay,id:'s',revision:bad},{...override,stayId:'s',revision:bad}).available,false);
+  }
+  assert.equal(read({...stay,id:'s',revision:0},{...override,stayId:'s',revision:0}).available,true,'explicit revision zero is valid, not absent');
 });

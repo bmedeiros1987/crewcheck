@@ -31,7 +31,8 @@ function transition(state, command, auth, policy, at) {
     || auth.confirmation?.alertId !== state.alertId || auth.confirmation?.revision !== state.revision)) return fail('CONFIRMATION_REQUIRED');
   if (state.phase === 'assisted' || state.phase === 'cancelled') return fail('CLOSED');
   const contacted = auth.contactedRecipientIds;
-  if (command.action !== 'confirm' && (!Array.isArray(contacted) || new Set(contacted).size !== contacted.length
+  const needsLedger = command.action !== 'confirm' && !(state.phase === 'draft' && command.action === 'cancel');
+  if (needsLedger && (!Array.isArray(contacted) || new Set(contacted).size !== contacted.length
     || contacted.some(x => !state.recipientIds.includes(x)))) return fail('DELIVERY_LEDGER_REQUIRED');
   const next = clone(state), effects = [];
   let cancelPending = false;
@@ -42,7 +43,8 @@ function transition(state, command, auth, policy, at) {
     });
   };
   if (command.action === 'confirm') {
-    if (state.phase !== 'draft' || at < state.createdAt || at >= state.draftExpiresAt) return fail('DRAFT_EXPIRED');
+    if (state.phase !== 'draft' || at < state.createdAt || at >= state.draftExpiresAt
+      || at >= state.createdAt + policy.alertTtlMs) return fail('DRAFT_EXPIRED');
     if (auth.channel !== 'whatsapp' || auth.previewId !== state.previewId
       || !Array.isArray(auth.authorizedRecipientIds) || !same(auth.authorizedRecipientIds, state.recipientIds)) return fail('RECIPIENTS_OR_CONSENT_CHANGED');
     if (state.recipientIds.length > policy.maxRecipients) return fail('RECIPIENT_LIMIT');
