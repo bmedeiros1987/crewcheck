@@ -312,7 +312,7 @@ for(const change of [f=>f.state.link.consent_concierge=0,f=>f.state.link.revoked
   assert.equal(f.state.queries.length,before,'disallowed input must stop before SQL');
   await Promise.all(Array.from({length:4},()=>post(s.port,packet('pilot-menu','menu'))));await flush();
   assert.equal(f.stats.sends.length,1);assert.equal(f.stats.engineInputs[0],'/menu');
-  if(prepared){assert.match(f.stats.sends[0].content.text,/menu completo/);assert(f.stats.sends[0].content.text.length<=4000);assert.equal(f.stats.writes,0);}
+  if(prepared){assert.match(f.stats.sends[0].content.text,/CrewCierge.*BETA/);for(let n=1;n<=17;n++)assert(f.stats.sends[0].content.text.includes(n+'. '),'complete numbered menu '+n);assert(f.stats.sends[0].content.text.length<=4000);assert.equal(f.stats.writes,0);}
   await post(s.port,packet('pilot-next',INFOBIP_OPERATIONAL_PILOT_INPUTS[1]));await flush();
   assert.equal(f.stats.sends.length,2);assert.equal(f.stats.engineInputs[1],'/proximo');
   if(prepared){assert.match(f.stats.sends[1].content.text,/SYNTH-PILOT/);assert(!f.stats.sends[1].content.text.includes('HOTEL-FOREIGN'));assert.equal(f.stats.writes,1);}
