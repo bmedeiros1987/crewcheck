@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { createInfobipInboundReceiver } from '../server/infobip-whatsapp-candidate.mjs';
 import { completeCanonicalWhatsAppLink } from '../server/whatsapp-link-proof.mjs';
@@ -75,4 +76,34 @@ state.pending.set(codeHash('333333'), { email: 'synthetic@example.invalid', expi
 assert.equal((await receive()(packet('expired', '333333'))).denied, 1);
 assert.equal((await receive()(packet('old-retry', '222222', { receivedAt: new Date(now - 9 * 86400000).toISOString() }))).denied, 1);
 assert.equal(state.enqueued, 0);
+
+// Execute the real status handler: authenticated, scoped SELECT only, no DDL.
+const whatsappSource = fs.readFileSync('server/whatsapp.mjs', 'utf8');
+const statusSource = whatsappSource.slice(whatsappSource.indexOf('async function handleLinkStatus('), whatsappSource.indexOf('\nasync function handleUnlink('));
+let reads = 0, broken = false;
+const identity = { email: 'synthetic@example.invalid', db: { query: async (sql, args) => {
+  reads++; assert(sql.trim().startsWith('SELECT ')); assert.deepEqual(args, [identity.email]);
+  if (broken) throw Error('SYNTHETIC_PRIVATE_DATABASE_ERROR');
+  return [[{ phone_last4: '0101', consent_concierge: '0', consent_alerts: 0, linked_at: '2032-01-01' }]];
+} } };
+const statusHandler = new Function('sendJson', 'requireIdentity', 'ensureWhatsAppTables', `return (${statusSource});`)(
+  (_res, status, payload) => ({ status, payload }), async req => req.identity, () => assert.fail('status cannot initialize tables'));
+assert.equal(await statusHandler({ method: 'GET', identity: null }, {}), undefined); assert.equal(reads, 0);
+const status = await statusHandler({ method: 'GET', identity }, {});
+assert.equal(status.status, 200); assert.equal(status.payload.linked, true); assert.equal(status.payload.last4, '0101'); assert.equal(status.payload.consentConcierge, false);
+broken = true;
+assert.equal((await statusHandler({ method: 'GET', identity }, {})).status, 503);
+
+if (process.argv.includes('--prepared')) {
+  const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+  const start = home.indexOf('async function openWhatsAppBinding() {'), end = home.indexOf('\n}\n', start) + 2;
+  assert(start > 0 && end > start);
+  const code = home.slice(start, end).replace(/authFetch<[^>]+>/g, 'authFetch');
+  let current = true, resolve, opens = 0, notices = 0;
+  const open = new Function('captureWhatsAppLinkSession', 'authFetch', 'window', 'navigator', 'toast', `return (${code});`)(
+    () => ({ isCurrent: () => current }), () => new Promise(done => { resolve = done; }),
+    { open: () => { opens++; } }, { clipboard: { writeText: () => { opens++; } } }, { success: () => { notices++; }, error: () => { notices++; } });
+  const pending = open(); current = false; resolve({ ok: true, code: '654321', openUrl: 'https://wa.me/12025550100' }); await pending;
+  assert.equal(opens, 0); assert.equal(notices, 0, 'old-account challenge must not be opened/copied/displayed');
+}
 console.log('PASS canonical Infobip handshake: literal raw HMAC before SQL, explicit recipient/window gate, canonical challenge/expiry, concurrency, rollback, restart, cross-account conflict and no paid confirmation; externalCalls=0.');

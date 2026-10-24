@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 const file='client/src/pages/Home.tsx';let source=fs.readFileSync(file,'utf8');
+const linkStatusImport="import { WhatsAppLinkStatus } from '@/components/notifications/WhatsAppLinkStatus';";
+if(!source.includes(linkStatusImport))source=linkStatusImport+'\n'+source;
 const start=source.indexOf('function WakeupView('),end=source.indexOf('\nfunction ',start+10);if(start<0||end<0)throw Error('Wakeup presentation boundary missing');
 if(!source.includes("import {WakeDiagnostic}"))source="import {WakeDiagnostic} from '@/components/notifications/WakeDiagnostic';\n"+source;
 let block=source.slice(source.indexOf('function WakeupView('),source.indexOf('\nfunction ',source.indexOf('function WakeupView(')+10));
@@ -124,5 +126,5 @@ if (activate==='activateServerAlarm') {
 `;
 }
 source=source.replace(source.slice(source.indexOf('function WakeupView('),source.indexOf('\nfunction ',source.indexOf('function WakeupView(')+10)),block);
-source=source.replace('deviceSettings={<><NotificationReadiness/>','deviceSettings={<><details className="cc-notification-channels"><summary>Vínculos de canais</summary><p>Vincular é uma ação explícita, distinta de salvar preferências.</p><button onClick={openTelegramBinding}>Vincular Telegram</button><button onClick={openWhatsAppBinding}>Vincular WhatsApp</button></details><NotificationReadiness/>');
+source=source.replace('deviceSettings={<><NotificationReadiness/>','deviceSettings={<><details className="cc-notification-channels"><summary>Vínculos de canais</summary><p>Vincular é uma ação explícita, distinta de salvar preferências.</p><button onClick={openTelegramBinding}>Vincular Telegram</button><button onClick={openWhatsAppBinding}>Vincular WhatsApp</button><WhatsAppLinkStatus/></details><NotificationReadiness/>');
 fs.writeFileSync(file,source);

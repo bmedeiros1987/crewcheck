@@ -14,11 +14,13 @@ const server = http.createServer((req, res) => context.respond(req, res, new URL
   const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}), args: ['--no-sandbox'] });
   try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 900 }, serviceWorkers: 'block' });
-    let linkStarts = 0;
+    let linkStarts = 0, statusReads = 0;
+    let linkState = { ok: true, linked: false, consentConcierge: false, last4: '' };
     await ctx.route('**/*', route => {
       const url = new URL(route.request().url());
       if (url.origin !== origin) return route.abort();
       if (url.pathname === '/api/whatsapp/link/start') linkStarts++;
+      if (url.pathname === '/api/whatsapp/link/status') { statusReads++; assert.equal(route.request().method(), 'GET'); return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(linkState)}); }
       if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false,"items":[],"data":[],"enabled":false}' });
       return route.continue();
     });
@@ -39,6 +41,12 @@ const server = http.createServer((req, res) => context.respond(req, res, new URL
     assert.equal(new URL(page.url()).searchParams.get('view'), 'notifications');
     await page.getByText('Vínculos de canais', { exact: true }).click();
     assert.equal(await page.getByRole('button', { name: 'Vincular WhatsApp', exact: true }).isVisible(), true);
+    assert.equal(statusReads,0,'status is consulted only by explicit user action');
+    await page.getByRole('button',{name:'Conferir vínculo WhatsApp',exact:true}).click();
+    await page.getByText('WhatsApp ainda não vinculado.',{exact:false}).waitFor();
+    linkState={ok:true,linked:true,consentConcierge:true,last4:'0101'};
+    await page.getByRole('button',{name:'Conferir vínculo WhatsApp',exact:true}).click();
+    await page.getByText('WhatsApp vinculado · final 0101.',{exact:false}).waitFor();
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })));
     await page.locator('.cc-notification-center').waitFor({ state: 'detached' });
     await page.getByLabel('Menu', { exact: true }).click();
@@ -50,6 +58,7 @@ const server = http.createServer((req, res) => context.respond(req, res, new URL
     await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-link-B', name: 'SYNTHETIC B', role: 'user' })); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
     await page.locator('.cc-notification-center').waitFor({ state: 'detached' });
     assert.equal(new URL(page.url()).searchParams.get('view'), 'cockpit');
+    assert.equal(await page.getByText('WhatsApp vinculado · final 0101.',{exact:false}).count(),0,'old-account status is removed');
     assert.equal(linkStarts, 0, 'navigation must never create a challenge automatically');
     assert.deepEqual(errors, []);
     await ctx.close();

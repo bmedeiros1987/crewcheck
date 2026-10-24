@@ -29,6 +29,8 @@ update('server.mjs', (source) => {
 
 update('client/src/pages/Home.tsx', (source) => {
   let next = source;
+  const captureImport = "import { captureAuthSession as captureWhatsAppLinkSession } from '@/lib/authClient';";
+  if (!next.includes(captureImport)) next = captureImport + '\n' + next;
   if (!next.includes('async function openWhatsAppBinding()')) {
     const marker = 'async function openTelegramBinding() {';
     if (!next.includes(marker)) throw new Error('[v14383] Fluxo de vínculo Telegram não localizado.');
@@ -37,6 +39,16 @@ update('client/src/pages/Home.tsx', (source) => {
   }
 
   const telegramButton = '<button onClick={openTelegramBinding}><Send/> Vincular Telegram</button>';
+  const linkStart = next.indexOf('async function openWhatsAppBinding() {');
+  const linkEnd = next.indexOf('\n}\n', linkStart) + 3;
+  if (linkStart < 0 || linkEnd < linkStart) throw Error('WhatsApp challenge boundary missing');
+  let link = next.slice(linkStart, linkEnd);
+  if (!link.includes('const session = captureWhatsAppLinkSession();')) {
+    link = link.replace('async function openWhatsAppBinding() {', 'async function openWhatsAppBinding() {\n  const session = captureWhatsAppLinkSession();');
+    link = link.replace("    if (!result?.code)", "    if (!session.isCurrent()) return;\n    if (!result?.code)");
+    link = link.replace('  } catch (error) {', '  } catch (error) {\n    if (!session.isCurrent()) return;');
+    next = next.slice(0, linkStart) + link + next.slice(linkEnd);
+  }
   const whatsappButton = '<button onClick={openWhatsAppBinding}><Send/> Vincular WhatsApp</button>';
   if (!next.includes(whatsappButton)) {
     if (!next.includes(telegramButton)) throw new Error('[v14383] Botão de vínculo Telegram não localizado.');

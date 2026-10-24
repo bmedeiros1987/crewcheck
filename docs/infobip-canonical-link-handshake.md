@@ -27,6 +27,13 @@ configured recipient/window, applies the existing per-recipient attempt bound,
 and consumes the actual unexpired canonical challenge transactionally. An active
 phone belonging to another account cannot be stolen by a new challenge.
 
+After sending the code, the user returns to Vínculos de canais and explicitly
+chooses **Conferir vínculo WhatsApp**. This authenticated status request performs
+only SELECT, returns a masked final-four/consent result, and never initializes
+tables. Missing schema is unavailable, not silently migrated. Account changes
+clear the visible result and discard stale status responses. Challenge creation
+also discards an old-account response before opening/copying/displaying the code.
+
 There is **no outgoing link-confirmation message** in this mode. Link update,
 challenge consumption and inbound claim commit together; the claim contains no
 reply content. A retry/restart is ACK-only. Alerts remain unconsented. Linking
