@@ -218,9 +218,11 @@ export function createMyCrewCareController({
         return false;
       }
       busy = true;
-      emit();
       try {
-        const ok = await engine.sync({ reason: 'manual' });
+        // Publish after the engine withdraws freshness, including to synchronous subscribers.
+        const syncing = engine.sync({ reason: 'manual' });
+        emit();
+        const ok = await syncing;
         if (ok) refreshSuggested = false;
         return ok;
       } finally {
