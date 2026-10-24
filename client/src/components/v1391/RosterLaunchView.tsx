@@ -438,7 +438,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
         ? <CalendarRosterView operationalEvents={allOrdered} events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
         : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
       {visibleGroups.map((group) => {
-        const groupPerDiems = group.events.flatMap(perDiemForEvent);
+        // Headers follow the allowance's civil date; event details retain journey ownership.
+        const groupPerDiems = selectedPerDiemRows.filter(row => row.iso === group.iso);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
         const groupPerDiemTotal = rosterDayAllowanceSummary(group.iso, groupPerDiems, scopedFinance?.perdiem?.unclassifiedItems, scopedFinance?.perdiem?.nativeSummary?.complete).convertedTotalBRL;
         const groupPendingCurrencies = Array.from(new Set(groupPerDiems.filter(row => row.convertedBRL === null).map(row => row.currency)));
