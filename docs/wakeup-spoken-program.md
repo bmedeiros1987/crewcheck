@@ -89,3 +89,5 @@ canonical event/owner/source changes, neutral fallback, explicit-consent rejecti
 actual scheduling handler and real prepared canonical source/engine. The real
 transport builders are inspected through fake fetch only. Existing queue/CAS,
 phone-binding, date/DST and raw/prepared transport suites remain required.
+
+The optional narration choice is destroyed on editor changes (including mode and lead round trips), session-generation events, source revisions and hotel context changes. Returning to the same account/event/instant never restores an old choice. The actual request rechecks the ephemeral session/source receipt; none is persisted. The prepared browser regression covers these transitions, including batched logout/login and source A→B→A. This only fences local consent; current server authority is still revalidated at scheduling and delivery.

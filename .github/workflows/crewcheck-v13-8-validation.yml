@@ -131,6 +131,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: node scripts/regression-whatsapp-link-navigation-browser.cjs
+      - name: Verify spoken wakeup choice does not revive across editor/session/source changes
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+        run: node scripts/regression-wakeup-spoken-consent-browser.mjs
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
