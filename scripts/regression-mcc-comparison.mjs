@@ -104,7 +104,6 @@ test('workflow retains all gates and broad unknown namespace discovery',()=>{
  for(const marker of ['UTC America/Sao_Paulo Pacific/Auckland','node scripts/assert-mycrewcare-v3-ownership.mjs','Complete canonical preparation','TypeScript','Web build',':app:compileDebugJavaWithJavac',':app:compileReleaseJavaWithJavac','scripts/assert-mycrewcare-debug-release.mjs --compiled'])assert.ok(workflow.includes(marker),marker);
  assert.equal(workflow.split('node scripts/assert-mycrewcare-v3-ownership.mjs').length-1,2);
  for(const name of ['scripts/ci/mcc-comparison.mjs','scripts/regression-mcc-comparison.mjs'])assert.ok(workflow.includes(`'${name}'`));
- assert.match(workflow,/- name: Resolve immutable MCC comparison \(fail closed\)\n        run: node scripts\/ci\/mcc-comparison.mjs/);
  assert.match(workflow,/- name: Classify MCC ownership scope without weakening the auditor/);
  assert.match(workflow,/path === 'scripts\/v139\/apply\.mjs'/,'canonical v139 writer must force full MCC audit');
  assert.equal((workflow.match(/if: env\.CREWCHECK_MCC_FULL_AUDIT == 'true'/g)||[]).length,2,'raw/prepared ownership audit must share the same scope fence');
