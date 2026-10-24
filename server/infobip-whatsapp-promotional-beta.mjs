@@ -36,7 +36,8 @@ export function createInfobipPromotionalBetaScope(configuration,admission,{now=D
    if(/^(?:oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comandos|inicio)[!.?]*$/.test(value)||/^(?:opcao\s+)?(?:[1-9]|1[0-7])[.)]?$/.test(value))return {text};
    if(/^\/(?:hoje|amanha|proximo|escala|historico_pernoites)$/.test(value))return {text:value};
    if(/^(?:o que tenho|qual (?:a )?minha programacao|minha escala|programacao)(?: para)? (hoje|amanha)[?.!]*$/.test(value))return {text:/amanha/.test(value)?'/amanha':'/hoje'};
-   const q=operationalQuestion(text);if(q?.kind==='schedule'||q?.kind==='logistics-question')return {text:q.rewrite||text};
+   if(/^\/(?:start|menu|ajuda|help|comandos)$/.test(value))return {text:'menu'};
+   const q=operationalQuestion(text);if(q?.kind==='schedule')return {text:q.rewrite||'que horas me apresento?'};if(q?.kind==='logistics-question')return {text};
    return {reply:'Neste beta, consulte sua escala e pernoites ou escreva “menu”. Não faço alterações, buscas externas, ligações ou novos envios.'};
   },
  });
