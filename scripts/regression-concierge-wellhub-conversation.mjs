@@ -1,3 +1,4 @@
+import {restrictConciergeSnapshotWrite,isConciergeConversationWritesOnly} from '../server/concierge-read-only-scope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -83,6 +84,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   const partner = { id: 'synthetic', name: 'Synthetic gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'basic', activities: ['Pilates'], openingHours: [], sourceUrl: 'https://example.invalid/synthetic' };
   let appResponse;
   const context = vm.createContext({
+    restrictConciergeSnapshotWrite,isConciergeConversationWritesOnly,
     ...radarEvidence,
     crewcheckMenu: createTelegramMenu({}),
     requestedWeatherAirport,

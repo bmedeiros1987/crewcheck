@@ -85,7 +85,7 @@ for(const phase of ['load','pool','credentials']) {
 // real-looking environment switches exist. No imports, pool or network execute.
 {
  const {composeHeldInfobipRoute}=await import('./p1-infobip-whatsapp-off/compose.mjs');
- const source=composeHeldInfobipRoute("import { configureWhatsAppConcierge, handleWhatsAppRoute } from './server/whatsapp.mjs';\nconfigureWhatsAppConcierge(async ({ email, text }) => {\n  return text;\n});\n\nhttp.createServer(async (req, res) => {\n  if (await handleWhatsAppRoute(req, res, url)) return;\n}).listen(port, () => {});");
+ const source=composeHeldInfobipRoute("import { configureWhatsAppConcierge, handleWhatsAppRoute } from './server/whatsapp.mjs';\nasync function conciergeSaveSnapshotAsync(profile = {}, roster = null, metadata = {}) {}\nasync function conciergeIdentityFlow(text = '', profile = {}, snapshot = null) {}\nconfigureWhatsAppConcierge(async ({ email, text }) => {\n  return text;\n});\n\nhttp.createServer(async (req, res) => {\n  if (await handleWhatsAppRoute(req, res, url)) return;\n}).listen(port, () => {});");
  assert(source.indexOf('await infobipWhatsAppRuntime.start(infobipHttpServer);')>source.indexOf('configureWhatsAppConcierge(async'));
  assert.equal(composeHeldInfobipRoute(source),source);
  const instance=source.match(/const infobipWhatsAppRuntime = .*;/)[0];

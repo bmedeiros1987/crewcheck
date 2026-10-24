@@ -59,7 +59,8 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
     const link = links[0];
     if (links.length !== 1 || !link.email || link.revoked_at !== null || Number(link.consent_concierge) !== 1 || !link.linked_at || !link.updated_at) return null;
     const [owners] = await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE', [link.email]);
-    if (owners.length !== 1 || !owners[0].public_id) return null;
+    if (owners.length !== 1 || !owners[0].public_id ||
+        (production?.allowsOwner && !production.allowsOwner(owners[0].public_id))) return null;
     // The existing authenticated link/start consent + channel code proves the
     // same WhatsApp recipient/account. A provider switch alone needs no new opt-in.
     // Sender ownership/routing is separately a deployment contract gate.

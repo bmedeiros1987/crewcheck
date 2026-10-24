@@ -6,6 +6,8 @@ import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import {execFileSync,fork} from 'node:child_process';
 import {createHash,createHmac} from 'node:crypto';
+import {createOperationalPilotScope,INFOBIP_OPERATIONAL_PILOT_APPROVAL,INFOBIP_OPERATIONAL_PILOT_INPUTS} from '../server/infobip-whatsapp-operational-pilot.mjs';
+import {configureSyntheticOperationalPilot} from './fixtures/infobip-operational-pilot.mjs';
 import {createInfobipSendAdmission} from '../server/infobip-whatsapp-admission.mjs';
 import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
@@ -60,6 +62,13 @@ const reportsPacket=items=>({...packet(),rawBody:Buffer.from(JSON.stringify({res
 const receiveReports=kind=>createOfflineInfobipDeliveryReceiver({kind,username:'synthetic',password,store:make().store,now:()=>epoch+3000});
 const restartAdmission=()=>createInfobipSendAdmission({id:'synthetic-engine-restart-approval',recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+60000},{sender,now:()=>epoch});
 const reserveRestart=()=>createInfobipSqlBudget(db)(c=>restartAdmission().reserve(c,{sender,recipient}));
+const pilotRestartId='synthetic-operational-pilot-actual-restart';
+const pilotRestartKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,pilotRestartId])).digest('hex');
+const pilotRestartAdmission=()=>{
+ const f=configureSyntheticOperationalPilot({state:{clock:epoch},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});
+ const scope=createOperationalPilotScope(f.dependencies.configuration,f.dependencies.admission,{now:()=>epoch}),quantity=createInfobipSendAdmission(f.dependencies.admission,{sender,now:()=>epoch});
+ return {allows:j=>scope.allows(j)&&quantity.allows(j),reserve:(c,j)=>scope.reserve(c,j,quantity.reserve)};
+};
 if(mode==='engine-worker'){
  const {configureWhatsAppConcierge,invokeConfiguredWhatsAppConcierge}=await load('server/whatsapp.mjs');
  let effects=0,release;const hold=new Promise(r=>release=r);
@@ -85,6 +94,13 @@ try{
    assert.equal((await receiveReports('delivery')(reportsPacket([report]))).duplicates,1);
    assert.equal((await receiveReports('seen')(reportsPacket([seen]))).duplicates,1);
    assert.equal(await reserveRestart(),false,'actual engine restart never resets quantity admission');
+   const pilotAdmission=pilotRestartAdmission();
+   assert.equal(await createInfobipSqlBudget(db)(c=>pilotAdmission.reserve(c,{sender,recipient,receivedAt:epoch,bindingStamp:JSON.stringify([owner]),text:'menu'})),false,'uncertain menu slot cannot be repeated after actual MySQL and process restart');
+   const pilotStore=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{admission:pilotAdmission,concierge:async()=>assert.fail('NO_PILOT_ENGINE_RETRY'),send:async()=>assert.fail('NO_PILOT_PROVIDER_RETRY')});
+   assert.equal((await pilotStore.dispatch(pilotRestartKey)).status,'uncertain');
+   assert.equal(await createInfobipSqlBudget(db)(c=>pilotAdmission.reserve(c,{sender,recipient,receivedAt:epoch,bindingStamp:JSON.stringify([owner]),text:INFOBIP_OPERATIONAL_PILOT_INPUTS[1]})),true,'only another approved category may use a remaining slot after restart');
+   const pilotQuotaKey='crewcheck-infobip-admission-v1:'+createHash('sha256').update(JSON.stringify([sender,INFOBIP_OPERATIONAL_PILOT_APPROVAL])).digest('hex');
+   const [[pilotQuota]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[pilotQuotaKey]);assert.equal((typeof pilotQuota.payload==='string'?JSON.parse(pilotQuota.payload):pilotQuota.payload).used,2);
    const production=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},
      {admission:restartAdmission(),concierge:async()=>assert.fail('NO_ENGINE_RETRY'),send:async()=>assert.fail('NO_PROVIDER_RETRY')});
    assert.equal((await production.dispatch(preparingKey)).status,'preparing','preparing marker survives restart without retry');
@@ -94,7 +110,7 @@ try{
    const [[fence]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[preparingStateKey]);
    const active=typeof fence.payload==='string'?JSON.parse(fence.payload):fence.payload;assert.equal(active.engineActive,true);assert.equal(active.sealed,null);
    await assert.rejects(eraseWhatsAppAccountState(email,{db}));
-   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart','active engine fence survives restart and expired-content cleanup without permitting erasure'],externalCalls:0}));
+   console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart','active engine fence survives restart and expired-content cleanup without permitting erasure','operational pilot uncertain slot and quantity survive actual MySQL/process restart without repeat'],externalCalls:0}));
  }else{
    await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
    await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64),created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
@@ -201,6 +217,10 @@ try{
      const state=typeof row.payload==='string'?JSON.parse(row.payload):row.payload;
      await c.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify({...state,status:'preparing',preparationId:'synthetic-preparation',engineActive:true,engineOwner:createHash('sha256').update(JSON.stringify(['infobip-engine-owner-v1',owner])).digest('hex')}),preparingStateKey]);
    });
+   const pilotEvent={...event,messageId:pilotRestartId,message:{type:'TEXT',text:'menu'}};
+   assert.equal((await make().receive(packet(pilotEvent))).accepted,1);
+   const pilotStore=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{admission:pilotRestartAdmission(),concierge:async()=> 'SYNTHETIC OPERATIONAL RESTART',send:async()=>({status:'uncertain'})});
+   assert.equal((await pilotStore.dispatch(pilotRestartKey)).status,'uncertain');
    console.log(JSON.stringify({head:HEAD,phase:'suite',engine:server[0].version,passed,externalCalls:0,retryContract:'synthetic ten-day ACK horizon; no account verification'}));
  }
 }finally{clearTimeout(timeout);await db.end();}
