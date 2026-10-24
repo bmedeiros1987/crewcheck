@@ -12,8 +12,8 @@ for(const assertion of assertions)assert(original.includes(assertion),'original 
 const stable=`await page.evaluate(async()=>{let prior='',same=0;for(let frame=0;frame<120;frame++){await new Promise(r=>requestAnimationFrame(r));const v=document.querySelector('.cc-doc-viewport');const next=JSON.stringify([scrollY,v.scrollLeft,v.scrollTop]);same=next===prior?same+1:0;prior=next;if(same>=3)return;}throw Error('Pre-action scroll did not stabilize');});`;
 const trials=[];
 for(const mode of ['original','settle','trial'])for(let repeat=1;repeat<=2;repeat++){
- let generated=original.replace("for(const theme of ['light','dark'])for(const size of [100,200])for(const width of [320,390])","for(const theme of ['dark'])for(const size of [200])for(const width of [320])");
- assert.notEqual(generated,original,'focused diagnostic case selection');
+ let generated=original;
+ assert(generated.includes("for(const theme of ['light','dark'])for(const size of [100,200])for(const width of [320,390])"),'retain all eight cases and original order');
  if(mode!=='original'){
   const prep=`\nconst diagnosticBefore=await page.evaluate(${snapshot});\nconst diagnosticEventsBefore=await page.evaluate(()=>window.__aimsNativeTrace.filter(e=>['pointerdown','mousedown','click'].includes(e.event)).length);\n${mode==='trial'?"await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).click({trial:true});":''}\n${stable}\nconst diagnosticAfter=await page.evaluate(${snapshot});\nassert.equal(await page.locator('.cc-doc-detail').count(),0,'preparation must not activate the product');\nassert.equal(await page.evaluate(()=>window.__aimsNativeTrace.filter(e=>['pointerdown','mousedown','click'].includes(e.event)).length),diagnosticEventsBefore,'preparation must not dispatch native activation');\nconsole.log('AIMS preparation diagnostic',JSON.stringify({mode:'${mode}',theme,size,width,zoomLabel,diagnosticBefore,diagnosticAfter}));\n`;
   generated=generated.replace(anchor,anchor+prep);
