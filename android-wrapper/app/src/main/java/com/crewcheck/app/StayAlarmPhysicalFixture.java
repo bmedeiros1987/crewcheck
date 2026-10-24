@@ -26,6 +26,9 @@ public final class StayAlarmPhysicalFixture {
     private StayAlarmPhysicalFixture(){}
     static boolean enabled(Context context){
         if(!StayAlarmHostAndroid.testHostEnabled(context))return false;
+        return hasMarker(context);
+    }
+    static boolean hasMarker(Context context){
         try(java.io.InputStream input=context.getAssets().open(ASSET)){
             byte[] bytes=new byte[64];int length=input.read(bytes);
             return length>0&&MARKER.equals(new String(bytes,0,length,StandardCharsets.UTF_8))&&input.read()==-1;
@@ -47,7 +50,7 @@ public final class StayAlarmPhysicalFixture {
         void show(){
             LinearLayout box=new LinearLayout(activity);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(28,32,28,20);box.setBackgroundColor(Color.rgb(7,29,51));
             TextView title=new TextView(activity);title.setText("CrewCheck • teste local offline");title.setTextSize(22);title.setTextColor(Color.WHITE);box.addView(title);
-            TextView info=new TextView(activity);info.setText("App separado .mcctest. Apenas contas A/B e evento fictícios. Sem login, escala real ou push remoto. Nenhuma permissão será solicitada por este painel.");info.setTextColor(Color.WHITE);box.addView(info);
+            TextView info=new TextView(activity);info.setText("Teste separado: "+activity.getPackageName()+". Apenas contas A/B e evento fictícios. Sem login, escala real ou push remoto. Nenhuma permissão será solicitada por este painel.");info.setTextColor(Color.WHITE);box.addView(info);
             status=new TextView(activity);status.setTextColor(Color.WHITE);box.addView(status);
             minutes=new EditText(activity);minutes.setInputType(InputType.TYPE_CLASS_NUMBER);minutes.setText("7");minutes.setHint("Minutos até o alerta: 1 a 30");minutes.setTextColor(Color.WHITE);box.addView(minutes);
             button(box,"Selecionar conta fictícia A",()->select(ACCOUNT_A));

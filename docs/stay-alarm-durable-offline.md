@@ -3,8 +3,9 @@
 Esta fatia mantém o scheduler/receiver existente e não adiciona permissões, serviço,
 polling ou sender. Produção continua com `PREPARED_HOST_ENABLED=false`.
 
-O APK debug usa o applicationId já isolado `com.crewcheck.app.mcctest`. Somente
-esse pacote pode instalar o host de teste. Uma programação só ganha autoridade
+O debug convencional mantém `com.crewcheck.app.mcctest`; o artefato desta
+aceitação usa um identificador exclusivo, descrito ao final. Somente pacotes
+de teste admitidos e debuggable podem instalar o host de teste. Uma programação só ganha autoridade
 local durável depois de `replace` confirmado e journal em estado `scheduled`.
 A autoridade armazena apenas owner/epoch/expiração até APZ; nenhum bearer, token
 FCM, segredo ou credencial de sender é persistido.
@@ -39,7 +40,8 @@ sem permitir que resposta de epoch antigo revogue a conta atual.
 O gate de API compila agora as três classes novas e executa contraprovas do host
 real com Android Uri/JSONObject e dispositivos falsos: logout após expiração e
 restart, reauth A→A, A→B, falha antes de pending-cancel e falha do tombstone.
-O pacote de teste precisa ser exatamente `com.crewcheck.app.mcctest` e debug;
+O pacote de teste precisa ser o `.mcctest` debug existente ou a variante de
+aceitação debug com marcador sintético exato;
 o receiver de produção recusa autoridade durável enquanto o gate permanecer OFF.
 Nenhum desses testes sintéticos substitui a matriz física do novo APK.
 
@@ -79,3 +81,19 @@ Roteiro curto para o operador, depois de autorizar instalação:
 
 Fonte e data aparecem como evento fictício salvo, sem anunciar dado operacional
 atual. Produção, Play e sender remoto continuam OFF/fora desta entrega.
+
+## Instalação lado a lado da aceitação
+
+O artefato dedicado usa agora `com.crewcheck.app.stayaccept<RUN_ID>r<ATTEMPT>`,
+atribuído somente ao build debug pelo init script temporário. Não modifica o
+applicationId de produção nem o `.mcctest` existente; cada execução/tentativa
+produz um pacote separado para evitar exigir atualização sobre outro debug com
+certificado diferente. O host aceita esse formato apenas em debug e com o marcador
+sintético exato. O painel mostra o identificador real do pacote.
+
+A CI verifica o manifesto final, launcher e ausência de authorities de outro
+pacote; `apksigner verify` precisa passar e o recibo inclui o fingerprint público
+do certificado. Não há chave persistente nova, troca de certificado de produção,
+instalação automática, desinstalação, limpeza de dados ou concessão de permissões.
+O erro relatado no artefato anterior ainda não tem causa confirmada no aparelho.
+Esta variante apenas oferece uma rota independente, sem alterar esse app anterior.

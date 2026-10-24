@@ -18,7 +18,7 @@ test('durable local authority survives restart but not logout/APZ',()=>{
   assert.match(value,/PASS 33 durable StayAlarm authority checks/);
  }finally{rmSync(out,{recursive:true,force:true});}
 });
-test('production remains OFF; only isolated mcctest package can install physical-test host',()=>{
+test('production remains OFF; dedicated acceptance package requires debug and synthetic marker',()=>{
  const host=readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarmHostAndroid.java','utf8');
  assert.match(host,/PREPARED_HOST_ENABLED=false/);
  assert.match(host,/"com\.crewcheck\.app\.mcctest"\.equals\(context\.getPackageName\(\)\)/);
@@ -61,4 +61,16 @@ test('dedicated physical artifact uses native synthetic launcher and separate st
  assert.match(workflow,/sourceSets\.getByName\('debug'\)\.manifest\.srcFile/);
  assert.match(workflow,/assert launcher and launcher\[1\]=='com\.crewcheck\.app\.StayAlarmPhysicalFixtureActivity'/);
  assert.match(workflow,/archive\.read\('assets\/crewcheck-stay-synthetic\.txt'\)==b'crewcheck-stay-synthetic-v1'/);
+});
+
+test('acceptance identity is per run/attempt; verified artifact cannot replace production or older mcctest',()=>{
+ const workflow=readFileSync('.github/workflows/stay-alarm-durable-offline.yml','utf8');
+ const host=readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarmHostAndroid.java','utf8');
+ assert.ok(workflow.includes('com.crewcheck.app.stayaccept${GITHUB_RUN_ID}r${GITHUB_RUN_ATTEMPT}'));
+ assert.ok(workflow.includes("buildTypes.getByName('debug').applicationIdSuffix = pkg.substring('com.crewcheck.app'.length())"));
+ assert.ok(workflow.includes('apksigner" verify --verbose --print-certs'));
+ assert.ok(workflow.includes("package[1] not in ('com.crewcheck.app','com.crewcheck.app.mcctest')"));
+ assert.ok(workflow.includes("value.startswith(expected+'.')"));
+ assert.ok(host.includes('acceptancePackage(context.getPackageName())&&StayAlarmPhysicalFixture.hasMarker(context)'));
+ assert.doesNotMatch(workflow,/keytool|CREWCHECK_STORE_PASSWORD|signingConfigs\.release|installDebug|adb install/);
 });

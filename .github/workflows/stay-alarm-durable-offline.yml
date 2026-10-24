@@ -36,14 +36,16 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
       - name: Build isolated debug test APK only
         run: |
+          export STAY_FIXTURE_PACKAGE="com.crewcheck.app.stayaccept${GITHUB_RUN_ID}r${GITHUB_RUN_ATTEMPT}"
+          echo "STAY_FIXTURE_PACKAGE=$STAY_FIXTURE_PACKAGE" >> "$GITHUB_ENV"
           mkdir -p android-wrapper/app/src/main/assets
           printf '%s' 'crewcheck-stay-synthetic-v1' > android-wrapper/app/src/main/assets/crewcheck-stay-synthetic.txt
           export STAY_FIXTURE_MANIFEST="$RUNNER_TEMP/stay-physical-manifest.xml"
           cat > "$STAY_FIXTURE_MANIFEST" <<'XML'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-            <application>
+            <application android:label="CrewCheck Teste Offline Isolado" tools:replace="android:label">
               <activity android:name="com.crewcheck.app.MainActivity" tools:node="remove" />
-              <activity android:name="com.crewcheck.app.StayAlarmPhysicalFixtureActivity" android:label="CrewCheck Teste Offline" android:exported="true">
+              <activity android:name="com.crewcheck.app.StayAlarmPhysicalFixtureActivity" android:label="CrewCheck Teste Offline Isolado" android:exported="true">
                 <intent-filter>
                   <action android:name="android.intent.action.MAIN" />
                   <category android:name="android.intent.category.LAUNCHER" />
@@ -56,6 +58,9 @@ jobs:
           gradle.beforeProject { p ->
             p.afterEvaluate {
               if (p.path == ':app') {
+                def pkg = System.getenv('STAY_FIXTURE_PACKAGE')
+                if (!(pkg ==~ /com\.crewcheck\.app\.stayaccept[0-9]{8,20}r[0-9]{1,5}/)) throw new GradleException('invalid isolated fixture package')
+                p.extensions.getByName('android').buildTypes.getByName('debug').applicationIdSuffix = pkg.substring('com.crewcheck.app'.length())
                 p.extensions.getByName('android').sourceSets.getByName('debug').manifest.srcFile(System.getenv('STAY_FIXTURE_MANIFEST'))
               }
             }
@@ -68,13 +73,24 @@ jobs:
         run: |
           mkdir -p artifacts/stay-alarm-test
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging android-wrapper/app/build/outputs/apk/debug/app-debug.apk > "$RUNNER_TEMP/stay-test-badging.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree android-wrapper/app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml > "$RUNNER_TEMP/stay-test-manifest.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android-wrapper/app/build/outputs/apk/debug/app-debug.apk > artifacts/stay-alarm-test/signature.txt
           python3 - <<'PY'
           import hashlib,json,os,re,zipfile
           from pathlib import Path
           apk=Path('android-wrapper/app/build/outputs/apk/debug/app-debug.apk')
           badging=(Path(os.environ['RUNNER_TEMP'])/'stay-test-badging.txt').read_text()
           package=re.search(r"^package: name='([^']+)' versionCode='([^']+)'",badging,re.M)
-          assert package and package[1]=='com.crewcheck.app.mcctest','unexpected physical-test package'
+          expected=os.environ['STAY_FIXTURE_PACKAGE']
+          assert re.fullmatch(r'com\.crewcheck\.app\.stayaccept[0-9]{8,20}r[0-9]{1,5}',expected)
+          assert package and package[1]==expected,'unexpected physical-test package'
+          assert package[1] not in ('com.crewcheck.app','com.crewcheck.app.mcctest')
+          manifest=(Path(os.environ['RUNNER_TEMP'])/'stay-test-manifest.txt').read_text()
+          for authorities in re.findall(r'android:authorities[^\n]*="([^"]+)"',manifest):
+            assert all(value.startswith(expected+'.') for value in authorities.split(';')),'foreign provider authority'
+          signature=Path('artifacts/stay-alarm-test/signature.txt').read_text()
+          certificate=re.search(r'^Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]{64})$',signature,re.M)
+          assert certificate,'verified signer fingerprint missing'
           assert re.search(r'^application-debuggable(?:\s|$)',badging,re.M),'test APK must be debuggable'
           launcher=re.search(r"^launchable-activity: name='([^']+)'",badging,re.M)
           assert launcher and launcher[1]=='com.crewcheck.app.StayAlarmPhysicalFixtureActivity','fixture must not launch MainActivity/authentication'
@@ -82,6 +98,7 @@ jobs:
             assert archive.read('assets/crewcheck-stay-synthetic.txt')==b'crewcheck-stay-synthetic-v1','missing synthetic native fixture'
           report={'checkoutSha':os.environ['GITHUB_SHA'],'pullRequestHead':os.environ['STAY_TEST_PR_HEAD'],'package':package[1],'versionCode':package[2],
             'debuggable':True,'apkSha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
+            'signatureVerified':True,'signerCertificateSha256':certificate[1].lower(),
             'syntheticNativeFixture':True,'requiresRealAccount':False,'launcher':launcher[1],
             'physicalAccepted':False,'storeRelease':False,'nativeRemotePushImplemented':False}
           Path('artifacts/stay-alarm-test/receipt.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -93,3 +110,4 @@ jobs:
           path: |
             android-wrapper/app/build/outputs/apk/debug/app-debug.apk
             artifacts/stay-alarm-test/receipt.json
+            artifacts/stay-alarm-test/signature.txt

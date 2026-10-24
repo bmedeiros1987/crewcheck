@@ -108,6 +108,10 @@ public final class StayAlarmHostAdmissionFixture {
   check(session.verified(session.begin(),"verified-a","epoch-a",clock[0]+180000));switchOnRead[0]=true;
   StayAlarmHostAndroid.transactOrRevoke(new StayAlarmBridge(engine,session),session,cancel.toString());
   check("verified-b".equals(session.activeOwner()));check("epoch-b".equals(session.epoch()));
+  check(StayAlarmHostAndroid.acceptancePackage("com.crewcheck.app.stayaccept40138577674r1"));
+  check(StayAlarmHostAndroid.acceptancePackage("com.crewcheck.app.stayaccept40138577674r2"));
+  for(String denied:new String[]{null,"com.crewcheck.app","com.crewcheck.app.mcctest","com.crewcheck.app.stayaccept","com.crewcheck.app.stayaccept40138577674","com.crewcheck.app.stayaccept40138577674r0x","other.com.crewcheck.app.stayaccept40138577674r1"})
+   check(!StayAlarmHostAndroid.acceptancePackage(denied));
   durableHostCounterproofs();
   System.out.println("PASS host production admission: "+checks+" assertions; origin/frame/OFF plus durable logout/restart/reauth/cancel counterproofs; no WebView/device instantiated");
  }

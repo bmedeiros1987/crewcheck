@@ -28,8 +28,11 @@ public final class StayAlarmHostAndroid {
         return new StayAlarmEngine.Owner(){public boolean enabled(){return activeAuthority!=null&&activeAuthority.enabled();}
             public String activeOwner(){return enabled()?activeAuthority.activeOwner():null;}public String epoch(){return enabled()?activeAuthority.epoch():null;}};
     }
-    static boolean testHostEnabled(Context context){return context!=null&&"com.crewcheck.app.mcctest".equals(context.getPackageName())
-        &&(context.getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0;}
+    static boolean acceptancePackage(String name){return name!=null&&name.matches("com\\.crewcheck\\.app\\.stayaccept[0-9]{8,20}r[0-9]{1,5}");}
+    static boolean testHostEnabled(Context context){return context!=null
+        &&(context.getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0
+        &&("com.crewcheck.app.mcctest".equals(context.getPackageName())
+            ||acceptancePackage(context.getPackageName())&&StayAlarmPhysicalFixture.hasMarker(context));}
     private static final String ORIGIN="https://crewcheck.online";
     private final WebView view;private final StayAlarmSessionHost session;private final StayAlarmDurableAuthority durable;private final StayAlarmEngine engine;
     private final StayAlarmBridge bridge;private final ExecutorService worker=Executors.newSingleThreadExecutor();
