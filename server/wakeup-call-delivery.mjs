@@ -1,3 +1,4 @@
+import { wakeupLocale, wakeupStandardVoice } from './wakeup-spoken-program.mjs';
 import { buildInfobipTtsRequest } from './v1396/infobip.mjs';
 
 const failed = (provider, code, configured = true) => ({ ok: false, uncertain: true, delivered: null, configured, provider, code });
@@ -26,7 +27,7 @@ async function boundedResponse(url, init, { fetchImpl, timeoutMs }) {
   } finally { clearTimeout(timer); }
 }
 
-export async function sendTelegramWakeupCall({ username, text, environment = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15_000 }) {
+export async function sendTelegramWakeupCall({ username, text, locale, environment = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15_000 }) {
   const provider = 'telegram-call';
   const user = String(username || '').trim().replace(/^@/, '');
   const enabled = String(environment.CALLMEBOT_TELEGRAM_CALL_ENABLED || '').trim().toLowerCase();
@@ -35,7 +36,7 @@ export async function sendTelegramWakeupCall({ username, text, environment = pro
   const url = new URL('https://api.callmebot.com/start.php');
   url.searchParams.set('user', `@${user}`);
   url.searchParams.set('text', String(text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 240));
-  url.searchParams.set('lang', environment.CALLMEBOT_TELEGRAM_LANG || 'pt-BR-Standard-A');
+  url.searchParams.set('lang', locale === undefined ? (environment.CALLMEBOT_TELEGRAM_LANG || 'pt-BR-Standard-A') : wakeupStandardVoice(locale));
   url.searchParams.set('rpt', '1');
   url.searchParams.set('cc', 'missed');
   url.searchParams.set('timeout', '30');
@@ -47,9 +48,10 @@ export async function sendTelegramWakeupCall({ username, text, environment = pro
   } catch { return failed(provider, 'CALL_RESULT_UNCERTAIN'); }
 }
 
-export async function sendInfobipWakeupCall({ phone, text, environment = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15_000 }) {
+export async function sendInfobipWakeupCall({ phone, text, locale, environment = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15_000 }) {
   const provider = 'infobip';
-  const request = buildInfobipTtsRequest({ phone, text, environment });
+  const selected = locale === undefined ? environment : { ...environment, INFOBIP_VOICE_LANGUAGE: wakeupLocale(locale).locale, INFOBIP_VOICE_NAME: '', INFOBIP_TTS_VOICE: '' };
+  const request = buildInfobipTtsRequest({ phone, text, environment: selected });
   if (!request.ok) return { ...request, uncertain: true, delivered: null };
   try {
     const { response, raw } = await boundedResponse(request.url, { method: 'POST', headers: request.headers, body: JSON.stringify(request.body) }, { fetchImpl, timeoutMs });

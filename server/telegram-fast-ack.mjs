@@ -1,3 +1,4 @@
+import { prepareScheduledWakeup, wakeupPrivateModelSupportsLocale } from './wakeup-spoken-program.mjs';
 import { sendInfobipWakeupCall } from './wakeup-call-delivery.mjs';
 import { runTelegramBriefingCycle, handleTelegramBriefingConsent } from './concierge/telegram-briefing.mjs';
 import { handleNotificationDiagnostic } from './notification-diagnostic.mjs';
@@ -171,18 +172,23 @@ async function recordSchedulerHeartbeat(db, patch) {
   }
 }
 
-async function sendInfobipPhone(phone, message) {
-  return sendInfobipWakeupCall({ phone, text: message });
+async function sendInfobipPhone(phone, message, { locale } = {}) {
+  return sendInfobipWakeupCall({ phone, text: message, locale });
 }
 
 async function deliverJob(job) {
+  const spoken = await prepareScheduledWakeup(job, { getPool: dbPool });
+  if (!spoken.ok) return spoken;
+  job = { ...job, message: spoken.text };
+  const callOptions = spoken.locale ? { locale: spoken.locale } : {};
+
   const channel = String(job.channel || 'telegram').toLowerCase();
   if (channel === 'telegram') return sendTelegram(job.chat_id, job.message);
-  if (channel === 'telegram-call') return callTelegram(job.telegram_username, job.message);
-  if (channel === 'phone' || channel === 'phone-call' || channel === 'infobip') return sendInfobipPhone(job.phone, job.message);
+  if (channel === 'telegram-call') return callTelegram(job.telegram_username, job.message, callOptions);
+  if (channel === 'phone' || channel === 'phone-call' || channel === 'infobip') return sendInfobipPhone(job.phone, job.message, callOptions);
   if (channel === 'both') {
     const telegram = await sendTelegram(job.chat_id, job.message);
-    const phone = await sendInfobipPhone(job.phone, job.message);
+    const phone = await sendInfobipPhone(job.phone, job.message, callOptions);
     return { ok: Boolean(telegram.ok || phone.ok), configured: Boolean(telegram.configured || phone.configured), provider: 'both', results: [telegram, phone] };
   }
   return { ok: false, configured: false, provider: channel, raw: 'Canal de notificação inválido.' };

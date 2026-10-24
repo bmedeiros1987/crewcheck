@@ -55,15 +55,16 @@ let fastAfter = replaceOnce(
 import { handleInfobipCallsEvent, infobipElevenLabsAudioEnabled, startInfobipElevenLabsCall } from './v14405/infobip-elevenlabs.mjs';`,
   'import ElevenLabs no scheduler',
 );
-if (fastAfter.includes('return sendInfobipWakeupCall({ phone, text: message });')) {
+const boundedCall = fastAfter.includes('return sendInfobipWakeupCall({ phone, text: message, locale });') ? '  return sendInfobipWakeupCall({ phone, text: message, locale });' : '  return sendInfobipWakeupCall({ phone, text: message });';
+if (fastAfter.includes(boundedCall)) {
   fastAfter = replaceOnce(fastAfter,
-    '  return sendInfobipWakeupCall({ phone, text: message });',
-    `  if (infobipElevenLabsAudioEnabled()) {
+    boundedCall,
+    `  if (infobipElevenLabsAudioEnabled() && (typeof locale === 'undefined' || wakeupPrivateModelSupportsLocale(locale))) {
     const privateCall = await startInfobipElevenLabsCall(phone, message);
     // A lost ACK must not fall through into another paid call.
     if (privateCall.configured) return { ...privateCall, uncertain: !privateCall.ok, delivered: null };
   }
-  return sendInfobipWakeupCall({ phone, text: message });`,
+${boundedCall}`,
     'one-attempt private audio policy');
 } else {
 fastAfter = replaceOnce(
