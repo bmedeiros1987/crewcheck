@@ -19,7 +19,7 @@ export async function seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner
   const slot='crewcheck-infobip-pilot-v1:'+H([sender,a.id,recipient,command]);
   await db.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES(?,?,NOW(3))',[slot,JSON.stringify({v:1,kind:'infobip_operational_pilot_slot',used:true})]);
   const historyKey='crewcheck-infobip-inbound-v1:'+H(['synthetic-renewal-delivered',sender,epoch,i]);historyKeys.push(historyKey);
-  await db.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES(?,?,NOW(3))',[historyKey,JSON.stringify({v:1,status:'delivered',ownerHash:createHmac('sha256',salt).update(owner).digest('hex'),sealed:null,report:{attemptAt:epoch+i*1000,deliveryStatusId:5}})]);
+  await db.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES(?,?,NOW(3))',[historyKey,JSON.stringify({v:1,status:'delivered',ownerHash:createHmac('sha256',salt).update(owner).digest('hex'),sealed:null,report:{attemptAt:epoch+i*1000,deliveryStatusId:5,senderHash:createHmac('sha256',salt).update(sender).digest('hex'),recipientHash:createHmac('sha256',salt).update(recipient).digest('hex')}})]);
  }
  configureSyntheticPilotRenewal(f);const now=()=>f.state.clock;
  const scope=createOperationalPilotScope(c,a,{now}),quantity=createInfobipPilotRenewalAdmission(c,a,{linkHashKey:salt,now});

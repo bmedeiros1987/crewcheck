@@ -15,7 +15,7 @@ async function seeded(){
  const quotaKey='crewcheck-infobip-admission-v1:'+H([sender,a.id]),originalState=structuredClone(state.rows.get(quotaKey));
  for(const [i,text]of ['/menu','/proximo'].entries()){
   state.rows.set('crewcheck-infobip-pilot-v1:'+H([sender,a.id,recipient,text]),{v:1,kind:'infobip_operational_pilot_slot',used:true});
-  state.rows.set('crewcheck-infobip-inbound-v1:'+H(['synthetic-prior',i]),{v:1,status:'delivered',ownerHash:createHmac('sha256',secrets.linkHashKey).update(state.owner).digest('hex'),report:{attemptAt:epoch+i*1000,deliveryStatusId:5}});
+  state.rows.set('crewcheck-infobip-inbound-v1:'+H(['synthetic-prior',i]),{v:1,status:'delivered',ownerHash:createHmac('sha256',secrets.linkHashKey).update(state.owner).digest('hex'),report:{attemptAt:epoch+i*1000,deliveryStatusId:5,senderHash:createHmac('sha256',secrets.linkHashKey).update(sender).digest('hex'),recipientHash:createHmac('sha256',secrets.linkHashKey).update(recipient).digest('hex')}});
  }
  configureSyntheticPilotRenewal(f);
  const scope=createOperationalPilotScope(f.dependencies.configuration,a,{now:()=>state.clock});
@@ -41,6 +41,8 @@ for(const mutate of [
  x=>x.state.rows.delete(x.quotaKey),x=>x.state.rows.get(x.quotaKey).digest='0'.repeat(64),
  x=>x.state.rows.get(x.quotaKey).used=3,x=>x.state.rows.get(x.quotaKey).execution={revision:1},
  x=>[...x.state.rows.values()].find(r=>r.status==='delivered').engineActive=true,
+ x=>[...x.state.rows.values()].find(r=>r.status==='delivered').report.recipientHash='0'.repeat(64),
+ x=>[...x.state.rows.values()].find(r=>r.status==='delivered').report.senderHash='0'.repeat(64),
  ]){const x=await seeded();mutate(x);assert.equal(await x.reserve(),false);}
 const expired=await seeded();expired.state.clock=expired.dependencies.configuration.operationalPilotRenewal.validUntil;assert.equal(await expired.reserve(),false);
 const foreign=await seeded();assert.equal(await foreign.reserve({...foreign.job,bindingStamp:JSON.stringify(['other-owner'])}),false);

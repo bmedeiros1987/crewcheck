@@ -25,18 +25,23 @@ export function createInfobipPilotRenewalAdmission(configuration,admission,{link
    if(state?.v!==1||state.kind!=='infobip_send_admission'||state.digest!==originalDigest||state.validUntil!==policy.validUntil||
      state.limit!==3||state.used!==renewal.expectedUsed||state.execution!==undefined)return false;
    const ownerHash=createHmac('sha256',linkHashKey).update(owner).digest('hex');
+   const senderHash=createHmac('sha256',linkHashKey).update(input.sender).digest('hex');
+   const recipientHash=createHmac('sha256',linkHashKey).update(policy.recipients[0]).digest('hex');
    // Minimal projection only. The profile lock and quantity lock are already
    // held by dispatch. Delivered projection is monotonic; any unknown work
    // blocks renewal, rather than refunding an attempt or guessing its outcome.
    const [history]=await c.query(`SELECT JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) AS status,
      JSON_EXTRACT(payload,'$.report.attemptAt') AS attempt_at,
      JSON_EXTRACT(payload,'$.report.deliveryStatusId') AS delivery_id,
+     JSON_UNQUOTE(JSON_EXTRACT(payload,'$.report.senderHash')) AS sender_hash,
+     JSON_UNQUOTE(JSON_EXTRACT(payload,'$.report.recipientHash')) AS recipient_hash,
      JSON_EXTRACT(payload,'$.engineActive') AS active
      FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-inbound-v1:%'
      AND CAST(state_key AS BINARY)>? AND CAST(state_key AS BINARY)<?
      AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerHash'))=?`,[prefix,prefix+'~',ownerHash]);
    if(history.some(row=>[true,1,'1','true'].includes(row.active)||['preparing','dispatching','uncertain'].includes(row.status)))return false;
-   const prior=history.filter(row=>row.attempt_at!==null&&Number(row.attempt_at)>=policy.validFrom&&Number(row.attempt_at)<policy.validUntil);
+   const prior=history.filter(row=>row.sender_hash===senderHash&&row.recipient_hash===recipientHash&&
+    row.attempt_at!==null&&Number(row.attempt_at)>=policy.validFrom&&Number(row.attempt_at)<policy.validUntil);
    if(prior.length!==2||prior.some(row=>row.status!=='delivered'||Number(row.delivery_id)!==5)||!scope.allows(job))return false;
    const execution={version:1,revision:renewal.revision,previousRevision:renewal.expectedRevision,
     authorizationReference:renewal.authorizationReference,authorizedAt:renewal.authorizedAt,
