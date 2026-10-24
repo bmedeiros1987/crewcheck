@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'server/concierge/stay-menu.mjs'
+      - 'server/concierge/operational-question.mjs'
+      - 'server/v14341/concierge-semantic.mjs'
+      - 'scripts/regression-concierge-operational-question.mjs'
       - 'scripts/p1-concierge-stay-menu/**'
       - 'scripts/regression-concierge-stay-menu.mjs'
       - 'scripts/v139/apply.mjs'
@@ -12,6 +15,9 @@ on:
     branches: [main]
     paths:
       - 'server/concierge/stay-menu.mjs'
+      - 'server/concierge/operational-question.mjs'
+      - 'server/v14341/concierge-semantic.mjs'
+      - 'scripts/regression-concierge-operational-question.mjs'
       - 'scripts/p1-concierge-stay-menu/**'
       - 'scripts/regression-concierge-stay-menu.mjs'
       - '.github/workflows/concierge-stay-menu.yml'
@@ -33,8 +39,10 @@ jobs:
       - run: npm ci
       - name: Legacy medical/emergency source contract
         run: node scripts/regression-v13-9-5-medical-emergency-care.mjs
+      - run: node scripts/regression-concierge-operational-question.mjs
       - run: node scripts/v139/apply.mjs
       - run: node --check server.mjs
+      - run: node scripts/regression-concierge-operational-question.mjs --prepared
       - run: node scripts/regression-concierge-stay-menu.mjs
       - run: node scripts/regression-concierge-pharmacy-reference.mjs
       - run: node scripts/regression-v14-3-65-canonical-health-location.mjs

@@ -1,3 +1,4 @@
+import { operationalQuestion } from './operational-question.mjs';
 import { dbPool, safeEmail } from '../v139/common.mjs';
 
 const PAGE_SIZE = 5;
@@ -14,8 +15,10 @@ export function stayMenuIntent(text = '') {
   if (/^(?:\/adicionar_quarto|adicionar (?:o )?quarto)$/.test(value)) return { kind: 'room' };
   const history = value.match(/^(?:\/(?:historico_pernoites|pernoites_registrados)|historico de pernoites|pernoites registrados)(?:\s+(\d+))?$/);
   if (history) return { kind: 'history', page: Math.min(MAX_PAGE, Math.max(1, Number(history[1] || 1))) };
-  // Exact logistics questions only. Nearby searches and hospital requests keep
+  // Bounded logistics questions only. Nearby searches and hospital requests keep
   // their existing routes. No position is inferred from current time.
+  const operational = operationalQuestion(text);
+  if (operational?.kind === 'logistics-question') return operational;
   const question = value.replace(/[?.!]+$/, '').trim();
   let subject = null;
   if (/^qual (?:e )?(?:o )?(?:meu )?hotel(?: do (?:meu )?pernoite)?$/.test(question)) subject = 'hotel';
@@ -74,6 +77,7 @@ export async function stayMenuReply(text, profile = {}, deps = {}) {
   if (!intent) return { handled: false };
   if (intent.kind === 'logistics-question') {
     const replies = {
+      apz: 'Você quer a apresentação no aeroporto, a APZ no hotel ou a saída da van? São horários distintos. Informe qual deles deseja; não tenho fonte confirmada de hotel ou pickup nesta leitura.',
       hotel: 'O hotel desta estadia não está confirmado nesta leitura. Qual é a data e o aeroporto do pernoite?',
       'hotel-time': 'Horário no hotel não confirmado. A chegada do voo é ao aeroporto; não informa chegada, saída ou apresentação no hotel.',
       wait: 'Prazo máximo de espera da van não confirmado. Confirme com o transporte operacional da empresa.',
