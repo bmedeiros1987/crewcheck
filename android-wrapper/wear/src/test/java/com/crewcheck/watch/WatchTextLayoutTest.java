@@ -41,6 +41,79 @@ public class WatchTextLayoutTest {
     private static final String LONG_TEXT =
             "Apresentação São José dos Campos — conexão internacional alterada";
 
+    @Test public void oldComplicationPendingIntentCannotBeRetargetedByNewSnapshot() {
+        var context = RuntimeEnvironment.getApplication();
+        var first = new ComplicationRendering("PERNOIT", "Pernoite · CWB", "PERNOITE", "Pernoite")
+                .withStayTarget("synthetic-A", 100L);
+        var second = new ComplicationRendering("PERNOIT", "Pernoite · CGH", "PERNOITE", "Pernoite")
+                .withStayTarget("synthetic-B", 200L);
+        int flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE;
+        var a = android.app.PendingIntent.getActivity(context, 11,
+                BaseComplicationService.tapIntent(context, first, false), flags);
+        var b = android.app.PendingIntent.getActivity(context, 11,
+                BaseComplicationService.tapIntent(context, second, false), flags);
+        assertNotEquals(a, b);
+        var oldIntent = org.robolectric.Shadows.shadowOf(a).getSavedIntent();
+        assertEquals("synthetic-A", oldIntent.getStringExtra("crewcheck_stay_context"));
+        assertEquals(100L, oldIntent.getLongExtra("crewcheck_stay_generation", 0));
+        assertFalse(oldIntent.getDataString().contains("synthetic-A"));
+        assertNull(BaseComplicationService.tapIntent(context, first, true).getStringExtra("crewcheck_stay_context"));
+    }
+
+    @Test public void compactStayAndDetailsStayInsideCircularViewport() throws Exception {
+        for (int size : new int[]{192, 227}) for (float scale : new float[]{1f, 1.5f, 2f}) {
+            RuntimeEnvironment.setFontScale(scale);
+            try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
+                MainActivity activity = controller.get();
+                ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                LinearLayout content = field(activity, "content", LinearLayout.class);
+                measure(scroll, size);
+                long now = System.currentTimeMillis();
+                var snapshot = WatchContextSnapshot.fromJson(WatchContextSnapshot.demo(now).toJson()
+                        .put("state", "OVERNIGHT").put("contextId", "synthetic-stay")
+                        .put("presentationPlace", "CWB • escala BRT").put("overnight", "Synthetic Hotel")
+                        .put("hotelPickup", "APZ hotel 22/10 04:20 America/Sao_Paulo").toString());
+                content.removeAllViews();
+                call(activity, "renderCompactStay", new Class[]{WatchContextSnapshot.class}, snapshot);
+                measure(scroll, size);
+                String glance = allText(content);
+                assertTrue(glance.contains("Pernoite") && glance.contains("CWB") && glance.contains("APZ 04:20") && glance.contains("22/10"));
+                assertFalse(glance.contains("Synthetic Hotel") || glance.contains("America/Sao_Paulo"));
+                assertEquals(4, content.getChildCount());
+                if (scale == 1f) assertTrue("normal-font compact view including action fits without scrolling: " + size + " height=" + content.getHeight() + " available=" + (scroll.getHeight()-scroll.getPaddingTop()-scroll.getPaddingBottom()),
+                        content.getHeight() <= scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom());
+                assertTrue(scroll.isVerticalScrollBarEnabled());
+                assertFits(content);
+                java.io.File preview = new java.io.File("build/reports/stay-compact/" + size + "-" + scale + ".png");
+                preview.getParentFile().mkdirs();
+                android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
+                scroll.draw(new android.graphics.Canvas(bitmap));
+                try (var output = new java.io.FileOutputStream(preview)) {
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output);
+                }
+                bitmap.recycle();
+                scroll.fullScroll(View.FOCUS_DOWN);
+                assertTrue("details action remains reachable", content.getChildAt(3).getBottom()
+                        <= scroll.getScrollY() + scroll.getHeight() - scroll.getPaddingBottom());
+                content.getChildAt(3).performClick();
+                assertTrue("click reloads empty/revoked cache instead of captured hotel",
+                        allText(content).contains("Pernoite indisponível"));
+                assertFalse(allText(content).contains("Synthetic Hotel"));
+                Field target = MainActivity.class.getDeclaredField("stayDetailsTarget"); target.setAccessible(true);
+                target.set(activity, new StayDetailsTarget(snapshot.contextId, snapshot.generatedAtEpochMs));
+                content.removeAllViews();
+                call(activity, "renderStayDetails", new Class[]{WatchContextSnapshot.class, long.class}, snapshot, now);
+                measure(scroll, size); assertFits(content);
+                assertTrue(allText(content).contains("Synthetic Hotel") && allText(content).contains("America/Sao_Paulo"));
+                content.removeAllViews();
+                call(activity, "renderStayDetails", new Class[]{WatchContextSnapshot.class, long.class}, snapshot, snapshot.validUntilEpochMs + 1);
+                measure(scroll, size); assertFits(content);
+                assertFalse(allText(content).contains("Synthetic Hotel"));
+                assertTrue(allText(content).contains("Pernoite indisponível"));
+            }
+        }
+    }
+
     @Test public void longOperationalTextAndButtonsFitSmallRoundScreens() throws Exception {
         for (float scale : new float[]{1f, 1.3f, 1.5f}) {
             RuntimeEnvironment.setFontScale(scale);
