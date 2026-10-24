@@ -1,5 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),vm=require('node:vm'),http=require('node:http');
 const {createRequire}=require('node:module'),ts=require('typescript');
+const {stabilizeAimsPreAction}=require('./lib/aims-preaction-stability.cjs');
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
 const out=path.resolve('artifacts/aims-document-app');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
@@ -25,12 +26,18 @@ const focusBounds=[];for(const zoomLabel of ['Ajustar','100%']){await page.getBy
 // Read-only native event evidence: retain the pre-action baseline and 1px assertions.
 await page.evaluate(()=>{if(window.__aimsNativeTraceInstalled){window.__aimsNativeTrace=[];return;}window.__aimsNativeTraceInstalled=true;window.__aimsNativeTrace=[];for(const name of ['pointerdown','mousedown','focus','focusin','pointerup','mouseup','click','scroll'])document.addEventListener(name,event=>{const frame=document.querySelector('.cc-doc-viewport'),target=event.target;window.__aimsNativeTrace.push({event:name,y:scrollY,left:frame?.scrollLeft,top:frame?.scrollTop,active:document.activeElement?.getAttribute('data-roster-event-id')||document.activeElement?.className||document.activeElement?.tagName,target:target?.getAttribute?.('data-roster-event-id')||target?.className||target?.tagName,at:performance.now()});},{capture:true,passive:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).scrollIntoViewIfNeeded();
-// Preserve the original pre-action baseline and record native activation separately.
-// The remote 2px drift is still under diagnosis; tolerance remains one pixel.
+// Finish preparation before measuring the return baseline. Layout changes fail; only
+// scroll settling is allowed. A bounded wait cannot turn perpetual movement green.
+const preparation=await page.evaluate(stabilizeAimsPreAction);
+console.log('AIMS stable preparation',JSON.stringify({theme,size,width,zoomLabel,...preparation}));
 const preparedBeforePointerAction=await page.evaluate(()=>({y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent}));
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).evaluate(el=>{window.__qaAimsActivationPosition=null;el.addEventListener('click',()=>{window.__qaAimsActivationPosition={y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent};},{capture:true,once:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).click();
 const activated=await page.evaluate(()=>window.__qaAimsActivationPosition);assert.ok(activated,'native activation snapshot must precede the real open handler');const before=preparedBeforePointerAction;
+assert.ok(Math.abs(activated.y-before.y)<=1,'real click must not move the prepared window baseline');
+assert.ok(Math.abs(activated.left-before.left)<=1,'real click must not move prepared horizontal pan');
+assert.ok(Math.abs(activated.top-before.top)<=1,'real click must not move prepared vertical pan');
+assert.equal(activated.zoom,before.zoom,'real click must preserve prepared zoom');
 console.log('AIMS activation snapshot',JSON.stringify({theme,size,width,zoomLabel,preparedBeforePointerAction,activated}));await page.locator('.cc-doc-detail').waitFor();await page.waitForFunction(()=>document.querySelector('.cc-doc-detail')===document.activeElement);assert.match(await page.locator('.cc-doc-detail').innerText(),/QA9029/);
 const detail=await page.locator('.cc-doc-detail').boundingBox(),pinned=await page.locator('.cz-global-header').boundingBox();assert.ok(detail.y>=pinned.y+pinned.height-1,'selected details start below visible header content and safe area');assert.equal(await page.locator('.cc-doc-detail').evaluate(el=>el===document.activeElement),true);
 // Exercise late ancestor movement too: exact scroll/zoom must survive animation completion.
