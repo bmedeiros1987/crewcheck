@@ -39,12 +39,14 @@ jobs:
       - name: Raw native registry and actual disposable SQL
         run: |
           node scripts/regression-native-push-registry.mjs
+          node scripts/regression-native-push-registry-protocol.mjs
           node scripts/regression-native-push-registry-sql.mjs
       - name: Preserve canonical preparation
         run: node scripts/v139/apply.mjs
       - name: Prepared native registry and actual disposable SQL
         run: |
           node scripts/regression-native-push-registry.mjs
+          node scripts/regression-native-push-registry-protocol.mjs
           node scripts/regression-native-push-registry-sql.mjs
       - uses: actions/upload-artifact@v4
         if: always()

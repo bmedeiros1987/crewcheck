@@ -62,3 +62,28 @@ explicit disposable flag. It never targets Aiven or production.
 No Play code allocation/upload/submission, environment, IAM, credentials, new
 permission, real account data, real token, paid message or deployment is included.
 Passing these tests is neither remote receipt nor physical acceptance.
+
+## Protocol adapter follow-up
+
+`protocol-adapter.mjs` adds an unmounted, OFF wire boundary. It accepts only the
+expected public project/package, canonical identity supplied separately by a
+future authenticated route, safe decimal native counters, explicit CAS revisions,
+consent and a stable mutation ID. Register, rotate and revoke remain distinct.
+It calls the existing durable primitive once and maps only a correlated committed
+summary to `registered`/`revoked`; `received` stays null. Unknown commit results
+are not retried. This does not mount a route or make the older Android payload
+compatible: the client must still supply the new CAS/operation fields and revoke
+under the captured old authenticated scope. The caller must durably retain the
+operation ID and reconcile lost ACKs; this adapter does not invent that storage.
+
+45 synthetic wire/ACK counterproofs run raw and prepared in the existing registry
+workflow. They use actual mutation plans for register/rotation/revocation, reject
+malformed/overflow counters and body identities, and prove invalid requests and
+OFF host touch no DB/protection. Existing actual MySQL tests remain separate.
+
+The requested ongoing flight/duty notification is not implemented by this slice.
+It must update one opaque notification identity per current owner/event, expose
+only approved lock-screen content, validate action identity/revision on tap, and
+label cached source/time honestly. Local saved-time alarms remain a distinct
+existing AlarmManager path; no continuous service, new infrastructure, sender
+activation or claim of iOS Live Activities is introduced here.
