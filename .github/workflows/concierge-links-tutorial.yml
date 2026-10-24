@@ -1,0 +1,37 @@
+name: Concierge links and tutorial offline
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/concierge/ConciergeChannels.tsx'
+      - 'client/src/components/concierge/concierge-channels.css'
+      - 'client/src/components/v1432/FirstAccessTour.tsx'
+      - 'client/src/components/v1432/homologation.css'
+      - 'client/src/lib/notificationNavigation.ts'
+      - 'scripts/regression-concierge-links-tutorial.mjs'
+      - '.github/workflows/concierge-links-tutorial.yml'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Raw navigation and tutorial; no browser or application HTTP
+        run: |
+          node scripts/regression-concierge-links-tutorial.mjs
+          node scripts/regression-notification-navigation-session.mjs
+      - name: Canonical preparation, TypeScript and web build
+        run: |
+          npm run check
+          npx vite build
+      - name: Prepared contracts
+        run: |
+          node scripts/regression-concierge-links-tutorial.mjs
+          node scripts/regression-notification-navigation-session.mjs
