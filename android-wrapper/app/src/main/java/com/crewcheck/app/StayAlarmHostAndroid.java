@@ -25,18 +25,23 @@ public final class StayAlarmHostAndroid {
     static final long MAX_OVERNIGHT=18*3_600_000L;
     private static volatile StayAlarmSessionHost activeAuthority;
     public static StayAlarmEngine.Owner owner(){
-        return new StayAlarmEngine.Owner(){public boolean enabled(){return PREPARED_HOST_ENABLED&&activeAuthority!=null&&activeAuthority.enabled();}
+        return new StayAlarmEngine.Owner(){public boolean enabled(){return activeAuthority!=null&&activeAuthority.enabled();}
             public String activeOwner(){return enabled()?activeAuthority.activeOwner():null;}public String epoch(){return enabled()?activeAuthority.epoch():null;}};
     }
+    static boolean testHostEnabled(Context context){return context!=null&&context.getPackageName()!=null&&context.getPackageName().endsWith(".mcctest");}
     private static final String ORIGIN="https://crewcheck.online";
-    private final WebView view;private final StayAlarmSessionHost session;private final StayAlarmEngine engine;
+    private final WebView view;private final StayAlarmSessionHost session;private final StayAlarmDurableAuthority durable;private final StayAlarmEngine engine;
     private final StayAlarmBridge bridge;private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private StayAlarmHostAndroid(Context context,WebView view){
         this.view=view;SharedPreferences prefs=context.getSharedPreferences("crewcheck_stay_alarm_owner_v1",Context.MODE_PRIVATE);
-        session=new StayAlarmSessionHost(PREPARED_HOST_ENABLED&&prefs.getBoolean("physicalValidationApproved",false),SystemClock::elapsedRealtime,
+        boolean enabled=PREPARED_HOST_ENABLED&&prefs.getBoolean("physicalValidationApproved",false)||testHostEnabled(context);
+        session=new StayAlarmSessionHost(enabled,SystemClock::elapsedRealtime,
             (account,epoch,expiry)->{if(!prefs.edit().putString("verifiedOwnerId",account).putString("verifiedOwnerEpoch",epoch)
                 .putLong("verifiedOwnerExpiresAt",expiry).commit())throw new IllegalStateException("lease commit failed");},PREPARED_OVERNIGHT_LEASE_ENABLED?MAX_OVERNIGHT:300_000);
-        StayAlarmAndroid driver=new StayAlarmAndroid(context);engine=new StayAlarmEngine(driver,driver,session);bridge=new StayAlarmBridge(engine,session);
+        durable=StayAlarmDurableAuthorityAndroid.open(context.getApplicationContext());
+        StayAlarmAndroid driver=new StayAlarmAndroid(context);
+        engine=new StayAlarmEngine(driver,driver,new StayAlarmCompositeOwner(session,durable));
+        bridge=new StayAlarmBridge(engine,session);
         activeAuthority=session;session.revoke();
         WebViewCompat.addWebMessageListener(view,"CrewCheckStayHost",Collections.singleton(ORIGIN),(web,message,source,main,reply)->{
             if(!admitted(main,source.toString(),web.getUrl()))return;
@@ -44,7 +49,12 @@ public final class StayAlarmHostAndroid {
                 if(message.getData()==null||message.getData().length()>16384)return;
                 JSONObject request=new JSONObject(message.getData());String id=request.getString("id"),action=request.getString("action");
                 if(id.length()>128||message.getData().length()>16384)return;
-                if("revoke".equals(action)){session.revoke();worker.execute(this::recover);reply.postMessage(response(id,"revoked",null));return;}
+                if("suspend".equals(action)){session.revoke();worker.execute(this::recover);reply.postMessage(response(id,"suspended",null));return;}
+                if("revoke".equals(action)){
+                    String account=session.activeOwner(),epoch=session.epoch();
+                    StayAlarmEngine.updateTrustedOwner(()->{durable.revoke(account,epoch);session.revoke();});
+                    worker.execute(this::recover);reply.postMessage(response(id,"revoked",null));return;
+                }
                 if("authenticate".equals(action)){
                     if(!session.enabled()){reply.postMessage(response(id,"rejected",null));return;}
                     long generation=session.begin();String token=request.getString("token");
@@ -53,6 +63,7 @@ public final class StayAlarmHostAndroid {
                         long duration=Math.max(0,Math.min(proof.duration,PREPARED_OVERNIGHT_LEASE_ENABLED?MAX_OVERNIGHT:300_000)-(SystemClock.elapsedRealtime()-began));
                         long expiry=SystemClock.elapsedRealtime()+duration;String account=proof.account;
                         boolean accepted=session.verified(generation,account,UUID.randomUUID().toString(),expiry);
+                        if(accepted)recover();
                         view.post(()->{if(accepted&&session.current(generation)&&allowed(view.getUrl())){
                             reply.postMessage(response(id,"verified",capabilities()));
                             view.postDelayed(()->{if(session.generation()==generation){session.revoke();worker.execute(this::recover);}},duration);
@@ -110,7 +121,7 @@ public final class StayAlarmHostAndroid {
         }finally{connection.disconnect();}
     }
     public static StayAlarmHostAndroid install(Context context,WebView view){
-        if(!PREPARED_HOST_ENABLED||!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))return null;
+        if(!(PREPARED_HOST_ENABLED||testHostEnabled(context))||!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))return null;
         return new StayAlarmHostAndroid(context,view);
     }
     private void recover(){try{engine.recover(false);}catch(Exception ignored){/* no acknowledgement on incomplete recovery */}}

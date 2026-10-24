@@ -1,0 +1,42 @@
+name: Android durable offline stay alarm
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarm*.java'
+      - 'shared/stay-alarm-host-runtime.mjs'
+      - 'client/src/lib/stayAlarmHost.ts'
+      - 'scripts/fixtures/StayAlarmDurableAuthorityFixture.java'
+      - 'scripts/regression-stay-alarm-durable-offline.mjs'
+      - 'docs/stay-alarm-durable-offline.md'
+      - '.github/workflows/stay-alarm-durable-offline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Durable authority and lifecycle counterproofs
+        run: node --test scripts/regression-stay-alarm-durable-offline.mjs
+      - name: Existing StayAlarm native contracts
+        run: node scripts/regression-stay-alarm-native.mjs
+      - run: npm run check
+      - run: npm run build
+      - uses: gradle/actions/setup-gradle@v6
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Build isolated debug test APK only
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-StayAlarm-Offline-Test
+          path: android-wrapper/app/build/outputs/apk/debug/app-debug.apk

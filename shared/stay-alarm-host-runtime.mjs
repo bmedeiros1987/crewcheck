@@ -19,12 +19,13 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
   const listener=event=>{try{
     const value=JSON.parse(event.data),request=pending.get(value.id);if(!request)return;
     pending.delete(value.id);clearTimer(request.timer);
-    if(request.generation!==generation||value.state!==({authenticate:'verified',revoke:'revoked',transact:'ok'}[request.action]))request.reject(Error('host session unavailable'));
+    if(request.generation!==generation||value.state!==({authenticate:'verified',revoke:'revoked',suspend:'suspended',transact:'ok'}[request.action]))request.reject(Error('host session unavailable'));
     else request.resolve(value.payload);
   }catch{}};
   port.addEventListener('message',listener);
   function reset(retained=null){generation++;activeScope=null;inactiveScope=retained;adapter=null;session=null;permission=false;onState(false);if(leaseTimer!==null)clearTimer(leaseTimer);leaseTimer=null;
     for(const request of pending.values()){clearTimer(request.timer);request.reject(Error('session invalidated'));}pending.clear();}
+  async function suspend(){const retained=activeScope||inactiveScope;reset(retained);try{await send('suspend');return {state:'native-suspended',cancelConfirmed:false};}catch{return {state:'suspension-unknown',cancelConfirmed:false};}}
   async function revoke(){const retained=activeScope||inactiveScope;reset(retained);try{await send('revoke');return {state:'native-revoked',cancelConfirmed:false};}catch{return {state:'revocation-unknown',cancelConfirmed:false};}}
   async function revokeScope(scope){
     if(activeScope!==scope&&inactiveScope!==scope)return {state:'superseded-session',cancelConfirmed:false};
@@ -43,11 +44,11 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
       const remaining=caps.leaseRemainingMillis ?? 300000;
       if(!Number.isSafeInteger(remaining)||remaining<=0||remaining>18*3600000){void revoke();return false;}
       activeScope={account,epoch:caps.ownerEpoch};inactiveScope=null;
-      onState(true);leaseTimer=setTimer(()=>{void revoke();},remaining);
+      onState(true);leaseTimer=setTimer(()=>{void suspend();},remaining);
       return true;
     }catch{if(captured===generation){adapter=null;session=null;}return false;}
   }
-  return {authenticate,revoke,
+  return {authenticate,revoke,suspend,
     async replace(input){const current=adapter,scope=activeScope;
       if(!current||!scope)return {state:'not-programmed',reason:'native-host-unavailable',key:input.key};
       if(!belongs(input.key,scope))return {state:'not-programmed',reason:'owner-epoch-mismatch',key:input.key};
@@ -78,5 +79,5 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
     },
     uncertainKeys:()=>[...scopes.values()].flatMap(scope=>[...scope.keys]),
     uncertainJobs:()=>[...scopes.values()].flatMap(scope=>[...scope.keys].map(key=>({key,account:scope.account,epoch:scope.epoch}))),
-    permission:()=>permission,close(){void revoke();port.removeEventListener('message',listener);},ready:()=>Boolean(adapter),session:()=>session};
+    permission:()=>permission,close(){void suspend();port.removeEventListener('message',listener);},ready:()=>Boolean(adapter),session:()=>session};
 }

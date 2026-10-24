@@ -25,8 +25,11 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     static final String ACTION="com.crewcheck.app.STAY_HOTEL_ALARM";
     private final Context context;
     private final SharedPreferences journal;
+    private final StayAlarmDurableAuthority durable;
     public StayAlarmAndroid(Context context) {
-        this.context=context.getApplicationContext();journal=this.context.getSharedPreferences("crewcheck_stay_alarm_journal_v1",Context.MODE_PRIVATE);
+        this.context=context.getApplicationContext();
+        journal=this.context.getSharedPreferences("crewcheck_stay_alarm_journal_v1",Context.MODE_PRIVATE);
+        durable=StayAlarmDurableAuthorityAndroid.open(this.context);
     }
     static String digest(String key) {
         try {byte[] bytes=MessageDigest.getInstance("SHA-256").digest(key.getBytes(StandardCharsets.UTF_8));
@@ -97,6 +100,7 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     }
     @Override public void commit(StayAlarmEngine.Record r)throws Exception {
         if(!journal.edit().putString("r:"+digest(r.key),encode(r).toString()).commit())throw new IllegalStateException("journal commit failed");
+        if("scheduled".equals(r.state)&&!durable.grant(r))throw new IllegalStateException("durable authority commit failed");
     }
     @Override public List<StayAlarmEngine.Record> all()throws Exception {
         List<StayAlarmEngine.Record> records=new ArrayList<>();
@@ -105,11 +109,10 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
             if(!key.equals("r:"+digest(r.key)))throw new SecurityException("journal identity");records.add(r);
         }return records;
     }
-    /** Only a future trusted native host may issue this lease AFTER physical
-     * validation. There is no writer or JavascriptInterface for it in this PR. */
+    /** Online session authority admits mutations; durable authority exists only
+     * after an explicitly confirmed schedule and is bounded by that stay's APZ. */
     public static StayAlarmEngine.Owner owner(Context context) {
-        // No process/session authority after restart => fail closed; reverify.
-        return StayAlarmHostAndroid.owner();
+        return new StayAlarmCompositeOwner(StayAlarmHostAndroid.owner(),StayAlarmDurableAuthorityAndroid.open(context.getApplicationContext()));
     }
     public static StayAlarmEngine engine(Context context) {StayAlarmAndroid driver=new StayAlarmAndroid(context);return new StayAlarmEngine(driver,driver,owner(context));}
 }
