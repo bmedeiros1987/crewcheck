@@ -29,7 +29,8 @@ async function boundedResponse(url, init, { fetchImpl, timeoutMs }) {
 export async function sendTelegramWakeupCall({ username, text, environment = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15_000 }) {
   const provider = 'telegram-call';
   const user = String(username || '').trim().replace(/^@/, '');
-  if (/^(false|0|off|no)$/i.test(String(environment.CALLMEBOT_TELEGRAM_CALL_ENABLED || '')) || !user) return failed(provider, 'CALL_DISABLED_OR_UNLINKED', false);
+  const enabled = String(environment.CALLMEBOT_TELEGRAM_CALL_ENABLED || '').trim().toLowerCase();
+  if ((enabled && !['1', 'true', 'yes', 'sim', 'on', 'enabled'].includes(enabled)) || !user) return failed(provider, 'CALL_DISABLED_OR_UNLINKED', false);
   if (!/^[a-zA-Z0-9_]{5,32}$/.test(user)) return failed(provider, 'CALL_RECIPIENT_INVALID', false);
   const url = new URL('https://api.callmebot.com/start.php');
   url.searchParams.set('user', `@${user}`);

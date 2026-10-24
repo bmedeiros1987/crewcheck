@@ -18,6 +18,14 @@ for (const raw of ['', 'ERROR: not authorized', 'Calls disabled']) assert.equal(
 count = 0;
 assert.equal((await sendTelegramWakeupCall({ ...base, environment: { CALLMEBOT_TELEGRAM_CALL_ENABLED: 'false' } })).configured, false);
 assert.equal(count, 0);
+for (const value of ['false', ' false ', 'disabled', 'DISABLED', '0', 'no', 'off', 'arbitrary']) {
+  assert.equal((await sendTelegramWakeupCall({ ...base, environment: { CALLMEBOT_TELEGRAM_CALL_ENABLED: value } })).configured, false);
+}
+assert.equal(count, 0, 'all previously disabled forms must make zero attempts');
+for (const value of ['', ' ', '1', ' true ', 'YES', 'sim', 'on', 'enabled']) {
+  assert.equal((await sendTelegramWakeupCall({ ...base, environment: { CALLMEBOT_TELEGRAM_CALL_ENABLED: value } })).ok, true);
+}
+count = 0;
 const interrupted = async (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => { count++; reject(new Error('Abort')); }, { once: true }));
 assert.equal((await sendTelegramWakeupCall({ ...base, fetchImpl: interrupted, timeoutMs: 5 })).uncertain, true);
 assert.equal(count, 1); // no fallback/retry
