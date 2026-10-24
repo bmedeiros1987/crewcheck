@@ -248,6 +248,7 @@ try {
   const day='2032-02-01',sameDayFx=missingFxRows.map(row=>({...row,iso:day}));
   for (const [groupPerDiems,complete,pending,expected] of [
     [sameDayFx,true,[],null],
+    [missingFxRows.slice(0,1).map(row=>({...row,partial:true})),false,[{iso:'2032-01-31',airport:'TEST'}],null],
     [missingFxRows.slice(0,1),false,undefined,null],
     [missingFxRows.slice(0,1),true,undefined,100],
     [missingFxRows.slice(0,1),false,[{iso:'2032-02-02',airport:'OTHER'}],100],

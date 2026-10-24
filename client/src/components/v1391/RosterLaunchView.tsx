@@ -68,6 +68,7 @@ type RosterEvent = {
 type ProgramMode = 'operating' | 'extra' | 'stay' | 'rest' | 'journey-rest' | 'reserve' | 'standby' | 'training' | 'duty';
 
 type PerDiemItem = {
+  partial?: boolean;
   eventId?: string;
   iso: string;
   label: string;
