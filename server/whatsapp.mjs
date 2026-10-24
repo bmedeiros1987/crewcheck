@@ -1,3 +1,4 @@
+import { infobipCanonicalLinkDestination } from './infobip-whatsapp-link-policy.mjs';
 import crypto from 'node:crypto';
 import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
@@ -566,6 +567,11 @@ async function handleLinkStart(req, res) {
   if (body?.consentConcierge !== true) {
     return sendJson(res, 400, { ok: false, message: 'Confirme que deseja usar o Concierge pelo WhatsApp.' });
   }
+  if (body?.provider !== undefined && body.provider !== 'infobip') return sendJson(res, 400, { ok: false, message: 'Provedor de vínculo inválido.' });
+  const number = body.provider === 'infobip'
+    ? await infobipCanonicalLinkDestination()
+    : normalizePhone(businessNumber());
+  if (body.provider === 'infobip' && !number) return sendJson(res, 503, { ok: false, message: 'Recebimento restrito da Infobip ainda não está disponível para vincular. Nenhum código foi criado.' });
   const db = await ensureWhatsAppTables(identity.db);
   if (!db || !auditSecret()) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
 
@@ -587,7 +593,6 @@ async function handleLinkStart(req, res) {
     }
   }
   if (!code) return sendJson(res, 503, { ok: false, message: 'Não consegui gerar o código agora. Tente novamente.' });
-  const number = normalizePhone(businessNumber());
   const openUrl = number ? `https://wa.me/${number}?text=${encodeURIComponent(code)}` : '';
   return sendJson(res, 200, {
     ok: true,

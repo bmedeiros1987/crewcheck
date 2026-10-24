@@ -39,6 +39,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs
+          node scripts/regression-infobip-canonical-link.mjs
           node scripts/regression-infobip-whatsapp-canonical-lifecycle.mjs
       - name: Prepare existing canonical OFF wiring
         run: node scripts/v139/apply.mjs
@@ -50,6 +51,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs --prepared
+          node scripts/regression-infobip-canonical-link.mjs
           node scripts/regression-infobip-whatsapp-canonical-lifecycle.mjs
           node scripts/regression-infobip-whatsapp-runtime.mjs
 
