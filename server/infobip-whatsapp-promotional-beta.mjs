@@ -1,3 +1,4 @@
+import {stayMenuIntent} from './concierge/stay-menu.mjs';
 import {sharedCreditKey,boundedQuoteReservation} from './concierge-shared-credit-candidate.mjs';
 import {createHash} from 'node:crypto';
 import {createPromotionalConciergeAdmission} from './concierge-promotional-admission.mjs';
@@ -25,7 +26,7 @@ export function createInfobipPromotionalBetaScope(configuration,admission,{now=D
     const global=await read(sharedCreditKey('global',[p.programId,currentPeriod]));
     const reserved=await read(sharedCreditKey('request',[p.programId,j.eventKey]));
     const at=now(),amount=boundedQuoteReservation(context.quote,'whatsapp',at);
-    return admission.allows(j)&&!c.signal?.aborted&&global?.v===1&&global.kind==='global-credit'&&global.period===currentPeriod&&global.budgetMicroUsd===p.monthlyBudgetMicroUsd&&global.reconciled===true&&Number.isSafeInteger(global.reconciledAt)&&at>=global.reconciledAt&&at-global.reconciledAt<=900000&&Number.isSafeInteger(global.knownSpentMicroUsd)&&global.knownSpentMicroUsd>=0&&Number.isSafeInteger(global.reservedMicroUsd)&&global.reservedMicroUsd>=0&&global.knownSpentMicroUsd+global.reservedMicroUsd<=global.budgetMicroUsd&&reserved?.kind==='credit-request'&&reserved.state==='reserved'&&reserved.period===currentPeriod&&reserved.accountKey===p.ownerAccountKey&&reserved.channel==='whatsapp'&&Number.isSafeInteger(reserved.amountMicroUsd)&&amount!==null&&amount<=reserved.amountMicroUsd;
+    return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).format(at)===currentPeriod&&admission.allows(j)&&!c.signal?.aborted&&global?.v===1&&global.kind==='global-credit'&&global.period===currentPeriod&&global.budgetMicroUsd===p.monthlyBudgetMicroUsd&&global.reconciled===true&&Number.isSafeInteger(global.reconciledAt)&&at>=global.reconciledAt&&at-global.reconciledAt<=900000&&Number.isSafeInteger(global.knownSpentMicroUsd)&&global.knownSpentMicroUsd>=0&&Number.isSafeInteger(global.reservedMicroUsd)&&global.reservedMicroUsd>=0&&global.knownSpentMicroUsd+global.reservedMicroUsd<=global.budgetMicroUsd&&reserved?.kind==='credit-request'&&reserved.state==='reserved'&&reserved.period===currentPeriod&&reserved.accountKey===p.ownerAccountKey&&reserved.channel==='whatsapp'&&Number.isSafeInteger(reserved.amountMicroUsd)&&amount!==null&&amount<=reserved.amountMicroUsd;
    }});
   },
   allowsProposal:proposal=>proposal?.sender===p.sender&&proposal.recipient===p.recipient&&typeof proposal.text==='string'&&proposal.text.length<=4000,
@@ -34,6 +35,7 @@ export function createInfobipPromotionalBetaScope(configuration,admission,{now=D
    const value=text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
    if(/^(?:opcao\s+)?(?:12|13|14)[.)]?$/.test(value))return {reply:'Consulte academias, farmácias e hospitais no app CrewCheck. Este beta não faz buscas externas pela conversa.'};
    if(/^(?:oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comandos|inicio)[!.?]*$/.test(value)||/^(?:opcao\s+)?(?:[1-9]|1[0-7])[.)]?$/.test(value))return {text};
+   const history=stayMenuIntent(value);if(history?.kind==='history')return {text:'/historico_pernoites '+history.page};
    if(/^\/(?:hoje|amanha|proximo|escala|historico_pernoites)$/.test(value))return {text:value};
    if(/^(?:o que tenho|qual (?:a )?minha programacao|minha escala|programacao)(?: para)? (hoje|amanha)[?.!]*$/.test(value))return {text:/amanha/.test(value)?'/amanha':'/hoje'};
    if(/^\/(?:start|menu|ajuda|help|comandos)$/.test(value))return {text:'menu'};
