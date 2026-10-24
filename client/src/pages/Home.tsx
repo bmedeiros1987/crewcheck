@@ -168,6 +168,10 @@ import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
 
+import { recordCrewciergeCapture } from "@/lib/crewCiergeCapture";
+import { useCrewciergeConversation } from "@/lib/useCrewciergeConversation";
+import { ConciergePlaceResults, isConciergePlaceResults, type ConciergePlaceResultsData } from '@/components/concierge/ConciergePlaceResults';
+
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'notifications' | 'maintenance' | 'import' | 'features'
   | 'currency' | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
@@ -1081,6 +1085,7 @@ function saveRoster(roster: CrewRoster, source: string): ComplianceResult {
     sessionStorage.setItem('crewcheck_source_file', source);
     localStorage.setItem('crewcheck_latest_roster_bundle', JSON.stringify({ roster, compliance, sourceFileName: source, updatedAt: new Date().toISOString(), source: 'crewcheck-v13.8.0-canonical' }));
     localStorage.setItem('crewcheck_last_roster', JSON.stringify(roster));
+    void recordCrewciergeCapture(roster);
     window.dispatchEvent(new CustomEvent('crewcheck:roster-updated', { detail: { roster, compliance, source } }));
   } catch {}
   return compliance;
@@ -4919,8 +4924,10 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
   const [telegramDiagnostic, setTelegramDiagnostic] = useState<any>(null);
   const [question, setQuestion] = useState('/proximo');
   const [answer, setAnswer] = useState('');
+  const [placeResults, setPlaceResults] = useState<ConciergePlaceResultsData | null>(null);
   const [busy, setBusy] = useState('');
   const hasLocalRoster = Array.isArray(bundle.roster?.days) && bundle.roster.days.length > 0;
+  const localConversation = useCrewciergeConversation(bundle.roster, setAnswer, setBusy, () => { setStatus(null); setTelegramDiagnostic(null); setPlaceResults(null); });
   const commands = [
     ['/proximo', 'Próxima programação'],
     ['/hoje', 'Programação de hoje'],
@@ -4933,6 +4940,8 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
   ];
 
   async function refresh() {
+    if (navigator.onLine === false) { setStatus({ ok: false, message: 'Modo offline: consultas usam apenas a escala salva desta conta.' }); return; }
+    const current = localConversation.lifecycleFence();
     try {
       const identity = telegramConciergeIdentity();
       const params = new URLSearchParams(identity);
@@ -4941,10 +4950,11 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
         fetchTelegramConciergeRoster(),
         admin ? fetch('/api/telegram/diagnostic', { cache: 'no-store' }).then((response) => response.json()).catch(() => null) : Promise.resolve(null),
       ]);
+      if (!current()) return;
       setStatus({ ...(linkResponse || {}), roster: rosterPayload?.snapshot || null, hasRoster: Boolean(rosterPayload?.snapshot?.roster || linkResponse?.hasRoster), rosterMessage: rosterPayload?.message || '' });
       setTelegramDiagnostic(diagnosticPayload);
     } catch {
-      setStatus({ ok: false, linked: false, message: 'Concierge aguardando conexão.' });
+      if (current()) setStatus({ ok: false, linked: false, message: 'Concierge aguardando conexão.' });
     }
   }
   useEffect(() => { refresh(); }, []);
@@ -4962,9 +4972,11 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     }
   }
   async function importFromTelegram() {
+    const current = localConversation.lifecycleFence();
     setBusy('import');
     try {
       const payload = await fetchTelegramConciergeRoster();
+      if (!current()) return;
       const roster = payload?.snapshot?.roster as CrewRoster | undefined;
       if (!roster?.days?.length) throw new Error('Nenhuma escala recebida pelo Telegram. Envie o PDF ao bot primeiro.');
       const source = String(payload?.snapshot?.fileName || 'Escala recebida no Telegram');
@@ -4985,16 +4997,18 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     if (!text) return;
     setQuestion(text);
     setBusy('ask');
-    try {
+    setPlaceResults(null);
+    await localConversation.ask(text, async current => {
       const payload = await askTelegramConcierge(text);
+      if (current()) {
       setAnswer(String(payload.reply || 'Sem resposta.'));
-      setStatus((current: any) => ({ ...(current || {}), linked: payload.linked, hasRoster: payload.hasRoster }));
-    } catch (error) {
-      setAnswer(error instanceof Error ? error.message : 'O Concierge não respondeu agora.');
-    } finally {
-      setBusy('');
-    }
+      setPlaceResults(isConciergePlaceResults(payload.placeResults) ? payload.placeResults : null);
+      setStatus((value: any) => ({ ...(value || {}), linked: payload.linked, hasRoster: payload.hasRoster }));
+      }
+      return String(payload.reply || 'Sem resposta.');
+    });
   }
+
   async function linkTelegram() {
     setBusy('link');
     try {
@@ -5021,7 +5035,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
   }
 
   return <><Brand back/><section className="cz-panel-head"><h1>Concierge Telegram</h1><p>Envie sua escala em PDF ao bot, use os comandos antigos e consulte radar, portão, saída, meteorologia, hotéis, academias e rotina por texto ou voz.</p></section>
-    <ConciergeFinancialPreview openFinance={(mode) => setView(mode === 'salary' ? 'salary' : 'perdiem')}/>
+    {localConversation.online && <ConciergeFinancialPreview openFinance={(mode) => setView(mode === 'salary' ? 'salary' : 'perdiem')}/>}
     <section className="cz-finance-grid">
       <KpiCard icon={Send} title="Telegram" value={status?.linked ? 'Vinculado' : 'Vincular'} detail={status?.message || 'Verificando bot'}/>
       <KpiCard icon={FileText} title="Escala no bot" value={status?.hasRoster ? 'Sincronizada' : 'Aguardando'} detail={status?.roster?.updatedAt ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(status.roster.updatedAt)) : 'Envie PDF ou sincronize'}/>
@@ -5032,9 +5046,9 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
       <h2>Enviar a escala pelo Telegram</h2>
       <p>1. Vincule o bot. 2. Abra a conversa e envie o PDF oficial como documento. 3. O Concierge valida a escala e responde com o resumo e a próxima programação. Depois você pode importar essa mesma escala no app.</p>
       <div className="cz-tool-actions">
-        <button onClick={linkTelegram} disabled={Boolean(busy)}><Send/> {status?.linked ? 'Abrir ou refazer vínculo' : 'Vincular e abrir Telegram'}</button>
-        <button onClick={syncCurrent} disabled={Boolean(busy) || !hasLocalRoster}><RotateCcw/> {busy === 'sync' ? 'Sincronizando...' : 'Sincronizar escala atual'}</button>
-        <button onClick={importFromTelegram} disabled={Boolean(busy)}><Upload/> {busy === 'import' ? 'Importando...' : 'Importar escala recebida'}</button>
+        <button onClick={linkTelegram} disabled={Boolean(busy) || !localConversation.online}><Send/> {status?.linked ? 'Abrir ou refazer vínculo' : 'Vincular e abrir Telegram'}</button>
+        <button onClick={syncCurrent} disabled={Boolean(busy) || !localConversation.online || !hasLocalRoster}><RotateCcw/> {busy === 'sync' ? 'Sincronizando...' : 'Sincronizar escala atual'}</button>
+        <button onClick={importFromTelegram} disabled={Boolean(busy) || !localConversation.online}><Upload/> {busy === 'import' ? 'Importando...' : 'Importar escala recebida'}</button>
         <button onClick={refresh} disabled={Boolean(busy)}><Radar/> Atualizar status</button>
       </div>
       {!hasLocalRoster && <p className="cz-mini-status">Você ainda pode enviar o PDF diretamente ao bot. Para sincronizar do app, importe uma escala primeiro.</p>}
@@ -5048,12 +5062,12 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
         <span><b>Fila</b>{Number(telegramDiagnostic?.webhook?.pendingUpdates || 0)} atualização(ões)</span>
         <span><b>Último erro</b>{telegramDiagnostic?.webhook?.lastErrorMessage || 'Nenhum informado'}</span>
       </div>
-      <div className="cz-tool-actions"><button className="primary" onClick={repairWebhook} disabled={Boolean(busy)}><RotateCcw/> {busy === 'webhook' ? 'Revinculando…' : 'Revincular webhook e menu'}</button><button onClick={refresh} disabled={Boolean(busy)}><Radar/> Consultar novamente</button></div>
+      <div className="cz-tool-actions"><button className="primary" onClick={repairWebhook} disabled={Boolean(busy) || !localConversation.online}><RotateCcw/> {busy === 'webhook' ? 'Revinculando…' : 'Revincular webhook e menu'}</button><button onClick={refresh} disabled={Boolean(busy)}><Radar/> Consultar novamente</button></div>
       {!telegramDiagnostic?.tokenConfigured && <p className="cz-mini-status">Gere um token novo no @BotFather e salve apenas em TELEGRAM_BOT_TOKEN no Render. Nunca cole o token no site, no GitHub ou em mensagens.</p>}
     </section>}
     <section className="cz-toolbox">
       <h2>Prévia dos comandos</h2>
-      <p>Teste aqui a mesma resposta operacional que o bot usa. No Telegram, também funciona com perguntas naturais e mensagem de voz.</p>
+      <p>{localConversation.online ? 'Teste aqui a mesma resposta operacional que o bot usa. No Telegram, também funciona com perguntas naturais e mensagem de voz.' : 'Modo offline: consulte a próxima jornada ou escala salva desta conta. Fontes ausentes ficam indisponíveis.'}</p>
       <div className="cz-tool-actions">{commands.map(([command, label]) => <button key={command} onClick={() => ask(command)} disabled={Boolean(busy)}><Send/> {label}</button>)}</div>
       <label><span>Pergunte ao Concierge</span><textarea className="cz-update-textarea" style={{ minHeight: 90 }} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex.: qual o portão do LA3730?"/></label>
       <div className="cz-tool-actions"><button onClick={() => ask()} disabled={Boolean(busy) || !question.trim()}><Send/> {busy === 'ask' ? 'Consultando...' : 'Consultar'}</button></div>

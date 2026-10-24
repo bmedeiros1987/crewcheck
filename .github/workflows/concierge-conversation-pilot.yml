@@ -1,0 +1,83 @@
+name: CrewCierge isolated conversation contracts
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/crewCiergeLocal.ts'
+      - 'client/src/lib/crewCiergeCapture.ts'
+      - 'client/src/lib/useCrewciergeConversation.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'shared/concierge-conversation-intent*'
+      - 'server/concierge/conversation-*.mjs'
+      - 'server/concierge/duty-facts.mjs'
+      - 'scripts/regression-conversation-pilot.mjs'
+      - 'scripts/regression-crewcierge-local-browser.mjs'
+      - 'scripts/regression-crewcierge-screen-browser.mjs'
+      - 'scripts/regression-crewcierge-pwa-browser.mjs'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/v139/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/concierge-conversation-pilot.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Isolated test browser; no application dependency change
+        run: |
+          npm install --prefix "$RUNNER_TEMP/crewcierge-browser" --ignore-scripts --no-audit --no-fund playwright@1.57.0
+          node "$RUNNER_TEMP/crewcierge-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Original sources, synthetic data, actual browser offline
+        env:
+          CREWCHECK_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/crewcierge-browser/node_modules/playwright
+        run: |
+          set -euo pipefail
+          npx --no-install tsc --noEmit
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/regression-conversation-pilot.mjs
+            TZ="$zone" node scripts/regression-crewcierge-local-browser.mjs
+            TZ="$zone" node scripts/regression-crewcierge-screen-browser.mjs
+          done
+      - name: Canonical preparation and complete build
+        run: |
+          npm run check
+          npm run build
+      - name: Prepared sources preserve the same read contracts
+        env:
+          CREWCHECK_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/crewcierge-browser/node_modules/playwright
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/regression-conversation-pilot.mjs
+            TZ="$zone" node scripts/regression-crewcierge-local-browser.mjs
+            TZ="$zone" node scripts/regression-crewcierge-screen-browser.mjs
+          done
+          node scripts/regression-concierge-journey-programs.mjs
+      - name: Complete built PWA, real worker, offline reload and fresh document
+        env:
+          CREWCHECK_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/crewcierge-browser/node_modules/playwright
+        run: |
+          set -euo pipefail
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" CREWCIERGE_PWA_EVIDENCE="$RUNNER_TEMP/crewcierge-pwa-$zone" node scripts/regression-crewcierge-pwa-browser.mjs
+          done
+      - name: Retain synthetic PWA reports and browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewcierge-pwa-${{ github.sha }}
+          path: ${{ runner.temp }}/crewcierge-pwa-*/**
+          if-no-files-found: ignore
