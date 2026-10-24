@@ -181,5 +181,5 @@ export default function RegulationScenarioView(props:Parameters<typeof DetailedR
  const imported=Boolean(props.scheduleDay&&props.scheduleDay.type!=='IMPORTAR'&&(props.scheduleDay.legs?.length||props.program?.kind==='duty'));
  const automatic=imported&&props.scheduleDay?.type==='VOO'&&!manual;
  if(automatic)return <RegulationAutomaticView scheduleDay={props.scheduleDay!} program={props.program} compliance={props.compliance} operationalArrival={props.operationalArrival} onManual={()=>setManual(true)}/>;
- return <>{imported&&<button className="cc-reg-return-auto" type="button" onClick={()=>setManual(false)}>Voltar ao cenário automático</button>}<DetailedRegulationScenarioView {...props} scheduleDay={imported?props.scheduleDay:null} program={imported?props.program:null}/></>;
+ return <>{imported&&<div className="cc-regulation-scenario cc-reg-return-actions"><button className="cc-reg-return-auto" type="button" onClick={()=>setManual(false)}>Voltar ao cenário automático</button></div>}<DetailedRegulationScenarioView {...props} scheduleDay={imported?props.scheduleDay:null} program={imported?props.program:null}/></>;
 }

@@ -16,7 +16,7 @@ const candidate={...normalizeCiriumFlightStatus(row),scheduledDepartureUtc:event
 window.hostCurrent=true;const admitted={candidate,session:captureAuthSession(),ownerScope:'synthetic-owner',revision:'r1',receivedAt:'2032-10-20T13:00:02Z',isCurrent:()=>window.hostCurrent};
 const root=createRoot(document.getElementById('root'));window.renderAircraft=(code)=>{const changed={...day,legs:day.legs.map(leg=>({...leg,aircraftType:code}))};const updated=buildCanonicalRosterEvents({days:[changed],year:2032,month:10,base:'BSB'}).filter(e=>e.kind==='flight');const rows=updated.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));root.render(<View scheduleDay={regulationProgramDay(rows,rows[0])} program={updated[0]}/>);};window.renderAdmission=(kind='good')=>root.render(<View scheduleDay={regulationProgramDay(ui,ui[0])} program={events[0]} operationalArrival={kind==='none'?null:{...admitted,candidate:kind==='other'?{...candidate,destination:'REC'}:kind==='seconds'?{...normalizeCiriumFlightStatus({...row,operationalTimes:{estimatedRunwayArrival:{dateUtc:'2032-10-20T15:30:01Z'}},flightStatusUpdates:[{updatedAt:{dateUtc:'2032-10-20T13:00:00Z'},updatedDateFields:[{field:'ERA',newDateUtc:'2032-10-20T15:30:01Z'}]}]}),scheduledDepartureUtc:events[0].startDateTime,departureDate:'2032-10-20'}:candidate}}/>);window.renderAdmission();`;
 console.log('Bundling synthetic component');await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle:true,jsx:'automatic',format:'iife',outfile:path.join(dir,'app.js'),alias:{'@':path.resolve('client/src'),'@shared':path.resolve('shared')},logLevel:'silent'});
-const server=http.createServer((req,res)=>{const file=req.url==='/app.js'?'app.js':req.url==='/app.css'?'app.css':null;res.setHeader('Content-Type',file?.endsWith('.js')?'text/javascript':file?'text/css':'text/html');res.end(file?fs.readFileSync(path.join(dir,file)):'<html><head><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script src="/app.js"></script></body></html>');});
+const server=http.createServer((req,res)=>{const file=req.url==='/app.js'?'app.js':req.url==='/app.css'?'app.css':null;res.setHeader('Content-Type',file?.endsWith('.js')?'text/javascript':file?'text/css':'text/html');res.end(file?fs.readFileSync(path.join(dir,file)):'<html><head><style>body{margin:0}.cz-app button{width:100%}</style><link rel="stylesheet" href="/app.css"></head><body><div class="cz-app" style="padding:16px"><div id="root"></div></div><script src="/app.js"></script></body></html>');});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
 let browser;try{
  console.log('Launching isolated headless Chrome');browser=await chromium.launch({headless:true,timeout:20000,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
@@ -55,6 +55,21 @@ let browser;try{
   await page.evaluate(()=>window.renderAircraft('B789'));await page.waitForFunction(()=>document.querySelector('[aria-label="Equipamento da etapa 1"]').value==='B789');assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).inputValue(),'0','source revision clears delay override');assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','new WB source does not inherit NB default');
   await page.getByRole('button',{name:'Simulação manual',exact:true}).click();
   assert.match(await page.locator('body').innerText(),/REFERÊNCIA A CONFIRMAR|Referência a confirmar|Confirmar dados/);
+  for(const width of [320,390,1440])for(const theme of ['light','dark']){
+   await page.setViewportSize({width,height:900});await page.evaluate(theme=>document.documentElement.dataset.crewTheme=theme,theme);
+   const back=page.getByRole('button',{name:'Voltar ao cenário automático',exact:true});
+   const geometry=await back.evaluate(button=>{const b=button.getBoundingClientRect(),section=document.querySelector('[aria-label="Simulação de regulamentação"]').getBoundingClientRect();return{width:b.width,height:b.height,left:b.left,sectionLeft:section.left,sectionWidth:section.width,overflow:document.documentElement.scrollWidth>innerWidth};});
+   assert.ok(geometry.height>=44&&geometry.height<=70,JSON.stringify(geometry));
+   assert.ok(geometry.width<=300&&geometry.width<=geometry.sectionWidth,JSON.stringify(geometry));
+   assert.ok(Math.abs(geometry.left-geometry.sectionLeft)<=1,JSON.stringify(geometry));assert.equal(geometry.overflow,false);
+   await back.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert.equal(await back.evaluate(button=>getComputedStyle(button).outlineStyle),'solid');
+   if(zone==='UTC')await page.screenshot({path:`/tmp/regulation-return-${width}-${theme}.png`,fullPage:true});
+  }
+  await page.getByRole('button',{name:'Voltar ao cenário automático',exact:true}).press('Enter');
+  await page.getByLabel('Resultado automático condicional',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Voltar ao cenário automático',exact:true}).count(),0);
+  await page.getByRole('button',{name:'Ajustar dados',exact:true}).click();
+  await page.getByRole('button',{name:'Simulação manual',exact:true}).click();
   await page.evaluate(()=>window.dispatchEvent(new Event('crewcheck:auth-will-change')));
   await page.getByText('Sessão alterada. Reabra a programação para carregar os dados atuais.').waitFor();
   assert.equal(external,0);assert.deepEqual(errors,[]);await context.close();
