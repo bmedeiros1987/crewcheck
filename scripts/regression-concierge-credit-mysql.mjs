@@ -93,6 +93,16 @@ try{
   await assert.rejects(transaction(c=>expiring.reserve(c,promoJob(9))));assert.equal((await read(key('account',['promotional-expiry',account]))).reservedMicroUsd,0);assert.equal(await read(key('promotional-admission',['synthetic-expiring-approval'])),null);passed.push('expiry during awaited credit reservation rolls back all credit and quantity writes');
   await seed('promotional',{balance:24000});assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),true);
   assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),false);passed.push('integrated promotional quantity and credit reserve once in SQL');
+  await seed('lock-expiry');let waitedClock=epoch,enteredResolve;const entered=new Promise(r=>enteredResolve=r);
+  const blocking=await db.getConnection();await blocking.beginTransaction();await blocking.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key('global',['lock-expiry','2032-10'])]);
+  let settled=false;const delayed=createSharedCreditCandidate(policy('lock-expiry'),{now:()=>waitedClock,resolveTrustedContext:context});
+  const waiting=transaction(c=>delayed.reserve({...c,query:async(sql,args)=>{if(sql.startsWith('SELECT payload')&&args[0]===key('global',['lock-expiry','2032-10']))enteredResolve();return c.query(sql,args);}},job(51))).finally(()=>{settled=true;});
+  await entered;await new Promise(r=>setTimeout(r,100));assert.equal(settled,false,'real SELECT FOR UPDATE is blocked by owned connection');waitedClock=epoch+60000;await blocking.commit();blocking.release();assert.equal(await waiting,false);
+  assert.equal((await read(key('account',['lock-expiry',account]))).reservedMicroUsd,0);assert.equal(await read(key('request',['lock-expiry',event(51)])),null);
+  await seed('last-write-expiry');let updateClock=epoch,count=0;const lastWrite=createSharedCreditCandidate(policy('last-write-expiry'),{now:()=>updateClock,resolveTrustedContext:context});
+  await assert.rejects(transaction(c=>lastWrite.reserve({...c,query:async(sql,args)=>{const result=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state')&&++count===3)updateClock=epoch+60000;return result;}},job(52))));
+  assert.equal((await read(key('account',['last-write-expiry',account]))).reservedMicroUsd,0);assert.equal((await read(key('global',['last-write-expiry','2032-10']))).reservedMicroUsd,0);assert.equal(await read(key('request',['last-write-expiry',event(52)])),null);
+  passed.push('real SQL lock wait expires session without debit; expiry after final real UPDATE throws and rolls back all writes');
   await seed('restart');assert.equal(await reserve('restart',1),true);
   execFileSync(process.execPath,[...process.execArgv,process.argv[1],'worker',root,socket,head,modulesRoot],{stdio:'pipe',timeout:10000});passed.push('separate Node process cannot repeat retained event');
  }else{

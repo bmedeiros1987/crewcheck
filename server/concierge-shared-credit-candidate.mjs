@@ -39,7 +39,7 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
   if(!enabled)return false;
   // Existing dispatch transaction must already hold canonical binding/profile
   // locks. This callback must read server-owned entitlement and price metadata.
-  const context=await resolveTrustedContext(c,job),at=now();
+  const resolved=await resolveTrustedContext(c,job),context=resolved?{...resolved,quote:resolved.quote?{...resolved.quote}:null}:null,at=now();
   if(!context||!/^[a-f0-9]{64}$/.test(context.accountKey||'')||context.accountKey!==job?.accountKey||context.linked!==true||context.consent!==true||
    context.bindingStamp!==job?.bindingStamp||context.sender!==job.sender||context.recipient!==job.recipient||
    !/^[a-f0-9]{64}$/.test(job.eventKey||'')||!Number.isSafeInteger(at)||
@@ -57,12 +57,16 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
    const [rows]=await c.query(select,[k]);const value=parse(rows[0]?.payload);if(!value)return false;states.set(k,value);
   }
   const a=states.get(accountKey),g=states.get(globalKey);
+  const fresh=()=>{const current=now();return Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000;};
   if(a.v!==1||a.kind!=='account-credit'||a.accountKey!==account||!int(a.availableMicroUsd)||!int(a.reservedMicroUsd)||
    g.v!==1||g.kind!=='global-credit'||g.period!==period||g.budgetMicroUsd!==budget||
    !int(g.knownSpentMicroUsd)||!int(g.reservedMicroUsd)||g.reconciled!==true||
-   !int(g.reconciledAt)||at<g.reconciledAt||at-g.reconciledAt>15*60_000)return false;
+   !int(g.reconciledAt)||at<g.reconciledAt||at-g.reconciledAt>15*60_000||!fresh())return false;
   await c.query(insert,[requestKey,JSON.stringify({v:1,kind:'credit-request',state:'empty'})]);
-  const [rows]=await c.query(select,[requestKey]);const r=parse(rows[0]?.payload);
+  if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
+  const [rows]=await c.query(select,[requestKey]);
+  if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
+  const r=parse(rows[0]?.payload);
   if(r?.v!==1||r.kind!=='credit-request'||r.state!=='empty')return false;
   if(a.availableMicroUsd<amount||g.knownSpentMicroUsd>budget||g.reservedMicroUsd>budget-g.knownSpentMicroUsd||
    amount>budget-g.knownSpentMicroUsd-g.reservedMicroUsd||!int(a.reservedMicroUsd+amount)||!int(g.reservedMicroUsd+amount))return false;
@@ -73,7 +77,9 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
    [globalKey,{...g,reservedMicroUsd:g.reservedMicroUsd+amount}],
    [requestKey,{v:1,kind:'credit-request',state:'reserved',period,accountKey:account,amountMicroUsd:amount,channel:job.channel,quoteSourceId:context.quote.sourceId}],
   ]){
+   if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
    const [result]=await c.query(update,[JSON.stringify(value),k]);if(result.affectedRows!==1)throw Error('CREDIT_WRITE');
+   if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
   }
   return true;
  }

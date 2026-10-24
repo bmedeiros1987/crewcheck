@@ -8,7 +8,7 @@ const account='a'.repeat(64),other='b'.repeat(64),event=n=>n.toString(16).padSta
 const quote=channel=>({channel,currency:'USD',country:'BR',sender:'12025550100',sourceId:'synthetic-quote-never-real-tariff',verifiedAt:at,category:'service-text',sessionUntil:at+60000,unitMicroUsd:9909,markupMicroUsd:2091,setupMicroUsd:0,...(channel==='voice'?{unitMicroUsd:30000,markupMicroUsd:10000,setupMicroUsd:5000,maxDurationSeconds:61,quantumSeconds:60}:{})});
 const job=(n,channel='whatsapp')=>({accountKey:account,sender:'12025550100',recipient:'12025550101',bindingStamp:'synthetic-current-binding',eventKey:event(n),channel});
 function fixture({balance=1000000,budget=20000000,spent=0}={}){
- const state=new Map();let tail=Promise.resolve(),failUpdate=0,lostAck=false;
+ const state=new Map();let tail=Promise.resolve(),failUpdate=0,lostAck=false,clockHook=()=>{},quoteOverride={};
  const grant=a=>state.set(key('account',[programId,a]),{v:1,kind:'account-credit',accountKey:a,availableMicroUsd:balance,reservedMicroUsd:0});
  grant(account);grant(other);
  const globalKey=key('global',[programId,'2032-10']);
@@ -16,7 +16,7 @@ function fixture({balance=1000000,budget=20000000,spent=0}={}){
  const transaction=fn=>{
   const work=tail.then(async()=>{
    const next=structuredClone(state);let updates=0;
-   const c={query:async(sql,args)=>{
+   const c={query:async(sql,args)=>{clockHook(sql,args);
     if(sql.startsWith('INSERT INTO crewcheck_telegram_state')){if(!next.has(args[0]))next.set(args[0],JSON.parse(args[1]));return [{affectedRows:1}];}
     if(sql.startsWith('SELECT payload'))return [[...(next.has(args[0])?[{payload:JSON.stringify(next.get(args[0]))}]:[])]];
     if(sql.startsWith('UPDATE crewcheck_telegram_state')){
@@ -30,9 +30,9 @@ function fixture({balance=1000000,budget=20000000,spent=0}={}){
  };
  let context={accountKey:account,linked:true,consent:true,bindingStamp:'synthetic-current-binding',sender:'12025550100',recipient:'12025550101'};
  const policy={enabled:true,budgetApproved:true,monthlyBudgetMicroUsd:budget,programId,allowedChannels:['whatsapp','voice']};
- const make=(clock=at)=>createSharedCreditCandidate(policy,{now:()=>clock,resolveTrustedContext:async(_c,j)=>({...context,quote:quote(j.channel)})});
+ const make=(clock=at)=>createSharedCreditCandidate(policy,{now:typeof clock==='function'?clock:()=>clock,resolveTrustedContext:async(_c,j)=>({...context,quote:{...quote(j.channel),...quoteOverride}})});
  const reserve=(n,channel='whatsapp',candidate=make())=>transaction(c=>candidate.reserve(c,{...job(n,channel),accountKey:context.accountKey}));
- return {state,globalKey,transaction,policy,make,reserve,context,setFail:n=>failUpdate=n,loseAck:()=>lostAck=true};
+ return {state,globalKey,transaction,policy,make,reserve,context,setFail:n=>failUpdate=n,loseAck:()=>lostAck=true,setClockHook:fn=>clockHook=fn,setQuoteOverride:v=>quoteOverride=v};
 }
 assert.equal(CONCIERGE_SHARED_CREDIT_SHIPPING,false);
 {const f=fixture();const impostor=createSharedCreditCandidate(f.policy,{now:()=>at,resolveTrustedContext:async()=>({...f.context,accountKey:other,quote:quote('whatsapp')})});assert.equal(await f.transaction(c=>impostor.reserve(c,job(9))),false,'canonical owner must equal the server-stamped job owner');}
@@ -94,5 +94,14 @@ for(const malformed of [null,{...quote('whatsapp'),currency:'BRL'},{...quote('wh
  const f=fixture();f.state.get(f.globalKey).reconciledAt=at-900001;assert.equal(await f.reserve(1),false);
  const mismatched=createSharedCreditCandidate({...f.policy,monthlyBudgetMicroUsd:30000000},{now:()=>at,resolveTrustedContext:async()=>({...f.context,quote:quote('whatsapp')})});
  f.state.get(f.globalKey).reconciledAt=at;assert.equal(await f.reserve(2,'whatsapp',mismatched),false,'Policy changes cannot reset or silently enlarge reconciled budget');
+}
+for(const boundary of ['locked-read','request-insert','last-update','stale-quote','stale-reconciliation']){
+ const f=fixture();let clock=at,reads=0,updates=0;
+ if(boundary==='stale-quote')f.setQuoteOverride({sessionUntil:at+86400000});
+ if(boundary==='stale-reconciliation')f.state.get(f.globalKey).reconciledAt=at-899999;
+ f.setClockHook(sql=>{if(sql.startsWith('SELECT payload')&&++reads===2&&['locked-read','stale-quote','stale-reconciliation'].includes(boundary))clock=at+(boundary==='stale-quote'?900001:boundary==='stale-reconciliation'?2:60000);if(sql.startsWith('INSERT INTO')&&boundary==='request-insert')clock=at+60000;if(sql.startsWith('UPDATE')&&++updates===3&&boundary==='last-update')clock=at+60000;});
+ const run=()=>f.reserve(71,'whatsapp',f.make(()=>clock));
+ if(['request-insert','last-update'].includes(boundary))await assert.rejects(run(),/EXPIRED/);else assert.equal(await run(),false);
+ assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,1000000);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,0);assert.equal(f.state.has(key('request',[programId,event(71)])),false,'expired request has no committed marker/debit');
 }
 console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:false,syntheticTransactionalModel:true,realMysqlOrRestartTested:false,concurrentUsers:35,accountCreditAndGlobalBudgetAtomic:true,sharedMessageVoiceBalance:true,channelPreferenceDoesNotMintCredits:true,uncertainReservationRetained:true,externalCalls:0,providerCalls:0}));
