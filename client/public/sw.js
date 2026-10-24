@@ -169,6 +169,7 @@ async function cleanupRetiredBuildCaches(arrivingClientId = '') {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
+    await withBuildCacheLock(purgeUnsafeRuntimeEntries);
     await cleanupRetiredBuildCaches();
     const openPages=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     if(openPages.length===0)await cleanupSharedPdfs();
@@ -202,6 +203,66 @@ function isApiRequest(url) {
   return url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/');
 }
 
+// Proposed privacy boundary: generic runtime caching is for public static assets only.
+function isPublicRuntimeRequest(request) {
+  const url = new URL(request.url);
+  return request.method === 'GET' && url.origin === self.location.origin
+    && !['authorization','proxy-authorization','cookie','x-api-key','x-auth-token'].some(name => request.headers?.has(name))
+    && [...url.searchParams.keys()].every(name => ['v','brand'].includes(name))
+    && (url.pathname === '/manifest.json' || (/^(?:\/assets\/|\/icons\/|\/fonts\/)/.test(url.pathname)
+      && /\.(?:m?js|css|woff2?|ttf|png|jpe?g|webp|svg|ico)$/.test(url.pathname)));
+}
+function isPublicAssetType(request, response) {
+  const pathname = new URL(request.url).pathname;
+  const type = (response?.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (pathname === '/manifest.json') return type === 'application/json' || type === 'application/manifest+json';
+  if (/\.m?js$/.test(pathname)) return /^(?:text|application)\/(?:javascript|ecmascript)$/.test(type);
+  if (/\.css$/.test(pathname)) return type === 'text/css';
+  if (/\.(?:woff2?|ttf)$/.test(pathname)) return /^(?:font\/|application\/(?:font|x-font))/.test(type);
+  return /^image\//.test(type);
+}
+function isPublicRuntimeResponse(request, response) {
+  return isPublicRuntimeRequest(request) && isPublicAssetType(request, response) && response?.status === 200
+    && /(?:^|,)\s*(?:public|max-age\s*=)/i.test(response.headers.get('cache-control') || '')
+    && response.type !== 'opaque' && !response.redirected
+    && !/(?:^|,)\s*(?:no-store|private)(?:\s|,|=|$)/i.test(response.headers.get('cache-control') || '')
+    && !/(?:^|,)\s*(?:authorization|cookie|\*)\s*(?:,|$)/i.test(response.headers.get('vary') || '');
+}
+const BUILD_CACHE_NAME_PATTERN = /^crewcheck-v[\d.]+-(?:offline-)?(?:shell|runtime)(?:-[a-zA-Z0-9]+)*$/;
+async function matchPublicBuildAsset(request) {
+  // Keep prior build chunks, but never search shared-PDF, OCR or arbitrary origin caches.
+  if (!isPublicRuntimeRequest(request)) return undefined;
+  const names = await caches.keys();
+  for (const name of new Set([CACHE_NAME, RUNTIME_CACHE, ...names.filter(name => BUILD_CACHE_NAME_PATTERN.test(name))])) {
+    const cache = await caches.open(name);
+    // Inspect the stored request as well: Cache.match ignores Authorization by default.
+    for (const stored of await cache.keys(request)) {
+      const response = await cache.match(stored);
+      const isShell = /-(?:offline-)?shell(?:-|$)/.test(name);
+      const ready = isShell ? await cache.match(UPDATE_READY_KEY) : null;
+      const manifest = ready ? await ready.json().catch(() => null) : null;
+      const listed = Array.isArray(manifest?.urls) && manifest.urls.some(value => new URL(value, self.location.origin).href === request.url);
+      // Prepared shell downloads deliberately use no-store; only explicitly listed
+      // public build assets may use that exception, never generic runtime entries.
+      const shellSafe = isShell && listed && isPublicRuntimeRequest(stored)
+        && isPublicAssetType(stored, response) && response?.status === 200 && !response.redirected
+        && !/(?:^|,)\s*private(?:\s|,|=|$)/i.test(response.headers.get('cache-control') || '')
+        && !/(?:^|,)\s*(?:authorization|cookie|\*)\s*(?:,|$)/i.test(response.headers.get('vary') || '');
+      if (shellSafe || (isPublicRuntimeResponse(stored, response) && isPublicRuntimeResponse(request, response))) return response;
+    }
+  }
+}
+async function purgeUnsafeRuntimeEntries() {
+  // Scoped entry deletion only; no whole-cache deletion or shared-PDF/roster mutation.
+  for (const name of await caches.keys()) {
+    if (!/^crewcheck-v[\d.]+-(?:offline-)?runtime(?:-[a-zA-Z0-9]+)*$/.test(name)) continue;
+    const cache = await caches.open(name);
+    for (const request of await cache.keys()) {
+      if (!isPublicRuntimeResponse(request, await cache.match(request))) await cache.delete(request);
+    }
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -226,6 +287,11 @@ self.addEventListener('fetch', (event) => {
       await cache.delete(request);
       return response;
     })());
+    return;
+  }
+
+  if (['authorization','proxy-authorization','cookie','x-api-key','x-auth-token'].some(name => request.headers?.has(name))) {
+    event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => Response.error()));
     return;
   }
 
@@ -265,16 +331,14 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith((async () => {
-    const shell = await caches.open(CACHE_NAME);
-    const runtime = await caches.open(RUNTIME_CACHE);
-    // Preserve old chunks used by still-open forms/tabs after explicit activation.
-    const cached = (await shell.match(request)) || (await runtime.match(request)) || (await caches.match(request));
+    const cached = await matchPublicBuildAsset(request);
     if (cached) return cached;
+    const runtime = await caches.open(RUNTIME_CACHE);
 
     try {
       const response = await fetch(request, { cache: 'no-store' });
-      if (response && response.status === 200) {
-        await runtime.put(request, response.clone());
+      if (isPublicRuntimeResponse(request, response)) {
+        await runtime.put(new Request(request.url), response.clone());
         await trimCache(RUNTIME_CACHE);
       }
       return response;
