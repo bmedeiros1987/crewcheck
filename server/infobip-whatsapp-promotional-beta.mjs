@@ -33,7 +33,8 @@ export function createInfobipPromotionalBetaScope(configuration,admission,{now=D
   command:text=>{
    if(typeof text!=='string'||text.length>600)return {reply:'Não entendi. Escreva “menu” para ver as consultas disponíveis.'};
    const value=text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
-   if(/^(?:opcao\s+)?(?:12|13|14)[.)]?$/.test(value))return {reply:'Consulte academias, farmácias e hospitais no app CrewCheck. Este beta não faz buscas externas pela conversa.'};
+   const handoff=/^(?:opcao\s+)?(9|10|11|12|13|14)[.)]?$/.exec(value)?.[1];
+   if(handoff){const topic={'9':'Radar e portão de voo','10':'METAR','11':'TAF','12':'academias / Wellhub','13':'farmácias','14':'hospitais'}[handoff];return {reply:`Para consultar ${topic}, abra o app CrewCheck. A disponibilidade depende dos dados e da fonte no app. Este beta não faz essa busca pela conversa.`};}
    if(/^(?:oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comandos|inicio)[!.?]*$/.test(value)||/^(?:opcao\s+)?(?:[1-9]|1[0-7])[.)]?$/.test(value))return {text};
    const history=stayMenuIntent(value);if(history?.kind==='history')return {text:'/historico_pernoites '+history.page};
    if(/^\/(?:hoje|amanha|proximo|escala|historico_pernoites)$/.test(value))return {text:value};
