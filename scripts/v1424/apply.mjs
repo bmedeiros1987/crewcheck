@@ -69,7 +69,8 @@ patchFile('client/src/pages/Home.tsx', (source) => {
     );
   }
 
-  if (!next.includes("['concierge','Telegram','Conectar, PDF, comandos e voz',Send]")) throw new Error('[v1424] Telegram não foi consolidado no menu.');
+  if (!next.includes("['concierge','Telegram','Conectar, PDF, comandos e voz',Send]")
+    && !next.includes("['concierge','Concierge','Vínculos, briefing e consultas',Send]")) throw new Error('[v1424] Telegram não foi consolidado no menu.');
   return next;
 });
 
