@@ -22,20 +22,20 @@ assert(/^8\.4\./.test(identity.version));assert.equal(Number(identity.no_tcp),1)
 if(mode==='suite')await admin.query('CREATE DATABASE crewcheck_credit_qa');await admin.end();
 const db=mysql.createPool({socketPath:socket,user:'root',password:'',database:'crewcheck_credit_qa',connectionLimit:40,connectTimeout:2000});
 const epoch=Date.parse('2032-10-24T12:00:00Z'),hash=x=>createHash('sha256').update(x).digest('hex');
-const sender='12025550100',recipient='12025550101',phoneHash=hash('synthetic-recipient'),owner='SYNTHETIC-A',other='SYNTHETIC-B';
+const sender='12025550100',recipient='12025550101',phoneHash=hash(recipient),owner='SYNTHETIC-A',other='SYNTHETIC-B';
 const account=hash(owner),otherAccount=hash(other),event=n=>hash('synthetic-event-'+n);
 const job=(n,channel='whatsapp')=>({accountKey:account,sender,recipient,bindingStamp:'synthetic-revision-1',eventKey:event(n),channel});
 const quote=channel=>({channel,currency:'USD',country:'BR',sender,sourceId:'synthetic-fixture-not-live-tariff',verifiedAt:epoch,category:'service-text',sessionUntil:epoch+60000,unitMicroUsd:12000,markupMicroUsd:0,setupMicroUsd:0,...(channel==='voice'?{unitMicroUsd:30000,quantumSeconds:60,maxDurationSeconds:61}: {})});
 // Test-only resolver demonstrates exact canonical association and row locks.
 // A production resolver/entitlement source is intentionally not installed.
 async function context(c,j){
- const [links]=await c.query('SELECT email,consent_concierge,revoked_at,revision FROM credit_qa_links WHERE BINARY phone_hash=BINARY ? FOR UPDATE',[phoneHash]);
+ const [links]=await c.query('SELECT email,consent_concierge,revoked_at,revision FROM credit_qa_links WHERE BINARY phone_hash=BINARY ? FOR UPDATE',[hash(j.recipient)]);
  if(links.length!==1||links[0].consent_concierge!==1||links[0].revoked_at!==null)return null;
  const [profiles]=await c.query('SELECT public_id FROM credit_qa_profiles WHERE BINARY email=BINARY ? FOR UPDATE',[links[0].email]);
  if(profiles.length!==1||!profiles[0].public_id)return null;
  const [same]=await c.query('SELECT public_id FROM credit_qa_profiles WHERE BINARY public_id=BINARY ? FOR UPDATE',[profiles[0].public_id]);
  if(same.length!==1)return null;
- return {accountKey:hash(profiles[0].public_id),linked:true,consent:true,bindingStamp:links[0].revision,sender,recipient,quote:quote(j.channel)};
+ return {accountKey:hash(profiles[0].public_id),linked:true,consent:true,bindingStamp:links[0].revision,sender,recipient:j.recipient,quote:quote(j.channel)};
 }
 const policy=id=>({enabled:true,budgetApproved:true,monthlyBudgetMicroUsd:50000,programId:id,allowedChannels:['whatsapp','voice']});
 const candidate=(id,overrides={})=>createSharedCreditCandidate({...policy(id),...overrides},{now:()=>epoch,resolveTrustedContext:context});
@@ -55,8 +55,17 @@ try{
   await db.query('CREATE TABLE credit_qa_links(phone_hash CHAR(64) PRIMARY KEY,email VARCHAR(160) NOT NULL,consent_concierge TINYINT NOT NULL,revoked_at DATETIME(3),revision VARCHAR(80) NOT NULL) ENGINE=InnoDB');
   await db.query('INSERT INTO credit_qa_profiles VALUES(?,?),(?,?)',['a@synthetic.invalid',owner,'b@synthetic.invalid',other]);
   await db.query('INSERT INTO credit_qa_links VALUES(?,?,1,NULL,?)',[phoneHash,'a@synthetic.invalid','synthetic-revision-1']);
-  await seed('concurrent');const results=await Promise.all(Array.from({length:35},(_,n)=>reserve('concurrent',n)));
-  assert.equal(results.filter(Boolean).length,4);assert.equal((await read(key('global',['concurrent','2032-10']))).reservedMicroUsd,48000);passed.push('35 concurrent SQL reservations cannot exceed one global budget');
+  await seed('concurrent');const users=[];
+  for(let n=0;n<35;n++){
+   const publicId='SYNTHETIC-CONCURRENT-'+n,email='concurrent-'+n+'@synthetic.invalid',to=String(12025550200+n),a=hash(publicId);users.push({a,to});
+   await db.query('INSERT INTO credit_qa_profiles VALUES(?,?)',[email,publicId]);
+   await db.query('INSERT INTO credit_qa_links VALUES(?,?,1,NULL,?)',[hash(to),email,'synthetic-revision-1']);
+   await write(key('account',['concurrent',a]),{v:1,kind:'account-credit',accountKey:a,availableMicroUsd:1000000,reservedMicroUsd:0});
+  }
+  const results=await Promise.all(users.map(({a,to},n)=>transaction(c=>candidate('concurrent').reserve(c,{...job(n),accountKey:a,recipient:to}))));
+  assert.equal(results.filter(Boolean).length,4);assert.equal((await read(key('global',['concurrent','2032-10']))).reservedMicroUsd,48000);
+  let sum=0;for(const {a} of users)sum+=(await read(key('account',['concurrent',a]))).reservedMicroUsd;assert.equal(sum,48000);
+  passed.push('35 distinct canonical accounts share one global SQL budget');
   await seed('duplicate');assert.equal((await Promise.all(Array.from({length:24},()=>reserve('duplicate',1)))).filter(Boolean).length,1);passed.push('24 concurrent copies reserve once');
   assert.equal(await reserve('duplicate',1,'voice'),false);assert.equal((await read(key('account',['duplicate',account]))).reservedMicroUsd,12000);passed.push('channel change cannot mint balance or repeat event');
   for(let boundary=1;boundary<=4;boundary++){
