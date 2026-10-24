@@ -1,3 +1,4 @@
+import { beginRadarOperationalHistory } from './server/concierge/radar-history-capture.mjs';
 import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
@@ -186,6 +187,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     .replaceAll('{destination}', encodeURIComponent(destination || ''));
   const { response, payload } = await jsonFetch(apiUrl, { headers: { accept: 'application/json' } }, timeoutMs);
   if (!response.ok) return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte configurável sem dados agora.' };
+  const historyReceipt = ctx.operationalHistory?.captureCustom(payload, Date.now());
   return {
     ok: true,
     configured: true,
@@ -193,6 +195,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
     gateUpdate: payload?.departureGateUpdate?.schema === 'crewcheck.departure-gate-update.v1' ? customGateSourceUpdate(payload) : null,
+    ...(Number.isFinite(historyReceipt) ? { sourceReceivedAt: historyReceipt } : {}),
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
     scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),
@@ -416,6 +419,7 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
     ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
   }
+  ctx.operationalHistory = await beginRadarOperationalHistory(req, ctx.gateQueryEvidence);
   const payload = await runRadarRace(ctx, origin, destination);
   if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
   if (payload.querySuppressed || payload.provider === 'cirium-sky') return sendJson(res, 200, { ...payload, exportedToConcierge: false });
@@ -430,6 +434,7 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   const info = findPublishedGateLeg(currentAuthority.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(currentAuthority.roster));
   if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
   if (!payload.ok) return sendJson(res,200,{...payload,exportedToConcierge:false});
+  await ctx.operationalHistory?.commit(payload);
   if (currentAuthority.snapshot) {
     const snapshot = currentAuthority.snapshot;
     conciergeApplyRadar(snapshot, info, payload);

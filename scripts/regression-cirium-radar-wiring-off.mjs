@@ -1,3 +1,4 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -50,7 +51,7 @@ function harness(text, forbidLegacy = false, overrides = {}) {
   const counters = { provider: 0, auth: 0, load: 0, apply: 0, save: 0, env: 0, fetch: 0 };
   const roster = structuredClone(overrides.roster || (forbidLegacy ? ciriumRoster : legacyRoster));
   const now = overrides.now ?? Date.parse(forbidLegacy ? '2026-11-01T04:00:00Z' : '2026-10-12T00:00:00Z');
-  const sandbox = { ...injection, ...gatePolicy, ...radarEvidence, buildCanonicalRosterEvents,
+  const sandbox = {beginRadarOperationalHistory, ...injection, ...gatePolicy, ...radarEvidence, buildCanonicalRosterEvents,
     gateQueryDay: (identity, instant) => gatePolicy.gateQueryDay(identity, instant ?? now), radarHealth: new Map(), console, setTimeout, clearTimeout, URL,
     Date: class extends Date { static now() { return now; } },
     process: { env: new Proxy({}, { get() { counters.env++; if (forbidLegacy) throw Error('Synthetic path read env'); return undefined; } }) },

@@ -11,6 +11,8 @@ on:
       - 'server/v139/notificationStateDeletion.mjs'
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/tests/*briefing*.mjs'
+      - 'server.mjs'
+      - 'scripts/regression-radar-operational-history.mjs'
       - 'scripts/tests/operational-history.test.mjs'
       - 'scripts/regression-operational-history-mysql.mjs'
       - 'scripts/tests/telegram-operational-change.test.mjs'
@@ -40,6 +42,7 @@ jobs:
         run: |
           node scripts/p1-concierge-journey/compile.mjs
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs
+          node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-wakeup-call-delivery.mjs
@@ -137,6 +140,7 @@ jobs:
           node scripts/v139/apply.mjs
           node scripts/p1-concierge-journey/compile.mjs
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs
+          node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-wakeup-call-delivery.mjs
