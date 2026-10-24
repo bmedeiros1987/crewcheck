@@ -34,6 +34,7 @@ export async function runPromotionalGrantSqlScenarios({db,transaction,mode,epoch
  const [[link]]=await db.query('SELECT linked_at,updated_at FROM crewcheck_whatsapp_links WHERE phone_hash=?',[phoneHash]);
  const j={accountKey:account,provider:'infobip',sender,recipient,eventKey:'f'.repeat(64),receivedAt:epoch,bindingStamp:JSON.stringify([owner,JSON.stringify([String(link.linked_at),String(link.updated_at)]),'infobip',sender,recipient]),channel:'whatsapp'};
  const ctx=await transaction(c=>resolver(c,j));assert.equal(ctx.quote.verifiedAt,tariff.verifiedAt,'stored verification date is never stamped now');
+ const authKey=key('grant-authorization',[p.approvalId]),auth=await read(authKey);await write(authKey,{...auth,status:'revoked'});assert.equal(await transaction(c=>resolver(c,j)),null,'revoked promotional approval denies despite remaining balance');await write(authKey,auth);
  const credit=createSharedCreditCandidate({enabled:true,budgetApproved:true,programId:p.programId,monthlyBudgetMicroUsd:50000,allowedChannels:['whatsapp']},{now:()=>clock,resolveTrustedContext:resolver});assert.equal(await transaction(c=>credit.reserve(c,j)),true);
  assert.equal((await fund()).status,'already-granted');assert.equal((await read(key('account',[p.programId,account]))).availableMicroUsd,12000,'grant replay does not reset spent credits');
  clock=epoch+900001;assert.equal(await transaction(c=>resolver(c,{...j,receivedAt:clock})),null);clock=epoch;

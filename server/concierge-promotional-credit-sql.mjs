@@ -64,6 +64,9 @@ export function createPromotionalCreditSqlResolver({programId,approvalId,ownerAc
   const account=await lock(c,sharedCreditKey('account',[programId,ownerAccountKey]));
   if(expectedGrantManifest!==undefined&&(!hex(expectedGrantManifest)||account?.grantManifest!==expectedGrantManifest||account.validFrom!==expectedValidFrom||account.expiresAt!==expectedValidUntil))return null;
   if(account?.grantApprovalId!==approvalId||account.accountKey!==ownerAccountKey||!int(account.validFrom)||account.validFrom>at||!int(account.expiresAt)||account.expiresAt<=at)return null;
+  const authority=await lock(c,sharedCreditKey('grant-authorization',[approvalId]));
+  const receipt=await lock(c,sharedCreditKey('grant-receipt',[approvalId]));
+  if(authority?.status!=='approved'||authority.kind!=='promotional-grant-authorization'||authority.manifest!==account.grantManifest||!int(authority.approvedAt)||authority.approvedAt>at||receipt?.kind!=='promotional-grant-receipt'||receipt.state!=='granted'||receipt.manifest!==account.grantManifest)return null;
   const recorded=await lock(c,sharedCreditKey('tariff',[programId,sender,'BR','service-text']));
   const current=now();if(!int(current)||current<at||current<account.validFrom||current>=account.expiresAt||current-j.receivedAt>15*60000)return null;
   if(recorded?.v!==1||recorded.kind!=='verified-tariff'||recorded.currency!=='USD'||recorded.recipientHash!==phoneHash||recorded.sender!==sender||recorded.country!=='BR'||recorded.category!=='service-text'||!hex(recorded.evidenceSha256)||typeof recorded.sourceId!=='string'||!recorded.sourceId||!int(recorded.verifiedAt)||recorded.verifiedAt>current||current-recorded.verifiedAt>15*60000||!int(recorded.validUntil)||recorded.validUntil<=current)return null;
