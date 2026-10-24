@@ -8,6 +8,7 @@ import {createInfobipProductionTextTransport} from './infobip-whatsapp-transport
 import {createInfobipSendAdmission} from './infobip-whatsapp-admission.mjs';
 import {preflightInfobipWhatsAppStorage} from './infobip-whatsapp-preflight.mjs';
 import {invokeConfiguredWhatsAppConcierge,isWhatsAppConciergeConfigured,withWhatsAppConciergeQuiesced} from './whatsapp.mjs';
+import {createOperationalPilotScope} from './infobip-whatsapp-operational-pilot.mjs';
 
 const singleTestInput='Teste CrewCierge',singleTestReply='Teste de conexão CrewCierge.';
 
@@ -61,6 +62,9 @@ export async function createInfobipWhatsAppProduction(options={}) {
       !binding.subscriptionIds.every(reference)||binding.sender!==sender||binding.baseUrl!==baseUrl||
       binding.publicOrigin!==httpsOrigin(ingress.publicOrigin)||binding.linkHashKeyReference!==refs.linkHashKey)fail();
     const singleTest=input.singleMessageTest===true;
+    if(input.operationalPilot!==undefined&&typeof input.operationalPilot!=='boolean')fail();
+    if(singleTest&&input.operationalPilot===true)fail();
+    const pilot=input.operationalPilot===true?createOperationalPilotScope(input,options.admission,{now}):null;
     const linkHandshake=singleTest&&input.canonicalLinkHandshake===true;
     const linkOnly=linkHandshake&&input.canonicalLinkHandshakeOnly===true;
     if(input.canonicalLinkHandshake!==undefined&&typeof input.canonicalLinkHandshake!=='boolean')fail();
@@ -70,7 +74,10 @@ export async function createInfobipWhatsAppProduction(options={}) {
     const quantity=createInfobipSendAdmission(options.admission,{sender,now});
     const testFrom=options.admission.validFrom;
     const testInput=job=>!linkOnly&&job?.text===singleTestInput&&job.receivedAt>=testFrom;
-    const admission=singleTest?Object.freeze({
+    const admission=pilot?Object.freeze({
+      allows:job=>pilot.allows(job)&&quantity.allows(job),
+      reserve:(c,job)=>pilot.reserve(c,job,quantity.reserve),
+    }):singleTest?Object.freeze({
       allows:job=>testInput(job)&&quantity.allows(job),
       reserve:(c,job)=>testInput(job)?quantity.reserve(c,job):Promise.resolve(false),
     }):quantity;
@@ -90,11 +97,17 @@ export async function createInfobipWhatsAppProduction(options={}) {
     const transport=createInfobipProductionTextTransport({...configuration,request});
     // Neutral transport smoke test uses the same binding/consent, durable
     // reservation, lifecycle and send locks, without invoking account tools.
-    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge:singleTest?async()=>singleTestReply:invokeConfiguredWhatsAppConcierge,
-      send:singleTest?(proposal,context)=>!linkOnly&&proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
+    const concierge=pilot?async input=>{
+      const text=pilot.command(input.text);
+      if(!text)throw Error('INFOBIP_OPERATIONAL_PILOT_DENIED');
+      return invokeConfiguredWhatsAppConcierge({...input,text});
+    }:singleTest?async()=>singleTestReply:invokeConfiguredWhatsAppConcierge;
+    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge,
+      send:pilot?(proposal,context)=>pilot.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'})
+        :singleTest?(proposal,context)=>!linkOnly&&proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
     await preflightInfobipWhatsAppStorage(db,sqlBudget); // SELECT only; never create or repair tables.
     const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now,
-      ...(singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
+      ...(pilot?{queueLinkConfirmation:false,acceptEvent:event=>admission.allows(event)}:singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
         (linkHandshake&&/^\d{6}$/.test(event.text)&&event.receivedAt>=testFrom&&quantity.allows(event))}:{})});
     const report=kind=>createInfobipReportReceiver({kind,authentication:configuration.webhookAuthentication,store,now});
     const pipeline=Object.freeze({receive,receiveDelivery:report('delivery'),receiveSeen:report('seen'),

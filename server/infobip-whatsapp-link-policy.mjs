@@ -3,8 +3,8 @@
 export async function infobipCanonicalLinkStatus(link, {hashPhone, ownerReady=false, environment=process.env, now=Date.now()}={}) {
   const result={provider:'infobip',recorded:Boolean(link),linked:false,canonicalVerified:false,testWindow:'unavailable',linkStartAvailable:false};
   try {
-    const {validateInfobipSingleTestPolicy}=await import('./infobip-whatsapp-single-test.mjs');
-    const policy=validateInfobipSingleTestPolicy(JSON.parse(environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY));
+    const {validateInfobipRestrictedPolicy}=await import('./infobip-whatsapp-single-test.mjs');
+    const policy=validateInfobipRestrictedPolicy(JSON.parse(environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY));
     const {configuration:c,admission:a}=policy;
     if(c.authentication!=='hmac-sha256'||!/^[1-9]\d{7,14}$/.test(c.sender)||
       !c.allowedSenders?.includes(c.sender)||c.deploymentBinding?.sender!==c.sender||!Number.isFinite(now))return result;
@@ -24,8 +24,8 @@ export async function infobipCanonicalLinkStatus(link, {hashPhone, ownerReady=fa
 
 export async function infobipCanonicalLinkDestination(environment = process.env, now = Date.now()) {
   try {
-    const { validateInfobipSingleTestPolicy } = await import('./infobip-whatsapp-single-test.mjs');
-    const policy = validateInfobipSingleTestPolicy(JSON.parse(environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY));
+    const { validateInfobipRestrictedPolicy } = await import('./infobip-whatsapp-single-test.mjs');
+    const policy = validateInfobipRestrictedPolicy(JSON.parse(environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY));
     const { configuration: configuration, admission } = policy;
     const sender = configuration.sender;
     if (configuration.canonicalLinkHandshake !== true || configuration.authentication !== 'hmac-sha256' ||
