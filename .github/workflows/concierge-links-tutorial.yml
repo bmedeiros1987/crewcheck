@@ -9,6 +9,8 @@ on:
       - 'client/src/components/v1432/homologation.css'
       - 'client/src/lib/notificationNavigation.ts'
       - 'scripts/regression-concierge-links-tutorial.mjs'
+      - 'scripts/v1424/apply.mjs'
+      - 'scripts/v14341/apply.mjs'
       - '.github/workflows/concierge-links-tutorial.yml'
 permissions:
   contents: read
