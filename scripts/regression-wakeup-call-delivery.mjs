@@ -64,14 +64,15 @@ assert.equal(sends, 2);
 // Exercise the real bootstrap wrapper, both raw and source-prepared. The
 // prepared version selects the existing private-audio transport first.
 const runtime = fs.readFileSync('server/telegram-fast-ack.mjs', 'utf8');
-const wrapper = runtime.match(/async function sendInfobipPhone\(phone, message\) \{[\s\S]*?\n\}/)?.[0];
+const wrapper = runtime.match(/async function sendInfobipPhone\(phone, message(?:, \{ locale \} = \{\})?\) \{[\s\S]*?\n\}/)?.[0];
 assert.ok(wrapper);
 let fallbackCalls = 0, privateCalls = 0;
 let privateResult = { ok: false, configured: true };
-const selected = new Function('sendInfobipWakeupCall', 'infobipElevenLabsAudioEnabled', 'startInfobipElevenLabsCall', `return (${wrapper});`)(
+const selected = new Function('sendInfobipWakeupCall', 'infobipElevenLabsAudioEnabled', 'startInfobipElevenLabsCall', 'wakeupPrivateModelSupportsLocale', `return (${wrapper});`)(
   async () => { fallbackCalls++; return { ok: true }; },
   () => true,
   async () => { privateCalls++; return privateResult; },
+  () => true,
 );
 const first = await selected('15555550101', 'Synthetic');
 if (wrapper.includes('privateCall.configured')) {

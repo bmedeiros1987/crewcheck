@@ -52,7 +52,7 @@ let fastAckAfter = replaceOnce(
   `import { buildInfobipEnglishFallbackRequest, buildInfobipTtsRequest, infobipPublicStatus, infobipRejectedUnsupportedLanguage } from './v1396/infobip.mjs';`,
   'import do fallback no scheduler',
 );
-if (!fastAckBefore.includes("return sendInfobipWakeupCall({ phone, text: message });")) {
+if (!fastAckBefore.includes("import { sendInfobipWakeupCall } from './wakeup-call-delivery.mjs';")) {
 fastAckAfter = replaceOnce(
   fastAckAfter,
   `    const response = await fetch(request.url, {
