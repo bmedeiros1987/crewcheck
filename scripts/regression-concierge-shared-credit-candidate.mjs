@@ -37,6 +37,7 @@ function fixture({balance=1000000,budget=20000000,spent=0}={}){
 assert.equal(CONCIERGE_SHARED_CREDIT_SHIPPING,false);
 {const f=fixture();const impostor=createSharedCreditCandidate(f.policy,{now:()=>at,resolveTrustedContext:async()=>({...f.context,accountKey:other,quote:quote('whatsapp')})});assert.equal(await f.transaction(c=>impostor.reserve(c,job(9))),false,'canonical owner must equal the server-stamped job owner');}
 assert.equal(boundedQuoteReservation(quote('whatsapp'),'whatsapp',at),12000);
+assert.equal(boundedQuoteReservation({...quote('whatsapp'),validUntil:at},'whatsapp',at),null,'explicit tariff deadline must not be replaced by quote verification TTL');
 assert.equal(boundedQuoteReservation(quote('voice'),'voice',at),75000,'61 seconds rounds to two 60-second quanta plus setup/buffer, never 1:1');
 for(const malformed of [{...quote('voice'),maxDurationSeconds:null},{...quote('voice'),quantumSeconds:0},{...quote('voice'),verifiedAt:at-900001}])assert.equal(boundedQuoteReservation(malformed,'voice',at),null);
 for(const malformed of [null,{...quote('whatsapp'),currency:'BRL'},{...quote('whatsapp'),unitMicroUsd:0},{...quote('whatsapp'),sessionUntil:at},{...quote('whatsapp'),verifiedAt:at+1},{...quote('voice'),maxDurationSeconds:121},{...quote('voice'),unitMicroUsd:Number.MAX_SAFE_INTEGER}])assert.equal(boundedQuoteReservation(malformed,malformed?.channel||'whatsapp',at),null);
@@ -95,13 +96,14 @@ for(const malformed of [null,{...quote('whatsapp'),currency:'BRL'},{...quote('wh
  const mismatched=createSharedCreditCandidate({...f.policy,monthlyBudgetMicroUsd:30000000},{now:()=>at,resolveTrustedContext:async()=>({...f.context,quote:quote('whatsapp')})});
  f.state.get(f.globalKey).reconciledAt=at;assert.equal(await f.reserve(2,'whatsapp',mismatched),false,'Policy changes cannot reset or silently enlarge reconciled budget');
 }
-for(const boundary of ['locked-read','request-insert','last-update','stale-quote','stale-reconciliation']){
+for(const boundary of ['locked-read','request-insert','last-update','stale-quote','stale-reconciliation','tariff-deadline','tariff-last-update']){
  const f=fixture();let clock=at,reads=0,updates=0;
  if(boundary==='stale-quote')f.setQuoteOverride({sessionUntil:at+86400000});
+ if(boundary.startsWith('tariff-'))f.setQuoteOverride({validUntil:at+2});
  if(boundary==='stale-reconciliation')f.state.get(f.globalKey).reconciledAt=at-899999;
- f.setClockHook(sql=>{if(sql.startsWith('SELECT payload')&&++reads===2&&['locked-read','stale-quote','stale-reconciliation'].includes(boundary))clock=at+(boundary==='stale-quote'?900001:boundary==='stale-reconciliation'?2:60000);if(sql.startsWith('INSERT INTO')&&boundary==='request-insert')clock=at+60000;if(sql.startsWith('UPDATE')&&++updates===3&&boundary==='last-update')clock=at+60000;});
+ f.setClockHook(sql=>{if(sql.startsWith('SELECT payload')&&++reads===2&&['locked-read','stale-quote','stale-reconciliation','tariff-deadline'].includes(boundary))clock=at+(boundary==='stale-quote'?900001:['stale-reconciliation','tariff-deadline'].includes(boundary)?2:60000);if(sql.startsWith('INSERT INTO')&&boundary==='request-insert')clock=at+60000;if(sql.startsWith('UPDATE')&&++updates===3&&['last-update','tariff-last-update'].includes(boundary))clock=at+(boundary==='tariff-last-update'?2:60000);});
  const run=()=>f.reserve(71,'whatsapp',f.make(()=>clock));
- if(['request-insert','last-update'].includes(boundary))await assert.rejects(run(),/EXPIRED/);else assert.equal(await run(),false);
+ if(['request-insert','last-update','tariff-last-update'].includes(boundary))await assert.rejects(run(),/EXPIRED/);else assert.equal(await run(),false);
  assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,1000000);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,0);assert.equal(f.state.has(key('request',[programId,event(71)])),false,'expired request has no committed marker/debit');
 }
 console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:false,syntheticTransactionalModel:true,realMysqlOrRestartTested:false,concurrentUsers:35,accountCreditAndGlobalBudgetAtomic:true,sharedMessageVoiceBalance:true,channelPreferenceDoesNotMintCredits:true,uncertainReservationRetained:true,externalCalls:0,providerCalls:0}));

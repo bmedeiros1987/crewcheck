@@ -15,6 +15,7 @@ const update='UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WH
 export function boundedQuoteReservation(quote,channel,at) {
  if(!quote||quote.currency!=='USD'||quote.channel!==channel||typeof quote.sourceId!=='string'||!quote.sourceId||
   !int(quote.verifiedAt)||at<quote.verifiedAt||at-quote.verifiedAt>15*60_000||
+  (quote.validUntil!==undefined&&(!int(quote.validUntil)||at>=quote.validUntil))||
   !int(quote.markupMicroUsd)||!int(quote.setupMicroUsd))return null;
  let charge;
  if(channel==='whatsapp'){
