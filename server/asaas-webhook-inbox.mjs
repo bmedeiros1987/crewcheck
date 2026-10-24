@@ -85,6 +85,8 @@ async function applyReceipt(client, event, { legacyReceipt = false, now = Date.n
     && metadata.lastAsaasPaymentId !== event.paymentId) return end('quarantined', 'different_payment_requires_review');
   let periodEnd = subscription.current_period_end;
   if (PAID.has(event.eventName)) {
+    const processingTime = new Date(now());
+    if (!Number.isFinite(processingTime.getTime())) return end('quarantined', 'processing_time_unavailable');
     // Both ingress and retry hold the same reference lock. A durable later orphan
     // must not be bypassed merely because subscription metadata is still empty.
     const pending = await client.query("SELECT event_id FROM crewcheck_asaas_webhook_inbox WHERE subscription_ref=$1 AND event_id<>$2 AND disposition IN ('received','quarantined') AND (event_time IS NULL OR event_time >= $3) LIMIT 1 FOR UPDATE", [event.subscriptionRef, event.eventId, event.eventTime]);
@@ -104,6 +106,11 @@ async function applyReceipt(client, event, { legacyReceipt = false, now = Date.n
     const samePaymentEnd = funding.rows[0]?.funded_period_end;
     if (samePaymentEnd && candidate > String(samePaymentEnd)) return end('quarantined', 'payment_period_changed_requires_review');
     if (!samePaymentEnd && periodEnd && !metadata.lastAsaasPaidPaymentId) return end('quarantined', 'unverified_existing_period');
+    // Provider dateCreated has no timezone. Do NOT convert it into an instant.
+    // A paid civil day beyond the processing UTC day is not established as paid
+    // yet: hold it for review rather than granting access from future/ambiguous evidence.
+    if (event.paidDate && event.paidDate > processingTime.toISOString().slice(0, 10))
+      return end('quarantined', 'future_payment_date_requires_review');
     // Preserve only funding proven for THIS payment, never the global maximum of
     // a different/refunded payment. Same-day expiry is conservatively held.
     periodEnd = samePaymentEnd || candidate;

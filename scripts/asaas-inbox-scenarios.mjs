@@ -53,6 +53,21 @@ export async function runAsaasScenarios(fixture) {
   await run('lost COMMIT ACK after orphan quarantine retains receipt and never grants',async()=>{let failed=false;const fault={async connect(){const c=await db.connect();return {...c,async query(sql,p){const r=await c.query(sql,p);if(sql==='COMMIT'&&!failed){failed=true;throw Error('synthetic orphan ACK lost');}return r;}};}};await assert.rejects(receiveAsaasEvent(fault,body()),/synthetic orphan ACK lost/);const retry=await receiveAsaasEvent(db,body());assert.equal(retry.body.duplicate,true);assert.equal(retry.body.reconciled,false);assert.equal((await state()).subscriptions.length,0);});
   await run('per-payment receipt records funding and rejects a later extension for same payment',async()=>{await seed();await receiveAsaasEvent(db,body('evt_funding'));const funded=(await state()).receipts.evt_funding.funded_period_end;assert(funded);const r=await receiveAsaasEvent(db,body('evt_extend',{dateCreated:'2026-10-11 14:00:00',payment:{...body().payment,confirmedDate:'2026-10-10'}}));assert.equal(r.body.reason,'payment_period_changed_requires_review');assert.equal((await state()).subscriptions[0].current_period_end,funded);});
   await run('delayed paid event cannot grant a period expired at processing time',async()=>{await seed();const r=await receiveAsaasEvent(db,body('evt_expired'),{now:()=>Date.parse('2026-12-01T00:00:00Z')});assert.equal(r.body.reason,'expired_payment_period');assert.equal((await state()).profiles['fictional@example.test'],'free');});
+  for (const [name,date] of [['next civil day','2026-10-10'],['unambiguously future year','2099-10-24']])
+    await run('future paid evidence: '+name,async()=>{
+      await seed();const result=await receiveAsaasEvent(db,body('evt_future_'+date,{dateCreated:date+' 12:00:00',payment:{...body().payment,confirmedDate:date}}));
+      assert.equal(result.status,200);assert.equal(result.body.disposition,'quarantined');assert.equal(result.body.reconciled,false);
+      assert.equal(result.body.reason,'future_payment_date_requires_review');
+      const s=await state();assert.equal(s.profiles['fictional@example.test'],'free');assert.equal(s.subscriptions[0].status,'pending');
+      assert.equal(s.subscriptions[0].current_period_end,null);assert(s.receipts['evt_future_'+date]);
+      assert.notEqual((await retryAsaasReceipt(db,'evt_future_'+date)).disposition,'processed');
+    });
+  await run('invalid processing clock never grants paid access',async()=>{
+    await seed();const result=await receiveAsaasEvent(db,body('evt_clock_unknown'),{now:()=>NaN});
+    assert.equal(result.body.reason,'processing_time_unavailable');assert.equal(result.body.reconciled,false);
+    assert.equal((await state()).profiles['fictional@example.test'],'free');
+    assert.notEqual((await retryAsaasReceipt(db,'evt_clock_unknown')).disposition,'processed');
+  });
   passed.push(...await runAsaasReviewCounterexamples(fixture));
   console.log(`PASS ${passed.length} Asaas receipt/order/identity/rollback scenarios; synthetic fixtures only.`);
   return passed;
