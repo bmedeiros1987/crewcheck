@@ -6,6 +6,7 @@ import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createSharedCreditCandidate,sharedCreditKey as key,CONCIERGE_SHARED_CREDIT_SHIPPING} from '../server/concierge-shared-credit-candidate.mjs';
+import {createPromotionalConciergeAdmission} from '../server/concierge-promotional-admission.mjs';
 import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
 const [mode,rootArg,socketArg,head,modulesRoot=process.cwd()]=process.argv.slice(2);
 assert(['suite','restart','worker'].includes(mode));assert(/^[a-f0-9]{40}$/.test(head));
@@ -35,7 +36,7 @@ async function context(c,j){
  if(profiles.length!==1||!profiles[0].public_id)return null;
  const [same]=await c.query('SELECT public_id FROM credit_qa_profiles WHERE BINARY public_id=BINARY ? FOR UPDATE',[profiles[0].public_id]);
  if(same.length!==1)return null;
- return {accountKey:hash(profiles[0].public_id),linked:true,consent:true,bindingStamp:links[0].revision,sender,recipient:j.recipient,quote:quote(j.channel)};
+ return {accountKey:hash(profiles[0].public_id),linked:true,consent:true,bindingStamp:j.bindingStamp.startsWith('[')?JSON.stringify([profiles[0].public_id,links[0].revision,'infobip',sender,j.recipient]):links[0].revision,sender,recipient:j.recipient,quote:quote(j.channel)};
 }
 const policy=id=>({enabled:true,budgetApproved:true,monthlyBudgetMicroUsd:50000,programId:id,allowedChannels:['whatsapp','voice']});
 const candidate=(id,overrides={})=>createSharedCreditCandidate({...policy(id),...overrides},{now:()=>epoch,resolveTrustedContext:context});
@@ -47,6 +48,9 @@ async function seed(id,{balance=1000000,budget=50000,spent=0}={}){
  await write(key('global',[id,'2032-10']),{v:1,kind:'global-credit',period:'2032-10',budgetMicroUsd:budget,knownSpentMicroUsd:spent,reservedMicroUsd:0,reconciled:true,reconciledAt:epoch});
 }
 const reserve=(id,n,channel='whatsapp')=>transaction(c=>candidate(id).reserve(c,job(n,channel)));
+const promoPolicy={enabled:true,version:1,approvalId:'synthetic-promotional-approval',programId:'promotional',ownerAccountKey:account,sender,recipient,validFrom:epoch-1000,validUntil:epoch+86400000,maxReplies:2,monthlyBudgetMicroUsd:50000};
+const promo=()=>createPromotionalConciergeAdmission(promoPolicy,{now:()=>epoch,resolveTrustedContext:context});
+const promoJob=n=>({...job(n),provider:'infobip',receivedAt:epoch,bindingStamp:JSON.stringify([owner,'synthetic-revision-1','infobip',sender,recipient])});
 const passed=[];assert.equal(CONCIERGE_SHARED_CREDIT_SHIPPING,false);
 try{
  if(mode==='suite'){
@@ -85,11 +89,14 @@ try{
   await seed('uncertain');let loseAck=true;
   const ackDb={async getConnection(){const c=await db.getConnection();return {query:c.query.bind(c),beginTransaction:c.beginTransaction.bind(c),rollback:c.rollback.bind(c),release:c.release.bind(c),destroy:c.destroy.bind(c),async commit(){await c.commit();if(loseAck){loseAck=false;throw Error('SYNTHETIC_ACK_LOST_AFTER_REAL_COMMIT');}}};}};
   await assert.rejects(createInfobipSqlBudget(ackDb)(c=>candidate('uncertain').reserve(c,job(1))));assert.equal(await reserve('uncertain',1),false);assert.equal((await read(key('global',['uncertain','2032-10']))).reservedMicroUsd,12000);passed.push('lost real COMMIT acknowledgement retains reservation, no retry debit');
+  await seed('promotional',{balance:24000});assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),true);
+  assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),false);passed.push('integrated promotional quantity and credit reserve once in SQL');
   await seed('restart');assert.equal(await reserve('restart',1),true);
   execFileSync(process.execPath,[...process.execArgv,process.argv[1],'worker',root,socket,head,modulesRoot],{stdio:'pipe',timeout:10000});passed.push('separate Node process cannot repeat retained event');
  }else{
   assert.equal(await reserve('restart',1),false);assert.equal(await reserve('uncertain',1),false);
   assert.equal((await read(key('global',['restart','2032-10']))).reservedMicroUsd,12000);assert.equal((await read(key('global',['uncertain','2032-10']))).reservedMicroUsd,12000);
+  if(mode==='restart'){assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),false);assert.equal(await transaction(c=>promo().reserve(c,promoJob(2))),true);assert.equal(await transaction(c=>promo().reserve(c,promoJob(3))),false);assert.equal((await read(key('account',['promotional',account]))).reservedMicroUsd,24000);passed.push('promotional limit survives actual restart and spends only remaining credit');}
   passed.push(mode==='restart'?'actual MySQL restart preserves normal and uncertain reservation':'separate process retains idempotency');
  }
  console.log(JSON.stringify({head,phase:mode,mysql:identity.version,passed,shipping:false,externalCalls:0,providerCalls:0}));

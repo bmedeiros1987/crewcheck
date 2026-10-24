@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'server/concierge-shared-credit-candidate.mjs'
+      - 'server/concierge-promotional-admission.mjs'
+      - 'scripts/regression-concierge-promotional-admission.mjs'
       - 'server/infobip-whatsapp-sql-budget.mjs'
       - 'scripts/regression-concierge-shared-credit-candidate.mjs'
       - 'scripts/regression-concierge-credit-mysql*'
@@ -25,5 +27,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Synthetic contract, no transport
         run: node scripts/regression-concierge-shared-credit-candidate.mjs
+      - name: Existing HMAC receiver and sealed production dispatch with synthetic I/O
+        run: node scripts/regression-concierge-promotional-admission.mjs
       - name: Real isolated InnoDB, concurrency and restart without networking
         run: bash scripts/regression-concierge-credit-mysql-ci.sh
