@@ -140,7 +140,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     await showFinancial(page,'charts');await page.locator('.cc-financial-graph').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));await page.screenshot({path:path.join(out,`${width}-${theme}-comparison.png`),fullPage:false});
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-payment-hero').waitFor();
     await page.waitForFunction(()=>document.querySelector('.cc-salary-basis-amount').textContent.includes('2.900,00'),null,{timeout:10000}).catch(async error=>{console.log('SYNTHETIC PAYROLL DEBUG',await page.locator('.cc-payment-overview').innerText());await page.screenshot({path:path.join(out,'payroll-debug.png'),fullPage:true});throw error;});
-    assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);assert.match(await page.locator('.cc-payment-hero').innerText(),/fevereiro de 2032/);assert.match(await page.locator('.cc-payment-hero').innerText(),/bruto estimado/);
+    assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).isChecked(),false);assert.match(await page.locator('.cc-payment-hero').innerText(),/fevereiro de 2032/);assert.match(await page.locator('.cc-payment-hero').innerText(),/bruto estimado/);
     await showFinancial(page,'charts');
     const breakdown=page.getByRole('region',{name:'Ganhos e descontos da competência',exact:true});
     assert.match(await breakdown.innerText(),/Não calculável/,'missing selected-competence data never becomes zero or next-cycle net');
