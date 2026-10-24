@@ -21,7 +21,12 @@ export function operationalQuestion(text = '') {
     const subject = /\b(?:contato|telefone|whatsapp|numero)\b/.test(value) ? 'contact'
       : /\b(?:esperar|espera|aguardar|aguardo)\b/.test(value) ? 'wait'
       : clock || /\b(?:busca|buscar|pega|pegar|sai|saida)\b/.test(value) ? 'pickup' : null;
-    if (subject) return { kind: 'logistics-question', subject, direction };
+    if (subject) {
+      // A hotel pickup supplies an origin, not an airport destination.
+      const hotelOrigin = subject === 'pickup' && direction === null
+        && /^(?:que (?:hora|horas)|quando) (?:a )?van (?:me (?:pega|busca) (?:no|do) hotel|sai do hotel)$/.test(value);
+      return { kind: 'logistics-question', subject, direction, ...(hotelOrigin ? { origin: 'hotel' } : {}) };
+    }
   }
   if (hotel && question && clock) return { kind: 'logistics-question', subject: 'hotel-time', direction: null };
   if (hotel && /\b(?:qual|onde|que hotel|em que hotel)\b/.test(value)
