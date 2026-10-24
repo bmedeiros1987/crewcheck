@@ -9,7 +9,7 @@ import { loadClientModules } from './lib/ts-module-harness.mjs';
 
 const modules = loadClientModules({ files: ['client/src/lib/financialAmounts.ts',
   'client/src/lib/financialStatementLearning.ts', 'client/src/lib/financialJourneyGrouping.ts',
-  'client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts'], prefix: 'synthetic-finance-callers-' });
+  'client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts', 'client/src/lib/rosterDayAllowanceSummary.ts'], prefix: 'synthetic-finance-callers-' });
 try {
   const amounts = modules.load('financialAmounts');
   const learning = modules.load('financialStatementLearning');
@@ -245,8 +245,18 @@ try {
   }
   findGroupTotal(rosterAst); assert.ok(actualGroupTotal);
   const groupCode=ts.transpileModule(actualGroupTotal+'\nglobalThis.value=groupPerDiemTotal;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-  for (const [groupPerDiems,complete,expected] of [[missingFxRows,true,null],[missingFxRows.slice(0,1),false,null],[missingFxRows.slice(0,1),true,100]]) {
-    const c=vm.createContext({...periods,groupPerDiems,scopedFinance:{perdiem:{nativeSummary:{complete}}}});vm.runInContext(groupCode,c);assert.equal(c.value,expected,'day grouping must not show a partial total');
+  const day='2032-02-01',sameDayFx=missingFxRows.map(row=>({...row,iso:day}));
+  for (const [groupPerDiems,complete,pending,expected] of [
+    [sameDayFx,true,[],null],
+    [missingFxRows.slice(0,1).map(row=>({...row,partial:true})),false,[{iso:'2032-01-31',airport:'TEST'}],null],
+    [missingFxRows.slice(0,1),false,undefined,null],
+    [missingFxRows.slice(0,1),true,undefined,100],
+    [missingFxRows.slice(0,1),false,[{iso:'2032-02-02',airport:'OTHER'}],100],
+    [missingFxRows.slice(0,1),false,[{iso:day,airport:'TEST'}],null],
+    [missingFxRows.slice(0,1),false,[{iso:'invalid',airport:'TEST'}],null],
+  ]) {
+    const c=vm.createContext({...periods,...modules.load('rosterDayAllowanceSummary'),group:{iso:day},groupPerDiems,scopedFinance:{perdiem:{nativeSummary:{complete},...(pending===undefined?{}:{unclassifiedItems:pending})}}});
+    vm.runInContext(groupCode,c);assert.equal(c.value,expected,'day grouping preserves own/unknown pending and FX while isolating unrelated dates');
   }
   console.log('PASS production financial callers: per-item dates, expiry/night, cross-month currency completeness, no-data UI and separate observed periods — TZ=' + (process.env.TZ || 'device'));
 } finally { modules.cleanup(); }
