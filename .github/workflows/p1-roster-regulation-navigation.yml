@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/regulation/**'
       - 'client/src/components/CanonicalDutyCard.tsx'
       - 'client/src/components/canonical-duty-card.css'
@@ -121,7 +124,7 @@ permissions:
 
 defaults:
   run:
-    shell: bash -o pipefail {0}
+    shell: bash -e -o pipefail {0}
 
 concurrency:
   group: p1-roster-regulation-${{ github.ref }}
@@ -149,6 +152,15 @@ jobs:
         run: node scripts/regression-p1-565-roster-regulation-navigation.mjs
       - name: Roster focus compatibility
         run: node scripts/regression-p1-548-dynamic-calendar.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated regulation browser
         run: |
           npm install --prefix "$RUNNER_TEMP/regulation-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -178,10 +190,12 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: |
+          [[ $- == *e* ]] || { echo 'Browser regression shell must propagate failures'; exit 1; }
           node scripts/regression-regulation-native-composition-browser.mjs
           node scripts/regression-regulation-review-arrival-composition-browser.mjs
           node scripts/regression-regulation-selected-source-browser.mjs
           node scripts/regression-regulation-automatic-browser.mjs
+          REGULATION_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-regulation-automatic-browser.mjs
           node scripts/regression-regulation-no-roster-home-browser.mjs
           node scripts/regression-regulation-deadline-browser.mjs
           node scripts/regression-regulation-review-gates-browser.mjs

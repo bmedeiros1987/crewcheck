@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runTelegramOperationalChangeCycle,changeTelegramOperationalConsent,handleTelegramOperationalConsent} from '../../server/concierge/telegram-operational-change.mjs';
 import {inspectOperationalChange} from '../../server/concierge/operational-change-source.mjs';
 import {dispatchClaimedJob,safeScheduleJob} from '../../server/notification-job-safety.mjs';
+import {prepareScheduledWakeup} from '../../server/wakeup-spoken-program.mjs';
 const NOW=Date.parse('2099-10-06T06:00:00Z'), EMAIL='synthetic@example.invalid', OWNER='CC-SYNTHETIC-A', CHAT='123456789';
 const copy=x=>structuredClone(x);
 globalThis.fetch=()=>{throw Error('No network permitted');};
@@ -121,3 +122,12 @@ test('status source contract + separate consent -> existing queue -> fake transp
 });
 test('grant requires explicit confirmation; each topic revision is isolated',async()=>{const f=fixture();await assert.rejects(()=>f.grant({confirmed:false}));await f.grant();await f.grant({field:'status'});const consents=[...f.records.values()].filter(v=>v.channel==='telegram');assert.deepEqual(consents.map(v=>v.revision),[1,1]);});
 test('reimported baseline does not create a second job for the same new value/instant',async()=>{const f=await ready();await f.plan();const prev=f.history.source.previousObservation;prev.gate='23';prev.departureGateUpdate.gate='23';await f.plan();assert.equal(f.jobs.length,1);});
+test('composed shipping delivery preserves operational text and never invokes wakeup source or call transports',async()=>{
+ const runtime=readFileSync(new URL('../../server/telegram-fast-ack.mjs',import.meta.url),'utf8');
+ const wrapper=runtime.match(/async function deliverJob\(job\) \{[\s\S]*?\n\}/)?.[0];assert.ok(wrapper);
+ const sent=[];
+ const forbidden=()=>assert.fail('Operational Telegram event must not access wakeup account/source or call provider');
+ const deliver=new Function('prepareScheduledWakeup','dbPool','sendTelegram','callTelegram','sendInfobipPhone',`return (${wrapper});`)(prepareScheduledWakeup,forbidden,async(chat,message)=>{sent.push({chat,message});return {ok:true};},forbidden,forbidden);
+ const f=await ready();await f.plan();assert.equal((await f.dispatch(f.claim(),deliver)).status,'sent');
+ assert.deepEqual(sent,[{chat:CHAT,message:'Portão atualizado: 24 → 25. Confira os canais oficiais antes de agir.'}]);
+});

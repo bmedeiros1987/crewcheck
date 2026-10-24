@@ -1,4 +1,5 @@
 import { OPERATIONAL_CHANGE_PREFIX, TELEGRAM_OPERATIONAL_CHANGE_ENABLED, dispatchTelegramOperationalChange } from './concierge/telegram-operational-change.mjs';
+import { createWakeupSpokenEnvelope, isReservedWakeupMessage } from './wakeup-spoken-program.mjs';
 import { BRIEFING_JOB_PREFIX, dispatchTelegramBriefing, TELEGRAM_OPERATIONAL_BRIEFING_ENABLED } from './concierge/telegram-briefing.mjs';
 // Safety boundary for the existing SQL notification queue. No new provider/queue.
 import { LEAVE_CYCLE, cycleJobPrefix, lockCycle } from './v139/notificationCycles.mjs';
@@ -47,8 +48,15 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   if ((channels.includes('telegram') && !chatId) || (channels.includes('telegram-call') && !username) || (channels.includes('phone-call') && !phone)) return sendJson(res, 400, { ok: false, message: 'Vínculo ou destinatário indisponível.' });
   const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
   if (/^(cycle:|free-day:|operational-briefing:|operational-change:)/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
+  let message = String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000);
+  if (body.spokenProgram !== undefined && typeof body.spokenProgram !== 'boolean') return sendJson(res, 400, { ok: false, message: 'Confirme explicitamente o conteúdo deste alerta.' });
+  if (body.spokenProgram === true) {
+    if (!jobKey.startsWith('wakeup:')) return sendJson(res, 400, { ok: false, message: 'A programação falada exige um despertador identificado.' });
+    try { message = await createWakeupSpokenEnvelope({ db, account: user, eventId: body.eventId, scheduledAt: scheduledAt.getTime() }); }
+    catch { return sendJson(res, 409, { ok: false, message: 'Não foi possível confirmar essa programação na próxima jornada da escala ativa. Desmarque o roteiro ou confira a escala antes de ativar.' }); }
+  } else if (isReservedWakeupMessage(message)) return sendJson(res, 400, { ok: false, message: 'Conteúdo reservado; use a escolha explícita de programação.' });
   const job = { email: user.email, job_key: jobKey, scheduled_at: scheduledAt, channel, chat_id: chatId, telegram_username: username, phone,
-    message: String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000) };
+    message };
   const [existing] = await db.query('SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE email=? AND job_key=? LIMIT 1', [user.email, jobKey]);
   const old = existing[0];
   if (old && (terminal.has(old.status) || ['processing', 'dispatching'].includes(old.status))) {

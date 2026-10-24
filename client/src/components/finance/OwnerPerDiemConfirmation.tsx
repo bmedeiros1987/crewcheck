@@ -25,7 +25,7 @@ export default function OwnerPerDiemConfirmation({ onSaved }: { onSaved?: () => 
     onSaved?.();
     window.dispatchEvent(new CustomEvent('crewcheck:finance-calibrated', { detail: { mode: 'per_diem' } }));
   }
-  return <details><summary>Confirmar tarifa informada pelo titular</summary>
+  return <><details><summary>Confirmar tarifa informada pelo titular</summary>
     <p>Aplicação somente nesta conta e no mês escolhido. A tarifa de táxi não comprova elegibilidade, corrida ou pagamento.</p>
     <fieldset disabled={!!review}>
       <label>Mês de vigência <input type="month" value={month} onChange={e => setMonth(e.target.value)}/></label>
@@ -42,5 +42,5 @@ export default function OwnerPerDiemConfirmation({ onSaved }: { onSaved?: () => 
       <p>Opções desmarcadas não adotam uma tarifa proporcional desta revisão. Café mantém suas fontes independentes; táxi exige preço e elegibilidade próprios.</p>
       <button type="button" onClick={save}>Confirmar e salvar tarifas nesta conta</button><button type="button" onClick={() => setReview(null)}>Cancelar revisão</button></div>}
     {message && <p role="status">{message}</p>}
-  </details>;
+  </details></>;
 }

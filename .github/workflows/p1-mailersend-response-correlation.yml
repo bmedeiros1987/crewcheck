@@ -3,6 +3,9 @@ name: P-1 MailerSend response correlation
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'scripts/v14382/apply.mjs'
       - 'shared/crewcheckEmailIdentity.*'
       - 'client/src/pages/AdminPartnerAccountsPage.tsx'
@@ -26,6 +29,15 @@ jobs:
       - run: npm ci
       - name: Institutional footer in source (no external sends)
         run: node scripts/regression-institutional-email-signature.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/partner-preview-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

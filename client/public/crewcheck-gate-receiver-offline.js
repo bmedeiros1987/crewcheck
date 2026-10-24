@@ -1,6 +1,6 @@
-/* Isolated gate receiver candidate. Not imported by sw.js; no admission, sender,
- * permission, subscription or startup path. Binding must come from a separately
- * reviewed host; neither this component nor a binding authenticates an account. */
+/* Gate receiver fence shared by the shipping worker and isolated harnesses.
+ * No sender, permission or subscription creation. A topic binding is synchronized
+ * only against the existing installation generation; it does not authenticate an account. */
 (function (root) {
   const fields = ['ownerId', 'installationId', 'consentRevision', 'topicRevision', 'authorityEpoch'];
   const same = (a, b) => a && b && fields.every(key => a[key] === b[key]);
@@ -29,6 +29,18 @@
     };
     return { ...base,
       gateBinding: () => transaction((state, done) => { const read = state.get('gate-binding:v1'); read.onsuccess = () => done(read.result || null); }),
+      syncGate: (next, expected, generation) => transaction((state, done) => {
+        const base = state.get('binding'), currentGeneration = state.get('generation'), previous = state.get('gate-binding:v1');
+        previous.onsuccess = () => {
+          const matchesBase = value => value && expected && ['ownerId','installationId','consentRevision'].every(key => value[key] === expected[key]);
+          if (!matchesBase(base.result) || expected?.subscriptionHash && base.result?.subscriptionHash !== expected.subscriptionHash || currentGeneration.result !== generation || !Number.isSafeInteger(generation)) return done({ok:false});
+          const old = previous.result;
+          if (next !== null && (!valid(next) || next.active !== true || !matchesBase(next))) return done({ok:false});
+          if (next && matchesBase(old) && (old.topicRevision > next.topicRevision || old.topicRevision === next.topicRevision && (!same(old,next) || old.active !== true))) return done({ok:false});
+          const value = next ? {...scope(next),active:true} : old ? {...scope(old),active:false} : null;
+          state.put(value,'gate-binding:v1'); done({ok:true,previous:old});
+        };
+      }),
       invalidateGate: expected => transaction((state, done) => {
         const read = state.get('gate-binding:v1'); read.onsuccess = () => {
           if (!valid(expected) || !same(read.result, expected)) return done(false);
@@ -38,7 +50,7 @@
     };
   }
   function create(options = {}) {
-    if (options.enabled !== true) return Object.freeze({ receive: async () => blocked('disabled'), revoke: async () => ({ status: 'disabled', ack: null }) });
+    if (options.enabled !== true) return Object.freeze({ sync: async () => ({ok:false}), receive: async () => blocked('disabled'), revoke: async () => ({ status: 'disabled', ack: null }) });
     const { store, registration, locks, processPush, clock = () => Date.now() } = options;
     if (typeof locks?.request !== 'function' || typeof store?.gateBinding !== 'function'
       || typeof store?.invalidateGate !== 'function' || typeof processPush !== 'function') throw Error('Gate receiver fence unavailable');
@@ -46,6 +58,19 @@
     // instances. Never fall back to a per-module queue or acknowledge without it.
     const exclusive = run => locks.request('crewcheck:gate-notice:v1', { mode: 'exclusive' }, run);
     return Object.freeze({
+      async sync(next, expected, generation) {
+        if (typeof store.syncGate !== 'function') return {ok:false};
+        try { return await exclusive(async () => {
+          const result = await store.syncGate(next, expected, generation);
+          if (!result.ok) return result;
+          if (result.previous && (!next || !same(result.previous,next))) {
+            for (const notice of await registration.getNotifications()) {
+              if (gateEnvelope(notice.data?.envelope) && same(notice.data.envelope,result.previous)) await notice.close();
+            }
+          }
+          return {ok:true};
+        }); } catch { return {ok:false}; }
+      },
       async receive(input) {
         const envelope = structuredClone(input);
         if (!gateEnvelope(envelope)) return blocked('blocked');

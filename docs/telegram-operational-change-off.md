@@ -1,6 +1,6 @@
 # Portão/status Telegram — composição OFF para revisão
 
-Base: c963094bd044a9e5a772eee890c04b65412dd84f (#1215 publicada OFF). Nenhuma ativação ou entrega física. Sem novo scheduler, fila, polling, custo, credencial, migração ou fonte paga. NOTAM continua fora do escopo; nenhum endpoint de diagnóstico upstream foi chamado.
+Base composta por merge normal: d7c43258c30320c40704d5ad72feccef8423df9b (inclui #1225/#1227/#1228). Base original: c963094bd044a9e5a772eee890c04b65412dd84f (#1215 publicada OFF). Nenhuma ativação ou entrega física. Sem novo scheduler, fila, polling, custo, credencial, migração ou fonte paga. NOTAM continua fora do escopo; nenhum endpoint de diagnóstico upstream foi chamado.
 
 ## Ownership e reuso
 
@@ -35,3 +35,17 @@ Workflow existente inclui testes raw/prepared e MySQL isolado `--network none`, 
 5. Revisar enablement limitado a destinatário/ocorrência/janela e orçamento explícitos; verificar schema e configuração existentes sem criar credenciais/permissões. Depois de autorização específica de teste de envio, observar aceite do Telegram e recebimento físico separadamente. Nunca resetar intent ambíguo.
 
 Web Push permanece disabled conforme diagnóstico anterior; sua instalação/assinatura e configuração real continuam não observadas. Habilitar Push não ativa este produtor Telegram nem valida fonte/status.
+
+## Reavaliação na base d7c43258
+
+A composição preserva os imports e a validação de roteiro falado de `safeScheduleJob`, `prepareScheduledWakeup`/locale em `deliverJob`, transportes limitados e `phone_binding_unavailable`. Mantém também os guards CAS/cancelamento/resultado incerto do dispatcher. Os únicos conflitos do merge eram imports e a linha de namespace reservado: ambas as funcionalidades foram mantidas. Não houve edição de `server.mjs`, transportes TTS, perfil Voice, financeiro, Android, chaves ou ambiente. O teste da entrega composta usa a função real `deliverJob` extraída do bootstrap e `prepareScheduledWakeup` real: um evento operacional mantém o texto derivado da fonte e não acessa fonte de despertador nem transporte de ligação. Todos os destinos são falsos, e a rede externa é proibida.
+
+| Tipo | Fonte e atualização real verificada em código | Consentimento/produtor/dispatch | Menor dependência ainda aberta |
+| --- | --- | --- | --- |
+| Portão | `runRadarRace` já lê os fornecedores, chamado por `handleRadar` e comando Telegram `/radar`; pode consultar upstream pago. `lastRadar` salva somente a última projeção quando há snapshot Concierge, sem histórico anterior durável. Não foi localizado trigger que atualize essa fonte sem consulta do app/comando. | Este draft prepara consentimento próprio gate, produtor OFF no scheduler e dispatch revalidado na fila existente. O leitor padrão continua null; sem UI nova de adesão. | Identificar feed/ingest já autorizado que avance sem app e preserve prova custom por campo, recebimento original, duas observações e revisão/ocorrência da escala; então implementar leitor atual na mesma transação e opt-in no Concierge. Não basta ler `lastRadar` ou ativar flag. |
+| Status | Valores atuais de status não possuem `departureStatusUpdate` com prova temporal própria. `lastUpdatedDate` genérico e atualizações Cirium de campos de chegada não provam transição de status. | Consentimento separado e contrato proposto, OFF; nenhum adapter inventa a prova. | Além do trigger/histórico acima, obter a observação de status efetivamente emitida por fonte autorizada. O schema do teste é proposta, não capacidade de fornecedor comprovada. |
+| NOTAM | `server/aisweb-diagnostic.mjs` e rota admin `server/v1412/aiswebHealth.mjs` são diagnóstico; até GET/HEAD chama `diagnoseAiswebNotam`, que pode fazer consulta externa. Não foram executados. | Não há tópico NOTAM neste draft, produtor de mudanças, consentimento ou envio conectado. Briefing o lista entre fontes não suportadas. | Confirmar fonte/uso/trigger já autorizado e definir ocorrência, validade, cancelamento/substituição e relevância operacional antes de compor detecção+consentimento na fila existente. Diagnóstico ou credencial presente não autoriza polling nem alerta. |
+
+O leitor existente `conciergeDbGet` usa outro pool e SELECT comum; `conciergeLoadSnapshot` prefere cache local; `conciergeSaveSnapshotAsync` não propaga falha de persistência. Importá-los diretamente não satisfaz current-read sob locks. Preservar a prova original exige coordenar o writer Radar em `server.mjs`, que não foi alterado nesta fatia. Nenhuma preferência salva comprova agendamento, nenhum aceite de transporte comprova recebimento físico. Configuração LIVE e disponibilidade externa não foram consultadas nesta reavaliação offline.
+
+O mínimo necessário do usuário é identificar a fonte/trigger concreto já disponível (ou autorizar uma integração específica quando inexistente); depois, confirmar Portão e/ou Status no próprio vínculo Telegram pelo Concierge quando essa UI estiver revisada. A autorização atual não inclui polling pago, ativação ou teste de envio, e a PR deve continuar draft/OFF enquanto essas dependências existirem.

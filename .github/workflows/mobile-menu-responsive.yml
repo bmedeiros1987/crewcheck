@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/styles/**'
       - 'client/src/components/preferences/**'
       - 'shared/timezone-choice*'
@@ -62,6 +63,8 @@ on:
       - 'scripts/regression-menu-favorites-interaction.mjs'
       - 'scripts/regression-shell-navigation-browser.mjs'
       - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - '.github/workflows/mobile-menu-responsive.yml'
   workflow_dispatch:
 
@@ -109,6 +112,16 @@ jobs:
           npx vite build
       - name: Verify approved PR936 art, offline aliases and Android resource inputs
         run: node scripts/regression-approved-brand-assets.mjs
+      # Azure can trickle APT archives for the entire job timeout. Keep the
+      # runner's existing signed HTTPS Ubuntu fallbacks; no test/gate changes.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/menu-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

@@ -60,9 +60,9 @@ function linkStamp(link, event) {
 // claim+enqueue commit together, unique claims survive restarts, failures roll
 // back, and lookupLink uses the same transaction. Stores are explicitly supplied.
 // Retry ACK horizon is independent of reply authorization. Content expires at 15m.
-export function createInfobipInboundReceiver({ sender, username, password, authentication, store, now = Date.now }) {
+export function createInfobipInboundReceiver({ sender, username, password, authentication, store, now = Date.now, acceptEvent = () => true, queueLinkConfirmation = true }) {
   if (!phone(sender) ||
-      typeof store?.transaction !== 'function' || typeof now !== 'function') fail('CONFIGURATION');
+      typeof store?.transaction !== 'function' || typeof now !== 'function' || typeof acceptEvent !== 'function' || typeof queueLinkConfirmation !== 'boolean') fail('CONFIGURATION');
   const auth = createInfobipWebhookAuthenticator(authentication === undefined ? {mode: 'basic', username, password} : authentication);
   // Stable dedup namespace is independent of credential/audit-key rotation.
   // This hash is an internal uniqueness key, NOT a privacy/anonymization claim.
@@ -74,9 +74,12 @@ export function createInfobipInboundReceiver({ sender, username, password, authe
     let events;
     try { events = parseInbound(rawBody, sender, now()); }
     catch { return { status: 400, code: 'INVALID_EVENT' }; }
-    let accepted = 0, duplicates = 0, denied = 0;
+    let accepted = 0, duplicates = 0, denied = 0, linked = 0;
     try {
       for (const event of events) {
+        // Runs only after raw-body authentication and schema validation. A
+        // restricted caller may ACK unrelated events without SQL/link changes.
+        if(!acceptEvent(event)){denied++;continue;}
         const result = await store.transaction(async tx => {
           if (now() - event.receivedAt > INFOBIP_REPLY_MAX_AGE_MS) {
             const digest = createHash('sha256').update(JSON.stringify(event)).digest('hex');
@@ -95,6 +98,7 @@ export function createInfobipInboundReceiver({ sender, username, password, authe
             if (!linked) {await tx.finishClaim(eventKey(event)); return 'denied';}
             const bindingStamp = linkStamp(await tx.lookupLink(event), event);
             if (!bindingStamp) fail('LINK');
+            if (!queueLinkConfirmation) { await tx.finishClaim(eventKey(event)); return 'linked'; }
             await tx.enqueue({...event, text: 'WhatsApp conectado ao CrewCheck com segurança.',
               kind: 'link_confirmation', bindingStamp, eventKey: eventKey(event)});
             return 'accepted';
@@ -113,10 +117,11 @@ export function createInfobipInboundReceiver({ sender, username, password, authe
         if (result === 'accepted') accepted++;
         else if (result === 'duplicate') duplicates++;
         else if (result === 'denied') denied++;
+        else if (result === 'linked') linked++;
         else fail('TRANSACTION');
       }
       // ACK only after durable transaction promises resolve successfully.
-      return { status: 200, code: 'QUEUED', accepted, duplicates, denied };
+      return { status: 200, code: 'QUEUED', accepted, duplicates, denied, ...(queueLinkConfirmation ? {} : {linked}) };
     } catch { return { status: 503, code: 'STORE_UNAVAILABLE' }; }
   };
 }
