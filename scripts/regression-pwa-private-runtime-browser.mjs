@@ -7,6 +7,9 @@ import {createRequire} from 'node:module';
 import {stampServiceWorkerBuild} from './ci/stamp-service-worker-build.mjs';
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const raw=fs.readFileSync(process.env.PWA_WORKER_SOURCE||'client/public/sw.js','utf8');
+const shellUrls=vm.runInNewContext(raw.match(/const APP_SHELL = (\[[^\]]*\]);/)[1]);
+const shellIcon=shellUrls.find(url=>new URL(url,'http://synthetic.invalid').pathname==='/icons/crewcheck-icon-v2.png');
+assert(shellIcon,'actual shell includes the canonical icon');
 const html='<html><body>synthetic offline privacy fixture<script src="/assets/app-a.js"></script></body></html>';
 const binaryAssets=['/assets/brand/fixture.png','/assets/sounds/a320-interphone-cc0.mp3','/assets/opening/crewcheck-opening.mp4','/assets/sounds/ATTRIBUTION.json'];
 const serverSource=fs.readFileSync('server.mjs','utf8');
@@ -43,7 +46,7 @@ try{
  check(await p.evaluate(async()=>await(await fetch('/assets/old.js')).text())==='old public chunk','old manifest-listed public chunk survives');
  check((await p.evaluate(async()=>await(await fetch('/assets/public-new.js')).text())).includes('syntheticPublic'),'public runtime asset survives');
  for(const asset of binaryAssets)check(await p.evaluate(async asset=>await(await fetch(asset)).text(),asset)==='synthetic-public-binary:'+asset,'manifest-listed production MIME binary survives '+asset);
- check(await p.evaluate(async()=>await(await fetch('/icons/crewcheck-icon-v2.png')).text())==='synthetic icon','production MIME shell icon survives');
+ check(await p.evaluate(async url=>await(await fetch(url)).text(),shellIcon)==='synthetic icon','production MIME shell icon survives');
  check(await p.evaluate(async()=>{try{await fetch('/assets/unlisted.mp3');await fetch('/assets/unlisted.json');return false}catch{return true}}),'unlisted binary media does not enter runtime');
  check(await p.evaluate(async()=>{try{await fetch('/assets/unlisted.json');return false}catch{return true}}),'unlisted JSON does not enter runtime');
  check(await p.evaluate(async()=>await(await(await caches.open('crewcheck-ocr-verified-v1')).match('/preserve')).text())==='verified synthetic OCR','OCR cache untouched');
