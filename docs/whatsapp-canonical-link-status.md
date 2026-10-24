@@ -22,6 +22,21 @@ last-four match is authority to create a challenge or send a reply.
 
 ## Proposed personal reconciliation, not activated
 
+The authenticated start action selects Infobip explicitly with
+`provider: 'infobip'`. Its destination comes exclusively from the validated
+restricted policy sender, including the allowed-sender and deployment-binding
+agreement. Global Meta aliases do not override or veto that selection.
+Provider-less legacy callers retain `CREWCHECK_WHATSAPP_NUMBER` before
+`WHATSAPP_BUSINESS_NUMBER`; unknown explicit providers remain rejected. No
+environment-variable change is needed to keep the two destinations separate.
+
+Repository consumers of the legacy aliases are `businessNumber()` in
+`server/whatsapp.mjs`: the legacy diagnostics boolean and the provider-less
+link-start destination. The Blueprint declares both variables but this change
+does not alter their values, inheritance or precedence. Meta send credentials,
+phone-number ID, inbound signature and routing remain unchanged. No Home,
+navigation, tour or link-status component changes are part of this correction.
+
 After review and separate approval of a new short window, the existing policy
 can explicitly set both `canonicalLinkHandshake: true` and
 `canonicalLinkHandshakeOnly: true`. All sender, URL, HMAC, service, recipient,
