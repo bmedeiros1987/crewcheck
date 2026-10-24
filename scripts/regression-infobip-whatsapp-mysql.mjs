@@ -109,6 +109,25 @@ try{
    };
    await run('four existing schema slices use InnoDB',async()=>{const [r]=await db.query('SELECT ENGINE FROM information_schema.tables WHERE table_schema=?',[database]);assert.equal(r.length,4);assert(r.every(t=>t.ENGINE==='InnoDB'));});
    await reset();
+   await run('canonical handshake commits link and receipt without confirmation job',async()=>{
+     await db.query('DELETE FROM crewcheck_whatsapp_links');
+     const code='123456',codeHash=createHmac('sha256',salt).update('crewcheck-whatsapp-link|'+code).digest('hex');
+     await db.query('INSERT INTO crewcheck_whatsapp_link_codes(email,code_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 10 MINUTE))',[email,codeHash]);
+     const store=make().store;
+     const receiver=()=>createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:password},store,now:()=>clock,queueLinkConfirmation:false});
+     const item={...event,messageId:'synthetic-link-handshake',message:{type:'TEXT',text:code}};
+     const rawBody=Buffer.from(JSON.stringify({results:[item]}));
+     const signed={method:'POST',rawBody,rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')]};
+     const outcomes=await Promise.all(Array.from({length:8},()=>receiver()(signed)));
+     assert(outcomes.every(x=>x.status===200));assert.equal(outcomes.reduce((n,x)=>n+x.linked,0),1);assert.equal(outcomes.reduce((n,x)=>n+x.duplicates,0),7);
+     const [[link]]=await db.query('SELECT consent_concierge,consent_alerts FROM crewcheck_whatsapp_links WHERE email=?',[email]);
+     assert.equal(Number(link.consent_concierge),1);assert.equal(Number(link.consent_alerts),0);
+     const [[pending]]=await db.query('SELECT COUNT(*) AS n FROM crewcheck_whatsapp_link_codes');assert.equal(Number(pending.n),0);
+     const [states]=await db.query('SELECT payload FROM crewcheck_telegram_state');
+     assert(!states.some(row=>JSON.parse(typeof row.payload==='string'?row.payload:JSON.stringify(row.payload)).status==='held'));
+     assert.equal((await receiver()(signed)).duplicates,1,'recreated receiver must ACK the committed claim');
+   });
+   await reset();
    await run('concurrent real SQL claim/enqueue',async()=>{const {receive}=make();const rs=await Promise.all(Array.from({length:16},()=>receive(packet())));assert(rs.every(r=>r.status===200));assert.equal(rs.reduce((n,r)=>n+r.accepted,0),1);assert.equal(rs.reduce((n,r)=>n+r.duplicates,0),15);assert.equal((await read()).status,'held');});
    await run('sealed state excludes raw synthetic identity/content',async()=>{const raw=JSON.stringify(await read());for(const x of [email,recipient,owner,event.message.text])assert(!raw.includes(x));});
    await run('binary namespace scan selects held job under real database collation',async()=>{assert.equal(await make().store.nextHeld(),eventKey);assert.equal((await make().store.maintain()).scanned,1);});
