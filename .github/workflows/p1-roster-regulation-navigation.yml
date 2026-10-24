@@ -194,6 +194,7 @@ jobs:
           node scripts/regression-regulation-review-arrival-composition-browser.mjs
           node scripts/regression-regulation-selected-source-browser.mjs
           node scripts/regression-regulation-automatic-browser.mjs
+          REGULATION_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-regulation-automatic-browser.mjs
           node scripts/regression-regulation-no-roster-home-browser.mjs
           node scripts/regression-regulation-deadline-browser.mjs
           node scripts/regression-regulation-review-gates-browser.mjs
