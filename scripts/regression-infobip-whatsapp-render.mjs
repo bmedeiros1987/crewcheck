@@ -317,7 +317,8 @@ for(const change of [f=>f.state.link.consent_concierge=0,f=>f.state.link.revoked
   assert.equal(f.stats.sends.length,2);assert.equal(f.stats.engineInputs[1],'/proximo');
   if(prepared){assert.match(f.stats.sends[1].content.text,/SYNTH-PILOT/);assert(!f.stats.sends[1].content.text.includes('HOTEL-FOREIGN'));assert.equal(f.stats.writes,1);}
   await s.close();s=await makeServer(f);
-  await post(s.port,packet('pilot-van',INFOBIP_OPERATIONAL_PILOT_INPUTS[2]));await flush();assert.equal(f.stats.sends.length,3);
+  await post(s.port,packet('pilot-van','Que horas a van me pega no hotel?'));await flush();assert.equal(f.stats.sends.length,3);
+  await post(s.port,packet('pilot-van-alias-retry','q hrs a van me busca no hotel?'));await flush();assert.equal(f.stats.sends.length,3,'alternate pickup wording cannot retry the used category');
   if(prepared)assert.match(f.stats.sends[2].content.text,/pickup ainda não está confirmado/i);
   await Promise.all(['four','five','six'].map(id=>post(s.port,packet('pilot-'+id,'menu'))));await flush();
   assert.equal(f.stats.sends.length,3);assert.equal(f.stats.engine,3);

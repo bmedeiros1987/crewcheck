@@ -42,11 +42,13 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
   const receiveText=async(id,text)=>{const rawBody=Buffer.from(JSON.stringify({results:[{...event,messageId:id,message:{type:'TEXT',text}}]}));return receive({method:'POST',rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')],rawBody});};
   const keys=[];
   for(const [i,text]of INFOBIP_OPERATIONAL_PILOT_INPUTS.entries()){
-   const id='synthetic-pilot-sql-'+i;await receiveText(id,text);keys.push(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex'));
+   const id='synthetic-pilot-sql-'+i;await receiveText(id,i===2?'Que horas a van me busca no hotel?':text);keys.push(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex'));
   }
   await Promise.all(keys.flatMap(k=>[store.dispatch(k),store.dispatch(k)]));
   assert.equal(sends,3);assert.equal(engine,3);
   store=makePilot();await Promise.all(keys.map(k=>store.dispatch(k)));assert.equal(sends,3);
+  await receiveText('synthetic-pilot-van-alias-new-message',INFOBIP_OPERATIONAL_PILOT_INPUTS[2]);
+  await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,'synthetic-pilot-van-alias-new-message'])).digest('hex'));assert.equal(sends,3,'recreated store preserves the shared alias slot');
   await receiveText('synthetic-pilot-same-menu-new-message','menu');
   await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,'synthetic-pilot-same-menu-new-message'])).digest('hex'));assert.equal(sends,3);
   const [rows]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%'");
