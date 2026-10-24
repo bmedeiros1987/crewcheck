@@ -61,6 +61,8 @@ export async function createInfobipWhatsAppProduction(options={}) {
       !binding.subscriptionIds.every(reference)||binding.sender!==sender||binding.baseUrl!==baseUrl||
       binding.publicOrigin!==httpsOrigin(ingress.publicOrigin)||binding.linkHashKeyReference!==refs.linkHashKey)fail();
     const singleTest=input.singleMessageTest===true;
+    const linkHandshake=singleTest&&input.canonicalLinkHandshake===true;
+    if(input.canonicalLinkHandshake!==undefined&&typeof input.canonicalLinkHandshake!=='boolean')fail();
     if(singleTest&&(options.admission?.maxAttempts!==1||options.admission?.recipients?.length!==1))fail();
     const quantity=createInfobipSendAdmission(options.admission,{sender,now});
     const testFrom=options.admission.validFrom;
@@ -89,7 +91,8 @@ export async function createInfobipWhatsAppProduction(options={}) {
       send:singleTest?(proposal,context)=>proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
     await preflightInfobipWhatsAppStorage(db,sqlBudget); // SELECT only; never create or repair tables.
     const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now,
-      ...(singleTest?{acceptEvent:event=>event.text===singleTestInput&&admission.allows(event)}:{})});
+      ...(singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
+        (linkHandshake&&/^\d{6}$/.test(event.text)&&event.receivedAt>=testFrom&&quantity.allows(event))}:{})});
     const report=kind=>createInfobipReportReceiver({kind,authentication:configuration.webhookAuthentication,store,now});
     const pipeline=Object.freeze({receive,receiveDelivery:report('delivery'),receiveSeen:report('seen'),
       dispatch:store.dispatch,expire:store.expirePayload,maintain:store.maintain,nextHeld:store.nextHeld,eraseAccount:(email,context)=>withWhatsAppConciergeQuiesced(email,async()=>{await store.waitForLocalPreparations(email);return store.eraseAccount(email,context);})});

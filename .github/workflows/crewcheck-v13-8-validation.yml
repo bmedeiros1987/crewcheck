@@ -127,6 +127,10 @@ jobs:
           node scripts/regression-web-push-device-browser.mjs
       - name: Prepare canonical application and build shipping CSS for layout fixtures
         run: npm run build
+      - name: Verify built Notifications navigation with synthetic accounts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+        run: node scripts/regression-whatsapp-link-navigation-browser.cjs
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
@@ -184,6 +188,7 @@ jobs:
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-notification-navigation-session.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
           node scripts/regression-free-day-source-queue.mjs
@@ -235,6 +240,7 @@ jobs:
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-notification-navigation-session.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
           node scripts/regression-free-day-source-queue.mjs
