@@ -1,0 +1,92 @@
+name: Radar mobile layout and offline interactions
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/styles/radar-layout.css'
+      - 'client/src/components/nextflight/**'
+      - 'scripts/follow-flight/**'
+      - 'scripts/p1-566-flightdeck-radar-briefing-context/**'
+      - 'scripts/regression-radar-layout*'
+      - 'scripts/regression-followed-flights*'
+      - 'scripts/v139/**'
+      - '.github/workflows/radar-mobile-layout.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/styles/radar-layout.css'
+      - 'client/src/components/nextflight/**'
+      - 'scripts/follow-flight/**'
+      - 'scripts/p1-566-flightdeck-radar-briefing-context/**'
+      - 'scripts/regression-radar-layout*'
+      - 'scripts/regression-followed-flights*'
+      - 'scripts/v139/**'
+      - '.github/workflows/radar-mobile-layout.yml'
+permissions:
+  contents: read
+concurrency:
+  group: radar-mobile-layout-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash -e -o pipefail {0}
+jobs:
+  synthetic-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Raw TypeScript and synthetic fixture network policy
+        run: |
+          npx tsc --noEmit
+          node --check scripts/regression-radar-layout-browser.mjs
+          node scripts/regression-radar-layout-browser.mjs --fixture-policy-only
+          node scripts/regression-followed-flights.mjs
+      - name: Build canonical application with shipping CSS
+        run: |
+          npm run build
+          npx tsc --noEmit
+      - name: Layout and retained follow persistence contracts
+        run: |
+          mkdir -p artifacts/radar-mobile-layout
+          node scripts/regression-radar-layout.mjs | tee artifacts/radar-mobile-layout/contracts.log
+          node scripts/regression-followed-flights.mjs
+          node scripts/regression-followed-flights-ui.mjs
+          node scripts/regression-radar-layout-browser.mjs --bundle-only
+      - name: Install isolated Chromium fixture dependency on existing CI runner
+        run: |
+          npm install --prefix "$RUNNER_TEMP/radar-layout-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/radar-layout-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Actual prepared Radar, manual editor, follow list and bottom navigation
+        env:
+          RADAR_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/radar-layout-browser/package.json
+        run: node scripts/regression-radar-layout-browser.mjs | tee artifacts/radar-mobile-layout/browser.log
+      - name: Bind evidence to exact checked-out source
+        if: always()
+        env:
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_BASE: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          mkdir -p artifacts/radar-mobile-layout
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const git=ref=>execFileSync('git',['rev-parse',ref],{encoding:'utf8'}).trim();
+          fs.writeFileSync('artifacts/radar-mobile-layout/checkout.json',JSON.stringify({sourceHead:process.env.SOURCE_HEAD,sourceBase:process.env.SOURCE_BASE,checkedOutCommit:git('HEAD'),checkedOutTree:git('HEAD^{tree}')},null,2));
+          if(git('HEAD')!==process.env.SOURCE_HEAD)throw Error('Fixture did not run on the declared exact HEAD');
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: radar-mobile-layout-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/radar-mobile-layout/
+          retention-days: 7

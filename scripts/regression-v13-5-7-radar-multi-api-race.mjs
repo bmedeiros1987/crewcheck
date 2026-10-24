@@ -33,7 +33,7 @@ assert(!server.includes('VITE_FLIGHTAWARE'), 'FlightAware não é exposto como V
 if (home) {
   assert(home.includes('13.5.7'), 'Home atualizado para 13.5.7');
   assert(home.includes('Atualizar agora'), 'Radar tem atualização manual');
-  assert(home.includes('Qualidade'), 'Radar exibe qualidade da resposta');
+  assert(home.includes('cc-radar-sources') && home.includes('pontuação interna não comprova exatidão'), 'Radar mantém ressalva de qualidade no disclosure de fontes');
 }
 
 let changed = '';
