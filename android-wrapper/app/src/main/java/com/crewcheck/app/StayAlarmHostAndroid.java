@@ -154,6 +154,7 @@ public final class StayAlarmHostAndroid {
         }finally{connection.disconnect();}
     }
     public static StayAlarmHostAndroid install(Context context,WebView view){
+        if(StayAlarmPhysicalFixture.enabled(context))return null; // synthetic APK has a separate native-only launcher
         if(!(PREPARED_HOST_ENABLED||testHostEnabled(context))||!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))return null;
         return new StayAlarmHostAndroid(context,view);
     }

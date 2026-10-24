@@ -9,7 +9,7 @@ public final class StayAlarmDurableAuthorityAndroid {
     private static final String PREFS="crewcheck_stay_alarm_durable_authority_v1";
     private StayAlarmDurableAuthorityAndroid(){}
     public static StayAlarmDurableAuthority open(Context context){
-        final SharedPreferences prefs=context.getApplicationContext().getSharedPreferences(PREFS,Context.MODE_PRIVATE);
+        final SharedPreferences prefs=context.getApplicationContext().getSharedPreferences(StayAlarmPhysicalFixture.authorityName(context),Context.MODE_PRIVATE);
         StayAlarmDurableAuthority.Store store=new StayAlarmDurableAuthority.Store(){
             @Override public StayAlarmDurableAuthority.Snapshot read(){
                 if(!prefs.contains("generation"))return null;

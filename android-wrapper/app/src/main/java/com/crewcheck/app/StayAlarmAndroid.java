@@ -28,7 +28,7 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     private final StayAlarmDurableAuthority durable;
     public StayAlarmAndroid(Context context) {
         this.context=context.getApplicationContext();
-        journal=this.context.getSharedPreferences("crewcheck_stay_alarm_journal_v1",Context.MODE_PRIVATE);
+        journal=this.context.getSharedPreferences(StayAlarmPhysicalFixture.journalName(this.context),Context.MODE_PRIVATE);
         durable=StayAlarmDurableAuthorityAndroid.open(this.context);
     }
     static String digest(String key) {

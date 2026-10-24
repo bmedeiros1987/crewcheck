@@ -49,3 +49,33 @@ de SharedPreferences: cache já alterado e disco ainda antigo. Enquanto houver
 incerteza, encontrar tombstone em memória exige nova gravação bem-sucedida antes
 do ACK; não limpa a quarentena pelo cache. Recibo idempotente de revogação só é
 permitido sem autoridade online e com ausência/tombstone durável confirmado.
+
+## Entrega sintética sem conta real
+
+O APK67f20cec e anteriores não contêm este painel: o fluxo normal desses builds
+exige autenticação real. Eles ficam históricos/HOLD para a entrega sem conta.
+
+O workflow dedicado agora adiciona somente ao APK de teste um marcador e um
+manifesto debug temporário. Esse overlay remove MainActivity do artefato e aponta
+o launcher para StayAlarmPhysicalFixtureActivity; os arquivos de MainActivity e
+dos manifestos existentes não são editados. A CI verifica o launcher, o marcador,
+o pacote exato, debuggable e os hashes antes de publicar o artefato.
+
+O painel nativo usa contas fictícias A/B, um evento fictício e preferências locais
+com namespace próprio. Não abre WebView, autenticação ou escala real. Não pede
+permissões nem cria conta/credencial. Continua usando o mesmo engine, AlarmManager,
+receiver e protocolo de revogação; não é prova da integração autenticada nem de
+push remoto. A instalação fica a cargo do operador, somente após pedido específico.
+
+Roteiro curto para o operador, depois de autorizar instalação:
+1. Abra o app de teste separado e selecione a conta fictícia A. Se o painel indicar
+   acessos insuficientes, pare e informe; este roteiro não autoriza novas concessões.
+2. Escolha7min, confira horário/APZ fictícios e toque Confirmar teste. Só prossiga
+   se aparecer scheduled. Ative modo avião, bloqueie a tela e remova o app dos
+   recentes. Registre se apareceu uma única notificação e em qual horário.
+3. Repita editando/cancelando e alternando A→B/logout: nenhum alerta antigo deve
+   aparecer. Reboot, Doze e mudança de fuso exigem rodadas próprias; forçar parada
+   nas Configurações é um estado separado, sem garantia de entrega.
+
+Fonte e data aparecem como evento fictício salvo, sem anunciar dado operacional
+atual. Produção, Play e sender remoto continuam OFF/fora desta entrega.

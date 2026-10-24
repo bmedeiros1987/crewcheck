@@ -47,3 +47,17 @@ test('confirmed schedule grants durable owner; receiver recovery still uses exis
  assert.match(receiver,/ACTION_TIMEZONE_CHANGED/);
  assert.match(receiver,/engine\.recover/);
 });
+test('dedicated physical artifact uses native synthetic launcher and separate storage, no real login or permission UI',()=>{
+ const root='android-wrapper/app/src/main/java/com/crewcheck/app/';
+ const fixture=readFileSync(root+'StayAlarmPhysicalFixture.java','utf8'),activity=readFileSync(root+'StayAlarmPhysicalFixtureActivity.java','utf8');
+ const host=readFileSync(root+'StayAlarmHostAndroid.java','utf8'),workflow=readFileSync('.github/workflows/stay-alarm-durable-offline.yml','utf8');
+ assert.doesNotMatch(fixture+activity,/HttpsURLConnection|HttpClient|openConnection|WebView|requestPermissions|ACTION_REQUEST_|authClient|crewcheck\.online/);
+ for(const value of ['synthetic-offline-account-a','synthetic-offline-account-b','synthetic-offline-event','crewcheck_synthetic_stay_journal_v1','crewcheck_synthetic_stay_authority_v1'])assert.ok(fixture.includes(value),value);
+ assert.match(fixture,/if\(!StayAlarmHostAndroid\.testHostEnabled\(context\)\)return false/);
+ assert.match(host,/if\(StayAlarmPhysicalFixture\.enabled\(context\)\)return null/);
+ assert.match(activity,/if\(!StayAlarmPhysicalFixture\.enabled\(this\)\)\{finish\(\);return;\}/);
+ assert.match(workflow,/MainActivity" tools:node="remove"/);
+ assert.match(workflow,/sourceSets\.getByName\('debug'\)\.manifest\.srcFile/);
+ assert.match(workflow,/assert launcher and launcher\[1\]=='com\.crewcheck\.app\.StayAlarmPhysicalFixtureActivity'/);
+ assert.match(workflow,/archive\.read\('assets\/crewcheck-stay-synthetic\.txt'\)==b'crewcheck-stay-synthetic-v1'/);
+});
