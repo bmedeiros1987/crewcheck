@@ -12,6 +12,7 @@ on:
       - 'scripts/v1424/apply.mjs'
       - 'scripts/v14341/apply.mjs'
       - 'scripts/p1-menu-premium/apply.mjs'
+      - 'scripts/regression-v14-3-41-concierge-semantic-context.mjs'
       - '.github/workflows/concierge-links-tutorial.yml'
 permissions:
   contents: read
