@@ -2,6 +2,8 @@ name: Financial known values and payment dates
 on:
   pull_request:
     paths:
+      - 'client/src/components/preferences/PreferenceSwitch.tsx'
+      - 'client/src/components/preferences/preference-switch.css'
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
