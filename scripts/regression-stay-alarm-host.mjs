@@ -16,6 +16,18 @@ test('logout invalidates delayed authentication before native reply',async()=>{c
 test('account switch accepts only latest verified owner/epoch',async()=>{const f=fixture(),old=f.runtime.authenticate();f.switchAccount();const current=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps('account-a'));f.reply(f.messages[1],'verified',f.caps('account-b','epoch-2'));assert.equal(await old,false);assert.equal(await current,true);assert.match(f.runtime.session(),/epoch-2/);});
 test('same-account reauthentication invalidates pending epoch',async()=>{const f=fixture(),old=f.runtime.authenticate(),current=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());f.reply(f.messages[1],'verified',f.caps('account-a','new-epoch'));assert.equal(await old,false);assert.equal(await current,true);});
 test('lease expiry suspends the online session without revoking confirmed local alarms',async()=>{const f=fixture(),p=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await p;const expire=[...f.timers.values()][0];expire();assert.equal(f.runtime.ready(),false);assert.equal(f.messages.at(-1).action,'suspend');f.reply(f.messages.at(-1),'suspended',null);});
+test('logout after suspension retains the exact confirmed owner epoch in revoke',async()=>{
+ const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await auth;
+ const suspended=f.runtime.suspend();f.reply(f.messages.at(-1),'suspended',null);await suspended;f.logout();
+ const revoked=f.runtime.revoke(),message=f.messages.at(-1);
+ assert.equal(message.ownerId,'account-a');assert.equal(message.ownerEpoch,'epoch-1');assert.equal(message.token,undefined);
+ f.reply(message,'revoked',null);assert.equal((await revoked).state,'native-revoked');
+});
+test('native rejection cannot become a confirmed revocation receipt',async()=>{
+ const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await auth;
+ const revoke=f.runtime.revoke();f.reply(f.messages.at(-1),'rejected',null);
+ assert.equal((await revoke).state,'revocation-unknown');assert.equal(f.runtime.ready(),false);
+});
 test('wiring performs inspect/replace and edit invalidation cancels stable native identity',async()=>{
  const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await auth;
  const key='stay-hotel-apz:account-a:event-1',input={key,alarmAt:'2030-10-11T00:01:00Z',hotelReportAt:'2030-10-11T00:03:00Z',confirmed:true,apzConfirmed:true,mode:'relative'};

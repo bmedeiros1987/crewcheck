@@ -26,7 +26,7 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
   function reset(retained=null){generation++;activeScope=null;inactiveScope=retained;adapter=null;session=null;permission=false;onState(false);if(leaseTimer!==null)clearTimer(leaseTimer);leaseTimer=null;
     for(const request of pending.values()){clearTimer(request.timer);request.reject(Error('session invalidated'));}pending.clear();}
   async function suspend(){const retained=activeScope||inactiveScope;reset(retained);try{await send('suspend');return {state:'native-suspended',cancelConfirmed:false};}catch{return {state:'suspension-unknown',cancelConfirmed:false};}}
-  async function revoke(){const retained=activeScope||inactiveScope;reset(retained);try{await send('revoke');return {state:'native-revoked',cancelConfirmed:false};}catch{return {state:'revocation-unknown',cancelConfirmed:false};}}
+  async function revoke(){const retained=activeScope||inactiveScope;reset(retained);try{await send('revoke',retained?{ownerId:retained.account,ownerEpoch:retained.epoch}:{});return {state:'native-revoked',cancelConfirmed:false};}catch{return {state:'revocation-unknown',cancelConfirmed:false};}}
   async function revokeScope(scope){
     if(activeScope!==scope&&inactiveScope!==scope)return {state:'superseded-session',cancelConfirmed:false};
     return revoke();

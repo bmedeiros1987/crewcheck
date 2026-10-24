@@ -9,7 +9,7 @@ if(!webkit)throw Error('STAY_WEBKIT_JAR required for actual origin/frame listene
 const classpath=api+path.delimiter+webkit;
 const output=mkdtempSync(path.join(os.tmpdir(),'crewcheck-stay-api-'));
 const root='android-wrapper/app/src/main/java/com/crewcheck/app/';
-const sources=['NotificationTiming','StayAlarmEngine','StayAlarmAndroid','StayAlarmBridge','StayAlarmReceiver','StayAlarmSessionHost','StayAlarmHostAndroid'].map(name=>root+name+'.java')
+const sources=['NotificationTiming','StayAlarmEngine','StayAlarmAndroid','StayAlarmBridge','StayAlarmReceiver','StayAlarmSessionHost','StayAlarmHostAndroid','StayAlarmDurableAuthority','StayAlarmDurableAuthorityAndroid','StayAlarmCompositeOwner'].map(name=>root+name+'.java')
  .concat(['scripts/fixtures/StayAlarmEngineFixture.java','scripts/fixtures/StayAlarmBridgeFixture.java','scripts/fixtures/StayAlarmHostAdmissionFixture.java']);
 try {
  const args=['-source','8','-target','8','-cp',classpath,'-d',output,...sources];

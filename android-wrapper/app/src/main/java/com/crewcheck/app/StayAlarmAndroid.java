@@ -112,6 +112,8 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     /** Online session authority admits mutations; durable authority exists only
      * after an explicitly confirmed schedule and is bounded by that stay's APZ. */
     public static StayAlarmEngine.Owner owner(Context context) {
+        if(!StayAlarmHostAndroid.PREPARED_HOST_ENABLED&&!StayAlarmHostAndroid.testHostEnabled(context))
+            return new StayAlarmEngine.Owner(){public boolean enabled(){return false;}public String activeOwner(){return null;}public String epoch(){return null;}};
         return new StayAlarmCompositeOwner(StayAlarmHostAndroid.owner(),StayAlarmDurableAuthorityAndroid.open(context.getApplicationContext()));
     }
     public static StayAlarmEngine engine(Context context) {StayAlarmAndroid driver=new StayAlarmAndroid(context);return new StayAlarmEngine(driver,driver,owner(context));}

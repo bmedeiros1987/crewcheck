@@ -19,3 +19,26 @@ O artefato `CrewCheck-StayAlarm-Offline-Test` é somente APK debug de teste,
 não upload Play. Matriz física obrigatória: programar horário confirmado,
 modo avião, tela fechada/processo removido, reboot antes/depois de desbloqueio,
 Doze, timezone/time-set, editar/cancelar, logout A→B e provar zero alerta antigo.
+
+## Correções após revisão dos três P1
+
+Revogação explícita usa o escopo persistido quando a sessão curta já terminou;
+o transporte conserva owner/epoch ao suspender. Um pedido antigo não revoga uma
+sessão online mais nova. Só há recibo `revoked` após tombstone com leitura de
+confirmação; falha retorna rejeição/unknown. A incerteza de persistência bloqueia
+entrega em todas as instâncias do processo, inclusive o owner online. Recovery
+continua tentando cancelar/bloquear os registros, sem prometer persistência após
+reinício se tanto o journal quanto a gravação da revogação falharem.
+
+A identidade verificada da mesma conta reutiliza o epoch local vigente. Mudança
+real de conta precisa tombstonar a autoridade anterior antes de aceitar a nova.
+Uma resposta atrasada de autenticação não modifica autoridade de geração nova.
+Cancelamento incerto também revoga/quarentena o fallback antes de retornar,
+sem permitir que resposta de epoch antigo revogue a conta atual.
+
+O gate de API compila agora as três classes novas e executa contraprovas do host
+real com Android Uri/JSONObject e dispositivos falsos: logout após expiração e
+restart, reauth A→A, A→B, falha antes de pending-cancel e falha do tombstone.
+O pacote de teste precisa ser exatamente `com.crewcheck.app.mcctest` e debug;
+o receiver de produção recusa autoridade durável enquanto o gate permanecer OFF.
+Nenhum desses testes sintéticos substitui a matriz física do novo APK.

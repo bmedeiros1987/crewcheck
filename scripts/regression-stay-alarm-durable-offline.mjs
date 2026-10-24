@@ -15,13 +15,14 @@ test('durable local authority survives restart but not logout/APZ',()=>{
   ];
   execFileSync('javac',['-d',out,...sources],{stdio:'inherit'});
   const value=execFileSync('java',['-cp',out,'StayAlarmDurableAuthorityFixture'],{encoding:'utf8'});
-  assert.match(value,/PASS 11 durable StayAlarm authority checks/);
+  assert.match(value,/PASS 26 durable StayAlarm authority checks/);
  }finally{rmSync(out,{recursive:true,force:true});}
 });
 test('production remains OFF; only isolated mcctest package can install physical-test host',()=>{
  const host=readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarmHostAndroid.java','utf8');
  assert.match(host,/PREPARED_HOST_ENABLED=false/);
- assert.match(host,/endsWith\("\.mcctest"\)/);
+ assert.match(host,/"com\.crewcheck\.app\.mcctest"\.equals\(context\.getPackageName\(\)\)/);
+ assert.match(host,/ApplicationInfo\.FLAG_DEBUGGABLE/);
  assert.match(host,/PREPARED_HOST_ENABLED\|\|testHostEnabled\(context\)/);
  assert.doesNotMatch(host,/PREPARED_HOST_ENABLED=true/);
 });

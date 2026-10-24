@@ -6,6 +6,7 @@ public final class StayAlarmCompositeOwner implements StayAlarmEngine.Owner {
     private final StayAlarmEngine.Owner primary,fallback;
     public StayAlarmCompositeOwner(StayAlarmEngine.Owner primary,StayAlarmEngine.Owner fallback){this.primary=primary;this.fallback=fallback;}
     private StayAlarmEngine.Owner selected(){
+        if(StayAlarmDurableAuthority.deliveryBlocked())return null;
         if(primary!=null&&primary.enabled()&&primary.activeOwner()!=null&&primary.epoch()!=null)return primary;
         if(fallback!=null&&fallback.enabled()&&fallback.activeOwner()!=null&&fallback.epoch()!=null)return fallback;
         return null;
