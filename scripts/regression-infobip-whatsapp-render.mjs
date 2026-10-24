@@ -11,6 +11,8 @@ import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import {createInfobipWhatsAppHost,createInfobipRenderHttpServer} from '../server/infobip-whatsapp-host.mjs';
 import {createInfobipWhatsAppProduction} from '../server/infobip-whatsapp-production.mjs';
+import {createInfobipSqlStore} from '../server/infobip-whatsapp-store.mjs';
+import {createInfobipInboundReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
 import {menuGreeting} from '../server/concierge/telegram-menu.mjs';
 import {fixture,sender,recipient,epoch,secrets} from './fixtures/infobip-production-sql.mjs';
@@ -190,6 +192,26 @@ for(const change of [s=>s.link.consent_concierge=0,s=>s.link.revoked_at='synthet
  await new Promise(r=>foreign.listen(0,'127.0.0.1',r));try{const before=f.state.queries.length;assert.equal((await post(foreign.address().port,JSON.stringify({results:[event('foreign-listener')]}))).status,503);assert.equal(f.state.queries.length,before);}finally{await new Promise(r=>foreign.close(r));await s.close();}
 }
 // Explicitly enabled canonical handshake uses no provider send or quota row.
+{
+ const f=setup();f.singleTest=true;f.linkHandshake=true;f.linkOnly=true;
+ // Persist a paid reply candidate through the actual receiver/store, with no
+ // dispatcher. A new handshake-only host must not resume that held work.
+ const store=createInfobipSqlStore({db:f.db,sender,encryptionKey:secrets.encryptionKey,linkHashKey:secrets.linkHashKey,now:()=>epoch});
+ const receive=createInfobipInboundReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:secrets.webhookSecret},store,now:()=>epoch});
+ const id='synthetic-prior-held-paid',rawBody=Buffer.from(JSON.stringify({results:[{...event(id),message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}}]}));
+ assert.equal((await receive({method:'POST',rawBody,rawHeaders:['X-Hub-Signature',signed(rawBody)]})).accepted,1);
+ const eventKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex');
+ const stateKey='crewcheck-infobip-inbound-v1:'+eventKey;
+ assert.equal(f.state.rows.get(stateKey).status,'held');assert(f.state.rows.get(stateKey).sealed);
+ let s=await makeServer(f);
+ try{
+  assert.equal((await s.host.dispatch(eventKey)).status,'blocked');
+  assert.equal(f.state.rows.get(stateKey).status,'cancelled');assert.equal(f.state.rows.get(stateKey).sealed,null);
+  await s.close();s=await makeServer(f);await s.host.dispatch(eventKey);
+  assert.equal(f.stats.engine,0);assert.equal(f.stats.sends.length,0);
+  assert(![...f.state.rows.values()].some(row=>row.kind==='infobip_send_admission'));
+ }finally{await s.close();}
+}
 for(const linkOnly of [false,true]) {
  const f=setup();f.singleTest=true;f.linkHandshake=true;f.linkOnly=linkOnly;f.state.link=null;
  f.state.linkChallenge={email:'synthetic@example.invalid',codeHash:createHmac('sha256',secrets.linkHashKey).update('crewcheck-whatsapp-link|123456').digest('hex'),expiresAt:epoch+600000};

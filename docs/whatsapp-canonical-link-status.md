@@ -52,3 +52,9 @@ valid callback that was ACKed without authorization to reply.
 
 All validation uses synthetic records and local HTTP fixtures. No real link,
 credential, provider profile, environment, schema or message is changed here.
+
+The host and InnoDB scenarios explicitly seed an older paid job in `held`,
+recreate the host as handshake-only, and require cancellation with no engine,
+provider request or quota reservation. The suite's six checks after an actual
+MySQL engine restart cover shared durable invariants; they are not six separate
+handshake-only restart scenarios.

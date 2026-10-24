@@ -76,7 +76,7 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
      const [links]=await db.query('SELECT email FROM crewcheck_whatsapp_links');assert.equal(links.length,scenario==='conflict'?1:0);if(links.length)assert.equal(links[0].email,email);
    }
  });
- await run('handshake-only production commits canonical proof without reply or quota under InnoDB recreation',async()=>{
+ await run('handshake-only production commits proof and fences prior held paid work under InnoDB recreation without reply or quota',async()=>{
    await reset();await db.query('DELETE FROM crewcheck_whatsapp_links');
    const code='654321',codeHash=createHmac('sha256',salt).update('crewcheck-whatsapp-link|'+code).digest('hex');
    await db.query('INSERT INTO crewcheck_whatsapp_link_codes(email,code_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 10 MINUTE))',[email,codeHash]);
@@ -99,9 +99,19 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
    try{
      assert((await Promise.all(Array.from({length:4},()=>post('synthetic-link-only',code)))).every(r=>r.status===200));
      const [links]=await db.query('SELECT email,consent_concierge,consent_alerts FROM crewcheck_whatsapp_links');assert.equal(links.length,1);assert.equal(links[0].email,email);assert.equal(links[0].consent_alerts,0);
+     await runtime.dispose();
+     const held={...event,messageId:'synthetic-prior-held-paid',message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}};
+     assert.equal((await make().receive(packet(held))).accepted,1);
+     const heldKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,held.messageId])).digest('hex');
+     const readHeld=async()=>{const [[row]]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',['crewcheck-infobip-inbound-v1:'+heldKey]);return typeof row.payload==='string'?JSON.parse(row.payload):row.payload;};
+     assert.equal((await readHeld()).status,'held');assert((await readHeld()).sealed);
+     runtime=await createInfobipWhatsAppProduction(options);
+     assert.equal((await runtime.dispatch(heldKey)).status,'blocked');
+     assert.equal((await readHeld()).status,'cancelled');assert.equal((await readHeld()).sealed,null);
      const [[before]]=await db.query('SELECT COUNT(*) n FROM crewcheck_telegram_state');
      assert.equal((await post('synthetic-paid-denied',INFOBIP_SINGLE_TEST_INPUT)).status,200);
      await runtime.dispose();runtime=await createInfobipWhatsAppProduction(options);
+     assert.equal((await runtime.dispatch(heldKey)).status,'cancelled');
      assert.equal((await post('synthetic-paid-denied-recreated',INFOBIP_SINGLE_TEST_INPUT)).status,200);
      const [[after]]=await db.query('SELECT COUNT(*) n FROM crewcheck_telegram_state');assert.equal(after.n,before.n);
      const [[quota]]=await db.query("SELECT COUNT(*) n FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%'");assert.equal(quota.n,0);
