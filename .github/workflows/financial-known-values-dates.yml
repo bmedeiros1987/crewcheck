@@ -8,6 +8,9 @@ on:
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/lib/rosterDayAllowanceSummary.ts'
+      - 'scripts/regression-roster-daily-allowance-browser.mjs'
       - 'client/src/lib/*Salary*.ts'
       - 'client/src/lib/salaryDisplayBasis.ts'
       - 'scripts/regression-salary-display-basis*'
@@ -103,6 +106,7 @@ jobs:
           node scripts/regression-financial-history-loading-ui.cjs
           node scripts/regression-owner-per-diem-browser.mjs
           node scripts/regression-taxi-pending-row-browser.mjs
+          node scripts/regression-roster-daily-allowance-browser.mjs
           TZ=UTC node scripts/regression-finance-actionable-browser.mjs
           TZ=America/Sao_Paulo node scripts/regression-finance-actionable-browser.mjs
           TZ=Pacific/Auckland node scripts/regression-finance-actionable-browser.mjs
