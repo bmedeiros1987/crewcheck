@@ -9,6 +9,7 @@ const H=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 export async function seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch}) {
  const f=configureSyntheticOperationalPilot({state:{clock:epoch,owner},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});
  const a=f.dependencies.admission,c=f.dependencies.configuration;
+ c.operationalPilotPricing.sender=sender;
  a.validFrom=epoch-1000;a.validUntil=epoch+600000;
  for(const name of ['operationalPilotPricing','operationalPilotBudget'])Object.assign(c[name],{verifiedAt:epoch-1000,validUntil:a.validUntil});
  const original=createInfobipSendAdmission(a,{sender,now:()=>f.state.clock}),tx=createInfobipSqlBudget(db);
