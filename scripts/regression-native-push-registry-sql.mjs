@@ -57,6 +57,15 @@ try {
  assertCheck(race.filter(r=>r.status==='fulfilled').length===1,'one token race winner');
  assertCheck(race.filter(r=>r.status==='rejected').every(r=>['NATIVE_TOKEN_ALREADY_BOUND','ER_LOCK_DEADLOCK'].includes(r.reason.code)),'race loser fails closed');
  const winner=race.findIndex(r=>r.status==='fulfilled'),winnerInput=racers[winner];
+ const winnerKey=nativeBindingKey(winnerInput.identity,winnerInput.installationId);
+ const [claimRows]=await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-native-push:token:%'");
+ const winnerClaim=claimRows.find(row=>JSON.parse(row.payload)?.bindingKey===winnerKey);
+ assert(winnerClaim);
+ await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[winnerClaim.state_key]);
+ await assert.rejects(readNativeInstallation(db,winnerInput.identity,winnerInput.installationId),e=>e.code==='NATIVE_TOKEN_CLAIM_CHANGED');checks++;
+ await assert.rejects(mutate(winnerInput),e=>e.code==='NATIVE_TOKEN_CLAIM_CHANGED');checks++;
+ await db.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES(?,?,NOW(3))',[winnerClaim.state_key,winnerClaim.payload]);
+
  // Lost commit acknowledgement: do not call it confirmed, reconcile by mutation ID.
  const uncertain=input(owners[0],{generation:2,expectedRevision:3,expectedConsentRevision:2,token:token+'UNCERTAIN'});
  const lostAckPool={async getConnection(){const c=await db.getConnection();return {query:c.query.bind(c),beginTransaction:c.beginTransaction.bind(c),rollback:c.rollback.bind(c),release:c.release.bind(c),async commit(){await c.commit();throw Error('SYNTHETIC_COMMIT_ACK_LOST')}};}};

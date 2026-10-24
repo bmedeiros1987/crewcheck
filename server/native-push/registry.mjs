@@ -98,6 +98,12 @@ function storedBindingChecked(record, input) {
 function claimChecked(claim) {
   if (claim && (claim.schema !== 1 || typeof claim.active !== 'boolean' || typeof claim.bindingKey !== 'string' || !claim.bindingKey.startsWith(PREFIX+'binding:') || claim.bindingKey.length > 190 || !integer(claim.revision) || claim.revision < 1)) fail('NATIVE_TOKEN_CLAIM_INVALID',503);
 }
+async function verifyActiveClaim(connection, bindingKey, record) {
+  if (!record?.active) return;
+  const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[tokenKey(record.tokenHash)]);
+  const claim = parse(rows[0]?.payload); claimChecked(claim);
+  if (!claim?.active || claim.bindingKey !== bindingKey || claim.revision !== record.revision) fail('NATIVE_TOKEN_CLAIM_CHANGED');
+}
 // No table creation, ambient credential/key lookup, transport or retry after an
 // uncertain commit. The caller must reconcile by mutationId after an unknown ACK.
 export async function mutateNativeInstallation(db, raw, { protection, now = Date.now() } = {}) {
@@ -110,7 +116,7 @@ export async function mutateNativeInstallation(db, raw, { protection, now = Date
     const previous = await lockState(connection,bindingKey);
     storedBindingChecked(previous,input);
     const plan = nativeMutationPlan(previous,input,now);
-    if (plan.duplicate) { await connection.commit(); return summary(plan.next,true); }
+    if (plan.duplicate) { await verifyActiveClaim(connection,bindingKey,plan.next); await connection.commit(); return summary(plan.next,true); }
     const keys = [...new Set([previous?.tokenHash,input.tokenHash].filter(Boolean).map(tokenKey))].sort();
     const claims = new Map();
     for (const key of keys) { const claim = await lockState(connection,key); claimChecked(claim); claims.set(key,claim); }
@@ -143,6 +149,7 @@ export async function readNativeInstallation(db, identity, installationId) {
     await connection.beginTransaction(); await lockIdentity(connection,identity);
     const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[nativeBindingKey(identity,installationId)]);
     const record = parse(rows[0]?.payload); storedBindingChecked(record,{identity,installationId});
+    await verifyActiveClaim(connection,nativeBindingKey(identity,installationId),record);
     await connection.commit();
     return record ? summary(record) : {installationId,revision:0,consentRevision:0,active:false,registryConfirmed:true,received:null};
   } catch(error) { await connection.rollback(); throw error; } finally { connection.release(); }
