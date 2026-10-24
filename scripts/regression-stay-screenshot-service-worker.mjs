@@ -61,10 +61,12 @@ for (const [label, script] of [['raw-or-prepared', source], ['stamped-build', st
   }
   assert.equal(h.cacheCalls.length, 0, label + ': no cache read/write/open/global match for OCR');
   assert.equal(h.fetches.length, 0, label + ': SW does not wrap/alter original OCR fetch options');
-  // Counterexample against the unmodified worker: model would have been served
-  // from an old generic cache despite fetch(no-store), outside the model-only cache.
+  // Defense in depth: removing only the OCR bypass must still not recover an
+  // old generic cache entry now that the privacy boundary restricts lookup.
+  // The bypass above remains required to avoid all outer-worker cache/network wrapping.
   const before = harness(script.replace(bypass, '')); before.stores.set('crewcheck-v0-runtime-old', new Map([[modelUrl, new Response('stale-runtime-copy')]]));
-  assert.equal((await before.dispatch('/ocr/v7/eng.traineddata.gz')).body, 'stale-runtime-copy');
+  assert.equal((await before.dispatch('/ocr/v7/eng.traineddata.gz')).body, 'network:' + modelUrl);
+  assert(!before.cacheCalls.some(call => call[0] === 'globalMatch' || call[0] === 'put'), 'no generic replay/admission even without OCR bypass');
   assert(before.cacheCalls.length > 0);
 }
 
@@ -100,4 +102,4 @@ assert(!/(?:src|href)=[\"'][^\"']*\/ocr\//.test(fs.readFileSync('client/index.ht
 const vite = fs.readFileSync('vite.config.ts', 'utf8');
 assert(vite.includes("fs.readdirSync(path.join(root, 'assets')"), 'Vite inventories only the built /assets directory');
 assert(vite.includes(".map(name => '/assets/'"), 'Vite stamps only /assets URLs');
-console.log('PASS actual raw/prepared + stamped SW: exclusive /ocr bypass, legacy counterexample, zero OCR respondWith/cache calls, unchanged non-OCR and single-use PDF routes, lazy /assets-only install.');
+console.log('PASS actual raw/prepared + stamped SW: exclusive /ocr bypass, privacy defense in depth, zero OCR respondWith/cache calls, unchanged non-OCR and single-use PDF routes, lazy /assets-only install.');
