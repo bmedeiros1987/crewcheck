@@ -94,6 +94,7 @@ jobs:
           result=$?
           set -e
           test "$result" -ne 0
+          cat "$RUNNER_TEMP/history-old-snapshot.log"
           grep 'HISTORY_STALE_READ: durable observation must be current after owner wait' "$RUNNER_TEMP/history-old-snapshot.log"
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql

@@ -12,7 +12,7 @@ export function fixture(){
   if(sql.startsWith('SELECT p.public_id'))return [[{public_id:publicId,must_change_password:0}]];
   if(sql.startsWith('SELECT id FROM crewcheck_platform_rosters'))return [[{id:'synthetic-roster'}]];
   if(sql.includes('r.id,r.owner_email')){assert.match(sql,/FOR UPDATE$/);return [[{account_email:email,account_public_id:publicId,id:'synthetic-roster',owner_email:email,roster_key:'2099-10',roster,fingerprint:'a'.repeat(64),active:1,revision_seconds:revision/1000}]];}
-  if(sql.startsWith('SELECT payload')){assert.match(sql,/FOR UPDATE$/);return [states.has(args[0])?[{payload:structuredClone(states.get(args[0]))}]:[]];}
+  if(sql.startsWith('SELECT payload')){assert.match(sql,/FOR UPDATE$/);const sqlJson=value=>Array.isArray(value)?value.map(sqlJson):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,sqlJson(value[k])])):value;return [states.has(args[0])?[{payload:sqlJson(states.get(args[0]))}]:[]];}
   if(sql.startsWith('INSERT INTO crewcheck_telegram_state')){states.set(args[0],JSON.parse(args[1]));return [{affectedRows:1}];}
   throw Error('Unexpected SQL '+sql);
  }

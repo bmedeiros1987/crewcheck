@@ -29,7 +29,11 @@ async function scope(c, context, now) {
   const source = result.body.source;
   return { ownerId:context.owner, rosterRevision:hash([source.rosterId,source.rosterKey,source.revisionAt,source.contentDigest]), identity };
 }
-function same(left,right) { return hash(left) === hash(right); }
+// MySQL JSON normalizes object-key order. Compare scope fields, never insertion order.
+function same(left,right) {
+  return Boolean(left && right && left.ownerId===right.ownerId && left.rosterRevision===right.rosterRevision &&
+    ['flight','origin','destination','scheduledDepartureUtc','departureDate','eventId'].every(k=>left.identity?.[k]===right.identity?.[k]));
+}
 function bound(record, context, current) {
   return record?.version===1 && record.email===context.email && record.owner===context.owner &&
     record.field==='gate' && same(record.scope,current) && record.source?.ownerId===current.ownerId && record.source.rosterRevision===current.rosterRevision;
