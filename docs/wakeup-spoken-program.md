@@ -4,6 +4,11 @@ Stacked on the reviewed call-transport correction #1225. Code/test draft only:
 no real calls, provider profile changes, secrets, migrations or activation.
 The existing `phone_binding_unavailable` guard stays in place; WhatsApp linking
 is not voice-call consent. Telegram text and CallMeBot calls remain distinct.
+The existing app selector also holds `telegram-call` pending canonical binding,
+franchise and recipient authorization. This draft does not remove that readiness
+hold or treat a Telegram text message as a call. A separate capability must prove
+those conditions before the selector can honestly enable scheduled calls; a
+configured transport alone is insufficient.
 
 The actual scheduler/delivery bootstrap uses the same formatter for Telegram
 text, CallMeBot speech and Infobip speech. The existing dispatch CAS, cancellation
