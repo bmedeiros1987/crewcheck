@@ -8,6 +8,11 @@ import {WHATSAPP_TEXT_MENU,whatsappTextMenu as route} from '../server/concierge/
 let calls=0;globalThis.fetch=()=>{calls++;assert.fail('NO_NETWORK');};
 const profile={channel:'whatsapp',linked:true,email:'synthetic@example.test'};
 assert(WHATSAPP_TEXT_MENU.length<4000);assert(!/\bmais\b/i.test(WHATSAPP_TEXT_MENU));
+assert.match(WHATSAPP_TEXT_MENU,/CrewCierge · BETA/);
+const visibleOptions=[...WHATSAPP_TEXT_MENU.matchAll(/^(\d+)\. /gm)].map(match=>Number(match[1]));
+assert.deepEqual(visibleOptions,Array.from({length:17},(_,i)=>i+1),'all existing options remain visible, ordered and unique');
+for(const label of ['📅 *ESCALA SALVA','🏨 *PERNOITE E TRANSPORTE','📡 *CONSULTAS COM FONTE E CONEXÃO','📱 *CONTINUE NO APP','🔒 *ACESSO BETA'])assert(WHATSAPP_TEXT_MENU.includes(label));
+assert(!/emergência|inteligência artificial|IA ativada/i.test(WHATSAPP_TEXT_MENU),'no unshipped capabilities advertised');
 for(let i=1;i<=17;i++){assert(WHATSAPP_TEXT_MENU.includes(`${i}. `));const r=route(String(i),profile);assert(r&&typeof(r.reply||r.text)==='string');assert((r.reply||r.text).length<4000);}
 for(const text of ['oi','OLÁ!','menu','/start','ajuda','boa tarde'])assert.equal(route(text,profile)?.reply,WHATSAPP_TEXT_MENU);
 for(const p of [{},{...profile,channel:'telegram'},{...profile,channel:'app'},{...profile,linked:false},{...profile,email:'invalid'}])assert.equal(route('menu',p),null);
