@@ -1,0 +1,243 @@
+# CrewLife v2 — phone candidate, health remains OFF
+
+**Draft/HOLD: corrected Wearf9edefd6 and phone producer pass synthetic composition
+(11 protocol cases and 30 complete-sender assertions). Independent review of this
+phone delta and the exact pair, strict MCC integration, vendor and physical gates
+remain pending. No health activation or Store publication follows from these tests.**
+
+Phone changes extend #1085 HEAD379eb3db. No Wear files, real SDK, permissions,
+Health Sync activation, live health records, Store operation or routine/roster
+projection is included. Final integration needs the exact independently reviewed
+Wear producer/consumer composition and the strict shared-source MCC gate.
+
+Transport names:
+
+- Capability `crewlife_metric_validity_v2` (discovery prerequisite, never consent).
+- Data Item `/crewcheck/watch/crewlife/v2`, DataMap string `crewLifeJson`.
+- Directed control message `/crewcheck/watch/crewlife/v2/control`.
+- Directed ACK message `/crewcheck/watch/crewlife/v2/ack`.
+- Legacy CrewLife `/crewcheck/watch/crewlife/v1` is removed, never republished.
+- Routine `/crewcheck/watch/routine/v1` is unchanged. Full existing explicit
+  consent revocation still requests deletion of routine; protocol-only migration
+  and source invalidation do not touch it.
+
+Snapshot example (synthetic epoch and values):
+
+```json
+{
+  "schemaVersion": 2,
+  "kind": "snapshot",
+  "streamId": "random-opaque-uuid",
+  "revision": 4,
+  "generatedAtEpochMs": 1800000000000,
+  "validUntilEpochMs": 1800000060000,
+  "metrics": {
+    "recoveryScore": {"state":"valid","value":0,"validUntilEpochMs":1800000060000},
+    "sleepMinutes": {"state":"no_data","validUntilEpochMs":0},
+    "steps": {"state":"valid","value":51,"validUntilEpochMs":1800000060000},
+    "activeMinutes": {"state":"no_data","validUntilEpochMs":0}
+  }
+}
+```
+
+Rendered legacy WebView health projections are refused without a source refresh;
+the native host alone initiates consent-gated provider reads and mirroring. This
+also prevents native-summary -> React projection -> native-read feedback. Manual local entries remain
+local and are not represented as automatic sensor data.
+
+The phone maps `metricValidity.energyScore` to `metrics.recoveryScore`, preserving
+the value and conservatively bounding its transmitted deadline to the smaller of
+the original individual deadline and original source envelope. Neither deadline
+is extended. A longer valid metric is not marked invalid just because another
+metric shortens the envelope. This version carries ENERGY only, not a fabricated
+recovery assessment. Other mappings retain their names. Integer bounds are
+0–100, 0–1440, 0–200000, and 0–1440 respectively. Narrative, heart metrics,
+labels, raw records and identity fields are not accepted. Unknown fields are
+rejected at every object level; strings/fractions/negative numbers are not
+coerced or clamped. A malformed individual metric becomes unavailable while
+independently valid metrics survive. A malformed envelope invalidates CrewLife.
+
+A snapshot replaces the entire previous snapshot. Missing/no-data/expired/
+unknown-source/invalid/revoked/permission-denied metrics have no `value` and a
+zero deadline. A numeric measured zero remains present. The consumer must show
+`--` for unavailable values and recheck expiry while open/AOD/complications.
+At exact expiry it is unavailable. The source envelope and each metric deadline
+must both be valid; transport receipt and rendering never extend them. A source
+envelope may conservatively expire before a remaining metric: it is never
+extended by this protocol.
+
+Protocol journal stores only an opaque stream UUID, revision and per-node
+cleanup challenges/ACK state in a separate private preference file. No account
+identifier or health values are retained. Commit failure blocks the process.
+Each new owner/consent generation needs a fresh opaque stream and reset ACK.
+Persisted per-node receipts require exact Boolean flags, full typed schema/action/
+current-stream/safe-revision/request UUID/nonce and root-state consistency. A partial
+or malformed record remains a known pending node, never an inferred cleanup.
+A reset ACK grants one publication permit, consumed durably before DataClient
+handoff. Duplicated old ACKs cannot rearm that permit. Explicit retry after a
+consumed proof, startup/reconnect reconciliation and discovery/send failures reopen
+a challenge at a greater revision. This recovers from a Wear journal loss without
+accepting old receipts as current. Timer retries only resend pending work; they
+do not continuously reset an already-clean peer.
+Revisions increase durably; Wear must persist stream/revision fences, reject
+older revisions/foreign streams and reject v1 replay after migration.
+
+The phone first sends `{schemaVersion:2,op:"challenge_request",action:"reset",
+streamId,revision,requestId}` to a capable node. Wear must generate and persist
+`wearChallenge`, encoded as exactly 64 lowercase hex characters from 256 random
+bits, bound to sender/action/stream/revision/requestId before responding via ACK
+path with `op:"challenge"`, `action:"reset"` and the same tuple plus nonce.
+The phone accepts only its currently pending exact node/action/stream/revision/
+requestId, persists the nonce, then sends `{schemaVersion:2,op:"reset",streamId,
+revision,requestId,wearChallenge}`. Control does not include `action` after the
+challenge phase. For revocation the challenge action is `"revoke"` instead.
+
+Wear must check its own durable pending nonce; a reset cannot supply its own
+authority. Missing/corrupt/lost journal means unavailable and a NEW Wear nonce.
+After atomic cache clearing, fence installation and nonce consumption, Wear ACKs
+`{schemaVersion:2,op:"reset_ack",streamId,revision,requestId,wearChallenge,
+status:"cleared"}`. No `action` in final ACK. Without that exact persisted nonce,
+wrong node/action, stale challenge or prior-generation ACK cannot grant readiness.
+The phone does not issue the Wear nonce or reconstruct it from a clock.
+
+Duplicate exact consumed resets may only ACK idempotently from a durable applied
+receipt; they must not clear newer data or lower the fence. Issuing a challenge
+alone cannot change the active stream. Delayed old hello may cause another retry,
+never authorize old data. The actual receiver-side rules require verification in
+the separate Wear PR, including losing the Wear journal after issuing a nonce.
+Capability alone does not authorize publication. The phone requires challenge-bound
+reset ACKs and successful legacy Data Item deletion before values.
+Revocation/source invalidation advances the revision and publishes a durable
+`kind:"revoked"` tombstone with `metrics:{}`, generatedAt/validUntil zero. Control
+uses `op:"revoke"` with the persisted Wear nonce, ACK
+`op:"revoke_ack",status:"cleared"` echoing that nonce. Tombstone is retained,
+including after ACK, until a new stream is reset. Pending challenges survive
+restart; bounded local retries and incoming watch requests resume cleanup.
+Unknown/offline previously seen nodes stay pending. Empty node lists never mean
+remote clearance. `putDataItem` success means queued, not consumer ACK/display.
+Optional snapshot ACK is not used as cleanup authority in this phone version.
+
+Local consent is disabled before asynchronous full-revocation I/O. Every async
+publication boundary checks persisted generation/revision and current consent.
+A task already handed to the Data Layer cannot be recalled. A late completion
+republishes the current tombstone if revoked; Wear's persisted fence must reject
+the old stream/revision. Offline/old watches cannot be declared cleaned merely
+because a deletion task succeeded. Data Items are shared/persistent, so one
+capable watch does not prove migration of all paired devices. Unseen old/offline
+caches remain a release limitation, not a guarantee fixed by this patch.
+
+Common synthetic acceptance vectors live in `tests/fixtures/crewlife-v2/`.
+`regression-crewlife-v2-phone.mjs` compiles and executes actual phone protocol,
+journal, transport coordinator and actual MainActivity producer method with
+explicit Android/storage/Task doubles. It does not execute the new Wear parser,
+real Data Layer, proprietary SDK, encryption migration or physical display.
+Those proofs and old/new composition remain with the separate Wear candidate.
+
+
+## Exact composition validation
+
+Wear input is pinned to `f9edefd647b1a982b8e19b77b703422f0a741f7b`.
+The receiver fixes challenged initial clear-only revoke and zero-time value-free
+revocation tombstones. CI checks out that exact read-only source tree and compiles
+its actual `CrewLifeFence`/`CrewLifeSnapshot` with this phone's actual native
+producer method, publisher, protocol journal, coordinator, ACK listener service,
+consent and revocation retry implementation. Input hashes are checked before/after.
+Transport Tasks, source query/clock, Android and persistence are explicit doubles.
+The store encryption/Android lifecycle proofs are separate Wear CI tests, not
+claimed by this harness.
+
+The sender suite covers cold-start cleanup before consent; fresh Wear challenge and
+reset ACK through the real phone service; zero/absence/source deadlines; old/new
+schemas; old Companion with missing provenance; logout during discovery; late
+already-handed-off put completion and tombstone repair; account stream replacement;
+Wear journal loss; and an old/offline peer never treated as cleaned. Protocol-only
+migration/source invalidation preserves routine, while existing full explicit
+consent revocation still removes routine. The operational publisher is not called
+by any health ACK flow. Old phone + old Wear behavior remains unsafe and is not
+certified by this rollout. No physical delivery/display or remote cache clearance
+is inferred from a DataClient success.
+
+
+## Phone independent-review corrections
+
+Three defects were reproduced separately on a30506c7 before the corrections:
+partial/string-flag persisted receipts could appear cleared; valid mixed deadlines
+became invalid during v2 sanitization; and a receiver journal loss left the sender
+reusing stale readiness indefinitely. The new complete-flow suite covers these
+with 100 additional assertions, including three retries plus three native publication
+attempts with no current Wear proof, followed by real challenge/ACK recovery. It
+also exercises strict malformed receipt permutations, old ACK replay after permit
+consumption, native Companion filtering through the actual Wear parser with mixed
+TTL orderings, process-start reconciliation, capability loss and DataClient failure.
+No cross-account leak was demonstrated or is claimed by these findings.
+
+
+## ACK continuation is not an external refresh request
+
+Accepted reset ACKs use a separate local `LIFE_WATCH_PROOF_READY` action. They do
+not use the external watch-request action, call the provider's `refresh`, request
+an operational projection, or post another 1800ms callback. Activity-local work
+tickets bound ACK continuations of the latest original read phase;
+new external phases coalesce older reads, terminal callbacks finish their own
+ticket, account changes invalidate tickets, and Activity destruction closes them.
+The durable per-node publication permits and all source/session fences remain.
+
+Twenty-four Robolectric tests use actual Android broadcast registration/delivery, the
+production Activity receiver, native provider read, publisher and ACK service,
+and the real paused main Looper. A posting WebView test adapter models an attached
+View's Handler delivery. GMS transport, a synthetic ContentProvider and peer disk
+are explicit doubles; receiver parser/fence come from the exact pinned Wear source.
+The tests drain main callbacks and native worker threads until there is NO next
+scheduled main task, then advance another30seconds and require stable counts.
+They cover external request, ACK without original work, duplicate/reordered ACKs,
+logout, explicit retry, rendered Web projections and destroyed Activity. They also
+require positive publication after two late peer ACKs in either order, one-peer
+transient discovery recovery after cached/settled reads fail, known-offline peer
+blocking/reconnect, two-peer cancellation/logout, and stable idle after persistent
+failure. This closes the no-op-broadcast
+coverage gap in the older JVM fixtures; those still test their narrower contracts.
+No physical delivery or real vendor/encrypted-store behavior is inferred.
+
+A reset ACK resumes pending work only after every persisted peer cleanup is
+confirmed. Partial quorum ACKs do not spend the Activity operation continuation.
+Recoverable discovery/capability/delete/send errors keep that operation pending;
+fresh accepted quorum proof can resume it, subject to the same source/account/
+consent/publication fences. Each operation allows at most four ACK continuations;
+exhaustion stops automatic source reads, while a new external request starts a
+new bounded operation. Transport retry alone never invents source work. Success,
+definitive rejection, account change and Activity destruction terminate it. No
+payload is persisted to make this work queue durable across process death.
+
+Legacy deletion failure has its own bounded Activity-local continuation after
+1000ms; it does not depend on a new handshake ACK or external request. It reuses
+unconsumed peer proof and revalidates source/session/consent through the ordinary
+producer before attempting deletion and publication. The scheduled callback is
+bound to its exact active ticket under the Activity owner fence. No publication
+is permitted until deletion succeeds. The shared four-continuation limit also
+bounds this stage; cancellation/logout/destruction suppress queued stage work.
+
+Success and definitive completion mark a ticket inactive irreversibly. A late
+failure callback cannot defer that terminal ticket or a newer operation. Tests
+hold the original discovery Tasks, complete publication through retry/proof, then
+release old failures/duplicate ACKs and invoke explicit retry; reads/publications
+must remain unchanged. One control uses explicit retry. Another adds a second
+connected/capable peer after success, then releases the old discovery failure;
+its scheduled retry(false) must really handshake the new peer while reads and
+snapshots stay unchanged. The rejected baseline demonstrates a bounded unwanted
+resumption, not an infinite loop. Separate tests demonstrate legacy-delete
+automatic recovery and bounded persistent failure.
+
+Operation identity and attempt identity are distinct. Starting/claiming work also
+advances an attempt generation before the native read. Reads, publisher callbacks,
+terminal completion, defer and delayed deletion retry must match both identities.
+An obsolete put completion (including superseded), failure or ACK cannot terminate
+or rearm the current attempt. A valid current-attempt success still closes the
+operation irreversibly; its four-continuation budget is not reset by a new attempt.
+
+Two additional Android controls explicitly delay an accepted ACK's local broadcast
+and release that same Intent through the real Android framework. The original
+1800ms phase queues a held put, delayed proof starts another discovery, then the
+old put completes or fails while old ACKs are duplicated. The current discovery
+must reset/ACK, enqueue the second snapshot and leave actual pinned Wear steps=51
+with stable idle, without another external request or public retry. The local
+broadcast delivery delay is an explicit test double, not a physical timing claim.

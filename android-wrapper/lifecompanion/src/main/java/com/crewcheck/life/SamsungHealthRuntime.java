@@ -11,6 +11,11 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -75,7 +80,10 @@ final class SamsungHealthRuntime {
             }
 
             Object store = getStore(context);
-            boolean granted = hasAllPermissions(store);
+            Set<Object> required = requiredPermissions();
+            Set<Object> grantedSet = grantedPermissions(store, required);
+            boolean granted = !grantedSet.isEmpty();
+            json.put("allPermissionsGranted", grantedSet.containsAll(required));
             json.put("state", granted ? "connected" : "permission_required");
             json.put("permissionsGranted", granted);
         } catch (Throwable error) {
@@ -111,9 +119,9 @@ final class SamsungHealthRuntime {
         if (result instanceof Set<?>) {
             combined.addAll((Set<?>) result);
         }
-        if (combined.containsAll(required)) return true;
+        if (!combined.isEmpty()) return true;
 
-        return grantedPermissions(store, required).containsAll(required);
+        return !grantedPermissions(store, required).isEmpty();
     }
 
     static JSONObject readSummary(Context context) throws Exception {
@@ -123,61 +131,86 @@ final class SamsungHealthRuntime {
 
         Object store = getStore(context);
         Set<Object> required = requiredPermissions();
-        if (!grantedPermissions(store, required).containsAll(required)) {
-            throw new SecurityException("Permissões do Samsung Health ainda não foram concedidas.");
-        }
-
+        Set<Object> granted = grantedPermissions(store, required);
+        if (granted.isEmpty()) throw new SecurityException("Nenhuma permissão Samsung Health concedida.");
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-
-        long steps = Math.round(numberValue(aggregate(
-                store,
-                "com.samsung.android.sdk.health.data.request.DataType$StepsType",
-                "TOTAL",
-                localTimeFilter(startOfDay, now)
-        )));
-
-        Duration active = durationValue(aggregate(
-                store,
-                "com.samsung.android.sdk.health.data.request.DataType$ActivitySummaryType",
-                "TOTAL_ACTIVE_TIME",
-                localTimeFilter(startOfDay, now)
-        ));
-
-        double activeCalories = numberValue(aggregate(
-                store,
-                "com.samsung.android.sdk.health.data.request.DataType$ActivitySummaryType",
-                "TOTAL_ACTIVE_CALORIES_BURNED",
-                localTimeFilter(startOfDay, now)
-        ));
-
-        double distance = numberValue(aggregate(
-                store,
-                "com.samsung.android.sdk.health.data.request.DataType$ActivitySummaryType",
-                "TOTAL_DISTANCE",
-                localTimeFilter(startOfDay, now)
-        ));
-
-        JSONObject sleep = latestSleep(store, now);
-        JSONObject energy = latestEnergyScore(store);
-
+        LocalDateTime startOfDay = now.toLocalDate().atStartOfDay();
         JSONObject json = new JSONObject();
-        json.put("schemaVersion", 1);
+        json.put("schemaVersion", 1); // additive metadata; old readers retain field names
         json.put("source", "samsung_health");
-        json.put("generatedAtEpochMs", System.currentTimeMillis());
-        json.put("day", LocalDate.now().toString());
-        json.put("steps", Math.max(0, steps));
-        json.put("activeMinutes", active == null ? 0 : Math.max(0, active.toMinutes()));
-        json.put("caloriesBurned", Math.max(0, Math.round(activeCalories)));
-        json.put("distanceMeters", Math.max(0, Math.round(distance)));
-        json.put("sleepMinutes", sleep.optInt("sleepMinutes", 0));
-        json.put("sleepScore", sleep.optInt("sleepScore", 0));
-        json.put("sleepStart", sleep.optString("sleepStart", ""));
-        json.put("sleepEnd", sleep.optString("sleepEnd", ""));
-        json.put("energyScore", energy.optInt("energyScore", 0));
-        json.put("energyDate", energy.optString("energyDate", ""));
+        json.put("sourceZoneId", ZoneId.systemDefault().getId());
+        json.put("generatedAtEpochMs", System.currentTimeMillis()); // query time, never sample time
+        json.put("day", now.toLocalDate().toString());
+        for (String field : new String[]{"steps", "activeMinutes", "caloriesBurned", "distanceMeters",
+                "sleepMinutes", "sleepScore", "energyScore"}) json.put(field, JSONObject.NULL);
+        if (allows(granted, "STEPS")) {
+            putNumber(json, "steps", aggregate(store,
+                    "com.samsung.android.sdk.health.data.request.DataType$StepsType", "TOTAL",
+                    localTimeFilter(startOfDay, now)));
+        }
+        if (allows(granted, "ACTIVITY_SUMMARY")) {
+            String type = "com.samsung.android.sdk.health.data.request.DataType$ActivitySummaryType";
+            Duration active = durationValue(aggregate(store, type, "TOTAL_ACTIVE_TIME", localTimeFilter(startOfDay, now)));
+            json.put("activeMinutes", active == null || active.isNegative() ? JSONObject.NULL : active.toMinutes());
+            putNumber(json, "caloriesBurned", aggregate(store, type, "TOTAL_ACTIVE_CALORIES_BURNED", localTimeFilter(startOfDay, now)));
+            putNumber(json, "distanceMeters", aggregate(store, type, "TOTAL_DISTANCE", localTimeFilter(startOfDay, now)));
+        }
+        if (allows(granted, "SLEEP")) copy(latestSleep(store, now), json);
+        if (allows(granted, "ENERGY_SCORE")) copy(latestEnergyScore(store), json);
+        // End of query interval is not an observed sample timestamp.
+        json.put("activityWindowStart", startOfDay.toString());
+        json.put("activityWindowEnd", now.toString());
         json.put("automatic", true);
-        return json;
+        // Permissions can be revoked while an asynchronous Samsung query is in flight.
+        applyGrantedFields(json, grantedPermissions(store, required));
+        return com.crewcheck.health.CompanionFreshness.filter(json, System.currentTimeMillis());
+    }
+
+    private static void applyGrantedFields(JSONObject json, Set<Object> granted) throws Exception {
+        String[][] fields = {{"STEPS", "steps"}, {"ACTIVITY_SUMMARY", "activeMinutes", "caloriesBurned", "distanceMeters"},
+                {"SLEEP", "sleepMinutes", "sleepScore", "sleepStart", "sleepEnd", "sleepStartInstant", "sleepEndInstant", "sleepStartLocal", "sleepEndLocal"},
+                {"ENERGY_SCORE", "energyScore", "energyDate", "energyZoneId"}};
+        for (String[] group : fields) if (!allows(granted, group[0]))
+            for (int i = 1; i < group.length; i++) json.remove(group[i]);
+    }
+
+    private static void putNumber(JSONObject json, String key, Object value) throws Exception {
+        json.put(key, value instanceof Number && Double.isFinite(((Number)value).doubleValue())
+                && ((Number)value).doubleValue() >= 0 ? Math.round(((Number)value).doubleValue()) : JSONObject.NULL);
+    }
+
+    private static void copy(JSONObject from, JSONObject to) throws Exception {
+        for (java.util.Iterator<String> keys = from.keys(); keys.hasNext();) {
+            String key = keys.next(); to.put(key, from.get(key));
+        }
+    }
+
+    private static boolean allows(Set<Object> granted, String field) throws Exception {
+        Object read = Enum.valueOf((Class<Enum>) Class.forName(CLS_ACCESS), "READ");
+        Object permission = Class.forName(CLS_PERMISSION).getMethod("of", Class.forName(CLS_DATA_TYPE),
+                Class.forName(CLS_ACCESS)).invoke(null, staticField(CLS_DATA_TYPES, field), read);
+        return granted.contains(permission);
+    }
+
+    /** Recheck grants at the provider boundary; revoked fields never leave cached storage. */
+    static String authorizedCachedSummary(Context context) {
+        try {
+            if (!sdkBundled()) return "";
+            Object store = getStore(context);
+            Set<Object> granted = grantedPermissions(store, requiredPermissions());
+            if (granted.isEmpty()) { LifeSummaryStore.clear(context); return ""; }
+            String raw = LifeSummaryStore.read(context);
+            if (raw.isBlank()) return "";
+            JSONObject json = new JSONObject(raw);
+            applyGrantedFields(json, granted);
+            JSONObject filtered = com.crewcheck.health.CompanionFreshness.filter(json, System.currentTimeMillis());
+            // Persist removal too: re-granting a category must never resurrect revoked cache.
+            if (!filtered.toString().equals(raw) && !LifeSummaryStore.save(context, filtered)) {
+                LifeSummaryStore.clear(context);
+                return "";
+            }
+            return filtered.toString();
+        } catch (Throwable deniedOrUnavailable) { return ""; }
     }
 
     static boolean resolveIfPossible(Throwable error, Activity activity) {
@@ -280,11 +313,6 @@ final class SamsungHealthRuntime {
         return set;
     }
 
-    private static boolean hasAllPermissions(Object store) throws Exception {
-        Set<Object> required = requiredPermissions();
-        return grantedPermissions(store, required).containsAll(required);
-    }
-
     private static Set<Object> grantedPermissions(Object store, Set<Object> required)
             throws Exception {
         Object future = invoke(store, "getGrantedPermissionsAsync", required);
@@ -342,14 +370,11 @@ final class SamsungHealthRuntime {
         );
 
         Object latest = null;
-        LocalDateTime latestEnd = null;
+        Instant latestEnd = null;
         for (Object point : points) {
-            Object end = tryInvoke(point, "getEndLocalDateTime");
-            Object start = tryInvoke(point, "getStartLocalDateTime");
-            LocalDateTime candidate = end instanceof LocalDateTime
-                    ? (LocalDateTime) end
-                    : start instanceof LocalDateTime ? (LocalDateTime) start : null;
-            if (candidate != null && (latestEnd == null || candidate.isAfter(latestEnd))) {
+            Instant candidate = instantValue(tryInvoke(point, "getEndTime"));
+            if (candidate != null && !candidate.isAfter(Instant.now())
+                    && (latestEnd == null || candidate.isAfter(latestEnd))) {
                 latest = point;
                 latestEnd = candidate;
             }
@@ -364,11 +389,33 @@ final class SamsungHealthRuntime {
         Object end = tryInvoke(latest, "getEndLocalDateTime");
 
         Duration d = durationValue(duration);
-        json.put("sleepMinutes", d == null ? 0 : Math.max(0, d.toMinutes()));
-        json.put("sleepScore", Math.max(0, Math.round(numberValue(score))));
-        json.put("sleepStart", start == null ? "" : start.toString());
-        json.put("sleepEnd", end == null ? "" : end.toString());
+        json.put("sleepMinutes", d == null || d.isNegative() ? JSONObject.NULL : d.toMinutes());
+        putNumber(json, "sleepScore", score);
+        json.put("sleepStartLocal", start == null ? "" : start.toString());
+        json.put("sleepStart", JSONObject.NULL);
+        json.put("sleepEndLocal", end == null ? "" : end.toString());
+        json.put("sleepEnd", JSONObject.NULL);
+        preserveInstant(latest, "getStartTime", "sleepStartInstant", json);
+        preserveInstant(latest, "getEndTime", "sleepEndInstant", json);
         return json;
+    }
+
+    private static Instant instantValue(Object value) {
+        if (value instanceof Instant) return (Instant)value;
+        if (value instanceof OffsetDateTime) return ((OffsetDateTime)value).toInstant();
+        if (value instanceof ZonedDateTime) return ((ZonedDateTime)value).toInstant();
+        return null;
+    }
+
+    // Preserve an absolute time/offset only when supplied by the SDK. Never attach the
+    // current phone timezone to a historical LocalDateTime (travel/DST ambiguity).
+    private static void preserveInstant(Object point, String method, String key, JSONObject json) throws Exception {
+        Object value = tryInvoke(point, method);
+        if (value instanceof Instant || value instanceof OffsetDateTime || value instanceof ZonedDateTime) {
+            String absolute = value instanceof ZonedDateTime ? ((ZonedDateTime)value).toOffsetDateTime().toString() : value.toString();
+            json.put(key, absolute);
+            json.put(key.replace("Instant", ""), absolute);
+        }
     }
 
     private static JSONObject latestEnergyScore(Object store) throws Exception {
@@ -404,23 +451,25 @@ final class SamsungHealthRuntime {
         if (latest == null) return json;
 
         Object value = invoke(latest, "getValue", scoreField);
-        json.put(
-                "energyScore",
-                Math.max(0, Math.min(100, Math.round(numberValue(value))))
-        );
+        if (value instanceof Number && Double.isFinite(((Number)value).doubleValue())
+                && ((Number)value).doubleValue() >= 0 && ((Number)value).doubleValue() <= 100)
+            json.put("energyScore", Math.round(((Number)value).doubleValue()));
+        else json.put("energyScore", JSONObject.NULL);
         json.put(
                 "energyDate",
                 latestStart == null ? "" : latestStart.toLocalDate().toString()
         );
+        Object zone = tryInvoke(latest, "getZoneOffset");
+        if (!(zone instanceof ZoneOffset)) zone = tryInvoke(latest, "getStartZoneOffset");
+        Object absolute = tryInvoke(latest, "getStartTime");
+        if (absolute instanceof OffsetDateTime) zone = ((OffsetDateTime)absolute).getOffset();
+        if (absolute instanceof ZonedDateTime) zone = ((ZonedDateTime)absolute).getZone();
+        if (zone instanceof ZoneId) json.put("energyZoneId", zone.toString());
         return json;
     }
 
     private static Duration durationValue(Object value) {
         return value instanceof Duration ? (Duration) value : null;
-    }
-
-    private static double numberValue(Object value) {
-        return value instanceof Number ? ((Number) value).doubleValue() : 0d;
     }
 
     private static List<?> listValue(Object value) {

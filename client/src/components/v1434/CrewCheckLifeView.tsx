@@ -16,6 +16,9 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { captureAuthSession } from '@/lib/authClient';
+import { ingestCompanionSummary, ingestManualSummary } from '@/lib/lifeConcierge';
+import { isLifeHealthCacheKey, readLifeHealthCache, writeLifeHealthCache, clearCompanionHealthCache, type LifeHealthSession } from '@/lib/lifeHealthCache';
 
 type NextProgram = {
   title?: string;
@@ -45,7 +48,8 @@ type LifeProfile = {
 };
 
 type ManualSummary = {
-  sleepHours: number;
+  sleepHours?: number;
+  sleepReported?: boolean;
   steps: number;
   activityMinutes: number;
   studyMinutes: number;
@@ -69,6 +73,7 @@ type NativeHealthSummary = {
   automatic?: boolean;
   source?: string;
   generatedAtEpochMs?: number;
+  validUntilEpochMs?: number;
   energyScore?: number | null;
   sleepScore?: number | null;
   caloriesBurned?: number | null;
@@ -80,6 +85,7 @@ type NativeHealthSummary = {
   steps?: number | null;
   distanceMeters?: number | null;
   activityMinutes?: number | null;
+  activeMinutes?: number | null;
   restingHeartRateAverage?: number | null;
   capturedAt?: string;
 };
@@ -99,7 +105,6 @@ const DEFAULT_PROFILE: LifeProfile = {
 };
 
 const DEFAULT_MANUAL: ManualSummary = {
-  sleepHours: 0,
   steps: 0,
   activityMinutes: 0,
   studyMinutes: 0,
@@ -108,6 +113,10 @@ const DEFAULT_MANUAL: ManualSummary = {
 };
 
 function readStored<T>(key: string, fallback: T): T {
+  if (isLifeHealthCacheKey(key)) {
+    const owned = readLifeHealthCache(captureAuthSession(), key, fallback);
+    return owned && typeof owned === 'object' ? { ...fallback, ...owned } : fallback;
+  }
   try {
     const raw = localStorage.getItem(key);
     return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
@@ -116,7 +125,8 @@ function readStored<T>(key: string, fallback: T): T {
   }
 }
 
-function writeStored(key: string, value: unknown) {
+function writeStored(key: string, value: unknown, session: LifeHealthSession = captureAuthSession()) {
+  if (isLifeHealthCacheKey(key)) { writeLifeHealthCache(session, key, value); return; }
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
@@ -131,7 +141,7 @@ function numberOrZero(value: unknown): number {
 }
 
 function hoursLabel(minutes?: number | null): string {
-  if (!Number.isFinite(Number(minutes)) || Number(minutes) <= 0) return 'Sem dado';
+  if (minutes == null || !Number.isFinite(Number(minutes)) || Number(minutes) < 0) return 'Sem dado';
   const total = Math.round(Number(minutes));
   const hours = Math.floor(total / 60);
   const rest = total % 60;
@@ -155,6 +165,7 @@ function integrationLabel(status: NativeHealthStatus): string {
 }
 
 export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }) {
+  const healthSession = useMemo(() => captureAuthSession(), []);
   const [consent, setConsent] = useState<LifeConsent>(() => readStored(KEYS.consent, { active: false, acceptedAt: '', policyVersion: '1.0' }));
   const [consentChecked, setConsentChecked] = useState(false);
   const [profile, setProfile] = useState<LifeProfile>(() => {
@@ -190,6 +201,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const appleBridge = (window as any).webkit?.messageHandlers?.CrewCheckHealthKit;
 
   function postAndroid(action: string, payload: Record<string, unknown> = {}): boolean {
+    if (!healthSession.token || !healthSession.isCurrent()) return false;
     if (!androidBridge?.postMessage) return false;
     try {
       androidBridge.postMessage(JSON.stringify({ action, ...payload }));
@@ -201,10 +213,12 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
 
   useEffect(() => {
     const onStatus = (event: Event) => setNativeStatus(parseNativePayload((event as CustomEvent).detail) as NativeHealthStatus);
+    const session = healthSession;
     const onSummary = (event: Event) => {
+      if (!session.token || !session.isCurrent()) return;
       const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
       setNativeSummary(detail);
-      if (detail.ok) writeStored(KEYS.nativeSummary, detail);
+      if (detail.ok) writeStored(KEYS.nativeSummary, detail, session);
     };
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
@@ -217,7 +231,20 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
 
   useEffect(() => {
     const native = (window as any).AndroidCrewCheckNative;
+    const session = captureAuthSession();
+    let cancelled = false;
+    const clearCompanion = () => {
+      cancelled = true;
+      setCompanionSummary({});
+      setNativeSummary({});
+      setManual(DEFAULT_MANUAL);
+      setProfile(DEFAULT_PROFILE);
+      setConsent({ active: false, acceptedAt: '', policyVersion: '1.0' });
+      setWatchMirrorEnabled(false);
+      try { clearCompanionHealthCache(session); } catch {}
+    };
     const readCompanion = () => {
+      if (cancelled || !session.isCurrent()) return;
       try {
         const statusRaw = native?.lifeCompanionStatus?.();
         const status = typeof statusRaw === 'string' ? JSON.parse(statusRaw) : (statusRaw || {});
@@ -225,43 +252,45 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
         const summaryRaw = native?.readLifeCompanionSummary?.();
         const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : (summaryRaw || {});
         if (summary && typeof summary === 'object' && summary.automatic) {
-          const normalized = { ...summary, ok: true, source: 'samsung_health' };
+          const normalized = { ...summary, activityMinutes: summary.activeMinutes ?? null, ok: true, source: 'samsung_health' };
           setCompanionSummary(normalized);
           try {
-            localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
-              ...normalized,
-              capturedAt: Number(normalized.generatedAtEpochMs) > 0
-                ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-                : new Date().toISOString(),
-              source: 'samsung-companion',
-            }));
+            ingestCompanionSummary({ ...normalized, source: 'samsung_health' }, session);
             window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
           } catch {}
+        } else {
+          setCompanionSummary({});
+          clearCompanionHealthCache(session);
         }
       } catch {}
     };
     const onCompanion = (event: Event) => {
+      if (cancelled || !session.isCurrent()) return;
       const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
       if (detail && detail.automatic) {
-        const normalized = { ...detail, ok: true, source: 'samsung_health' };
+        const normalized = { ...detail, activityMinutes: detail.activeMinutes ?? null, ok: true, source: 'samsung_health' };
         setCompanionSummary(normalized);
         setCompanionStatus((current) => ({ ...current, installed: true, state: 'connected', automatic: true }));
         try {
-          localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
-            ...normalized,
-            capturedAt: Number(normalized.generatedAtEpochMs) > 0
-              ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-              : new Date().toISOString(),
-            source: 'samsung-companion',
-          }));
+          ingestCompanionSummary({ ...normalized, source: 'samsung_health' }, session);
           window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
         } catch {}
+      } else {
+        setCompanionSummary({});
+        clearCompanionHealthCache(session);
       }
     };
     readCompanion();
+    window.addEventListener('crewcheck:life-cache-invalidated', clearCompanion);
+    window.addEventListener('crewcheck:auth-will-change', clearCompanion);
+    window.addEventListener('crewcheck:auth-expired', clearCompanion);
     window.addEventListener('crewcheck:life-companion-summary', onCompanion);
     window.addEventListener('focus', readCompanion);
     return () => {
+      cancelled = true;
+      window.removeEventListener('crewcheck:life-cache-invalidated', clearCompanion);
+      window.removeEventListener('crewcheck:auth-will-change', clearCompanion);
+      window.removeEventListener('crewcheck:auth-expired', clearCompanion);
       window.removeEventListener('crewcheck:life-companion-summary', onCompanion);
       window.removeEventListener('focus', readCompanion);
     };
@@ -275,6 +304,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       && companionStatus.state === 'connected'
       && companionAgeMs >= 0
       && companionAgeMs <= 6 * 60 * 60 * 1000
+      && Number(companionSummary.validUntilEpochMs) > Date.now()
   );
   const effectiveSummary = companionFresh ? companionSummary : nativeSummary;
   const automaticSamsung = companionFresh;
@@ -315,6 +345,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
           : '';
 
   function openCompanionStore() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const native = (window as any).AndroidCrewCheckNative;
     try {
       if (native?.openLifeCompanionStore?.()) return;
@@ -328,6 +359,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function migrateCompanionToOfficialPlay() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const native = (window as any).AndroidCrewCheckNative;
     try {
       if (native?.migrateLifeCompanionToPlay?.()) {
@@ -340,15 +372,20 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   const metrics = useMemo(() => {
-    const sleepHours = numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
+    const manualSleepAvailable = typeof manual.sleepHours === 'number' && Number.isFinite(manual.sleepHours)
+      && manual.sleepHours >= 0 && (manual.sleepHours > 0 || manual.sleepReported === true);
+    const sleepHours = automaticSamsung ? (effectiveSummary.sleepMinutes == null || !Number.isFinite(effectiveSummary.sleepMinutes) || effectiveSummary.sleepMinutes < 0 ? null : effectiveSummary.sleepMinutes / 60)
+      : numberOrZero(effectiveSummary.sleepMinutes) > 0 ? numberOrZero(effectiveSummary.sleepMinutes) / 60
+      : manualSleepAvailable ? manual.sleepHours! : null;
     return {
       sleepHours,
-      steps: numberOrZero(effectiveSummary.steps) || numberOrZero(manual.steps),
-      activityMinutes: numberOrZero(effectiveSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
+      sleepAvailable: sleepHours !== null,
+      steps: automaticSamsung ? effectiveSummary.steps ?? null : numberOrZero(effectiveSummary.steps) || numberOrZero(manual.steps),
+      activityMinutes: automaticSamsung ? effectiveSummary.activityMinutes ?? null : numberOrZero(effectiveSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
       studyMinutes: numberOrZero(manual.studyMinutes),
       leisureMinutes: numberOrZero(manual.leisureMinutes),
     };
-  }, [manual, effectiveSummary]);
+  }, [manual, effectiveSummary, automaticSamsung]);
 
   useEffect(() => {
     if (!consent.active || !watchMirrorEnabled || (!effectiveSummary.ok && !effectiveSummary.automatic)) return;
@@ -356,26 +393,31 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     if (!bridge?.publishWatchCrewLife) return;
 
     const now = Date.now();
+    // Samsung projection already bounds every metric by its source age. Never renew on render.
+    const samsung = effectiveSummary.source === 'samsung_health';
+    const generated = samsung ? Number(effectiveSummary.generatedAtEpochMs) : now;
+    const validUntil = samsung ? Number(effectiveSummary.validUntilEpochMs) : now + 6 * 60 * 60 * 1000;
+    if (!Number.isFinite(generated) || generated > now || !(validUntil > now)) return;
     const payload: Record<string, unknown> = {
       schemaVersion: 1,
-      generatedAtEpochMs: now,
-      validUntilEpochMs: now + 6 * 60 * 60 * 1000,
+      generatedAtEpochMs: generated,
+      validUntilEpochMs: validUntil,
       recoveryLabel: 'DESCONHECIDA',
     };
-    if (Number.isFinite(Number(effectiveSummary.sleepMinutes))) {
+    if (effectiveSummary.sleepMinutes != null && Number.isFinite(Number(effectiveSummary.sleepMinutes))) {
       payload.sleepMinutes = Math.max(0, Math.round(Number(effectiveSummary.sleepMinutes)));
       payload.sleepLabel = hoursLabel(effectiveSummary.sleepMinutes);
     }
-    if (Number.isFinite(Number(effectiveSummary.steps))) {
+    if (effectiveSummary.steps != null && Number.isFinite(Number(effectiveSummary.steps))) {
       payload.steps = Math.max(0, Math.round(Number(effectiveSummary.steps)));
     }
-    if (Number.isFinite(Number(effectiveSummary.activityMinutes))) {
+    if (effectiveSummary.activityMinutes != null && Number.isFinite(Number(effectiveSummary.activityMinutes))) {
       payload.activeMinutes = Math.max(0, Math.round(Number(effectiveSummary.activityMinutes)));
     }
-    if (Number.isFinite(Number(effectiveSummary.restingHeartRateAverage))) {
+    if (effectiveSummary.restingHeartRateAverage != null && Number.isFinite(Number(effectiveSummary.restingHeartRateAverage))) {
       payload.restingHeartRate = Math.max(0, Math.round(Number(effectiveSummary.restingHeartRateAverage)));
     }
-    if (effectiveSummary.source === 'samsung_health' && Number(effectiveSummary.energyScore) > 0) {
+    if (effectiveSummary.source === 'samsung_health' && effectiveSummary.energyScore != null && Number(effectiveSummary.energyScore) >= 0) {
       payload.recoveryScore = Math.max(0, Math.min(100, Math.round(Number(effectiveSummary.energyScore))));
       payload.scoreKind = 'ENERGY';
       payload.detail = 'Samsung Health · Energy Score';
@@ -387,14 +429,14 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const recommendation = useMemo(() => {
     const program = nextProgram?.title || (nextProgram?.kind === 'flight' ? 'próxima programação' : 'próximo compromisso operacional');
     const presentation = nextProgram?.presentation || nextProgram?.departure;
-    if (profile.areas.sleep && metrics.sleepHours > 0 && metrics.sleepHours < profile.sleepTarget) {
+    if (profile.areas.sleep && metrics.sleepAvailable && metrics.sleepHours != null && metrics.sleepHours >= 0 && metrics.sleepHours < profile.sleepTarget) {
       return {
         tone: 'rest',
         title: 'Preserve seu descanso antes de encaixar novas atividades',
         body: `Seu registro mais recente está ${Math.max(0, profile.sleepTarget - metrics.sleepHours).toFixed(1).replace('.', ',')} h abaixo da meta pessoal. ${presentation ? `A apresentação do ${program} está indicada para ${presentation}.` : 'Confira a próxima programação antes de organizar estudo ou treino.'}`,
       };
     }
-    if (profile.areas.activity && metrics.activityMinutes < 20) {
+    if (profile.areas.activity && metrics.activityMinutes != null && metrics.activityMinutes < 20) {
       return {
         tone: 'activity',
         title: 'Há espaço para uma atividade curta, se sua agenda permitir',
@@ -413,17 +455,19 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       title: 'Rotina registrada sem ajuste urgente',
       body: 'Mantenha a próxima programação como referência e atualize os registros quando sua rotina mudar.',
     };
-  }, [metrics, nextProgram, profile]);
+  }, [metrics, nextProgram, profile, automaticSamsung]);
 
   function activateLife() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     if (!consentChecked) return;
     const next: LifeConsent = { active: true, acceptedAt: new Date().toISOString(), policyVersion: '1.0' };
     setConsent(next);
-    writeStored(KEYS.consent, next);
+    writeStored(KEYS.consent, next, healthSession);
     toast.success('CrewCheck Life ativado. Nenhuma permissão de saúde foi solicitada ainda.');
   }
 
   function saveProfile() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const safe: LifeProfile = {
       ...profile,
       sleepTarget: Math.min(12, Math.max(1, numberOrZero(profile.sleepTarget) || 7.5)),
@@ -431,13 +475,17 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       trainingTargetMinutes: Math.min(1440, Math.max(0, numberOrZero(profile.trainingTargetMinutes))),
     };
     setProfile(safe);
-    writeStored(KEYS.profile, safe);
+    writeStored(KEYS.profile, safe, healthSession);
     toast.success('Objetivos do CrewCheck Life salvos neste aparelho.');
   }
 
   function saveManual() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
+    const sleepReported = typeof manual.sleepHours === 'number' && Number.isFinite(manual.sleepHours)
+      && manual.sleepHours >= 0 && (manual.sleepHours > 0 || manual.sleepReported === true);
     const safe: ManualSummary = {
-      sleepHours: Math.min(24, numberOrZero(manual.sleepHours)),
+      sleepHours: sleepReported ? Math.min(24, manual.sleepHours!) : undefined,
+      sleepReported,
       steps: Math.min(200000, Math.round(numberOrZero(manual.steps))),
       activityMinutes: Math.min(1440, Math.round(numberOrZero(manual.activityMinutes))),
       studyMinutes: Math.min(1440, Math.round(numberOrZero(manual.studyMinutes))),
@@ -445,23 +493,27 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       updatedAt: new Date().toISOString(),
     };
     setManual(safe);
-    writeStored(KEYS.manual, safe);
+    writeStored(KEYS.manual, safe, healthSession);
+    ingestManualSummary(safe, healthSession);
     toast.success('Resumo manual atualizado localmente.');
   }
 
   function connectAndroid() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     if (!postAndroid('requestPermissions', { consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('Abra esta opção no aplicativo Android CrewCheck. No navegador, use o lançamento manual.');
     }
   }
 
   function refreshAndroid() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     if (!postAndroid('readSummary', { days: 7, consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('A atualização automática está disponível no aplicativo Android.');
     }
   }
 
   function setWatchMirror(enabled: boolean) {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const bridge = (window as any).AndroidCrewCheckNative;
     if (!bridge?.setWatchLifeConsent) {
       toast.info('O espelhamento do CrewLife está disponível no aplicativo Android CrewCheck.');
@@ -480,6 +532,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function connectApple() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     if (!appleBridge) {
       toast.info('Apple Health será liberado junto com o aplicativo nativo iOS. O modo manual já funciona no iPhone e iPad.');
       return;
@@ -488,6 +541,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function revokeNative() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     postAndroid('revokePermissions');
     try { appleBridge?.postMessage({ action: 'revokeOrOpenSettings' }); } catch {}
     setNativeSummary({});
@@ -497,13 +551,15 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function pauseLife() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const next = { ...consent, active: false };
     setConsent(next);
-    writeStored(KEYS.consent, next);
+    writeStored(KEYS.consent, next, healthSession);
     toast.success('CrewCheck Life pausado. Seus objetivos foram mantidos.');
   }
 
   function deleteLife() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     if (!window.confirm('Apagar consentimento, objetivos e todos os resumos locais do CrewCheck Life neste aparelho?')) return;
     postAndroid('revokePermissions');
     Object.values(KEYS).forEach((key) => { try { localStorage.removeItem(key); } catch {} });
@@ -547,22 +603,22 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       <button onClick={() => setWhyOpen((value) => !value)}>Por que estou vendo isso? {whyOpen ? <ChevronUp/> : <ChevronDown/>}</button>
       {whyOpen && <ul>
         <li>{nextProgram?.title ? `Próxima programação: ${nextProgram.title}${nextProgram.presentation ? ` às ${nextProgram.presentation}` : ''}.` : 'Nenhuma programação completa foi informada para esta orientação.'}</li>
-        <li>Meta pessoal de sono: {profile.sleepTarget.toFixed(1).replace('.', ',')} h; registro considerado: {metrics.sleepHours ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'sem dado'}.</li>
-        <li>Atividade considerada: {metrics.activityMinutes} min; estudo informado: {metrics.studyMinutes} min.</li>
+        <li>Meta pessoal de sono: {profile.sleepTarget.toFixed(1).replace('.', ',')} h; registro considerado: {metrics.sleepAvailable && metrics.sleepHours != null ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'sem dado'}.</li>
+        <li>Atividade considerada: {metrics.activityMinutes == null ? 'sem dado' : `${metrics.activityMinutes} min`}; estudo informado: {metrics.studyMinutes} min.</li>
         <li>A orientação é uma sugestão de rotina e não substitui avaliação pessoal ou canal oficial de fadiga.</li>
       </ul>}
     </section>
 
     {automaticSamsung && <section className="cc-life-auto-source">
       <div><small>FONTE AUTOMÁTICA</small><strong>Samsung Health</strong><span>Sincronizado pelo CrewLife Companion</span></div>
-      {Number(companionSummary.energyScore || 0) > 0 && <b>Energia {Math.round(Number(companionSummary.energyScore))}</b>}
+      {companionSummary.energyScore != null && Number(companionSummary.energyScore) >= 0 && <b>Energia {Math.round(Number(companionSummary.energyScore))}</b>}
       <button onClick={() => (window as any).AndroidCrewCheckNative?.openLifeCompanion?.()}>Abrir Companion</button>
     </section>}
 
     <section className="cc-life-metrics" aria-label="Resumo do CrewCheck Life">
-      <article><MoonStar/><small>Sono recente</small><strong>{metrics.sleepHours ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : `meta ${profile.sleepTarget.toFixed(1).replace('.', ',')} h`}</span></article>
-      <article><Footprints/><small>Passos</small><strong>{metrics.steps ? metrics.steps.toLocaleString('pt-BR') : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'entrada manual'}</span></article>
-      <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'sem avaliação clínica'}</span></article>
+      <article><MoonStar/><small>Sono recente</small><strong>{metrics.sleepAvailable && metrics.sleepHours != null ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : `meta ${profile.sleepTarget.toFixed(1).replace('.', ',')} h`}</span></article>
+      <article><Footprints/><small>Passos</small><strong>{metrics.steps != null && (automaticSamsung || metrics.steps > 0) ? metrics.steps.toLocaleString('pt-BR') : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'entrada manual'}</span></article>
+      <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes != null && (automaticSamsung || metrics.activityMinutes > 0) ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'sem avaliação clínica'}</span></article>
       <article><BookOpen/><small>Estudo</small><strong>{metrics.studyMinutes ? `${metrics.studyMinutes} min` : 'Sem dado'}</strong><span>meta {profile.studyTargetMinutes} min</span></article>
     </section>
 
@@ -618,7 +674,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     <section className="cc-life-block">
       <header><div><small>ENTRADA MANUAL</small><h2>Resumo pessoal</h2><p>Use quando não quiser ou não puder conectar um repositório de saúde.</p></div><button onClick={saveManual}>Salvar resumo</button></header>
       <div className="cc-life-form-grid five">
-        <label><span>Sono recente (h)</span><input type="number" min="0" max="24" step="0.25" value={manual.sleepHours} onChange={(event) => setManual({ ...manual, sleepHours: Number(event.target.value) })}/></label>
+        <label><span>Sono recente (h)</span><input type="number" min="0" max="24" step="0.25" placeholder="Não informado" value={manual.sleepHours === undefined || (manual.sleepHours === 0 && manual.sleepReported !== true) ? '' : manual.sleepHours} onChange={(event) => setManual({ ...manual, sleepHours: event.target.value.trim() === '' ? undefined : Number(event.target.value), sleepReported: event.target.value.trim() !== '' })}/></label>
         <label><span>Passos</span><input type="number" min="0" max="200000" step="100" value={manual.steps} onChange={(event) => setManual({ ...manual, steps: Number(event.target.value) })}/></label>
         <label><span>Atividade (min)</span><input type="number" min="0" max="1440" step="5" value={manual.activityMinutes} onChange={(event) => setManual({ ...manual, activityMinutes: Number(event.target.value) })}/></label>
         <label><span>Estudo (min)</span><input type="number" min="0" max="1440" step="5" value={manual.studyMinutes} onChange={(event) => setManual({ ...manual, studyMinutes: Number(event.target.value) })}/></label>
