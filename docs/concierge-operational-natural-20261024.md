@@ -60,3 +60,21 @@ Existing stay-menu, journey, navigation, natural-language and human-voice gates
 must remain intact. No credentials, network provider, policy, permissions or
 transport handlers are changed. Provider activation and broader sending remain
 outside this draft. Tests with mocks do not assess a real generative model.
+
+## Complete WhatsApp menu
+
+Greetings and explicit menu/help/start requests return one complete textual menu,
+with 17 numbered options, examples and no hidden “Mais” category. Numbers route
+only into existing producers or explicit app handoffs; ordinary questions remain
+ordinary questions. Telegram keeps its current inline navigation. The menu makes
+no interactive-button promise and never splits or schedules paid messages. Its
+constant text is below the existing 4000-character transport cap. The greeting
+path does not save context; delegated scale questions still use the existing
+context-writing wrapper. The neutral single-message production test remains
+unchanged and does not automatically invoke this menu.
+
+The Telegram messaging alternative is shown as free; feature access still depends
+on the account and available data. No claim of free external AI or calls is made.
+The menu explicitly retains the restricted WhatsApp pilot boundary. Pulse launch
+communication and commercial quotas are prepared only in the accompanying plan;
+no news, plan, billing or entitlement is changed.

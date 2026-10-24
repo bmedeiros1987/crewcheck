@@ -1,3 +1,4 @@
+import { whatsappTextMenu } from './whatsapp-text-menu.mjs';
 import { operationalQuestion } from './operational-question.mjs';
 import { dbPool, safeEmail } from '../v139/common.mjs';
 
@@ -73,6 +74,9 @@ const hotelHandoff = `${appPath}\nSelecione a data e o pernoite certo, toque em 
 const roomHandoff = `${appPath}\nSelecione o pernoite e toque em “Editar pernoite”. Confira a data e o hotel, preencha o quarto desta estadia e toque em “Salvar hotel”.\n\nO quarto é opcional. Não use o quarto de uma estadia anterior. O cadastro por esta conversa ainda não está disponível.`;
 
 export async function stayMenuReply(text, profile = {}, deps = {}) {
+  const textMenu = whatsappTextMenu(text, profile);
+  if (textMenu?.reply) return { handled: true, reply: textMenu.reply };
+  if (textMenu?.text) return { handled: false, text: textMenu.text };
   const intent = stayMenuIntent(text);
   if (!intent) return { handled: false };
   if (intent.kind === 'logistics-question') {
