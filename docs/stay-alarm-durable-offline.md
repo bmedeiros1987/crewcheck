@@ -123,3 +123,20 @@ A autorização de notificações não programa nem envia nada sozinha. O alarme
 existe após confirmação explícita e recibo scheduled; prontidão de capacidades
 não prova entrega. Bateria/carregamento e demais condições físicas precisam ser
 registrados como condições do ensaio, sem usar exceção de bateria como atalho.
+
+## Invalidação depois de reabrir o runtime
+
+O mapa JS registra apenas jobs observados pela página atual; mapa vazio não é
+inventário completo do journal Android. A regressão reproduziu a ausência de
+revoke depois de reautenticar um runtime novo com autoridade durável anterior.
+Agora uma invalidação explícita revoga o owner/epoch atual mesmo quando não há
+keys conhecidas. Depois de cancelar keys conhecidas também revoga esse escopo,
+porque pode haver outro job persistido não observado. Suspensão conserva o
+escopo para essa revogação; resposta antiga A/epoch anterior não revoga B/epoch
+novo. Falha de ACK permanece unknown, sem recibo de cancelamento inventado.
+
+A invalidação deixa o adapter indisponível. Antes de confirmar outro horário,
+o operador usa o botão já existente Validar sessão deste aparelho; não há
+reauth, rearmamento ou programação automática adicionada por esta correção.
+A reautenticação isolada continua preservando os jobs; o tombstone ocorre quando
+o editor/ciclo de dados pede invalidação, não apenas por autenticar a mesma conta.

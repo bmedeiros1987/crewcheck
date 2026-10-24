@@ -64,18 +64,25 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
     atomicReplace:true,acknowledgedCancel:true,
     async invalidate(){const current=adapter,scope=activeScope;
       if(!current||!scope){
-        if(inactiveScope&&inactiveScope.account===readAccount()&&jobs(inactiveScope).size)return revokeScope(inactiveScope);
+        if(inactiveScope&&inactiveScope.account===readAccount())return revokeScope(inactiveScope);
         return {state:'no-current-session-jobs'};
       }
+      if(scope.account!==readAccount())return {state:'superseded-session',cancelConfirmed:false};
       const programmed=jobs(scope);
-      if(!programmed.size)return {state:'no-known-jobs'};
+      // This map contains only calls observed by this page, never a complete
+      // native journal inventory. Empty after reopening cannot authorize jobs.
+      if(!programmed.size)return revokeScope(scope);
       session=`${session}:edit-${++sequence}`;
       for(const key of [...programmed]){
         if(activeScope!==scope)return {state:'superseded-session',cancelConfirmed:false};
         const result=await current.cancel({key});
         if(result.state==='cancelled'&&result.key===key)programmed.delete(key);
         else return revokeScope(scope);
-      }return {state:'cancelled'};
+      }
+      // Cancelled known keys do not prove that an older native job is absent.
+      // Tombstone this exact scope; a newer account/epoch is fenced above and
+      // by revokeScope. Revalidation uses the existing explicit UI action.
+      return revokeScope(scope);
     },
     uncertainKeys:()=>[...scopes.values()].flatMap(scope=>[...scope.keys]),
     uncertainJobs:()=>[...scopes.values()].flatMap(scope=>[...scope.keys].map(key=>({key,account:scope.account,epoch:scope.epoch}))),
