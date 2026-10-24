@@ -11,7 +11,8 @@ const assertions=["assert.ok(Math.abs(after.y-before.y)<=1",'assert.ok(Math.abs(
 for(const assertion of assertions)assert(original.includes(assertion),'original strict assertion exists');
 const stable=`await page.evaluate(async()=>{let prior='',same=0;for(let frame=0;frame<120;frame++){await new Promise(r=>requestAnimationFrame(r));const v=document.querySelector('.cc-doc-viewport');const next=JSON.stringify([scrollY,v.scrollLeft,v.scrollTop]);same=next===prior?same+1:0;prior=next;if(same>=3)return;}throw Error('Pre-action scroll did not stabilize');});`;
 const trials=[];
-for(const mode of ['original','settle','trial'])for(let repeat=1;repeat<=2;repeat++){
+const candidate=original.includes('page.evaluate(stabilizeAimsPreAction)');
+for(const mode of (candidate?['original']:['original','settle','trial']))for(let repeat=1;repeat<=2;repeat++){
  let generated=original;
  assert(generated.includes("for(const theme of ['light','dark'])for(const size of [100,200])for(const width of [320,390])"),'retain all eight cases and original order');
  if(mode!=='original'){

@@ -7,6 +7,9 @@ on:
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'scripts/diagnose-aims-preaction.cjs'
+      - 'scripts/lib/aims-preaction-stability.cjs'
+      - 'scripts/regression-aims-preaction-stability.cjs'
+      - 'scripts/regression-aims-document-app.cjs'
       - '.github/workflows/aims-document-browser.yml'
 permissions:
   contents: read
@@ -18,10 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - name: exact-base
-            ref: d4deb413e67537a10aed78012bdb6c07fe71a09d
-          - name: financial-head
-            ref: f0820b705c09d9ceeab3c253ba69ffd9ae54d8d2
+          - name: stabilized-candidate
+            ref: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -37,6 +38,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Reject perpetual motion and application layout shifts
+        run: node scripts/regression-aims-preaction-stability.cjs
       - name: Prepare and build exact target
         run: |
           node scripts/v139/apply.mjs
