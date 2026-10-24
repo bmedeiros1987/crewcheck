@@ -55,7 +55,7 @@ export function createInfobipWhatsAppApplicationHost(options={}) {
   starting=Promise.resolve().then(async()=>{
    try{
     if(closed)throw unavailable();
-    const policy=JSON.parse(environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY);
+    const policy=options.policy??JSON.parse(environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY);
     if(policy.version!==1||policy.ingress?.mode!=='render-managed-hmac'||
        environment.RENDER_SERVICE_ID!==policy.ingress.serviceId)throw unavailable();
     host=createInfobipWhatsAppHost({enabled:true,ingress:policy.ingress,lifecycle,
