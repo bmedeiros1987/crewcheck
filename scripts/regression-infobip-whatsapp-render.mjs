@@ -17,7 +17,7 @@ import {createInfobipInboundReceiver} from '../server/infobip-whatsapp-candidate
 import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
 import {menuGreeting} from '../server/concierge/telegram-menu.mjs';
 import {fixture,sender,recipient,epoch,secrets} from './fixtures/infobip-production-sql.mjs';
-import {configureSyntheticOperationalPilot} from './fixtures/infobip-operational-pilot.mjs';
+import {configureSyntheticOperationalPilot,configureSyntheticPilotRenewal} from './fixtures/infobip-operational-pilot.mjs';
 import {INFOBIP_OPERATIONAL_PILOT_INPUTS} from '../server/infobip-whatsapp-operational-pilot.mjs';
 const prepared=process.argv.includes('--prepared'),origin='https://crewcheck.synthetic.invalid',path='/api/infobip/whatsapp/webhook';
 const serviceId='srv-syntheticcrewcheck',baseUrl='https://synthetic.api.infobip.com';
@@ -317,11 +317,34 @@ for(const change of [f=>f.state.link.consent_concierge=0,f=>f.state.link.revoked
   assert.equal(f.stats.sends.length,2);assert.equal(f.stats.engineInputs[1],'/proximo');
   if(prepared){assert.match(f.stats.sends[1].content.text,/SYNTH-PILOT/);assert(!f.stats.sends[1].content.text.includes('HOTEL-FOREIGN'));assert.equal(f.stats.writes,1);}
   await s.close();s=await makeServer(f);
-  await post(s.port,packet('pilot-van',INFOBIP_OPERATIONAL_PILOT_INPUTS[2]));await flush();assert.equal(f.stats.sends.length,3);
+  await post(s.port,packet('pilot-van','Que horas a van me pega no hotel?'));await flush();assert.equal(f.stats.sends.length,3);
+  await post(s.port,packet('pilot-van-alias-retry','q hrs a van me busca no hotel?'));await flush();assert.equal(f.stats.sends.length,3,'alternate pickup wording cannot retry the used category');
   if(prepared)assert.match(f.stats.sends[2].content.text,/pickup ainda não está confirmado/i);
   await Promise.all(['four','five','six'].map(id=>post(s.port,packet('pilot-'+id,'menu'))));await flush();
   assert.equal(f.stats.sends.length,3);assert.equal(f.stats.engine,3);
   const quota=[...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission');assert.equal(quota.used,3);assert.equal(quota.limit,3);
+ }finally{await s.close();}
+}
+{
+ const f=configureSyntheticOperationalPilot(setup());let s=await makeServer(f);
+ const packet=(id,text,at=f.state.clock)=>JSON.stringify({results:[{...event(id),receivedAt:new Date(at).toISOString(),message:{type:'TEXT',text}}]});
+ const flush=async()=>{for(let i=0;i<8;i++){await nextTurn();await s.host.dispatch('0'.repeat(64));}};
+ try{
+  for(const [i,text]of INFOBIP_OPERATIONAL_PILOT_INPUTS.slice(0,2).entries()){
+   const id='renewal-prior-'+i;await post(s.port,packet(id,text));await flush();
+   const eventKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex');
+   const report={messageId:'cc-'+eventKey,to:recipient,sentAt:new Date(epoch).toISOString(),doneAt:new Date(epoch+1000).toISOString(),status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
+   assert.equal((await post(s.port,JSON.stringify({results:[report]}))).status,200);
+  }
+  assert.equal(f.stats.sends.length,2);const originalQuota=structuredClone([...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission'));
+  await s.close();configureSyntheticPilotRenewal(f);s=await makeServer(f);
+  await post(s.port,packet('renewal-old-window','Que horas a van me pega no hotel?',epoch));await flush();assert.equal(f.stats.sends.length,2);
+  await Promise.all(Array.from({length:4},()=>post(s.port,packet('renewal-pickup','Que horas a van me busca no hotel?'))));await flush();
+  assert.equal(f.stats.sends.length,3);if(prepared)assert.match(f.stats.sends[2].content.text,/pickup ainda não está confirmado/i);
+  const renewed=[...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission');
+  assert.equal(renewed.used,3);assert.equal(renewed.digest,originalQuota.digest);assert.equal(renewed.validUntil,originalQuota.validUntil);assert.equal(renewed.execution.revision,1);
+  await s.close();s=await makeServer(f);await post(s.port,packet('renewal-alias-retry','q hrs a van me pega no hotel?'));await flush();assert.equal(f.stats.sends.length,3);
+  f.state.clock=f.dependencies.configuration.operationalPilotRenewal.validUntil;await post(s.port,packet('renewal-expired','Que horas a van me pega no hotel?'));await flush();assert.equal(f.stats.sends.length,3);
  }finally{await s.close();}
 }
 for(const scenario of ['uncertain','expired-during-engine','revoked-during-engine','owner-changed-before-engine','owner-changed-before-first-receipt','owner-changed-during-engine']){

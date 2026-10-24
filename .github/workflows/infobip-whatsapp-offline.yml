@@ -8,6 +8,7 @@ on:
       - 'scripts/infobip-whatsapp-mysql-scenarios.mjs'
       - 'scripts/fixtures/infobip-production-sql.mjs'
       - 'scripts/fixtures/infobip-operational-pilot.mjs'
+      - 'scripts/fixtures/infobip-pilot-renewal-sql.mjs'
       - 'docs/infobip-whatsapp-production-composition.md'
       - 'docs/infobip-whatsapp-host-wiring.md'
       - 'docs/infobip-whatsapp-render-activation.md'
@@ -39,6 +40,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-hmac.mjs
           node scripts/regression-infobip-whatsapp-candidate.mjs
           node scripts/regression-infobip-whatsapp-operational-pilot.mjs
+          node scripts/regression-infobip-whatsapp-pilot-renewal.mjs
           node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
@@ -54,6 +56,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-hmac.mjs
           node scripts/regression-infobip-whatsapp-persistence.mjs
           node scripts/regression-infobip-whatsapp-operational-pilot.mjs
+          node scripts/regression-infobip-whatsapp-pilot-renewal.mjs
           node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
