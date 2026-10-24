@@ -13,6 +13,7 @@ on:
       - 'scripts/tests/*briefing*.mjs'
       - 'server.mjs'
       - 'scripts/regression-radar-operational-history.mjs'
+      - 'scripts/tests/operational-history-reader.test.mjs'
       - 'scripts/tests/operational-history.test.mjs'
       - 'scripts/regression-operational-history-mysql.mjs'
       - 'scripts/tests/telegram-operational-change.test.mjs'
@@ -41,7 +42,7 @@ jobs:
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-reader.test.mjs
           node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
@@ -103,6 +104,19 @@ jobs:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
           CREWCHECK_QA_OLD_HISTORY_READ: '1'
+      - name: Missing planner or dispatch reader wiring counterproofs
+        run: |
+          for boundary in producer dispatch; do
+            set +e
+            CREWCHECK_QA_OLD_READER_WIRING="$boundary" node scripts/regression-operational-history-mysql.mjs > "$RUNNER_TEMP/reader-$boundary.log" 2>&1
+            result=$?
+            set -e
+            test "$result" -ne 0
+            grep 'SCHEDULER_READER_WIRING: existing cycle must plan and dispatch through the same locked reader' "$RUNNER_TEMP/reader-$boundary.log"
+          done
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
       - name: Real SQL consent, competing claims and uncertain outcome
         run: |
           node scripts/regression-telegram-briefing-mysql.mjs
@@ -135,11 +149,17 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
           CREWCHECK_CONCIERGE_COMPOSITION_SOURCE: ${{ github.workspace }}/.ci-concierge-1203
+      - name: Compose entire OFF chain with pinned current main (QA only, never pushed)
+        run: |
+          git fetch --no-tags origin 3d506335ff7a293a9eb6c199682f5d88764d5039
+          git -c user.name='CrewCheck isolated QA' -c user.email='qa@example.invalid' merge --no-ff --no-edit 3d506335ff7a293a9eb6c199682f5d88764d5039
+          git rev-parse HEAD HEAD^1 HEAD^2
       - name: Canonical preparation and existing safeguards
         run: |
-          node scripts/v139/apply.mjs
+          npm run build
+          npx tsc --noEmit
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-reader.test.mjs
           node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs

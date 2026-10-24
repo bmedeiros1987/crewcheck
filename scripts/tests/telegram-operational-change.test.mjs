@@ -110,7 +110,7 @@ test('status proof is independent, temporal and exact occurrence; legacy status 
  for(const mutate of [s=>delete s.observation.departureStatusUpdate,s=>s.observation.departureStatusUpdate.status='cancelled',s=>s.observation.departureStatusUpdate.flight='LA999',s=>s.observation.departureStatusUpdate.updatedAt=new Date(NOW-1800001).toISOString(),s=>s.observation.sourceReceivedAt=now+1,s=>s.observation.operationalConflicts=['status']]){const s=copy(base);mutate(s);assert.equal(inspectOperationalChange(s,scope,'status',now).status,'blocked');}
 });
 test('existing timer and erasure include topic; no new polling/transport',async()=>{
- const s=readFileSync(new URL('../../server/telegram-fast-ack.mjs',import.meta.url),'utf8');assert.match(s,/summary.operationalChange = await runTelegramOperationalChangeCycle\(db\)/);
+ const s=readFileSync(new URL('../../server/telegram-fast-ack.mjs',import.meta.url),'utf8');assert.match(s,/summary.operationalChange = await runTelegramOperationalChangeCycle\(db, \{ readSource: readTelegramOperationalHistory \}\)/);
  const {notificationStateDeletionStatements}=await import('../../server/v139/notificationStateDeletion.mjs');assert.match(notificationStateDeletionStatements(EMAIL).map(([s])=>s).join(' '),/operational-change-event/);
  const mod=readFileSync(new URL('../../server/concierge/telegram-operational-change.mjs',import.meta.url),'utf8');assert.doesNotMatch(mod,/fetch\(|setInterval\(|setTimeout\(/);
 });

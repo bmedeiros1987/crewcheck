@@ -1,6 +1,7 @@
+import {createOperationalHistoryReader} from '../server/concierge/operational-history-reader.mjs';
 import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 import * as actualHistory from '../server/concierge/operational-history.mjs';
-import {telegramOperationalAuthority as authority} from '../server/concierge/telegram-briefing.mjs';
+import {telegramOperationalAuthority as authority,runTelegramBriefingCycle} from '../server/concierge/telegram-briefing.mjs';
 import {customGateSourceUpdate} from '../server/gate-source-update.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -16,7 +17,7 @@ const NOW=Date.parse('2032-10-06T06:00:00Z'),email='history@example.invalid',own
 const context={email,owner},options=()=>({enabled:true,now,lockSource:true});
 async function tx(fn){const c=await db.getConnection();try{await c.beginTransaction();const v=await fn(c);await c.commit();return v;}catch(e){await c.rollback();throw e;}finally{c.release();}}
 const currentScope=()=>tx(c=>scope(c,context,options()));
-const source=(c,who,opts)=>read(c,who,{...opts,enabled:true});
+const source=createOperationalHistoryReader({enabled:true});
 const observation=(identity,gate,offset)=>({ok:true,provider:'custom',...identity,gate,sourceReceivedAt:NOW+offset+100,departureGateUpdate:{schema:'crewcheck.departure-gate-update.v1',...identity,gate,updatedAt:new Date(NOW+offset).toISOString()}});
 try{
  assert.equal((await db.query('SELECT DATABASE() AS name'))[0][0].name,'crewcheck_notification_qa');
@@ -54,6 +55,19 @@ try{
  for(let n=0;n<200;n++){const [w]=await db.query('SELECT t.PROCESSLIST_ID FROM performance_schema.data_lock_waits w JOIN performance_schema.threads t ON t.THREAD_ID=w.REQUESTING_THREAD_ID WHERE t.PROCESSLIST_ID=?',[id]);if(w.length){blocked=true;break;}await new Promise(r=>setTimeout(r,10));}
  assert(blocked);await writer.commit();writer.release();let result;try{result=await pending;}finally{await reader.rollback();reader.release();}
  assert.equal(result.source.observation.gate,'27','HISTORY_STALE_READ: durable observation must be current after owner wait');
+ // Run the shipping scheduler function, not a second planner/dispatcher. The
+ // fixture DB clock maps existing NOW(3) expressions to the synthetic instant.
+ let cycleBody=fs.readFileSync('server/telegram-fast-ack.mjs','utf8').match(/async function runSchedulerCycle\(\) \{[\s\S]*?\n\}/)[0];
+ if(process.env.CREWCHECK_QA_OLD_READER_WIRING==='producer')cycleBody=cycleBody.replace('readSource: readTelegramOperationalHistory','readSource: undefined');
+ if(process.env.CREWCHECK_QA_OLD_READER_WIRING==='dispatch')cycleBody=cycleBody.replace('readOperationalChangeSource: readTelegramOperationalHistory','readOperationalChangeSource: undefined');
+ const cycleDb={query:(sql,args)=>db.query(sql.replaceAll('NOW(3)',`FROM_UNIXTIME(${now}/1000)`),args),getConnection:()=>db.getConnection()};
+ const cycle=new Function('dbPool','recordSchedulerHeartbeat','ensureNotificationTable','runTelegramBriefingCycle','runTelegramOperationalChangeCycle','readTelegramOperationalHistory','dispatchClaimedJob','deliverJob','linkedTelegramRecord','runCrewCheckPushQueue','runCommuteMonitorCycle',
+  `let schedulerRunning=false,lastCycle;${cycleBody};return {run:runSchedulerCycle,state:()=>lastCycle};`)(
+  async()=>cycleDb,async()=>{},async()=>{},runTelegramBriefingCycle,(d,o)=>runTelegramOperationalChangeCycle(d,{...o,enabled:true,clock:()=>now}),source,
+  (d,j,o)=>dispatchClaimedJob(d,j,{...o,operationalChangeEnabled:true,clock:()=>now}),async()=>{sends++;return {ok:true};},()=>assert.fail('Operational job must not use generic binding'),async()=>({status:'disabled'}),async()=>({status:'disabled'}));
+ await cycle.run();assert.equal(sends,2,'SCHEDULER_READER_WIRING: existing cycle must plan and dispatch through the same locked reader');
+ assert.equal(cycle.state().error,undefined);assert.equal(cycle.state().sent,1);await cycle.run();assert.equal(sends,2);
+
  await db.query('UPDATE crewcheck_platform_rosters SET updated_at=? WHERE id=?',[new Date(NOW-30000),'synthetic-roster']);assert.equal(await tx(c=>read(c,context,options())),null);await assert.rejects(record(db,context,input('27',2700),{enabled:true,clock:()=>now}));
- console.log('PASS isolated SQL actual history reader/writer: eight writers, original Radar capture callback, restart, real queue/dispatch with fake transport, current source after RR owner wait, stale ticket/revision refused; external calls=0.');
+ console.log('PASS isolated SQL actual history reader/writer: eight writers, original Radar capture callback, restart, shipping scheduler with shared locked reader, real queue/dispatch with fake transport, current source after RR owner wait, stale ticket/revision refused; external calls=0.');
 }finally{await db.end();}
