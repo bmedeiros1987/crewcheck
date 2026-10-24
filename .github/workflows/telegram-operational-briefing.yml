@@ -151,7 +151,7 @@ jobs:
           CREWCHECK_CONCIERGE_COMPOSITION_SOURCE: ${{ github.workspace }}/.ci-concierge-1203
       - name: Compose entire OFF chain with pinned current main (QA only, never pushed)
         run: |
-          git fetch --no-tags origin 3d506335ff7a293a9eb6c199682f5d88764d5039
+          git fetch --depth=64 --no-tags origin ${{ github.event.pull_request.head.sha || github.sha }} 3d506335ff7a293a9eb6c199682f5d88764d5039
           git -c user.name='CrewCheck isolated QA' -c user.email='qa@example.invalid' merge --no-ff --no-edit 3d506335ff7a293a9eb6c199682f5d88764d5039
           git rev-parse HEAD HEAD^1 HEAD^2
       - name: Canonical preparation and existing safeguards
