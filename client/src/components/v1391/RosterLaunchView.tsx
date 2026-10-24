@@ -3,6 +3,7 @@ import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/financ
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
 import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
+import { rosterDayAllowanceSummary } from '@/lib/rosterDayAllowanceSummary';
 import { peekPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import { AlertRosterNavigation } from '../alerts/AlertRosterNavigation';
@@ -92,6 +93,7 @@ type FlightEarningItem = {
 type RosterFinance = {
   perdiem?: {
     rows?: PerDiemItem[];
+    unclassifiedItems?: Array<{iso:string;airport:string}>;
     monthly?: number | null;
     monthlySummary?: ReturnType<typeof summarizeForecastRows>;
     nativeSummary?: ReturnType<typeof summarizeNativeForecastRows>;
@@ -438,8 +440,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       {visibleGroups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
-        const groupPerDiemTotal = scopedFinance?.perdiem?.nativeSummary?.complete === false
-          ? null : summarizeForecastRows(groupPerDiems).convertedTotalBRL;
+        const groupPerDiemTotal = rosterDayAllowanceSummary(group.iso, groupPerDiems, scopedFinance?.perdiem?.unclassifiedItems, scopedFinance?.perdiem?.nativeSummary?.complete).convertedTotalBRL;
         const groupPendingCurrencies = Array.from(new Set(groupPerDiems.filter(row => row.convertedBRL === null).map(row => row.currency)));
         const groupProduction = salaryRowsTotal(groupEarnings);
         const groupKm = groupEarnings.reduce((sum, row) => sum + Number(row.km || 0), 0);
