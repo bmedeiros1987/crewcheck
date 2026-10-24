@@ -76,9 +76,8 @@ const roomHandoff = `${appPath}\nSelecione o pernoite e toque em “Editar perno
 export async function stayMenuReply(text, profile = {}, deps = {}) {
   const textMenu = whatsappTextMenu(text, profile);
   if (textMenu?.reply) return { handled: true, reply: textMenu.reply };
-  if (textMenu?.text) return { handled: false, text: textMenu.text };
-  const intent = stayMenuIntent(text);
-  if (!intent) return { handled: false };
+  const intent = stayMenuIntent(textMenu?.text || text);
+  if (!intent) return textMenu?.text ? { handled: false, text: textMenu.text } : { handled: false };
   if (intent.kind === 'logistics-question') {
     const replies = {
       apz: 'Você quer a apresentação no aeroporto, a APZ no hotel ou a saída da van? São horários distintos. Informe qual deles deseja; não tenho fonte confirmada de hotel ou pickup nesta leitura.',
