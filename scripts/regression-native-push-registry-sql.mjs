@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
 import {mutateNativeInstallation,readNativeInstallation,deleteNativeAccountWithRegistry,nativeBindingKey,NATIVE_PROJECT,NATIVE_PACKAGE} from '../server/native-push/registry.mjs';
-import {applyNativeProtocolMutation} from '../server/native-push/protocol-adapter.mjs';
+import {applyNativeProtocolMutation,readNativeProtocolInstallation} from '../server/native-push/protocol-adapter.mjs';
 
 const value=process.env.NATIVE_PUSH_TEST_MYSQL_URL;
 const url=new URL(value||'mysql://invalid/');
@@ -103,13 +103,18 @@ try {
  // Real SQL through the actual wire adapter: an uncertain commit must not ACK
  // or retry; replaying the retained mutation ID reconciles the durable result.
  const protocolWire={action:'register',projectId:NATIVE_PROJECT,package:NATIVE_PACKAGE,installationId:'synthetic-protocol-install',mutationId:'synthetic-protocol-register',expectedRevision:0,expectedConsentRevision:0,generation:'1',tokenRevision:'1',consent:true,token:token+'PROTOCOL'};
+ const emptyProtocol=await readNativeProtocolInstallation(db,owners[0],protocolWire.installationId);
+ assertCheck(emptyProtocol.revision===0&&!emptyProtocol.registered&&!('generation' in emptyProtocol),'wire GET gives initial CAS without inventing native version');
  await assert.rejects(applyNativeProtocolMutation(lostAckPool,owners[0],protocolWire,{protection,now:1700000000200}),/SYNTHETIC_COMMIT_ACK_LOST/);checks++;
  const protocolAck=await applyNativeProtocolMutation(db,owners[0],protocolWire,{protection,now:1700000000300});
  assertCheck(protocolAck.registered&&protocolAck.duplicate&&protocolAck.revision===1&&protocolAck.received===null,'wire lost ACK reconciles once without claiming delivery');
+ const protocolRead=await readNativeProtocolInstallation(db,owners[0],protocolWire.installationId);
+ assertCheck(protocolRead.registered&&protocolRead.revision===1&&!JSON.stringify(protocolRead).includes('SYNTHETIC_FCM_TOKEN')&&!('sealedToken' in protocolRead),'wire GET returns redacted current CAS');
  await assert.rejects(applyNativeProtocolMutation(db,owners[0],{...protocolWire,token:token+'DIFFERENT'},{protection}),e=>e.code==='NATIVE_MUTATION_REUSED');checks++;
  const protocolRevoke={...protocolWire,action:'revoke',consent:false,token:undefined,mutationId:'synthetic-protocol-revoke',expectedRevision:1,expectedConsentRevision:1};
  const revokedAck=await applyNativeProtocolMutation(db,owners[0],protocolRevoke,{});
  assertCheck(revokedAck.revoked&&!revokedAck.registered&&revokedAck.revision===2,'wire revoke commits before correlated ACK');
+ assertCheck(!(await readNativeProtocolInstallation(db,owners[0],protocolWire.installationId)).registered,'wire GET reports committed revocation');
  await assert.rejects(applyNativeProtocolMutation(db,owners[0],{...protocolWire,mutationId:'synthetic-protocol-stale',expectedRevision:2,expectedConsentRevision:2},{protection}),e=>e.code==='NATIVE_GENERATION_REVOKED');checks++;
  const report={passed:true,checks,realMySQL:true,disposableOnly:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
  fs.mkdirSync('artifacts/native-registry-off',{recursive:true});fs.writeFileSync('artifacts/native-registry-off/sql-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));

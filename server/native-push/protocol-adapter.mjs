@@ -1,4 +1,4 @@
-import {mutateNativeInstallation,NATIVE_PROJECT,NATIVE_PACKAGE} from './registry.mjs';
+import {mutateNativeInstallation,readNativeInstallation,NATIVE_PROJECT,NATIVE_PACKAGE} from './registry.mjs';
 
 // Unmounted protocol only. This module neither obtains authority nor enables I/O.
 const fail=()=>{throw Object.assign(new Error('NATIVE_PROTOCOL_INVALID'),{code:'NATIVE_PROTOCOL_INVALID',status:400});};
@@ -45,5 +45,21 @@ export function nativeProtocolAcknowledgement(input,result) {
 export async function applyNativeProtocolMutation(db,identity,body,options) {
   const input=nativeProtocolMutation(identity,body);
   return nativeProtocolAcknowledgement(input,await mutateNativeInstallation(db,input,options));
+}
+// Supplies CAS revisions from the canonical owner scope. This is a registry
+// receipt, not device delivery or permission to reuse another session's result.
+export async function readNativeProtocolInstallation(db,identity,installationId) {
+  const result=await readNativeInstallation(db,identity,installationId);
+  if(result.registryConfirmed!==true||result.received!==null||result.installationId!==installationId
+    ||typeof result.active!=='boolean')fail();
+  const revision=counter(result.revision),consentRevision=counter(result.consentRevision);
+  const output={installationId,revision,consentRevision,registered:result.active,registryConfirmed:true,received:null};
+  if(revision===0) {
+    if(consentRevision!==0||result.active||result.generation!==undefined||result.tokenRevision!==undefined)fail();
+  }else {
+    output.generation=counter(result.generation);output.tokenRevision=counter(result.tokenRevision);
+    if(output.generation<1||output.tokenRevision<1||consentRevision<1)fail();
+  }
+  return output;
 }
 export async function nativeProtocolHost(){return {enabled:false,configured:false,registered:false,received:null};}
