@@ -29,3 +29,9 @@ PDF receive/read/single-use, OCR preservation and offline shell. Existing update
 lifecycle/retirement gates cover old/new workers, pending installs and old tabs.
 No real account, token, message, permission prompt or external provider is used.
 No Play, environment, credentials, channel activation or deployment changes.
+
+CI reconciliation: installation explicitly creates the empty runtime half of each
+build cache pair, preserving the existing lifecycle contract when all requests hit
+the shell. The OCR guard's old mutation counterproof expected unsafe global replay;
+it now requires network/no generic admission even with that guard removed, while
+the real guard still requires zero outer-worker cache/network operations.

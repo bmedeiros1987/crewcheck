@@ -38,6 +38,8 @@ function isSameOriginAsset(value) {
 
 async function precachePreparedShell() {
   const cache = await caches.open(CACHE_NAME);
+  // Preserve the build-owned pair even when every fetch hits the prepared shell.
+  await caches.open(RUNTIME_CACHE);
   const indexResponse = await fetch('/', { cache: 'no-store' });
   if (!indexResponse.ok) throw new Error(`CrewCheck shell unavailable (${indexResponse.status})`);
   const html = await indexResponse.clone().text();
@@ -203,7 +205,7 @@ function isApiRequest(url) {
   return url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/');
 }
 
-// Proposed privacy boundary: generic runtime caching is for public static assets only.
+// Privacy boundary: generic runtime caching is for public static assets only.
 function isPublicRuntimeRequest(request) {
   const url = new URL(request.url);
   return request.method === 'GET' && url.origin === self.location.origin
