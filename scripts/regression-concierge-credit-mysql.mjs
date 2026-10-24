@@ -1,5 +1,6 @@
 // Disposable socket only. No provider, app bootstrap, credentials or real account.
 import assert from 'node:assert/strict';
+import {runPromotionalGrantSqlScenarios} from './concierge-promotional-grant-sql-scenarios.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createRequire} from 'node:module';
@@ -111,5 +112,6 @@ try{
   if(mode==='restart'){assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),false);assert.equal(await transaction(c=>promo().reserve(c,promoJob(2))),true);assert.equal(await transaction(c=>promo().reserve(c,promoJob(3))),false);assert.equal((await read(key('account',['promotional',account]))).reservedMicroUsd,24000);passed.push('promotional limit survives actual restart and spends only remaining credit');}
   passed.push(mode==='restart'?'actual MySQL restart preserves normal and uncertain reservation':'separate process retains idempotency');
  }
+ if(mode!=='worker')passed.push(...await runPromotionalGrantSqlScenarios({db,transaction,mode,epoch}));
  console.log(JSON.stringify({head,phase:mode,mysql:identity.version,passed,shipping:false,externalCalls:0,providerCalls:0}));
 }finally{await db.end();}

@@ -57,7 +57,7 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
    const [rows]=await c.query(select,[k]);const value=parse(rows[0]?.payload);if(!value)return false;states.set(k,value);
   }
   const a=states.get(accountKey),g=states.get(globalKey);
-  const fresh=()=>{const current=now();return Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000;};
+  const fresh=()=>{const current=now();return Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&(a.validFrom===undefined&&a.expiresAt===undefined||(int(a.validFrom)&&int(a.expiresAt)&&current>=a.validFrom&&current<a.expiresAt))&&boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000;};
   if(a.v!==1||a.kind!=='account-credit'||a.accountKey!==account||!int(a.availableMicroUsd)||!int(a.reservedMicroUsd)||
    g.v!==1||g.kind!=='global-credit'||g.period!==period||g.budgetMicroUsd!==budget||
    !int(g.knownSpentMicroUsd)||!int(g.reservedMicroUsd)||g.reconciled!==true||
