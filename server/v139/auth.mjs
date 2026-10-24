@@ -1,3 +1,4 @@
+import {createCanonicalWatchHost,captureCanonicalGetMe} from '../watch-authority/canonical-host.mjs';
 import { verifiedStayLease } from '../../shared/stay-alarm-lease-policy.mjs';
 import crypto from 'node:crypto';
 import {
@@ -28,6 +29,32 @@ import {
   telegramLink,
   telegramToken,
 } from './delivery.mjs';
+
+const watchHosts=new WeakMap();
+function watchHost(db){if(!watchHosts.has(db))watchHosts.set(db,createCanonicalWatchHost({pool:db,verifyJwt,requestToken}));return watchHosts.get(db);}
+async function watchProof(req,res,db){
+ if(!flag('CREWCHECK_WATCH_AUTHORITY_ENABLED'))return sendJson(res,503,{ok:false,code:'WATCH_AUTHORITY_DISABLED'});
+ if(req.method!=='POST')return sendJson(res,405,{ok:false,code:'METHOD_NOT_ALLOWED'});
+ try{const body=await readBody(req,8000),user=await captureCanonicalGetMe(me,req,db);if(!user)return sendJson(res,401,{ok:false,code:'CANONICAL_GETME_REQUIRED'});
+ const result=await watchHost(db).issueAfterCanonicalGetMe(req,user,body?.binding);return sendJson(res,result.ok?200:401,result);
+ }catch{return sendJson(res,503,{ok:false,code:'WATCH_AUTHORITY_UNAVAILABLE'});}
+}
+async function watchRedeem(req,res,db){
+ if(!flag('CREWCHECK_WATCH_AUTHORITY_ENABLED'))return sendJson(res,503,{ok:false,code:'WATCH_AUTHORITY_DISABLED'});
+ if(req.method!=='POST')return sendJson(res,405,{ok:false,code:'METHOD_NOT_ALLOWED'});
+ try{const body=await readBody(req,8000),result=await watchHost(db).consumeNativeProof(body);return sendJson(res,result.ok?200:401,result);}catch{return sendJson(res,503,{ok:false,code:'WATCH_AUTHORITY_UNAVAILABLE'});}
+}
+async function canonicalLogout(req,res,db){
+ if(req.method!=='POST')return sendJson(res,405,{ok:false,code:'METHOD_NOT_ALLOWED'});
+ // Turning admission OFF must not skip cleanup of a previously issued JTI.
+ let priorWatchSession=false;
+ try{const p=verifyJwt(requestToken(req));priorWatchSession=typeof p?.jti==='string'&&/^watch1_[0-9a-f]{64}$/.test(p.jti);}catch{}
+ if(flag('CREWCHECK_WATCH_AUTHORITY_ENABLED')||priorWatchSession){
+  try{const result=await watchHost(db).invalidateCanonicalLogout(req);clearAuthCookie(res);return sendJson(res,result.ok?200:401,{ok:result.ok,watchAuthorityRevoked:result.ok,message:result.ok?'Sessão encerrada.':'Não foi possível confirmar a revogação Watch.'});}
+  catch{clearAuthCookie(res);return sendJson(res,503,{ok:false,watchAuthorityRevoked:false,code:'WATCH_REVOCATION_UNCONFIRMED'});}
+ }
+ clearAuthCookie(res);return sendJson(res,200,{ok:true,message:'Sessão encerrada.'});
+}
 
 const CREW_FUNCTIONS = new Set([
   'Comissário(a) de voo',
@@ -1307,15 +1334,14 @@ export async function handleAuthRoute(req, res, url) {
   else if (url.pathname === '/api/auth/request-reset') await requestReset(req, res, db);
   else if (url.pathname === '/api/auth/reset-password') await resetPassword(req, res, db);
   else if (url.pathname === '/api/auth/me') await me(req, res, db);
+  else if (url.pathname === '/api/auth/watch/proof') await watchProof(req,res,db);
+  else if (url.pathname === '/api/auth/watch/redeem') await watchRedeem(req,res,db);
   else if (url.pathname === '/api/auth/admin/diagnose-credential') await diagnoseCredentialState(req, res, db);
   else if (url.pathname === '/api/auth/admin/identity-audit') await identityAudit(req, res, db);
   else if (url.pathname === '/api/auth/admin/legacy-table-audit') await legacyTableAudit(req, res, db);
   else if (url.pathname === '/api/auth/admin/legacy-recovery-candidate') await legacyRecoveryCandidate(req, res, db);
   else if (url.pathname === '/api/auth/admin/legacy-roster-recovery-dry-run') await legacyRosterRecoveryDryRun(req, res, db);
   else if (url.pathname === '/api/auth/admin/legacy-roster-recovery-execute') await legacyRosterRecoveryExecute(req, res, db);
-  else if (url.pathname === '/api/auth/logout') {
-    clearAuthCookie(res);
-    sendJson(res, 200, { ok: true, message: 'Sessão encerrada.' });
-  } else sendJson(res, 404, { ok: false, message: 'Recurso de autenticação não localizado.' });
+  else if (url.pathname === '/api/auth/logout') await canonicalLogout(req,res,db); else sendJson(res, 404, { ok: false, message: 'Recurso de autenticação não localizado.' });
   return true;
 }

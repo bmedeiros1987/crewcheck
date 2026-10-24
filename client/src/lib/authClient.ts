@@ -351,8 +351,9 @@ export async function getMe(options: { isCurrent?(): boolean; onSessionExpired?(
 export async function logout(): Promise<void> {
   // Local logout is the security boundary: do not keep an authenticated client
   // alive while waiting for a slow/offline network request.
+  const logoutToken=getToken();
   clearSession();
-  void jsonFetch('/api/auth/logout', { method: 'POST', body: '{}' }).catch(() => {});
+  void jsonFetch('/api/auth/logout', { method: 'POST', body: '{}', headers: logoutToken ? {authorization: `Bearer ${logoutToken}`} : {} }).catch(() => {});
 }
 
 export async function authFetch<T>(url: string, init?: RequestInit): Promise<T> {
