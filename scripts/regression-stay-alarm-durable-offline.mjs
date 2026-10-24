@@ -69,6 +69,8 @@ test('acceptance identity is per run/attempt; verified artifact cannot replace p
  assert.ok(workflow.includes('com.crewcheck.app.stayaccept${GITHUB_RUN_ID}r${GITHUB_RUN_ATTEMPT}'));
  assert.ok(workflow.includes("buildTypes.getByName('debug').applicationIdSuffix = pkg.substring('com.crewcheck.app'.length())"));
  assert.ok(workflow.includes('apksigner" verify --verbose --print-certs'));
+ assert.ok(workflow.includes("application-label:'CrewCheck Teste Offline Isolado'"));
+ assert.ok(workflow.includes('artifacts/stay-alarm-test/CrewCheck-Teste-Offline-Isolado.apk'));
  assert.ok(workflow.includes("package[1] not in ('com.crewcheck.app','com.crewcheck.app.mcctest')"));
  assert.ok(workflow.includes("value.startswith(expected+'.')"));
  assert.ok(host.includes('acceptancePackage(context.getPackageName())&&StayAlarmPhysicalFixture.hasMarker(context)'));
