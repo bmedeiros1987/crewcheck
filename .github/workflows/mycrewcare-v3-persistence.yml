@@ -105,6 +105,7 @@ jobs:
             || path.startsWith('android-wrapper/app/src/debug/')
             || path === 'scripts/ci/mcc-comparison.mjs'
             || path === 'scripts/regression-mcc-comparison.mjs'
+            || path === 'scripts/v139/apply.mjs'
             || path === '.github/workflows/mycrewcare-v3-persistence.yml'
           );
           const mccSignals = changed.filter(isMccSignal);

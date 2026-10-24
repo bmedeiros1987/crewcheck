@@ -94,6 +94,7 @@ test('workflow retains all gates and broad unknown namespace discovery',()=>{
  for(const name of ['scripts/ci/mcc-comparison.mjs','scripts/regression-mcc-comparison.mjs'])assert.ok(workflow.includes(`'${name}'`));
  assert.match(workflow,/- name: Resolve immutable MCC comparison \(fail closed\)\n        run: node scripts\/ci\/mcc-comparison.mjs/);
  assert.match(workflow,/- name: Classify MCC ownership scope without weakening the auditor/);
+ assert.match(workflow,/path === 'scripts\/v139\/apply\.mjs'/,'canonical v139 writer must force full MCC audit');
  assert.equal((workflow.match(/if: env\.CREWCHECK_MCC_FULL_AUDIT == 'true'/g)||[]).length,2,'raw/prepared ownership audit must share the same scope fence');
  assert.equal((workflow.match(/MCC effective Gradle contract (?:before|after) canonical preparation/g)||[]).length,2,'effective Gradle MCC contract must run raw and prepared');
  assert.match(workflow,/- name: MCC routing\/equivalence regressions \(always\)\n        run: node --test scripts\/regression-mcc-comparison\.mjs/,'equivalence regression must execute even when full MCC audit is skipped');
@@ -124,11 +125,29 @@ test('scope routing keeps FCM-only Gradle changes out of the MCC ownership audit
   'docs/android-native-push-off-20261023.md',
  ];
  assert.equal(fcmOnly.some(isMccSignal),false,'#1218-style FCM-only diff must use the Gradle-equivalence path, not MCC ownership');
+ assert.equal(
+  ['android-wrapper/app/build.gradle','scripts/v139/apply.mjs'].some(isMccSignal),
+  true,
+  'canonical preparation writer must force full MCC ownership audit',
+ );
  for(const foreign of ['android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java','server.mjs','shared/unrelated.mjs']){
   const mixed=['shared/myCrewCareLogistics.mjs',foreign];
   assert.equal(mixed.some(isMccSignal),true,'real MCC change must force the full ownership auditor');
  }
  assert.equal(['android-wrapper/app/src/debug/AndroidManifest.xml'].some(isMccSignal),true,'MCC debug overlay must force the full ownership auditor');
+ assert.equal(isMccSignal('scripts/v139/apply.mjs'),true,'v139 canonical writer must never use the Gradle-only route');
+});
+
+test('canonical writer route preserves disabled MCC UI contract',()=>{
+ const guardLine="assert.match(controllerSource, /export const MYCREWCARE_UI_ENABLED = false;/);";
+ assert.ok(gateSource.includes(guardLine),'existing disabled-UI content assertion must remain in the auditor');
+ const uiDisabled=/export const MYCREWCARE_UI_ENABLED = false;/;
+ assert.match('export const MYCREWCARE_UI_ENABLED = false;',uiDisabled);
+ assert.doesNotMatch('export const MYCREWCARE_UI_ENABLED = true;',uiDisabled,'MYCREWCARE_UI_ENABLED=true must violate the existing content contract');
+ const classifier=workflow.match(/const isMccSignal = \(path\) => \(\n([\s\S]*?)\n          \);\n          const mccSignals/)?.[1];
+ assert.ok(classifier,'workflow classifier must remain extractable for canonical-writer counterproof');
+ const route=new Function('path',`return (${classifier});`);
+ assert.equal(route('scripts/v139/apply.mjs'),true,'writer capable of materializing guarded MCC content must force full audit');
 });
 
 test('actual Gradle-only proof executes the workflow code and fails closed on unproven deltas',()=>{
