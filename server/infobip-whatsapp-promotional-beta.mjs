@@ -1,3 +1,4 @@
+import {WHATSAPP_TEXT_MENU} from './concierge/whatsapp-text-menu.mjs';
 import {stayMenuIntent} from './concierge/stay-menu.mjs';
 import {sharedCreditKey,boundedQuoteReservation} from './concierge-shared-credit-candidate.mjs';
 import {createHash} from 'node:crypto';
@@ -33,6 +34,7 @@ export function createInfobipPromotionalBetaScope(configuration,admission,{now=D
   command:text=>{
    if(typeof text!=='string'||text.length>600)return {reply:'Não entendi. Escreva “menu” para ver as consultas disponíveis.'};
    const value=text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+   if(/^(?:\/(?:start|menu|ajuda|help|comandos)|oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comandos|inicio)[!.?]*$/.test(value))return {reply:WHATSAPP_TEXT_MENU.replace('“METAR SBGR”','“qual minha próxima jornada?”')+'\nNeste beta, as opções 9–14 são consultadas somente no app.'};
    const handoff=/^(?:opcao\s+)?(9|10|11|12|13|14)[.)]?$/.exec(value)?.[1];
    if(handoff){const topic={'9':'Radar e portão de voo','10':'METAR','11':'TAF','12':'academias / Wellhub','13':'farmácias','14':'hospitais'}[handoff];return {reply:`Para consultar ${topic}, abra o app CrewCheck. A disponibilidade depende dos dados e da fonte no app. Este beta não faz essa busca pela conversa.`};}
    if(/^(?:oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comandos|inicio)[!.?]*$/.test(value)||/^(?:opcao\s+)?(?:[1-9]|1[0-7])[.)]?$/.test(value))return {text};
