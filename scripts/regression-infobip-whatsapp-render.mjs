@@ -47,6 +47,7 @@ function applicationOptions(f){
  const policy={version:1,ingress:f.options.ingress,configuration,admission:structuredClone(f.dependencies.admission)};
  if(f.singleTest){policy.mode='single-neutral-reply-v1';policy.maxCostUsd='0.02';configuration.singleMessageTest=true;policy.admission.id=INFOBIP_SINGLE_TEST_APPROVAL;policy.admission.maxAttempts=1;policy.admission.validUntil=epoch+600_000;}
  if(f.linkHandshake)configuration.canonicalLinkHandshake=true;
+ if(f.linkOnly)configuration.canonicalLinkHandshakeOnly=true;
  const environment={RENDER_SERVICE_ID:serviceId,CREWCHECK_INFOBIP_WHATSAPP_POLICY:JSON.stringify(policy),
   CREWCHECK_INFOBIP_WHATSAPP_API_KEY:secrets.apiKey,CREWCHECK_INFOBIP_WHATSAPP_CONTENT_KEY:secrets.encryptionKey.toString('base64'),
   CREWCHECK_WHATSAPP_AUDIT_SALT:secrets.linkHashKey,CREWCHECK_INFOBIP_WHATSAPP_HMAC_SECRET:secrets.webhookSecret};
@@ -189,8 +190,8 @@ for(const change of [s=>s.link.consent_concierge=0,s=>s.link.revoked_at='synthet
  await new Promise(r=>foreign.listen(0,'127.0.0.1',r));try{const before=f.state.queries.length;assert.equal((await post(foreign.address().port,JSON.stringify({results:[event('foreign-listener')]}))).status,503);assert.equal(f.state.queries.length,before);}finally{await new Promise(r=>foreign.close(r));await s.close();}
 }
 // Explicitly enabled canonical handshake uses no provider send or quota row.
-{
- const f=setup();f.singleTest=true;f.linkHandshake=true;f.state.link=null;
+for(const linkOnly of [false,true]) {
+ const f=setup();f.singleTest=true;f.linkHandshake=true;f.linkOnly=linkOnly;f.state.link=null;
  f.state.linkChallenge={email:'synthetic@example.invalid',codeHash:createHmac('sha256',secrets.linkHashKey).update('crewcheck-whatsapp-link|123456').digest('hex'),expiresAt:epoch+600000};
  let s=await makeServer(f);
  const code=id=>JSON.stringify({results:[{...event(id),message:{type:'TEXT',text:'123456'}}]});
@@ -205,8 +206,15 @@ for(const change of [s=>s.link.consent_concierge=0,s=>s.link.revoked_at='synthet
   assert(![...f.state.rows.values()].some(row=>row.kind==='infobip_send_admission'||row.status==='held'));
   await s.close();s=await makeServer(f);await post(s.port,code('canonical-link'));await nextTurn();
   assert.equal(f.stats.sends.length,0,'link retry after restart is ACK only');
-  await post(s.port,JSON.stringify({results:[{...event('test-after-link'),message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}}]}));await drain(s,f.stats);
-  assert.equal(f.stats.sends.length,1);assert.equal(f.stats.sends[0].content.text,INFOBIP_SINGLE_TEST_REPLY);assert.equal(f.stats.engine,0);
+  const beforeTest=f.state.queries.length;
+  await post(s.port,JSON.stringify({results:[{...event('test-after-link'),message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}}]}));if(linkOnly)await nextTurn();else await drain(s,f.stats);
+  assert.equal(f.stats.sends.length,linkOnly?0:1);assert.equal(f.stats.engine,0);
+  if(linkOnly){
+   assert.equal(f.state.queries.length,beforeTest,'link-only rejects even the approved paid test before SQL');
+   assert(![...f.state.rows.values()].some(row=>row.kind==='infobip_send_admission'||row.status==='held'));
+   await s.close();s=await makeServer(f);await post(s.port,JSON.stringify({results:[{...event('test-after-link-restart'),message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}}]}));await nextTurn();
+   assert.equal(f.stats.sends.length,0,'restart never enables a paid reply in link-only mode');
+  }else assert.equal(f.stats.sends[0].content.text,INFOBIP_SINGLE_TEST_REPLY);
  }finally{await s.close();}
 }
 // Restricted caller: authenticated exact opt-in only, no account tools, one
@@ -227,7 +235,7 @@ for(const change of [s=>s.link.consent_concierge=0,s=>s.link.revoked_at='synthet
   await post(s.port,packet('after-restart'));await drain(s,f.stats);assert.equal(f.stats.sends.length,1);
  }finally{await s.close();}
  const valid=JSON.parse(applicationOptions(f).environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY);
- for(const change of [p=>p.admission.maxAttempts=2,p=>p.admission.recipients.push('5511999999999'),p=>p.admission.id+='reset',p=>p.maxCostUsd='1',p=>p.admission.validUntil=epoch+86400000]){
+ for(const change of [p=>p.admission.maxAttempts=2,p=>p.admission.recipients.push('5511999999999'),p=>p.admission.id+='reset',p=>p.maxCostUsd='1',p=>p.admission.validUntil=epoch+86400000,p=>p.configuration.canonicalLinkHandshakeOnly=true,p=>{p.configuration.canonicalLinkHandshake=true;p.configuration.canonicalLinkHandshakeOnly='true';}]){
   const p=structuredClone(valid);change(p);assert.throws(()=>validateInfobipSingleTestPolicy(p));
   const h=createInfobipWhatsAppSingleTestHost({environment:{CREWCHECK_INFOBIP_WHATSAPP_POLICY:JSON.stringify(p),get CREWCHECK_INFOBIP_WHATSAPP_HMAC_SECRET(){assert.fail('no credential resolution');}}});
   assert.equal(h.health().enabled,false);

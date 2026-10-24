@@ -1,4 +1,4 @@
-import { infobipCanonicalLinkDestination } from './infobip-whatsapp-link-policy.mjs';
+import { infobipCanonicalLinkDestination, infobipCanonicalLinkStatus } from './infobip-whatsapp-link-policy.mjs';
 import crypto from 'node:crypto';
 import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
@@ -603,19 +603,28 @@ async function handleLinkStart(req, res) {
   });
 }
 
-async function handleLinkStatus(req, res) {
+async function handleLinkStatus(req, res, url) {
   if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   const identity = await requireIdentity(req, res);
   if (!identity) return;
+  const provider=url?.searchParams.get('provider')||'';
+  if(provider&&provider!=='infobip')return sendJson(res,400,{ok:false,message:'Provedor de vínculo inválido.'});
   const db = identity.db;
   if (!db) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
   let rows;
   try { [rows] = await db.query(
-    `SELECT phone_last4,consent_concierge,consent_alerts,linked_at
+    `SELECT phone_hash,phone_last4,consent_concierge,consent_alerts,linked_at,updated_at,revoked_at
      FROM crewcheck_whatsapp_links WHERE email=? AND revoked_at IS NULL LIMIT 1`,
     [identity.email],
   ); } catch { return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' }); }
   const link = rows[0];
+  let diagnosis;
+  if(provider==='infobip') {
+    let owners=[];
+    try {if(link)[owners]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 2',[identity.email]);}
+    catch {return sendJson(res,503,{ok:false,message:'Vínculo do WhatsApp temporariamente indisponível.'});}
+    diagnosis=await infobipCanonicalLinkStatus(link,{hashPhone:privateHash,ownerReady:owners.length===1&&Boolean(owners[0].public_id)});
+  }
   return sendJson(res, 200, {
     ok: true,
     linked: Boolean(link),
@@ -623,6 +632,7 @@ async function handleLinkStatus(req, res) {
     consentConcierge: Number(link?.consent_concierge) === 1,
     consentAlerts: Number(link?.consent_alerts) === 1,
     linkedAt: link?.linked_at || null,
+    ...diagnosis,
   });
 }
 
@@ -656,7 +666,7 @@ export async function handleWhatsAppRoute(req, res, url) {
     return true;
   }
   if (url.pathname === '/api/whatsapp/link/status') {
-    await handleLinkStatus(req, res);
+    await handleLinkStatus(req, res, url);
     return true;
   }
   if (url.pathname === '/api/whatsapp/link/unlink') {

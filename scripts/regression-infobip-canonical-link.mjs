@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { createInfobipInboundReceiver } from '../server/infobip-whatsapp-candidate.mjs';
 import { completeCanonicalWhatsAppLink } from '../server/whatsapp-link-proof.mjs';
-import { infobipCanonicalLinkDestination } from '../server/infobip-whatsapp-link-policy.mjs';
+import { infobipCanonicalLinkDestination, infobipCanonicalLinkStatus } from '../server/infobip-whatsapp-link-policy.mjs';
 import { INFOBIP_SINGLE_TEST_APPROVAL } from '../server/infobip-whatsapp-single-test.mjs';
 
 globalThis.fetch = () => assert.fail('EXTERNAL_NETWORK_FORBIDDEN');
@@ -24,6 +24,19 @@ for (const edit of [p => p.configuration.canonicalLinkHandshake = false, p => p.
 // Synthetic serializable SQL fixture for the actual canonical completion code.
 // Only an already-authenticated user challenge can appear in pending.
 const hash = input => createHmac('sha256', secret).update(input).digest('hex');
+const verifiedRow={phone_hash:hash(recipient),phone_last4:recipient.slice(-4),linked_at:'synthetic-linked',updated_at:'synthetic-updated',revoked_at:null};
+const inspect=(link,options={})=>infobipCanonicalLinkStatus(link,{hashPhone:hash,ownerReady:true,environment,now,...options});
+assert.equal((await inspect(verifiedRow)).canonicalVerified,true);
+for(const link of [{...verifiedRow,phone_hash:hash('different-number-same-last-four')},{...verifiedRow,phone_hash:createHmac('sha256','synthetic-old-salt').update(recipient).digest('hex')},{...verifiedRow,phone_last4:'9999'},{...verifiedRow,updated_at:null},{...verifiedRow,revoked_at:'synthetic-revoked'}]) {
+ const result=await inspect(link);assert.equal(result.recorded,true);assert.equal(result.linked,false);assert.equal(result.canonicalVerified,false);
+ assert(!JSON.stringify(result).includes(link.phone_hash),'never return private indexes');
+}
+assert.equal((await inspect(verifiedRow,{ownerReady:false})).canonicalVerified,false);
+const expiredStatus=await inspect(verifiedRow,{now:policy.admission.validUntil});
+assert.equal(expiredStatus.canonicalVerified,true,'saved identity and temporary availability are separate');
+assert.equal(expiredStatus.testWindow,'expired');assert.equal(expiredStatus.linkStartAvailable,false);
+assert.equal((await inspect(verifiedRow,{environment:{}})).canonicalVerified,false);
+assert.equal((await inspect(null)).recorded,false);
 const state = { pending: new Map(), links: new Map(), claims: new Map(), transactions: 0, enqueued: 0, failCommit: false };
 const phoneHash = hash(recipient), codeHash = code => hash('crewcheck-whatsapp-link|' + code);
 let tail = Promise.resolve();
@@ -93,6 +106,26 @@ const status = await statusHandler({ method: 'GET', identity }, {});
 assert.equal(status.status, 200); assert.equal(status.payload.linked, true); assert.equal(status.payload.last4, '0101'); assert.equal(status.payload.consentConcierge, false);
 broken = true;
 assert.equal((await statusHandler({ method: 'GET', identity }, {})).status, 503);
+
+// The old account/last-four read may be true while the current canonical index
+// rejects the same display. Execute both actual handler branches with SELECTs.
+let row={...verifiedRow,phone_hash:hash('synthetic-other-number'),consent_concierge:1,consent_alerts:0};
+const scopedIdentity={email:'fixture-status@example.invalid',db:{async query(sql,args){
+ assert(sql.trim().startsWith('SELECT '));assert.deepEqual(args,[scopedIdentity.email]);
+ return [sql.includes('crewcheck_platform_profiles')?[{public_id:'synthetic-owner'}]:[row]];
+}}};
+const scopedHandler=new Function('sendJson','requireIdentity','infobipCanonicalLinkStatus','privateHash',`return (${statusSource});`)(
+ (_res,status,payload)=>({status,payload}),async req=>req.identity,(link,options)=>infobipCanonicalLinkStatus(link,{...options,environment,now}),hash);
+assert.equal((await scopedHandler({method:'GET',identity:scopedIdentity},{})).payload.linked,true);
+const statusUrl=new URL('https://synthetic.invalid/api/whatsapp/link/status?provider=infobip');
+const unconfirmed=await scopedHandler({method:'GET',identity:scopedIdentity},{},statusUrl);
+assert.equal(unconfirmed.payload.recorded,true);assert.equal(unconfirmed.payload.linked,false);assert.equal(unconfirmed.payload.canonicalVerified,false);
+assert.equal(unconfirmed.payload.last4,recipient.slice(-4));
+row={...row,phone_hash:hash(recipient)};
+const confirmed=await scopedHandler({method:'GET',identity:scopedIdentity},{},statusUrl);
+assert.equal(confirmed.payload.canonicalVerified,true);
+assert(!JSON.stringify(confirmed).includes(row.phone_hash));
+assert.equal((await scopedHandler({method:'GET',identity:scopedIdentity},{},new URL('https://synthetic.invalid/?provider=unknown'))).status,400);
 
 if (process.argv.includes('--prepared')) {
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');

@@ -12,6 +12,8 @@ export function validateInfobipSingleTestPolicy(policy) {
   if(policy?.version!==1 || policy.mode!=='single-neutral-reply-v1' ||
      policy.maxCostUsd!=='0.02' || policy.configuration?.singleMessageTest!==true ||
      (policy.configuration?.canonicalLinkHandshake!==undefined&&typeof policy.configuration.canonicalLinkHandshake!=='boolean') ||
+     (policy.configuration?.canonicalLinkHandshakeOnly!==undefined&&typeof policy.configuration.canonicalLinkHandshakeOnly!=='boolean') ||
+     (policy.configuration?.canonicalLinkHandshakeOnly===true&&policy.configuration.canonicalLinkHandshake!==true) ||
      admission?.id!==INFOBIP_SINGLE_TEST_APPROVAL || admission.maxAttempts!==1 ||
      !Array.isArray(admission.recipients) || admission.recipients.length!==1 ||
      !/^[1-9]\d{7,14}$/.test(admission.recipients[0]) ||

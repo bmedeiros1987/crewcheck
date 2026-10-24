@@ -62,11 +62,14 @@ export async function createInfobipWhatsAppProduction(options={}) {
       binding.publicOrigin!==httpsOrigin(ingress.publicOrigin)||binding.linkHashKeyReference!==refs.linkHashKey)fail();
     const singleTest=input.singleMessageTest===true;
     const linkHandshake=singleTest&&input.canonicalLinkHandshake===true;
+    const linkOnly=linkHandshake&&input.canonicalLinkHandshakeOnly===true;
     if(input.canonicalLinkHandshake!==undefined&&typeof input.canonicalLinkHandshake!=='boolean')fail();
+    if(input.canonicalLinkHandshakeOnly!==undefined&&typeof input.canonicalLinkHandshakeOnly!=='boolean')fail();
+    if(input.canonicalLinkHandshakeOnly===true&&!linkHandshake)fail();
     if(singleTest&&(options.admission?.maxAttempts!==1||options.admission?.recipients?.length!==1))fail();
     const quantity=createInfobipSendAdmission(options.admission,{sender,now});
     const testFrom=options.admission.validFrom;
-    const testInput=job=>job?.text===singleTestInput&&job.receivedAt>=testFrom;
+    const testInput=job=>!linkOnly&&job?.text===singleTestInput&&job.receivedAt>=testFrom;
     const admission=singleTest?Object.freeze({
       allows:job=>testInput(job)&&quantity.allows(job),
       reserve:(c,job)=>testInput(job)?quantity.reserve(c,job):Promise.resolve(false),
@@ -88,7 +91,7 @@ export async function createInfobipWhatsAppProduction(options={}) {
     // Neutral transport smoke test uses the same binding/consent, durable
     // reservation, lifecycle and send locks, without invoking account tools.
     const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge:singleTest?async()=>singleTestReply:invokeConfiguredWhatsAppConcierge,
-      send:singleTest?(proposal,context)=>proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
+      send:singleTest?(proposal,context)=>!linkOnly&&proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
     await preflightInfobipWhatsAppStorage(db,sqlBudget); // SELECT only; never create or repair tables.
     const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now,
       ...(singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
