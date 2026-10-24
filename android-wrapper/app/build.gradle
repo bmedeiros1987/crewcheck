@@ -38,6 +38,7 @@ android {
     sourceSets {
         main.res.srcDir generatedCrewCheckRes
     }
+    testOptions { unitTests.includeAndroidResources = true }
 
     def storeFilePath = project.findProperty('CREWCHECK_STORE_FILE') ?: System.getenv('CREWCHECK_STORE_FILE')
     def storePasswordValue = project.findProperty('CREWCHECK_STORE_PASSWORD') ?: System.getenv('CREWCHECK_STORE_PASSWORD')
@@ -87,6 +88,8 @@ android {
 preBuild.dependsOn generateCrewCheckBrandAssets
 
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
     def billing_version = "9.1.0"
     implementation platform("org.jetbrains.kotlin:kotlin-bom:1.8.22")
     implementation "com.android.billingclient:billing:$billing_version"

@@ -20,7 +20,11 @@ public class CrewCheckNotificationReceiver extends BroadcastReceiver {
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
         if (intent == null || !NotificationTiming.shouldAttempt(intent.getLongExtra("scheduledAt", 0L), System.currentTimeMillis(), true)) return;
         synchronized (NotificationLedger.LOCK) {
-            if (!new NotificationLedgerAndroid(context).ledger().claim(intent.getStringExtra("notificationKey"), intent.getStringExtra("notificationEpoch"), intent.getLongExtra("scheduledAt", 0L))) return;
+            String key=intent.getStringExtra("notificationKey");
+            boolean claimed=LifeReminderLedger.lifeKey(key)
+                    ? new LifeReminderAndroid(context).ledger().claim(key,intent.getStringExtra("notificationEpoch"),intent.getLongExtra("scheduledAt",0L))
+                    : new NotificationLedgerAndroid(context).ledger().claim(key,intent.getStringExtra("notificationEpoch"),intent.getLongExtra("scheduledAt",0L));
+            if (!claimed) return;
             ensureChannel(context);
             String title = intent == null ? "CrewCheck" : intent.getStringExtra("title");
             String body = intent == null ? "" : intent.getStringExtra("body");
