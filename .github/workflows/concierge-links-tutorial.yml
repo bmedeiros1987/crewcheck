@@ -9,6 +9,7 @@ on:
       - 'client/src/components/v1432/homologation.css'
       - 'client/src/lib/notificationNavigation.ts'
       - 'scripts/regression-concierge-links-tutorial.mjs'
+      - 'scripts/regression-concierge-links-tutorial-browser.cjs'
       - 'scripts/v1424/apply.mjs'
       - 'scripts/v14341/apply.mjs'
       - 'scripts/p1-menu-premium/apply.mjs'
