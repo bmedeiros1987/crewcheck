@@ -40,6 +40,9 @@ jobs:
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-wakeup-spoken-program.mjs
+          node scripts/regression-elevenlabs-call-deadlines.mjs
       - name: Start existing disposable notification QA pattern without network
         run: |
           mkdir -p /tmp/crewcheck-notification-qa-socket
@@ -120,6 +123,9 @@ jobs:
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-wakeup-spoken-program.mjs --prepared
+          node scripts/regression-elevenlabs-call-deadlines.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
           node scripts/regression-telegram-operational-change-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
