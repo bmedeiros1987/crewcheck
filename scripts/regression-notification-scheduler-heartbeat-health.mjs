@@ -128,6 +128,8 @@ const cycleTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-scheduler-
 const cycleTempFile = path.join(cycleTempDir, 'run-scheduler-cycle.mjs');
 try {
   const harness = `
+import { runTelegramOperationalChangeCycle } from ${JSON.stringify(pathToFileURL(path.resolve('server/concierge/telegram-operational-change.mjs')).href)};
+import { readTelegramOperationalHistory } from ${JSON.stringify(pathToFileURL(path.resolve('server/concierge/operational-history-reader.mjs')).href)};
 import { runTelegramBriefingCycle as actualTelegramBriefingCycle } from ${JSON.stringify(pathToFileURL(path.resolve('server/concierge/telegram-briefing.mjs')).href)};
 import { runCrewCheckPushQueue as actualCrewCheckPushQueue } from ${JSON.stringify(pathToFileURL(path.resolve('server/web-push/bidsProducer.mjs')).href)};
 let briefingThrows = false;
@@ -183,6 +185,7 @@ export { runSchedulerCycle };
   await mod.runSchedulerCycle();
   assert.equal(mod.dbPoolCalls, 3, 'terceiro ciclo também não pode ficar bloqueado pelos dois anteriores');
   assert.equal(mod.schedulerRunning, false, 'ciclo bem-sucedido deve terminar com schedulerRunning=false');
+  assert.equal(mod.lastCycle.operationalChange.status, 'disabled', 'Operational changes OFF use the real producer and shared reader without source DB access');
   assert.equal(mod.lastCycle.operationalBriefing.status, 'disabled', 'Briefing OFF uses the real producer without touching its DB path');
   assert.equal(mod.lastCycle.crewCheckPush.enabled, false, 'Web Push desativado permanece inerte no ciclo real');
   assert.equal(mod.lastCycle.crewCheckPush.selected, 0);

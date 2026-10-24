@@ -1,3 +1,4 @@
+import { readTelegramOperationalHistory } from './concierge/operational-history-reader.mjs';
 import { runTelegramOperationalChangeCycle, handleTelegramOperationalConsent } from './concierge/telegram-operational-change.mjs';
 import { prepareScheduledWakeup, wakeupPrivateModelSupportsLocale } from './wakeup-spoken-program.mjs';
 import { sendInfobipWakeupCall } from './wakeup-call-delivery.mjs';
@@ -365,7 +366,7 @@ async function runSchedulerCycle() {
     await ensureNotificationTable(db);
     try { summary.operationalBriefing = await runTelegramBriefingCycle(db); }
     catch { summary.operationalBriefing = { status: 'unavailable', planned: 0 }; }
-    try { summary.operationalChange = await runTelegramOperationalChangeCycle(db); }
+    try { summary.operationalChange = await runTelegramOperationalChangeCycle(db, { readSource: readTelegramOperationalHistory }); }
     catch { summary.operationalChange = { status: 'unavailable', planned: 0 }; }
     await db.query("UPDATE crewcheck_notification_jobs SET status='uncertain',locked_at=NULL WHERE status IN ('processing','dispatching') AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
     await db.query("UPDATE crewcheck_notification_jobs SET status='expired' WHERE status='pending' AND scheduled_at < DATE_SUB(NOW(3), INTERVAL 120 SECOND)");
@@ -374,7 +375,7 @@ async function runSchedulerCycle() {
     for (const job of rows) {
       const [claim] = await db.query("UPDATE crewcheck_notification_jobs SET status='processing',locked_at=NOW(3),attempts=attempts+1 WHERE id=? AND status='pending'", [job.id]);
       if (!claim.affectedRows) continue;
-      const outcome = await dispatchClaimedJob(db, job, { deliver: deliverJob, findLink: linkedTelegramRecord });
+      const outcome = await dispatchClaimedJob(db, job, { deliver: deliverJob, findLink: linkedTelegramRecord, readOperationalChangeSource: readTelegramOperationalHistory });
       if (outcome.accepted) summary.sent += 1;
       else if (!['skipped', 'pending'].includes(outcome.status)) summary.failed += 1;
     }
