@@ -109,7 +109,7 @@ export async function runFiniteReserveSqlScenarios({db,transaction,mode,epoch}){
   await denied('service session expired',()=>transaction(c=>quoteGate({sessionUntil:clock}).checkSend(c,sendJob(3))));
   await denied('quote from another observation',()=>transaction(c=>quoteGate({verifiedAt:epoch+1}).checkSend(c,sendJob(3))));
   let ticks=[epoch+3600000,epoch+3599999];const backwards=createFiniteReserveSendGate(p,{enabled:true,now:()=>ticks.length>1?ticks.shift():ticks[0],resolveTrustedContext:gateContext});
-  await denied('clock moving backwards',()=>transaction(c=>backwards.checkSend(c,sendJob(3))));
+  await denied('clock moving backwards',()=>transaction(c=>backwards.checkSend(c,sendJob(3,{receivedAt:clock-10}))));
   // Expiry after the consuming write rolls back: the reservation stays usable.
   let reason='';await assert.rejects(transaction(c=>gate().checkSend({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state'))clock=approvedTariffUntil;return r;}},sendJob(3)).catch(e=>{reason=e.message;throw e;})));
   assert.equal(reason,'FINITE_SEND_EXPIRED');clock=epoch+3600000;assert.equal(await marker(3),'reserved','expiry after the write rolls back');
