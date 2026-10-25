@@ -113,6 +113,7 @@ console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:fal
 {
  const f=fixture({balance:50000}),g=f.state.get(f.globalKey);let clock=at;
  const p={v:1,basis:'explicit-risk-reserve',residualRiskAccepted:true,riskDisclosureVersion:'provisional-provider-cost-v1',approvalId:'synthetic-finite-authority',evidenceReference:'synthetic-specific-risk-approval',programId,ownerAccountKey:account,grantManifest:'c'.repeat(64),sender:job(1).sender,recipient:job(1).recipient,approvedAt:at,validFrom:at,validUntil:at+86400000,maxAttempts:2,perAttemptMicroUsd:15000,totalMicroUsd:30000,monthlyBudgetMicroUsd:20000000,observedTariff:{evidenceSha256:'d'.repeat(64),observedAt:at,observedUnitMicroUsd:9909},observedBudget:{evidenceSha256:'e'.repeat(64),observedAt:at,knownSpentMicroUsd:0,outsideConsumersReserveMicroUsd:1000000}};
+ for(const bad of [{...p,residualRiskAccepted:false},{...p,grantManifest:undefined},{...p,validUntil:at+8*86400000},{...p,maxAttempts:3}])assert.throws(()=>createFiniteReservePrefunder(bad,{enabled:true}),/FINITE_RESERVE_POLICY/);
  const accountRow=f.state.get(key('account',[programId,account]));accountRow.grantManifest=p.grantManifest;
  const authKey=key('finite-reserve-authorization',[p.approvalId]);f.state.set(authKey,{v:1,kind:'finite-reserve-authorization',status:'approved',manifest:finiteReserveManifest(p),approvedAt:p.approvedAt,evidenceReference:p.evidenceReference});
  const prefund=createFiniteReservePrefunder(p,{enabled:true,now:()=>clock});
