@@ -1,0 +1,5 @@
+.cc-published-sequence-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cc-escala-contact{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cc-escala-dial{display:inline-flex!important;align-items:center;justify-content:center;width:44px;min-width:44px;min-height:44px;border:1px solid currentColor;border-radius:12px;color:inherit;background:transparent;text-decoration:none}
+.cc-escala-dial svg{width:22px;height:22px}.cc-escala-dial:focus-visible{outline:3px solid currentColor;outline-offset:3px}.cc-escala-dial:disabled{opacity:.5}
+.cc-escala-admin{padding:18px;border:1px solid currentColor;border-radius:16px;margin:16px 0}.cc-escala-admin label{display:grid;gap:6px}.cc-escala-admin input{min-height:44px;max-width:100%;padding:8px;color:inherit;background:transparent;border:1px solid currentColor;border-radius:8px}.cc-escala-admin button{min-height:44px;margin:8px 8px 0 0}.cc-escala-admin small{display:block;margin-top:6px}

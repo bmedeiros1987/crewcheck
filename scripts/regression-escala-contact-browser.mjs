@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import { build } from 'esbuild';
+const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url);
+const { chromium } = require('playwright');
+const built = await build({ entryPoints: ['scripts/fixtures/escala-contact-app.tsx'], outdir: '/tmp/escala-contact-browser-bundle', bundle: true, write: false, format: 'iife', jsx: 'automatic' });
+const js = built.outputFiles.find(file => file.path.endsWith('.js')).text;
+const css = built.outputFiles.find(file => file.path.endsWith('.css'))?.text || '';
+const server = http.createServer((req, res) => { res.setHeader('content-type', req.url === '/fixture.js' ? 'text/javascript' : 'text/html'); res.end(req.url === '/fixture.js' ? js : '<meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:12px;color:#173047;background:#f6f7fa}body.dark{color:#f6f7fa;background:#122339}*{box-sizing:border-box}' + css + '</style><div id="root"></div><script src="/fixture.js"></script>'); });
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+let browser;
+try {
+  browser = await chromium.launch({ ...(process.env.CREWCHECK_QA_CHROMIUM ? { executablePath: process.env.CREWCHECK_QA_CHROMIUM } : {}), args: ['--no-sandbox'] });
+  const context = await browser.newContext({ viewport: { width: 393, height: 851 }, serviceWorkers: 'block' });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  let externalRequests = 0;
+  await context.route('**/*', route => { if (new URL(route.request().url()).origin === origin) return route.continue(); externalRequests++; return route.abort(); });
+  const page = await context.newPage(), errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(origin);
+  const phone = () => page.getByRole('link', { name: 'Escala', exact: true });
+  const input = () => page.getByRole('textbox', { name: 'Telefone', exact: true });
+  const save = () => page.getByRole('button', { name: 'Salvar contato', exact: true });
+  const reload = () => page.getByRole('button', { name: 'Recarregar contato', exact: true });
+  const ready = async (dial = '01141746343') => { await page.waitForFunction(dial => document.querySelector('a[aria-label="Escala"]')?.getAttribute('href') === 'tel:' + dial, dial); };
+  const waitInput = async value => page.waitForFunction(value => document.querySelector('input[type="tel"]')?.value === value, value);
+  await ready(); await waitInput('01141746343');
+  assert.equal(await phone().textContent(), '');
+  assert.equal(await phone().getAttribute('title'), 'Escala');
+  assert.doesNotMatch(await page.locator('body').innerText(), /01141746343/);
+  await phone().click();
+  assert.deepEqual(await page.evaluate(() => fixture.forwarded), ['tel:01141746343']);
+  assert.equal(await page.evaluate(() => fixture.puts), 0);
+  for (const value of ['tel:01141746343', '01141746343#', '*12345678', '01141746343;ext=9', '011 41746343', '+012345678', '1234567']) {
+    await input().fill(value); assert.equal(await save().isDisabled(), true, value);
+  }
+  await page.getByRole('button', { name: 'Cancelar edição' }).click(); await waitInput('01141746343');
+  assert.equal(await page.evaluate(() => fixture.puts), 0);
+  await input().fill('+551141746344');
+  await page.evaluate(() => { fixture.hold = 'PUT'; });
+  await save().evaluate(button => { button.click(); button.click(); });
+  await page.waitForFunction(() => fixture.held.length === 1);
+  assert.equal(await page.evaluate(() => fixture.puts), 1, 'synchronous double click sends one update');
+  await page.evaluate(() => release()); await ready('+551141746344'); await waitInput('+551141746344');
+  assert.equal(await page.evaluate(() => fixture.puts), 1);
+  await page.evaluate(() => { fixture.mode = 'bad-record'; focusFixture(); });
+  await page.getByRole('button', { name: 'Escala', exact: true }).waitFor();
+  assert.equal(await phone().count(), 0, 'malformed read never uses hardcoded default');
+  await page.evaluate(() => { fixture.mode = 'read-error'; focusFixture(); });
+  await page.getByText('Contato da Escala indisponível.', { exact: true }).waitFor();
+  await page.evaluate(() => { fixture.mode = 'ok'; focusFixture(); }); await ready('+551141746344');
+  await input().fill('01141746349'); await page.evaluate(() => { fixture.mode = 'bad-ack'; }); await save().click();
+  await page.getByText(/Alteração não confirmada/).waitFor(); assert.equal(await save().isDisabled(), true);
+  assert.equal(await page.evaluate(() => fixture.contact.dialString), '+551141746344');
+  await page.evaluate(() => { fixture.mode = 'ok'; }); await reload().click(); await waitInput('+551141746344');
+  await input().fill('01141746345');
+  await page.evaluate(() => { fixture.mode = 'unknown-commit'; }); await save().click();
+  await page.getByText(/Alteração não confirmada/).waitFor();
+  assert.equal(await save().isDisabled(), true, 'unknown commit cannot be retried without reread');
+  assert.equal(await page.evaluate(() => fixture.puts), 3);
+  await page.evaluate(() => { fixture.mode = 'ok'; }); await reload().click(); await waitInput('01141746345');
+  await page.evaluate(() => focusFixture()); await ready('01141746345');
+  assert.equal(await page.evaluate(() => fixture.puts), 3, 'read reconciliation never replays update');
+  // Older reader response after a newer focus must not restore the old number.
+  await page.evaluate(() => { fixture.hold = 'GET'; focusFixture(); });
+  await page.waitForFunction(() => fixture.held.length > 0);
+  await page.evaluate(() => { fixture.hold = ''; fixture.contact = { ...fixture.contact, dialString: '01141746346', revision: 3 }; focusFixture(); }); await ready('01141746346');
+  await page.evaluate(() => release()); await ready('01141746346');
+  // Delayed admin grant from A cannot create an editor for B after B was denied.
+  await page.evaluate(() => { fixture.hold = 'ADMIN'; }); await reload().click();
+  await page.waitForFunction(() => fixture.held.length > 0);
+  await page.evaluate(() => { fixture.hold = ''; fixture.admin = false; session('synthetic-B'); });
+  await page.getByText('Contato administrativo indisponível ou acesso não autorizado.').waitFor();
+  await page.evaluate(() => release());
+  assert.equal(await input().count(), 0);
+  await ready('01141746346');
+  // Same owner with a new token fences an already rendered URI even before an event.
+  const before = await page.evaluate(() => fixture.forwarded.length);
+  await phone().evaluate(link => { localStorage.setItem('crewcheck_auth_token', 'replacement-without-event'); link.click(); });
+  assert.equal(await page.evaluate(() => fixture.forwarded.length), before);
+  await page.evaluate(() => { fixture.admin = true; session('synthetic-B', 'replacement-with-event'); }); await ready('01141746346'); await waitInput('01141746346');
+  await input().fill('01141746347'); await page.evaluate(() => { fixture.hold = 'PUT'; }); await save().click(); await page.waitForFunction(() => fixture.held.length === 1);
+  await page.evaluate(() => session('synthetic-C')); await waitInput('01141746347');
+  await page.waitForFunction(() => document.querySelector('input[type="tel"]')?.disabled === false);
+  assert.equal(await input().isDisabled(), false, 'new account does not inherit old unresolved write lock');
+  await input().fill('01141746348'); await save().click(); await page.waitForFunction(() => fixture.held.length === 2);
+  await page.evaluate(() => fixture.held.shift()());
+  assert.equal(await input().isDisabled(), true, 'old finally does not unlock new write');
+  await page.evaluate(() => release()); await waitInput('01141746348'); await ready('01141746348');
+  const output = process.env.ESCALA_CONTACT_QA_OUTPUT;
+  if (output) { fs.mkdirSync(output, { recursive: true }); await page.screenshot({ path: output + '/escala-light.png', fullPage: true }); await page.evaluate(() => document.body.classList.add('dark')); await page.screenshot({ path: output + '/escala-dark.png', fullPage: true }); }
+  assert.deepEqual(errors, []); assert.equal(externalRequests, 0);
+  assert.equal(await page.evaluate(() => fixture.puts), 5);
+  await context.close();
+  console.log('PASS actual React/auth client: icon-only exact dial URI; safe handoff intercepted; admin edit/cancel/double-click; malformed/unavailable read; unknown commit reconciliation; request/account/token fences; zero real calls and zero external requests.');
+} finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
