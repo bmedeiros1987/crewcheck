@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { ChevronDown, Clock, DoorOpen, Pencil, Plane, Watch } from 'lucide-react';
 import { setPendingNavigationContext } from '@/lib/navigationContext';
-import { gateDisplay, statusSourceLabel, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
+import { gateDisplay, boardingTypeLabel, statusSourceLabel, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
 import { useNextFlightGate, useWatchSyncState } from './useNextFlightGate';
 import { ManualGateReview, sourceGateUpdateLabel } from './ManualGateReview';
 import './next-flight-gate.css';
@@ -71,6 +71,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
           <small><DoorOpen aria-hidden="true"/> Portão</small>
           <b role={!info.gate ? 'img' : undefined} aria-label={!info.gate ? 'Portão de embarque não confirmado' : undefined}>{info.gate ? gate : '-'}</b>
           {info.terminal && <em>Terminal {info.terminal}</em>}
+          {info.manualBoardingType && <em>{boardingTypeLabel(info.boardingType)} · informado por você</em>}
         </span>
         <span className="cc-next-gate-facts"><small>Status</small><b role={!info.status ? 'img' : undefined} aria-label={!info.status ? 'Status operacional não confirmado' : undefined}>{info.status || '-'}</b></span>
       </span>
@@ -95,6 +96,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
         <div><dt>Apresentação</dt><dd>{info.presentation || 'Não informada'}</dd></div>
         <div><dt>Terminal</dt><dd>{info.terminal || 'Não informado'}</dd></div>
         <div><dt>Status operacional</dt><dd>{status} · {statusSourceLabel(info)}</dd></div><div><dt>Matrícula</dt><dd>{info.registration || 'Não confirmada'}{info.registrationSource === 'manual' ? ' · informado por você' : info.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}</dd></div>{info.plannedStatus && <div><dt>Planejamento da escala</dt><dd>{info.plannedStatus}</dd></div>}{info.plannedGate && <div><dt>Portão publicado na escala</dt><dd>{info.plannedGate} · não confirma portão atual</dd></div>}
+        <div><dt>Tipo de embarque</dt><dd>{boardingTypeLabel(info.boardingType)}{info.manualBoardingType ? ` · informado por ${info.manualBoardingType.author} em ${sourceGateUpdateLabel(info.manualBoardingType.setAtEpochMs)}` : ''}</dd></div>
         <div><dt>Fonte do portão</dt><dd>{gateSourceLabel(info)}</dd></div>
         {info.radarRejected && <div><dt>Radar</dt><dd>{info.radarRejected === 'position'
           ? 'A fonte informou posição da aeronave, não portão. Ignorada.'
