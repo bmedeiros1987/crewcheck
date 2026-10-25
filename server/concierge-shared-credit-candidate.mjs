@@ -1,3 +1,4 @@
+import {finiteReservePolicy,finiteReserveAmount,finiteReserveManifest} from './concierge-finite-reserve-off.mjs';
 import {createHash} from 'node:crypto';
 
 // Unwired candidate only. Host assertions are not verification of prices,
@@ -33,6 +34,8 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
  if(!policy||typeof resolveTrustedContext!=='function'||typeof now!=='function')throw Error('CREDIT_CONFIGURATION');
  const enabled=policy.enabled===true&&policy.budgetApproved===true;
  const budget=policy.monthlyBudgetMicroUsd,programId=policy.programId;
+ const finite=policy.finiteReserve===undefined?null:finiteReservePolicy(policy.finiteReserve);
+ if(finite&&(finite.programId!==programId||finite.monthlyBudgetMicroUsd!==budget))throw Error('CREDIT_CONFIGURATION');
  const channels=Object.freeze([...(Array.isArray(policy.allowedChannels)?policy.allowedChannels:[])]);
  if(enabled&&(!int(budget)||budget<1||typeof programId!=='string'||!programId||programId.length>80||
   !channels.length||channels.some(channel=>!['whatsapp','voice'].includes(channel))))throw Error('CREDIT_CONFIGURATION');
@@ -46,7 +49,7 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
    !/^[a-f0-9]{64}$/.test(job.eventKey||'')||!Number.isSafeInteger(at)||
    !channels.includes(job.channel)||
    context.quote?.sender!==job.sender||context.quote?.country!=='BR')return false;
-  const amount=boundedQuoteReservation(context.quote,job.channel,at);if(amount===null)return false;
+  const amount=finite?finite.perAttemptMicroUsd:boundedQuoteReservation(context.quote,job.channel,at);if(amount===null)return false;
   const period=periodAt(at),account=context.accountKey;
   const requestKey=sharedCreditKey('request',[programId,job.eventKey]);
   const accountKey=sharedCreditKey('account',[programId,account]);
@@ -58,11 +61,12 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
    const [rows]=await c.query(select,[k]);const value=parse(rows[0]?.payload);if(!value)return false;states.set(k,value);
   }
   const a=states.get(accountKey),g=states.get(globalKey);
-  const fresh=()=>{const current=now();return Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&(a.validFrom===undefined&&a.expiresAt===undefined||(int(a.validFrom)&&int(a.expiresAt)&&current>=a.validFrom&&current<a.expiresAt))&&boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000;};
+  if(finite){const [proofs]=await c.query(select,[sharedCreditKey('finite-reserve-authorization',[finite.approvalId])]);const proof=parse(proofs[0]?.payload);if(proofs.length!==1||proof?.v!==1||proof.kind!=='finite-reserve-authorization'||proof.status!=='approved'||proof.manifest!==finiteReserveManifest(finite)||proof.evidenceReference!==finite.evidenceReference||proof.approvedAt!==finite.approvedAt)return false;}
+  const fresh=()=>{const current=now();return Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&(a.validFrom===undefined&&a.expiresAt===undefined||(int(a.validFrom)&&int(a.expiresAt)&&current>=a.validFrom&&current<a.expiresAt))&&(finite?finiteReserveAmount(finite,context,a,g,job,current)===amount:boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000);};
   if(a.v!==1||a.kind!=='account-credit'||a.accountKey!==account||!int(a.availableMicroUsd)||!int(a.reservedMicroUsd)||
    g.v!==1||g.kind!=='global-credit'||g.period!==period||g.budgetMicroUsd!==budget||
    !int(g.knownSpentMicroUsd)||!int(g.reservedMicroUsd)||g.reconciled!==true||
-   !int(g.reconciledAt)||at<g.reconciledAt||at-g.reconciledAt>15*60_000||!fresh())return false;
+   (!finite&&(!int(g.reconciledAt)||at<g.reconciledAt||at-g.reconciledAt>15*60_000))||!fresh())return false;
   await c.query(insert,[requestKey,JSON.stringify({v:1,kind:'credit-request',state:'empty'})]);
   if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
   const [rows]=await c.query(select,[requestKey]);
@@ -70,13 +74,13 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
   const r=parse(rows[0]?.payload);
   if(r?.v!==1||r.kind!=='credit-request'||r.state!=='empty')return false;
   if(a.availableMicroUsd<amount||g.knownSpentMicroUsd>budget||g.reservedMicroUsd>budget-g.knownSpentMicroUsd||
-   amount>budget-g.knownSpentMicroUsd-g.reservedMicroUsd||!int(a.reservedMicroUsd+amount)||!int(g.reservedMicroUsd+amount))return false;
+   (!finite&&amount>budget-g.knownSpentMicroUsd-g.reservedMicroUsd)||!int(a.reservedMicroUsd+amount)||!int(g.reservedMicroUsd+amount))return false;
   // Reservation precedes engine/provider I/O, in the same transaction as the
   // preparing marker. No refund/retry method exists, even for failed/uncertain.
   for(const [k,value]of [
    [accountKey,{...a,availableMicroUsd:a.availableMicroUsd-amount,reservedMicroUsd:a.reservedMicroUsd+amount}],
-   [globalKey,{...g,reservedMicroUsd:g.reservedMicroUsd+amount}],
-   [requestKey,{v:1,kind:'credit-request',state:'reserved',period,accountKey:account,amountMicroUsd:amount,channel:job.channel,quoteSourceId:context.quote.sourceId}],
+   [globalKey,finite?{...g,finiteReserve:{...g.finiteReserve,usedMicroUsd:g.finiteReserve.usedMicroUsd+amount,attempts:g.finiteReserve.attempts+1}}:{...g,reservedMicroUsd:g.reservedMicroUsd+amount}],
+   [requestKey,{v:1,kind:'credit-request',state:'reserved',period,accountKey:account,amountMicroUsd:amount,channel:job.channel,quoteSourceId:context.quote.sourceId,...(finite?{reservationBasis:'explicit-risk-reserve',finiteManifest:g.finiteReserve.manifest}:{})}],
   ]){
    if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
    const [result]=await c.query(update,[JSON.stringify(value),k]);if(result.affectedRows!==1)throw Error('CREDIT_WRITE');

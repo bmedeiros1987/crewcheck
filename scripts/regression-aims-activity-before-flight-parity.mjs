@@ -10,7 +10,7 @@ import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-ha
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { load, cleanup } = loadClientModules({
-  files: ['client/src/lib/rosterCodes.ts', 'client/src/lib/aimsParser.ts'],
+  files: ['client/src/lib/rosterCodes.ts', 'client/src/lib/aimsParser.ts', 'client/src/lib/canonicalRoster.ts'],
   stubs: TYPE_ONLY_PDF_PARSER_STUB,
   prefix: 'crewcheck-aims-activity-before-flight-',
   expose: { aimsParser: ['parseAimsVisualColumnDays', 'parseAimsHumanBlock'] },
@@ -99,6 +99,146 @@ try {
     assert.equal(leg?.departureTime, '13:00');
     assert.equal(leg?.presentationTime, undefined);
   }
+
+  // PR #1254 r4370548240: removing a bare-clock activity must retain the
+  // positioning marker; the activity's release remains its own published clock.
+  for (const marker of ['[extra]', 'EXTRA', 'PS', 'PAX', 'PASSAGEIRO']) {
+    for (const paired of [false, true]) {
+      const own = paired ? ['ASB', 'BSB', '06:30', 'BSB', '08:50'] : ['ASB', '06:30', '08:50'];
+      const tokens = [...own, marker, 'LA', '3001', '09:50', 'BSB', 'GRU', '11:30', '(320)', '12:00'];
+      for (const read of [aims.parseAimsVisualColumnDays, aims.parseAimsHumanBlock]) {
+        const before = JSON.stringify(tokens);
+        const days = read(tokens, { ...context, rawBlock: tokens.join(' ') });
+        assert.equal(days[0].dutyDebrief, '08:50');
+        assert.equal(days[0].dutyDebriefSource, 'published');
+        const flight = days.find(day => day.legs.length);
+        assert.equal(flight.legs[0].workType, 'PS', `${marker} survives activity removal`);
+        assert.equal(flight.dutyReport, '09:50');
+        assert.equal(flight.dutyReportSource, 'estimated', 'activity release is not flight APZ');
+        assert.equal(JSON.stringify(tokens), before, 'published tokens remain unchanged');
+      }
+    }
+    for (const prefix of [[], ['(...)', 'BSB', '00:40', '(320)']]) {
+      const tokens = [...prefix, 'ASB', '06:30', '08:00', marker, '08:50', 'LA', '3001', '09:20', 'BSB', 'GRU', '11:10', '(320)', '11:40'];
+      for (const read of [aims.parseAimsVisualColumnDays, aims.parseAimsHumanBlock]) {
+        const days = read(tokens, { ...context, rawBlock: tokens.join(' ') });
+        assert.equal(days[0].dutyDebrief, '08:00', 'marker/APZ cannot extend the activity');
+        const flight = days.find(day => day.legs.length);
+        assert.equal(flight.legs[0].workType, 'PS');
+        assert.equal(flight.dutyReport, '08:50');
+        assert.equal(flight.dutyReportSource, 'published');
+        assert.equal(flight.legs[0].departureTime, '09:20');
+      }
+    }
+  }
+
+  // PR #1254 r4370548242: the removed duty still fences the earlier arrival.
+  for (const code of ['ASB', 'HSB', 'CRM']) {
+    const tokens = ['(...)', 'BSB', '08:20', code, 'BSB', '08:30', 'BSB', '09:00', 'LA', '3001', '10:15', 'BSB', 'GRU', '11:45', '(320)', '12:15'];
+    for (const read of [aims.parseAimsVisualColumnDays, aims.parseAimsHumanBlock]) {
+      const days = read(tokens, { ...context, rawBlock: tokens.join(' ') });
+      assert.equal(days[0].dutyReport, '08:30');
+      assert.equal(days[0].dutyDebrief, '09:00');
+      const flight = days.find(day => day.legs.length);
+      assert.equal(flight.dutyReport, '10:15');
+      assert.equal(flight.dutyReportSource, 'estimated');
+      assert.equal(flight.legs[0].presentationTime, undefined);
+    }
+  }
+
+  // Public import, not just the internal token readers: the full-length fixture
+  // exercises physical reconstruction and visual/text merging; the short one
+  // exercises the legacy fallback. Times and flights are synthetic.
+  const canonical = load('canonicalRoster');
+  const publicHeader = 'Escala de Tripulante Convertida para padrão AIMS\nTripulante: SYNTHETIC FIXTURE - BP: 999999 - Base: BSB - 01/10/2032 até 31/10/2032\n';
+  const ownReserve = ['ASB', 'BSB', '06:30', 'BSB', '08:50'];
+  const firstLeg = ['LA', '9801', '09:40', 'BSB', 'GRU', '11:30', '(320)'];
+  const secondLeg = ['LA', '9802', '12:20', 'GRU', 'BSB', '14:00', '(320)', '14:20'];
+  const expectedDuty = (type, start, end) => [type, start, end, 'published', 'published', []];
+  const expectedFlight = (start, end, legs = [['LA9801', 'OP'], ['LA9802', 'OP']], reportSource = 'published') => ['VOO', start, end, reportSource, 'published', legs];
+  const userExpected = [expectedDuty('ASB', '06:30', '08:50'), expectedFlight('08:50', '14:20')];
+  const publicCases = [
+    ['literal source08:50, not takeoff09:40', [...ownReserve, '08:50', ...firstLeg, ...secondLeg], userExpected],
+    ['several independent ground duties', ['HSB', 'BSB', '04:00', 'BSB', '06:10', ...ownReserve, '08:50', ...firstLeg, ...secondLeg], [expectedDuty('HSB', '04:00', '06:10'), ...userExpected]],
+    ['bare reserve release is not flight APZ', ['ASB', '06:30', '08:50', ...firstLeg, ...secondLeg], [userExpected[0], expectedFlight('09:40', '14:20', undefined, 'estimated')]],
+    ['old arrival cannot cross an activity fence', ['(...)', 'BSB', '08:20', 'ASB', 'BSB', '08:30', 'BSB', '09:00', 'LA', '9801', '10:15', 'BSB', 'GRU', '11:45', '(320)', '12:15'], [expectedDuty('ASB', '08:30', '09:00'), expectedFlight('10:15', '12:15', [['LA9801', 'OP']], 'estimated')]],
+    ['activity between flights and after last flight', ['08:50', ...firstLeg, '11:50', 'ASB', 'GRU', '12:10', 'GRU', '13:10', '13:20', 'LA', '9802', '14:10', 'GRU', 'BSB', '15:50', '(320)', '16:10', 'CRM', 'BSB', '16:20', 'BSB', '17:20'], [expectedFlight('08:50', '11:50', [['LA9801', 'OP']]), expectedDuty('ASB', '12:10', '13:10'), expectedFlight('13:20', '16:10', [['LA9802', 'OP']]), expectedDuty('CRM', '16:20', '17:20')]],
+    ['same flight number is not same leg identity', [...ownReserve, '08:50', ...firstLeg, ...secondLeg.map(t => t === '9802' ? '9801' : t)], [userExpected[0], expectedFlight('08:50', '14:20', [['LA9801', 'OP'], ['LA9801', 'OP']])]],
+    ['overnight arrival retains literal clocks', ['ASB', 'BSB', '14:00', 'BSB', '18:00', '18:00', 'LA', '9801', '19:00', 'BSB', 'MAO', '21:40', '(320)', 'LA', '9802', '22:30', 'MAO', 'GRU', '03:50(+1)', '(320)', '04:20(+1)'], [expectedDuty('ASB', '14:00', '18:00'), expectedFlight('18:00', '04:20')]],
+  ];
+  for (const airport of ['GRU', 'REC', 'CPT', 'LIS']) {
+    publicCases.push([`residual ${airport} is not an activity`, ['(...)', airport, '00:40', '(320)', ...ownReserve, '08:50', ...firstLeg, ...secondLeg], userExpected]);
+  }
+  for (const marker of ['[extra]', 'EXTRA', 'PS', 'PAX', 'PASSAGEIRO']) {
+    publicCases.push([`${marker} then own APZ before first leg`, ['ASB', '06:30', '08:00', marker, '08:50', ...firstLeg, ...secondLeg], [expectedDuty('ASB', '06:30', '08:00'), expectedFlight('08:50', '14:20', [['LA9801', 'PS'], ['LA9802', 'OP']])]]);
+    publicCases.push([`${marker} with trailing clock stays on next leg`, [...ownReserve, '08:50', ...firstLeg, marker, '12:00', ...secondLeg], [userExpected[0], expectedFlight('08:50', '14:20', [['LA9801', 'OP'], ['LA9802', 'PS']])]]);
+  }
+  // Continuation-only short legacy parsing is an independently documented,
+  // pre-existing limitation. Here pin the full reconstruction path being changed.
+  publicCases.push(['valid continuation presentation survives reconstruction', ['(...)', 'BSB', '08:29', '09:25', 'LA', '9801', '10:15', 'BSB', 'GRU', '11:45', '(320)', '12:15'], [expectedFlight('09:25', '12:15', [['LA9801', 'OP']])], [true]]);
+  for (const marker of ['[extra]', 'PS']) {
+    publicCases.push([`${marker} with temporally proven next presentation`, [...ownReserve, '08:50', ...firstLeg, marker, '14:00', 'LA', '9802', '14:40', 'GRU', 'BSB', '16:20', '(320)', '16:40'], [userExpected[0], expectedFlight('08:50', '16:40', [['LA9801', 'OP'], ['LA9802', 'PS']])]]);
+  }
+  // Exact duplicated-slot layout, with synthetic crew/date/flight numbers.
+  // Old and revised source clocks remain separate fields, including APZ==STD.
+  for (const sourceClock of ['08:50', '09:40']) {
+    const tokens = ['(...)', 'BSB', '06:15', '06:15', 'ASB', '06:30', '06:30', 'BSB', 'BSB', sourceClock, sourceClock, 'LA', '9801', sourceClock, '09:40', 'BSB', 'BPS', sourceClock === '08:50' ? '11:25' : '11:22', '(321)', 'LA', '9802', '12:05', 'BPS', 'BSB', '13:50', '14:20', '(321)'];
+    publicCases.push([`duplicated-slot source ${sourceClock}`, tokens, [expectedDuty('ASB', '06:30', sourceClock), expectedFlight(sourceClock, '14:20')]]);
+  }
+  publicCases.push(['duplicated-slot source without APZ', ['(...)', 'BSB', '06:15', '06:15', 'ASB', '06:30', '06:30', 'BSB', 'BSB', '09:40', '09:40', 'LA', '9801', '09:40', 'BSB', 'BPS', '11:22', '(321)', 'LA', '9802', '12:05', 'BPS', 'BSB', '13:50', '14:20', '(321)'], [expectedDuty('ASB', '06:30', '09:40'), expectedFlight('09:40', '14:20', undefined, 'estimated')]]);
+  let publicCount = 0;
+  const publicFailures = [];
+  for (const [label, tokens, expected, lengths = [false, true]] of publicCases) for (const long of lengths) for (const withVisual of [false, true]) {
+    const ordinary = ['LA', '9201', '08:50', '09:40', 'BSB', 'GRU', '11:30', '(320)', 'LA', '9202', '12:20', 'GRU', 'BSB', '14:00', '(320)', '14:20'];
+    const columns = long ? Array.from({ length: 12 }, (_, index) => ({ date: `${20 + index}Oct`, tokens: index === 5 ? tokens : index < 5
+      ? ordinary.map(t => /^920[12]$/.test(t) ? String(Number(t) + index * 2) : t) : ['DO'] }))
+      : [{ date: '25Oct', tokens }, { date: '26Oct', tokens: ['DO'] }, { date: '27Oct', tokens: ['DO'] }];
+    const fullText = publicHeader + columns.map(col => col.date + '\n' + col.tokens.join('\n')).join('\n');
+    const rows = columns.flatMap((col, index) => [col.date, ...col.tokens].map((str, row) => ({ page: 1, key: row, text: str, items: [{ str, x: 100 + index * 100, y: 800 - row * 15, page: 1 }] })));
+    const before = JSON.stringify({ tokens, rows });
+    try {
+      const roster = aims.parseAimsRoster(fullText, withVisual ? rows : undefined);
+      const days = roster.days.filter(day => day.date === '25/10/2032');
+      const actual = days.map(day => [day.type, day.dutyReport, day.dutyDebrief, day.dutyReportSource, day.dutyDebriefSource, day.legs.map(leg => [leg.flightNumber, leg.workType])]);
+      assert.deepEqual(actual, expected);
+      const events = canonical.buildCanonicalRosterEvents(roster);
+      const flights = events.filter(event => event.kind === 'flight' && /^LA980[12]$/.test(event.flightNumber));
+      assert.equal(flights.length, expected.reduce((sum, day) => sum + day[5].length, 0), 'canonical legs occur exactly once');
+      assert.equal(new Set(flights.map(event => event.id)).size, flights.length, 'canonical event identities are unique');
+      assert.equal(events.filter(event => event.kind === 'duty' && event.date === '25/10/2032').length, expected.filter(day => !day[5].length).length);
+      assert.deepEqual(flights.map(event => [event.flightNumber, event.leg.workType]), expected.flatMap(day => day[5]));
+      assert.equal(roster.rawText, fullText, 'original source text is intact');
+      assert.equal(JSON.stringify({ tokens, rows }), before, 'input tokens and visual rows are immutable');
+      for (const [type, start, end, reportSource, endSource] of expected) {
+        const day = events.map(event => event.publishedDay).find(item => item?.date === '25/10/2032' && item.type === type && item.dutyReport === start && item.dutyDebrief === end);
+        assert.equal(day.publishedClockEvidence.dutyReport, start);
+        assert.equal(day.publishedClockEvidence.dutyDebrief, end);
+        assert.equal(day.publishedClockEvidence.dutyReportSource, reportSource);
+        assert.equal(day.publishedClockEvidence.dutyDebriefSource, endSource);
+      }
+      if (label.startsWith('duplicated-slot source')) {
+        assert.deepEqual(flights.map(event => [event.departure, event.arrival]), [['09:40', label.endsWith('08:50') ? '11:25' : '11:22'], ['12:05', '13:50']]);
+        assert.equal(flights[0].leg.presentationTime, label.endsWith('without APZ') ? undefined : label.endsWith('08:50') ? '08:50' : '09:40');
+        assert.equal(new Set(flights.map(event => event.journeyId)).size, 1);
+      }
+      if (label.includes('temporally proven')) {
+        assert.equal(flights[1].leg.presentationTime, '14:00');
+        assert.equal(flights[1].leg.dutyClockEvidence.reportSource, 'published');
+      }
+      if (expected === userExpected) {
+        assert.equal(new Set(flights.map(event => event.journeyId)).size, 1, 'one journey, not a duplicate estimate');
+        assert.equal(flights[0].presentation, '08:50');
+        assert.equal(flights[0].startDateTime, '2032-10-25T12:40:00.000Z');
+        const reserve = events.find(event => event.kind === 'duty' && event.flightNumber === 'ASB' && event.date === '25/10/2032');
+        assert.equal(reserve.startDateTime, '2032-10-25T09:30:00.000Z');
+        assert.equal(reserve.endDateTime, '2032-10-25T11:50:00.000Z');
+      }
+      publicCount += 1;
+    } catch (error) { publicFailures.push({ label, long, withVisual, error: error.message }); }
+  }
+  assert.deepEqual(publicFailures, [], JSON.stringify(publicFailures, null, 2));
+  console.log(`PASS public import/canonical: ${publicCount} short/full text/visual cases`);
+
 } finally {
   cleanup();
   fs.rmSync(serverDir, { recursive: true, force: true });
