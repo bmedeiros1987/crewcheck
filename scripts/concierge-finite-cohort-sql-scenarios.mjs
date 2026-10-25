@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createHash,createHmac} from 'node:crypto';
 import {Readable} from 'node:stream';
 import {cohortPolicy,createCohortIngressReceiver,epoch,ownerId,ownerEmail,secrets,sender,programId} from './fixtures/infobip-cohort-sql.mjs';
-import {createPromotionalGrantWriter,promotionalGrantManifest} from '../server/concierge-promotional-credit-sql.mjs';
+import {createPromotionalGrantWriter,promotionalGrantManifest,lockCanonicalCreditIdentities} from '../server/concierge-promotional-credit-sql.mjs';
 import {finiteCohortPolicy,finiteCohortManifest,finiteCohortMemberId,finiteCohortTariffKey,finiteCohortState,createFiniteCohortPrefunder} from '../server/concierge-finite-reserve-off.mjs';
 import {createFiniteCohortSqlResolver} from '../server/concierge-finite-credit-sql.mjs';
 import {createSharedCreditCandidate,sharedCreditKey as key} from '../server/concierge-shared-credit-candidate.mjs';
@@ -118,6 +118,7 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
   return ['max8 cohort/account/request conservation survives actual MySQL restart, duplicates never send and only remaining attempts spend'];
  }
  assert.equal(mode,'suite');
+ await runCanonicalPointLockScenarios({db,transaction,p,globalKey,read});
  await runPrefundConcurrencyScenarios({db,transaction});
  for(const m of p.members){
   const t=m.observedTariff;
@@ -330,5 +331,87 @@ async function runPrefundConcurrencyScenarios({db,transaction}){
    }
   }
   console.log(JSON.stringify({suite:'max8 cohort prefund versus actual '+kind,transactions:outcomes.map(r=>r.status),cohortHeld:cohort,realProviderCalls:0}));
+ }
+}
+
+// Owned disposable MySQL proof only. No DDL, isolation change, retry or runtime
+// diagnostic is installed. Capture the actual reader statements rather than
+// testing a separately hardcoded replacement query.
+async function runCanonicalPointLockScenarios({db,transaction,p,globalKey,read}){
+ const before=await read(globalKey),m=p.members[0],captured=[];
+ const identities=await transaction(c=>lockCanonicalCreditIdentities({...c,query:async(sql,args)=>{
+  if(sql.startsWith('SELECT public_id')&&sql.includes('BINARY'))captured.push({sql,args:[...args]});
+  return c.query(sql,args);
+ }},[{ownerAccountKey:m.ownerAccountKey,sender,recipient:m.recipient,phoneHash:m.recipientHash}]));
+ assert.equal(identities?.get(m.ownerAccountKey)?.publicId,ownerId(0));assert.equal(captured.length,2);
+ const [[count]]=await db.query('SELECT COUNT(*) AS total FROM crewcheck_platform_profiles');assert(Number(count.total)>=8);
+ const requireRR=async c=>{const [[row]]=await c.query('SELECT @@transaction_isolation AS isolation');assert.equal(row.isolation,'REPEATABLE-READ');};
+ for(const [index,column]of ['email','public_id'].entries()){
+  const value=index===0?ownerEmail(0):ownerId(0),source=captured[index];
+  const oldSql=`SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY ${column}=BINARY ? FOR UPDATE`;
+  assert.equal(source.sql,`SELECT public_id FROM crewcheck_platform_profiles WHERE ${column}=? AND BINARY ${column}=BINARY ? FOR UPDATE`);
+  assert.deepEqual(source.args,[value,value]);
+  const plan=async(sql,args)=>{
+   const [rows]=await db.query('EXPLAIN '+sql,args);assert.equal(rows.length,1);const row=rows[0];
+   assert(['ALL','index','const','eq_ref','ref','range'].includes(row.type));
+   assert(row.key===null||typeof row.key==='string'&&/^[A-Za-z0-9_$-]{1,80}$/.test(row.key));
+   assert(Number.isSafeInteger(Number(row.rows))&&Number(row.rows)>=1);
+   return {type:row.type,key:row.key,rows:Number(row.rows)};
+  };
+  const oldPlan=await plan(oldSql,[value]),newPlan=await plan(source.sql,source.args);
+  // A different access path is not waved through as proof of this hypothesis.
+  assert(['ALL','index'].includes(oldPlan.type));assert(oldPlan.rows>1);
+  assert.equal(newPlan.type,'const');assert.equal(newPlan.rows,1);assert(newPlan.key);
+  const exact=rows=>{assert.equal(rows.length,1);assert.equal(rows[0].public_id,ownerId(0));};
+  await transaction(async c=>{await requireRR(c);exact((await c.query(oldSql,[value]))[0]);});
+  await transaction(async c=>{await requireRR(c);exact((await c.query(source.sql,source.args))[0]);});
+  const aliases=[['case',value.toUpperCase()],['accent',value.replace('cohort','cóhort')],['trailing-space',value+' ']],aliasResults=[];
+  for(const [kind,alias]of aliases){
+   assert.notEqual(alias,value);
+   const [collationMatches]=await db.query(`SELECT public_id FROM crewcheck_platform_profiles WHERE ${column}=?`,[alias]);
+   await transaction(async c=>{assert.equal((await c.query(oldSql,[alias]))[0].length,0);assert.equal((await c.query(source.sql,[alias,alias]))[0].length,0);});
+   // Record whether the disposable schema's collation aliases this value;
+   // trailing-space behavior differs between PAD SPACE and NO PAD collations.
+   aliasResults.push({kind,collationMatches:collationMatches.length,byteExactMatches:0});
+  }
+  assert.equal(aliasResults[0].collationMatches,1);assert.equal(aliasResults[1].collationMatches,1);
+  let ready,release,holding=true;
+  const locked=new Promise(resolve=>ready=resolve),hold=new Promise(resolve=>release=resolve);
+  const blocker=transaction(async c=>{
+   await requireRR(c);
+   const [rows]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[ownerEmail(1)]);
+   assert.equal(rows.length,1);assert.equal(rows[0].public_id,ownerId(1));assert.notEqual(rows[0].public_id,ownerId(0));
+   ready();await hold;
+  });
+  const observedBlocker=blocker.then(()=>{holding=false;return {ok:true};},error=>{holding=false;return {error};});
+  const nativeBeforeDestroy=[],nativeAfterDestroy=[];let destroyed=false,targetStarted=false;
+  const waiting=createInfobipSqlBudget({async getConnection(){
+   const c=await db.getConnection();
+   return {beginTransaction:c.beginTransaction.bind(c),commit:c.commit.bind(c),rollback:c.rollback.bind(c),release:c.release.bind(c),
+    destroy(){destroyed=true;c.destroy();},async query(sql,args){
+     if(sql===oldSql){assert.deepEqual(args,[value]);targetStarted=true;}
+     try{return await c.query(sql,args);}catch(error){
+      const code=typeof error?.code==='string'&&/^[A-Z0-9_]{1,80}$/.test(error.code)?error.code:'UNCLASSIFIED_SQL';
+      (destroyed?nativeAfterDestroy:nativeBeforeDestroy).push(code);throw error;
+     }
+    }};
+  }}); // ORIGINAL 8s transaction / 2s query budgets, not enlarged.
+  try{
+   await Promise.race([locked,observedBlocker.then(()=>{throw Error('UNRELATED_PROFILE_LOCK_NOT_HELD');})]);
+   // Prove point access before introducing the intentionally timed-out scan:
+   // client destroy does not imply immediate server-side rollback.
+   await transaction(async c=>{await requireRR(c);exact((await c.query(source.sql,source.args))[0]);});assert(holding);
+   const started=performance.now();
+   await assert.rejects(waiting(async c=>{await requireRR(c);return c.query(oldSql,[value]);}),/INFOBIP_STATE_UNAVAILABLE/);
+   const oldElapsedMs=Math.round(performance.now()-started);
+   assert(targetStarted);assert(destroyed,'only the owned deadline/destroy proves the expected old blocking');
+   assert.deepEqual(nativeBeforeDestroy,[],'unexpected native SQL failures cannot pass the old-query counterproof');assert(holding);
+   console.log(JSON.stringify({suite:'canonical profile point-lock old/new proof',column,profileCount:Number(count.total),oldPlan,newPlan,aliases:aliasResults,
+    oldOwnedDeadline:true,oldElapsedMs,nativeBeforeDestroy,nativeAfterDestroy,newExactRowWhileUnrelatedProfileHeld:true,realProviderCalls:0}));
+  }finally{release();assert.equal((await observedBlocker).ok,true,'blocker must complete normally after explicit release');}
+  // Original-budget point lock is a cleanup fence after releasing the blocker.
+  // Never let the deliberately abandoned scan contaminate a later case.
+  await transaction(async c=>{await requireRR(c);exact((await c.query(source.sql,source.args))[0]);});
+  assert.deepEqual(await read(globalKey),before,'read-only lock probes never mutate the financial allocation');
  }
 }

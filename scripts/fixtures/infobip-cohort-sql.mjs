@@ -69,7 +69,8 @@ export async function cohortFixture({count=2,fund=true,grant=true,policy=cohortP
    let result;
    if(sql.startsWith('SELECT email,consent_concierge')){state.queries.push(sql);const row=state.links.get(args[0]);result=[row?[structuredClone(row)]:[]];}
    else if(sql.startsWith('SELECT public_id')){
-    state.queries.push(sql);const byPublic=/WHERE BINARY public_id/.test(sql);
+    state.queries.push(sql);const byPublic=sql.includes('BINARY public_id=BINARY ?');
+    if(sql.includes('=? AND BINARY ')){assert.equal(args.length,2);assert.equal(args[0],args[1],'indexed and byte-exact parameters must identify the same row');}
     result=[[...state.profiles.values()].filter(row=>(byPublic?row.public_id:row.email)===args[0]).map(row=>({public_id:row.public_id}))];
    }else result=await query(sql,args);
    await sqlEffect(sql,args,result);return result;

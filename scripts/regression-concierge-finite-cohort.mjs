@@ -5,7 +5,7 @@ assert.equal(typeof finiteCohortPolicy,'function','COHORT_POLICY_MISSING');
 assert.equal(typeof createFiniteCohortPrefunder,'function','COHORT_PREFUNDER_MISSING');
 assert.equal(typeof createFiniteCohortSendGate,'function','COHORT_SEND_GATE_MISSING');
 const {cohortPolicy,cohortFixture,hash,phoneHash,ownerId,ownerEmail,epoch,secrets,programId,sender}=await import('./fixtures/infobip-cohort-sql.mjs');
-const {promotionalGrantManifest,createPromotionalCreditSqlResolver}=await import('../server/concierge-promotional-credit-sql.mjs');
+const {promotionalGrantManifest,createPromotionalCreditSqlResolver,createPromotionalGrantWriter,lockCanonicalCreditIdentities}=await import('../server/concierge-promotional-credit-sql.mjs');
 const {createFiniteCohortSqlResolver}=await import('../server/concierge-finite-credit-sql.mjs');
 const {createInfobipWhatsAppProduction}=await import('../server/infobip-whatsapp-production.mjs');
 const {validateInfobipRestrictedPolicy}=await import('../server/infobip-whatsapp-single-test.mjs');
@@ -104,6 +104,19 @@ await test('unknown initial COMMIT does not authorize automatic retry or a secon
   if(phase==='before-any')assert.equal(snapshot(f),before);
   else{conservation(f,[0,0]);const retained=snapshot(f);assert.equal((await f.transaction(f.prefund)).status,'already-reserved');assert.equal(snapshot(f),retained);}
  }
+});
+
+await test('reader and original grant writer retain exact identity under indexed point predicates',async()=>{
+ const f=await cohortFixture(),m=f.p.members[0],seen=[];
+ f.setSql((sql,args)=>{if(sql.startsWith('SELECT public_id'))seen.push({sql,args:structuredClone(args)});});
+ const before=snapshot(f);
+ assert(await f.transaction(c=>lockCanonicalCreditIdentities(c,[{ownerAccountKey:m.ownerAccountKey,sender,recipient:m.recipient,phoneHash:m.recipientHash}])));
+ assert.equal((await f.transaction(c=>createPromotionalGrantWriter({...m.grant,enabled:true},{now:()=>f.state.clock})(c,{ownerPublicId:ownerId(0)}))).status,'already-granted');
+ assert.deepEqual(seen,[
+  {sql:'SELECT public_id FROM crewcheck_platform_profiles WHERE email=? AND BINARY email=BINARY ? FOR UPDATE',args:[ownerEmail(0),ownerEmail(0)]},
+  {sql:'SELECT public_id FROM crewcheck_platform_profiles WHERE public_id=? AND BINARY public_id=BINARY ? FOR UPDATE',args:[ownerId(0),ownerId(0)]},
+  {sql:'SELECT public_id FROM crewcheck_platform_profiles WHERE public_id=? AND BINARY public_id=BINARY ? FOR UPDATE',args:[ownerId(0),ownerId(0)]},
+ ]);assert.equal(snapshot(f),before);
 });
 
 await test('new explicit mode uses authenticated staging and actual production dispatcher for different-cost members without fanout',async()=>{

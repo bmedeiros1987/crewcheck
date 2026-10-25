@@ -22,7 +22,7 @@ export function createPromotionalGrantWriter(options={}, {now=Date.now}={}){
  const atValid=at=>int(at)&&at>=p.validFrom&&at<p.validUntil;
  return async(c,{ownerPublicId}={})=>{
   const at=now();if(!atValid(at)||typeof ownerPublicId!=='string'||hash(ownerPublicId)!==p.ownerAccountKey)return {status:'denied'};
-  const [profiles]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY public_id=BINARY ? FOR UPDATE',[ownerPublicId]);
+  const [profiles]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE public_id=? AND BINARY public_id=BINARY ? FOR UPDATE',[ownerPublicId,ownerPublicId]);
   if(profiles.length!==1||profiles[0].public_id!==ownerPublicId)return {status:'denied'};
   const authority=await lock(c,sharedCreditKey('grant-authorization',[p.approvalId]));
   if(authority?.v!==1||authority.kind!=='promotional-grant-authorization'||authority.status!=='approved'||authority.manifest!==manifest||!int(authority.approvedAt)||authority.approvedAt>at||typeof authority.evidenceReference!=='string'||!authority.evidenceReference.trim())return {status:'denied'};
@@ -46,6 +46,9 @@ export function createPromotionalGrantWriter(options={}, {now=Date.now}={}){
   return {status:'granted'};
  };
 }
+// Indexed equality narrows each profile lock; the unchanged BINARY residual
+// still rejects case/accent/padding aliases. Never replace it with collation
+// equality alone. Full canonical UNIQUE indices remain a deployment gate.
 // Shared canonical proof, also used by the bounded cohort prefunder. Batch
 // locks are whole classes: all links, then all profiles/uniqueness proofs.
 // No account, grant, global row, timestamp refresh or identity is created.
@@ -58,9 +61,9 @@ export async function lockCanonicalCreditIdentities(c,targets){
   found.set(target.ownerAccountKey,{target,link});
  }
  for(const {target,link} of [...found.values()].sort((a,b)=>a.target.ownerAccountKey.localeCompare(b.target.ownerAccountKey))){
-  const [profiles]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY email=BINARY ? FOR UPDATE',[link.email]);
+  const [profiles]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? AND BINARY email=BINARY ? FOR UPDATE',[link.email,link.email]);
   if(profiles.length!==1||typeof profiles[0].public_id!=='string'||hash(profiles[0].public_id)!==target.ownerAccountKey)return null;
-  const [unique]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY public_id=BINARY ? FOR UPDATE',[profiles[0].public_id]);if(unique.length!==1)return null;
+  const [unique]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE public_id=? AND BINARY public_id=BINARY ? FOR UPDATE',[profiles[0].public_id,profiles[0].public_id]);if(unique.length!==1)return null;
   found.set(target.ownerAccountKey,{target,link,publicId:profiles[0].public_id,bindingStamp:JSON.stringify([profiles[0].public_id,JSON.stringify([String(link.linked_at),String(link.updated_at)]),'infobip',target.sender,target.recipient])});
  }
  return found.size===targets.length?found:null;
