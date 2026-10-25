@@ -33,6 +33,8 @@ export function createFiniteReservePrefunder(input,{enabled=false,now=Date.now}=
   const globalKey=sharedCreditKey('global',[p.programId,period(p.validFrom)]),accountKey=sharedCreditKey('account',[p.programId,p.ownerAccountKey]);
   const rows=new Map();for(const k of [globalKey,accountKey].sort())rows.set(k,await read(k));const g=rows.get(globalKey),a=rows.get(accountKey);
   if(!atValid()||a?.v!==1||a.kind!=='account-credit'||a.accountKey!==p.ownerAccountKey||a.grantManifest!==p.grantManifest||g?.v!==1||g.kind!=='global-credit'||g.budgetMicroUsd!==p.monthlyBudgetMicroUsd||g.period!==period(p.validFrom))return {status:'denied'};
+  const tariff=await read(sharedCreditKey('tariff',[p.programId,p.sender,'BR','service-text']));
+  if(tariff?.v!==1||tariff.kind!=='verified-tariff'||tariff.currency!=='USD'||tariff.country!=='BR'||tariff.sender!==p.sender||tariff.category!=='service-text'||tariff.evidenceSha256!==p.observedTariff.evidenceSha256||tariff.verifiedAt!==p.observedTariff.observedAt||tariff.unitMicroUsd!==p.observedTariff.observedUnitMicroUsd||g.billingEvidenceSha256!==p.observedBudget.evidenceSha256)return {status:'denied'};
   if(g.finiteReserve)return {status:g.finiteReserve.manifest===manifest?'already-reserved':'denied'};
   // Initial funding requires a genuinely fresh baseline. Later spending uses the
   // explicitly approved finite envelope, not a fabricated fresh observation.

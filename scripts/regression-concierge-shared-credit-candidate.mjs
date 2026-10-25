@@ -116,6 +116,7 @@ console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:fal
  for(const bad of [{...p,residualRiskAccepted:false},{...p,grantManifest:undefined},{...p,validUntil:at+8*86400000},{...p,maxAttempts:3}])assert.throws(()=>createFiniteReservePrefunder(bad,{enabled:true}),/FINITE_RESERVE_POLICY/);
  const accountRow=f.state.get(key('account',[programId,account]));accountRow.grantManifest=p.grantManifest;
  const authKey=key('finite-reserve-authorization',[p.approvalId]);f.state.set(authKey,{v:1,kind:'finite-reserve-authorization',status:'approved',manifest:finiteReserveManifest(p),approvedAt:p.approvedAt,evidenceReference:p.evidenceReference});
+ g.billingEvidenceSha256=p.observedBudget.evidenceSha256;f.state.set(key('tariff',[programId,p.sender,'BR','service-text']),{v:1,kind:'verified-tariff',currency:'USD',country:'BR',sender:p.sender,category:'service-text',evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,unitMicroUsd:9909});
  const prefund=createFiniteReservePrefunder(p,{enabled:true,now:()=>clock});
  assert.equal((await createFiniteReservePrefunder(p)()).status,'disabled');
  const funded=await Promise.all(Array.from({length:12},()=>f.transaction(prefund)));assert.equal(funded.filter(x=>x.status==='reserved').length,1);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,30000);
