@@ -1,5 +1,6 @@
 import { stayLocalInstant } from '../../../shared/stay-edit-plan.mjs';
 import { airportTimeZone } from '../../../shared/airport-timezones.mjs';
+import { classifyScheduleActivity } from './scheduleActivityClassification';
 
 export type CrewCheckWatchState =
   | 'OFF_DUTY'
@@ -76,6 +77,8 @@ export type WatchEventLike = {
     showPresentation?: boolean;
     leg?: { departureTime?: string | null; presentationTime?: string | null };
     publishedDay?: {
+      type?: string;
+      pairingCode?: string;
       date?: string;
       dutyReport?: string | null;
       dutyReportSource?: 'published' | 'estimated' | 'absent' | 'unknown';
@@ -228,6 +231,15 @@ export function buildCrewCheckWatchSnapshot(
   const activeWindow = (candidate: WatchEventLike) => !candidate.placeholder
     && instant(candidate.canonical?.startDateTime) <= now && now < instant(candidate.canonical?.endDateTime);
   const currentStays = events.filter(candidate => candidate.kind === 'stay' && activeWindow(candidate));
+  // A stale/partial projection can retain an inferred base-rest marker beside
+  // published rest. Do not let that inference contradict the published event,
+  // and never displace an already active selected flight/duty.
+  if ((!event || !activeWindow(event))
+    && currentStays.some(candidate => classifyScheduleActivity(candidate) === 'REPOUSO')) {
+    const publishedRest = events.find(candidate => (candidate.canonical?.kind || candidate.kind) === 'rest'
+      && classifyScheduleActivity(candidate) === 'FOLGA' && activeWindow(candidate));
+    if (publishedRest) event = publishedRest;
+  }
   // Home may select tomorrow's leg while the current occurrence is a stay.
   // Never override an active leg/rest or choose an arbitrary overlapping stay.
   if ((!event || !activeWindow(event)) && currentStays.length === 1) event = currentStays[0];
@@ -268,6 +280,11 @@ export function buildCrewCheckWatchSnapshot(
   }
 
   const canonical = event.canonical;
+  // Canonical kind=stay also carries inferred recovery at the home base.
+  // Keep that source model intact and use the existing presentation classifier.
+  const recoveryStay = event.kind === 'stay' && classifyScheduleActivity(event) === 'REPOUSO';
+  const baseRest = recoveryStay && [event.day?.type, canonical?.publishedDay?.type]
+    .some(type => String(type || '').trim().toUpperCase() === 'DESCANSO_BASE_CONTINUIDADE');
   const departure = publishedDeparture(event);
   const canonicalStartMs = instant(canonical?.startDateTime);
   const endMs = instant(canonical?.endDateTime);
@@ -284,6 +301,8 @@ export function buildCrewCheckWatchSnapshot(
     ? (event.kind === 'stay' && now < startMs) || now < focusStartMs || (restToday && now < startMs)
     : event.kind === 'duty' && Number.isFinite(sourceDayMs) && now < sourceDayMs;
   const expired = Number.isFinite(endMs) && now >= endMs;
+  const activeRecoveryStay = recoveryStay && !future && !expired
+    && Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs;
   const boardingMs = event.kind === 'flight' && departure && provenDomestic(event) ? startMs - 40 * 60_000 : NaN;
 
   // Published schedule gates are planning, not current operational confirmation.
@@ -311,6 +330,10 @@ export function buildCrewCheckWatchSnapshot(
     state = restToday ? 'OFF_DUTY' : 'UNKNOWN';
   } else if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
     state = 'UNKNOWN';
+  } else if (recoveryStay) {
+    // Existing phone/Wear v1 clients understand UNKNOWN and retain headline.
+    // OFF_DUTY renders FOLGA on old clients; inferred recovery is not a day off.
+    state = 'UNKNOWN';
   } else if (event.kind === 'stay') {
     state = 'OVERNIGHT';
   } else if (event.kind === 'flight') {
@@ -337,7 +360,8 @@ export function buildCrewCheckWatchSnapshot(
       && candidate.kind === 'flight'
       && (!journeyId || candidate.canonical?.journeyId === journeyId)
   );
-  const nextStay = laterEvents.find((candidate) => !candidate.placeholder && candidate.kind === 'stay');
+  const nextStay = laterEvents.find((candidate) => !candidate.placeholder && candidate.kind === 'stay'
+    && classifyScheduleActivity(candidate) === 'PERNOITE');
 
   const remainingConnectionMinutes = state === 'CONNECTION'
     ? Math.max(0, Math.round((startMs - now) / 60_000))
@@ -345,7 +369,7 @@ export function buildCrewCheckWatchSnapshot(
   const leaveTime = leaveMs ? clockLabel(leaveMs) : '';
   const leaveMinutes = leaveMs ? Math.max(0, Math.round((leaveMs - now) / 60_000)) : 0;
 
-  const headline = state === 'LEAVE_SOON'
+  const headline = activeRecoveryStay ? (baseRest ? 'DESCANSO NA BASE' : 'REPOUSO') : state === 'LEAVE_SOON'
     ? (leaveMinutes > 0 ? `SAIR EM ${leaveMinutes} MIN` : 'HORA DE SAIR')
     : state === 'CONNECTION'
       ? 'CONEXÃO'
@@ -361,6 +385,7 @@ export function buildCrewCheckWatchSnapshot(
 
   const schedule = events
     .filter((candidate) => !candidate.placeholder && ['flight', 'stay', 'duty'].includes(candidate.kind) && !['rest', 'journey-rest'].includes(candidate.canonical?.kind || ''))
+    .filter((candidate) => candidate.kind !== 'stay' || classifyScheduleActivity(candidate) === 'PERNOITE')
     .filter((candidate) => {
       const start = candidate.canonical?.startDateTime
         ? instant(candidate.canonical.startDateTime)
@@ -405,7 +430,7 @@ export function buildCrewCheckWatchSnapshot(
   // prose must use the same publication proof as APZ and schedule.time.
   const futureClock = event.kind === 'duty' ? presentation || 'horário a confirmar' : clockLabel(startMs);
   const futureDate = dayLabel(dateMs);
-  const inactive = future || expired || state === 'OFF_DUTY' || !Number.isFinite(startMs) || !Number.isFinite(endMs);
+  const inactive = recoveryStay || future || expired || state === 'OFF_DUTY' || !Number.isFinite(startMs) || !Number.isFinite(endMs);
   const transitions = [hotelApz?.at ?? NaN, focusStartMs, startMs, endMs, sourceDayMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
   return {
     schemaVersion: 1,
@@ -415,9 +440,9 @@ export function buildCrewCheckWatchSnapshot(
     state,
     headline,
     primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : event.kind === 'flight' ? clockLabel(startMs) : '',
-    detail: state === 'OVERNIGHT' ? (hotelApz?.label || 'APZ no hotel não informada; confira no celular.') : event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(dateMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
+    detail: activeRecoveryStay ? `${baseRest ? 'Descanso na base' : 'Repouso'} entre programações; não é folga publicada.` : state === 'OVERNIGHT' ? (hotelApz?.label || 'APZ no hotel não informada; confira no celular.') : event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(dateMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
     presentationTime: inactive ? '' : presentation,
-    presentationPlace: [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
+    presentationPlace: recoveryStay ? '' : [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
     leaveTime: inactive ? '' : leaveTime,
     trafficDetail: !inactive && routeIsFresh ? `${route?.durationMinutes || 0} min • deslocamento atual` : '',
     currentFlight: inactive ? '' : currentFlight,
@@ -438,7 +463,7 @@ export function buildCrewCheckWatchSnapshot(
           '', // No unconfirmed schedule gate on the operational watch glance.
         ].filter(Boolean).join(' • ')
       : '',
-    overnight: state === 'OVERNIGHT'
+    overnight: recoveryStay ? '' : state === 'OVERNIGHT'
       ? clean(event.hotel) || clean(event.destination) || clean(event.origin)
       : nextStay
         ? clean(nextStay.hotel) || clean(nextStay.destination) || clean(nextStay.origin)

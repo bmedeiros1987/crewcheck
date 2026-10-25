@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
+import { build as bundle } from 'esbuild';
 const file = new URL('../client/src/lib/.watch-overnight-test.mjs', import.meta.url);
-fs.writeFileSync(file, ts.transpileModule(fs.readFileSync(process.env.WATCH_CONTEXT_SOURCE || 'client/src/lib/watchContext.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
+await bundle({entryPoints:[process.env.WATCH_CONTEXT_SOURCE || 'client/src/lib/watchContext.ts'],outfile:file.pathname,bundle:true,platform:'node',format:'esm',target:'es2022',logLevel:'silent'});
 try {
  const {buildCrewCheckWatchSnapshot:build}=await import(file.href);
  const at=Date.parse;
