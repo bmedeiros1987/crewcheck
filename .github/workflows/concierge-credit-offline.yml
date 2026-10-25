@@ -5,6 +5,7 @@ on:
       - 'server/concierge-shared-credit-candidate.mjs'
       - 'server/concierge-finite-reserve-off.mjs'
       - 'server/concierge-finite-admission-off.mjs'
+      - 'server/concierge-finite-credit-sql.mjs'
       - 'scripts/concierge-finite-reserve-sql-scenarios.mjs'
       - 'server/concierge-promotional-admission.mjs'
       - 'server/concierge-promotional-credit-sql.mjs'
@@ -21,6 +22,7 @@ on:
       - 'scripts/regression-concierge-credit-mysql*'
       - 'docs/concierge-shared-credit-sql-off.md'
       - 'docs/concierge-finite-dispatch-off.md'
+      - 'docs/concierge-finite-caller-off.md'
       # Canonical preparation imports versioned and non-versioned scripts;
       # this also includes the actual-store regression and shared SQL fixture.
       - 'scripts/**'

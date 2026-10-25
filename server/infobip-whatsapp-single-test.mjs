@@ -1,4 +1,5 @@
 import {validateInfobipPromotionalPolicy} from './infobip-whatsapp-promotional-beta.mjs';
+import {validateInfobipFinitePolicy} from './infobip-whatsapp-finite-beta.mjs';
 import {createInfobipWhatsAppApplicationHost} from './infobip-whatsapp-application.mjs';
 import {createInfobipWhatsAppHost} from './infobip-whatsapp-host.mjs';
 import {validateInfobipOperationalPilotPolicy} from './infobip-whatsapp-operational-pilot.mjs';
@@ -25,6 +26,9 @@ export function validateInfobipSingleTestPolicy(policy) {
   return policy;
 }
 export function validateInfobipRestrictedPolicy(policy) {
+  if(policy?.configuration?.finiteBeta!==undefined&&typeof policy.configuration.finiteBeta!=='boolean')throw Error('INFOBIP_FINITE_POLICY');
+  if(policy?.configuration?.finiteBeta===true&&policy?.mode!=='finite-risk-beta-v1')throw Error('INFOBIP_FINITE_POLICY');
+  if(policy?.mode==='finite-risk-beta-v1')return validateInfobipFinitePolicy(policy);
   return policy?.mode==='promotional-beta-v1'?validateInfobipPromotionalPolicy(policy):policy?.mode==='operational-pilot-v1'
     ?validateInfobipOperationalPilotPolicy(policy):validateInfobipSingleTestPolicy(policy);
 }
