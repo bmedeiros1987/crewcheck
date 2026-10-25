@@ -26,7 +26,8 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
  const authorityKey=key('finite-reserve-authorization',[p.approvalId]),eventKey=id=>hash(JSON.stringify(['infobip-inbound-v1',sender,id]));
  const requestKey=id=>key('request',[programId,eventKey(id)]);
  const october=await read(key('global',[programId,'2032-10']));assert.equal(october.finiteReserve.v,1,'v1 fixture remains independent and untouched');
- let clock=epoch,sends=0,engines=0,loseAck=false,revoke=false;
+ let clock=epoch,sends=0,engines=0,loseAck=false,revoke=false,connectionOrdinal=0;
+ const dispatchSqlErrors=[],dispatchDestroyed=[];
  if(mode==='suite'){
   await write(globalKey,{v:1,kind:'global-credit',period,budgetMicroUsd:20000000,knownSpentMicroUsd:p.observedBudget.knownSpentMicroUsd,reservedMicroUsd:p.observedBudget.initialReservedMicroUsd,reconciled:true,reconciledAt:epoch,billingEvidenceSha256:p.observedBudget.evidenceSha256,promotionalAllocatedMicroUsd:0});
   for(const [i,m]of p.members.entries()){
@@ -53,7 +54,33 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
   assert.equal(g.finiteReserve.usedMicroUsd,used);assert.equal(g.finiteReserve.attempts,attempts);
   assert.equal(g.reconciledAt,epoch);assert.deepEqual(await read(key('global',[programId,'2032-10'])),october);
  };
- const ackDb={async getConnection(){const c=await db.getConnection();return {query:c.query.bind(c),beginTransaction:c.beginTransaction.bind(c),rollback:c.rollback.bind(c),release:c.release.bind(c),destroy:c.destroy.bind(c),async commit(){await c.commit();if(loseAck&&sends>=3){loseAck=false;throw Error('SYNTHETIC_COHORT_FINAL_ACK_LOST');}}};}};
+ const queryClass=value=>{
+  const sql=typeof value==='string'?value:'';
+  if(sql.startsWith('SELECT email,consent_concierge'))return 'canonical-link-lock';
+  if(sql.startsWith('SELECT public_id'))return sql.includes('public_id=BINARY')?'canonical-public-id-lock':sql.includes('BINARY email')?'canonical-binary-email-lock':'canonical-email-lock';
+  if(sql.startsWith('SELECT payload'))return 'state-read';
+  if(sql.startsWith('INSERT INTO crewcheck_telegram_state'))return 'state-insert';
+  if(sql.startsWith('UPDATE crewcheck_telegram_state'))return 'state-update';
+  return 'other-sql';
+ };
+ // Capture-only diagnostic. Preserve the original race and strict assertions;
+ // never replace a blocked result with success or retry a transaction. Do not
+ // emit SQL text, parameters, identities, sealed content or provider credentials.
+ const ackDb={async getConnection(){
+  const c=await db.getConnection(),connection=++connectionOrdinal,acquired=performance.now();let operation=0,destroyed=false;
+  const observe=async(method,args=[])=>{
+   const ordinal=++operation,started=performance.now();
+   try{return await c[method](...args);}
+   catch(error){dispatchSqlErrors.push({connection,ordinal,method,queryClass:method==='query'?queryClass(args[0]):null,
+    code:typeof error?.code==='string'&&/^[A-Z0-9_]{1,80}$/.test(error.code)?error.code:'UNCLASSIFIED_SQL',
+    errno:Number.isInteger(error?.errno)?error.errno:null,sqlState:typeof error?.sqlState==='string'&&/^[A-Z0-9]{5}$/.test(error.sqlState)?error.sqlState:null,
+    elapsedMs:Math.round(performance.now()-started),connectionElapsedMs:Math.round(performance.now()-acquired),destroyed});throw error;}
+  };
+  return {query:(...args)=>observe('query',args),beginTransaction:()=>observe('beginTransaction'),rollback:()=>observe('rollback'),release:c.release.bind(c),
+   destroy(){destroyed=true;dispatchDestroyed.push({connection,afterOperation:operation,elapsedMs:Math.round(performance.now()-acquired)});c.destroy();},
+   async commit(){await observe('commit');if(loseAck&&sends>=3){loseAck=false;throw Error('SYNTHETIC_COHORT_FINAL_ACK_LOST');}}
+  };
+ }};
  configureWhatsAppConcierge(async()=>{engines++;if(revoke){revoke=false;await write(grantKey(p.members[2]),{...await read(grantKey(p.members[2])),status:'revoked'});}return 'SYNTHETIC CANONICAL OWNER SCHEDULE';});
  const baseUrl='https://synthetic.api.infobip.com',publicOrigin='https://crewcheck.example.invalid';
  const configuration={finiteBeta:true,sender,baseUrl,allowedSenders:[sender],allowedBaseUrls:[baseUrl],authentication:'hmac-sha256',credentialReferences:{apiKey:'fixture/api',encryptionKey:'fixture/content',linkHashKey:'fixture/link',webhookSecret:'fixture/webhook'},deploymentBinding:{profileId:'synthetic-cohort-profile',subscriptionIds:['synthetic-cohort-subscription'],sender,baseUrl,publicOrigin,linkHashKeyReference:'fixture/link'}};
@@ -127,6 +154,15 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
  try{
   await route(runtime,0,'cohort-first-0');await route(runtime,1,'cohort-first-1');
   const results=await Promise.all([runtime.dispatch(eventKey('cohort-first-0')),runtime.dispatch(eventKey('cohort-first-1')),transaction(c=>ordinary.reserve(c,{...context,eventKey:hash('cohort-ordinary'),channel:'voice'}))]);
+  const boundaryGlobal=await read(globalKey);
+  console.log(JSON.stringify({suite:'DIAGNOSTIC original cohort boundary schedule; strict assertions unchanged',
+   statuses:results.slice(0,2).map(result=>result.status),ordinaryReserved:results[2],sqlErrors:dispatchSqlErrors,destroyedConnections:dispatchDestroyed,
+   stubProviderCalls:sends,realProviderCalls:0,globalReserved:boundaryGlobal.reservedMicroUsd,
+   aggregateAttempts:boundaryGlobal.finiteReserve.attempts,aggregateUsed:boundaryGlobal.finiteReserve.usedMicroUsd,
+   members:await Promise.all(p.members.slice(0,2).map(async(m,i)=>{
+    const account=await read(accountKey(m)),request=await read(requestKey('cohort-first-'+i)),inbound=await read('crewcheck-infobip-inbound-v1:'+eventKey('cohort-first-'+i));
+    return {available:account.availableMicroUsd,reserved:account.reservedMicroUsd,requestState:request?.state??null,inboundState:inbound?.status??null,engineActive:inbound?.engineActive??null};
+   }))}));
   assert.equal(results[0].status,'accepted_unconfirmed');assert.equal(results[1].status,'accepted_unconfirmed');assert.equal(results[2],true);
   assert.equal((await read(globalKey)).reservedMicroUsd,20000000-p.observedBudget.knownSpentMicroUsd);
   assert.equal(await transaction(c=>ordinary.reserve(c,{...context,eventKey:hash('cohort-ordinary-extra'),channel:'voice'})),false);
