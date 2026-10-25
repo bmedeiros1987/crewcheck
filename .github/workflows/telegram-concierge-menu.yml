@@ -3,6 +3,11 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'server/telegram-free-admission-off.mjs'
+      - 'scripts/regression-telegram-free-admission-off.mjs'
+      - 'docs/telegram-free-admission-off.md'
+      - 'server/platform-entitlement.mjs'
+      - 'server/profile-locks.mjs'
       - 'docs/telegram-inline-categories.md'
       - 'scripts/regression-concierge-stay-menu.mjs'
       - 'server/concierge/telegram-menu.mjs'
@@ -36,6 +41,7 @@ jobs:
       - run: |
           set -euo pipefail
           node scripts/tests/telegram-navigation-reuse.test.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-menu-raw.log"
+          node --unhandled-rejections=strict scripts/regression-telegram-free-admission-off.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-free-admission-raw.log"
       - run: |
           set -euo pipefail
           node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-menu-preparation.log"
@@ -45,6 +51,7 @@ jobs:
       - run: |
           set -euo pipefail
           node scripts/tests/telegram-navigation-reuse.test.mjs --materialized 2>&1 | tee "$RUNNER_TEMP/telegram-menu-materialized.log"
+          node --unhandled-rejections=strict scripts/regression-telegram-free-admission-off.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-free-admission-materialized.log"
       - run: node scripts/regression-telegram-concierge-menu.mjs
       - run: node scripts/regression-telegram-duty-facts-handler.mjs
       - run: node scripts/regression-concierge-stay-menu.mjs
@@ -55,6 +62,13 @@ jobs:
       - name: Preserve exact prepared source for independent review
         if: always()
         run: |
+          mkdir -p "$RUNNER_TEMP/telegram-menu-proof/server" "$RUNNER_TEMP/telegram-menu-proof/scripts" "$RUNNER_TEMP/telegram-menu-proof/docs"
+          cp server/{telegram-free-admission-off,platform-entitlement,profile-locks}.mjs "$RUNNER_TEMP/telegram-menu-proof/server/"
+          cp scripts/regression-telegram-free-admission-off.mjs "$RUNNER_TEMP/telegram-menu-proof/scripts/"
+          cp docs/telegram-free-admission-off.md "$RUNNER_TEMP/telegram-menu-proof/docs/"
+          cp "$RUNNER_TEMP"/telegram-free-admission-{raw,materialized}.log "$RUNNER_TEMP/telegram-menu-proof/" 2>/dev/null || true
+          git rev-parse HEAD > "$RUNNER_TEMP/telegram-menu-proof/HELPER_HEAD.txt"
+          sha256sum server/telegram-free-admission-off.mjs server/platform-entitlement.mjs server/profile-locks.mjs scripts/regression-telegram-free-admission-off.mjs docs/telegram-free-admission-off.md > "$RUNNER_TEMP/telegram-menu-proof/HELPER_SHA256SUMS"
           if [ -f .crewcheck-source-preparation.json ]; then
             mkdir -p "$RUNNER_TEMP/telegram-menu-proof"
             cp server.mjs "$RUNNER_TEMP/telegram-menu-proof/"
