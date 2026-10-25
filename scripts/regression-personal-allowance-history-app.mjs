@@ -108,11 +108,18 @@ try{
    const contextFile=width+'-'+state+'-context.png';await page.screenshot({path:path.join(out,contextFile),fullPage:false});
    const geometry=await personal.locator('select,input,button').evaluateAll(nodes=>nodes.filter(node=>node.getClientRects().length).map(node=>{const r=node.getBoundingClientRect();return {tag:node.tagName,left:r.left,right:r.right,width:r.width,viewport:innerWidth};}));
    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
+   const layout=await personal.evaluate(node=>{
+    const panel=node.getBoundingClientRect(),parent=node.parentElement,box=parent.getBoundingClientRect(),style=getComputedStyle(parent);
+    const scale=parent.offsetWidth?box.width/parent.offsetWidth:1,px=property=>(parseFloat(style[property])||0)*scale;
+    return {panel:{left:panel.left,right:panel.right,width:panel.width},parentContent:{left:box.left+px('borderLeftWidth')+px('paddingLeft'),right:box.right-px('borderRightWidth')-px('paddingRight')},parentColumns:style.gridTemplateColumns};
+   });
    const currentStyles=await page.locator('link[rel="stylesheet"]').evaluateAll(nodes=>nodes.filter(node=>node.href.includes('/assets/')).map(node=>({url:new URL(node.href).pathname,loaded:!!node.sheet})));
    assert(currentStyles.length&&currentStyles.every(style=>style.loaded),'captured state uses loaded production CSS');
    const styleHashes=currentStyles.map(style=>({...style,sha256:hash(fs.readFileSync(path.join('dist',style.url.slice(1))))}));
-   report.cases.push({width,state,file,sha256:hash(fs.readFileSync(path.join(out,file))),contextFile,contextSha256:hash(fs.readFileSync(path.join(out,contextFile))),overflow,geometry,styles:styleHashes});
+   report.cases.push({width,state,file,sha256:hash(fs.readFileSync(path.join(out,file))),contextFile,contextSha256:hash(fs.readFileSync(path.join(out,contextFile))),overflow,geometry,layout,styles:styleHashes});
    assert.equal(overflow,false,'production app has no horizontal overflow at '+width+'/'+state);
+   assert(layout.parentContent.right>layout.parentContent.left,'parent content has a measurable width');
+   assert(Math.abs(layout.panel.left-layout.parentContent.left)<=2&&Math.abs(layout.panel.right-layout.parentContent.right)<=2,'personal panel spans the actual parent content width at '+width+'/'+state);
    assert(geometry.every(item=>item.left>=-1&&item.right<=item.viewport+1),'all personal controls fit the production viewport at '+width+'/'+state);
   };
   await review('Refeição integral','2032-01-01','2032-01-01');assert.equal(await raw(),null);await capture('creation-preview');
