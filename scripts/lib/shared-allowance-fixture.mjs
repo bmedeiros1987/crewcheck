@@ -17,7 +17,7 @@ export function installAllowanceDependencies(context,{manual={},stubConfig=false
    const cfg=config(roster,date);
    return {...cfg,resolveSlot:(category,slot)=>{
     const row=cfg.rates[category],value=slot==='taxi'?cfg.taxiRate:slot==='breakfast'?category==='domestic'?cfg.domesticBreakfast:row?.mainMeal*cfg.breakfastPercent:row?.mainMeal;
-    return context.resolveSharedAllowanceSlot({category,slot,date,context:context.readFinancialActApplicability(),owned:typeof value==='number'?{value,source:'manual',version:'synthetic-account-fixture',description:'Explicit synthetic manual amount; not an ACT default.'}:null});
+    return context.resolveSharedAllowanceSlot({category,slot,date,context:context.readFinancialActApplicability(),owned:typeof value==='number'?{value,source:'manual',version:'synthetic-account-fixture',description:'Explicit synthetic manual amount; not an ACT default; previsão não comprova pagamento.'}:null});
    }};
   };
  }

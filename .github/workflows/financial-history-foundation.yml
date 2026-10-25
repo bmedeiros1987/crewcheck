@@ -221,7 +221,9 @@ jobs:
         timeout-minutes: 3
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-act-applicability-browser.mjs
+        run: |
+          node scripts/regression-financial-act-applicability-browser.mjs
+          node scripts/regression-financial-act-applicability-app.mjs
       - name: Verify fixed financial mask and account preference (synthetic)
         timeout-minutes: 3
         env:

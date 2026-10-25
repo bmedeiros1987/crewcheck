@@ -127,3 +127,7 @@ try {
  }
   console.log('PASS synthetic owner review UI: preview/cancel, explicit save, unchecked edit/reload, manual conflict disclosure, bounded rates and account-switch rejection');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+
+// The existing workflow builds the real application before this script. Keep
+// production-CSS visual coverage mandatory, separate from the component fixture.
+await import('./regression-personal-allowance-history-app.mjs');
