@@ -99,7 +99,7 @@ async function capture(page, name) {
   await date.fill('2032-02-05');await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();await page.getByText(/quinta-feira informada não pertence/).waitFor();assert.equal(db.state.revisions.length,count,'wrong cycle never writes');
   await date.fill('2032-02-12');await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();await page.getByRole('button',{name:'Confirmar gravação da previsão revisada',exact:true}).waitFor();assert.equal(db.state.revisions.length,count,'valid single-week preview remains read-only');
  }
- await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await page.locator('.cz-menu-btn').first().click();await page.locator('.cc-menu-destination[data-menu-label="Concierge"]').click();
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await page.locator('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]').click();await page.locator('.cc-menu-destination[data-menu-label="Concierge"]').click();
  await page.getByRole('heading',{name:'Próximas previsões financeiras',exact:true}).waitFor();
  await page.getByText('Parcial · conferir valores e datas.',{exact:true}).waitFor();
  if(scenario==='multi')await page.locator('.cc-concierge-finance time[datetime="2032-03-01"]').waitFor();

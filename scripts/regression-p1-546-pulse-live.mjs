@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-harness.mjs';
 
+await import('./regression-pulse-mobile-navigation.mjs');
+
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const runtime = fs.readFileSync('client/src/components/pulse/pulseRuntime.ts', 'utf8');
 const component = fs.readFileSync('client/src/components/pulse/CrewCheckPulse.tsx', 'utf8');

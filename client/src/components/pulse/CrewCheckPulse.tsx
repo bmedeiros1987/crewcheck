@@ -25,6 +25,7 @@ import {
 import './crewcheck-pulse.css';
 import { alertText } from '../../lib/alertExperienceText';
 import { setPendingNavigationContext, clearPendingNavigationContext } from '../../lib/navigationContext';
+import { availablePulseReturnTarget } from '../navigation/headerMenuAccess';
 
 export type { CrewCheckPulseMessage, CrewCheckPulseTone } from './pulseTypes';
 export { CREWCHECK_PULSE_EVENT, publishCrewCheckPulse } from './pulseRuntime';
@@ -77,7 +78,7 @@ export function CrewCheckPulse({ compact = false, brandMark = false, fallback = 
 
   const dismiss = useCallback(() => {
     if (compact && compactRef.current?.contains(document.activeElement)) {
-      const target = queued > 0 ? detailsRef.current : compactRef.current.closest('.cz-app')?.querySelector<HTMLButtonElement>('.cz-global-header .cz-brand-row button');
+      const target = queued > 0 ? detailsRef.current : availablePulseReturnTarget(compactRef.current.closest('.cz-app'));
       target?.focus({ preventScroll: true });
     }
     const saved = dismissCrewCheckPulse(state.message || undefined);
@@ -90,7 +91,7 @@ export function CrewCheckPulse({ compact = false, brandMark = false, fallback = 
   const tone: CrewCheckPulseTone = message.tone || 'informativo';
   const category: CrewCheckPulseCategory = message.category || 'general';
   const Icon = (category !== 'general' && CATEGORY_ICON[category]) || TONE_ICON[tone] || Info;
-  if (brandMark) return <span className="cz-logo cc-pulse-compact-icon cc-pulse-brand-mark" role="img" aria-label="Notificações CrewCheck" data-crewcheck-brand="notifications"><Icon size={18} strokeWidth={2} absoluteStrokeWidth aria-hidden="true"/><i aria-hidden="true"/></span>;
+  if (brandMark) return <span key={messageKey} className="cz-logo cc-pulse-compact-icon cc-pulse-brand-mark" role="img" aria-label="Notificações CrewCheck" data-crewcheck-brand="notifications"><Icon size={18} strokeWidth={2} absoluteStrokeWidth aria-hidden="true"/><i aria-hidden="true"/></span>;
   const act = () => {
     if (!message.action?.view) {
       setExpanded((value) => !value);
