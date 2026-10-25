@@ -1,3 +1,4 @@
+import {createInfobipPromotionalBetaScope} from './infobip-whatsapp-promotional-beta.mjs';
 import {withConciergeConversationWritesOnly} from './concierge-read-only-scope.mjs';
 import {createHeldInfobipWhatsAppRuntime,bindInfobipWhatsAppRuntime} from './infobip-whatsapp-runtime.mjs';
 import {createInfobipRenderIngressPolicy} from './infobip-whatsapp-render-ingress.mjs';
@@ -73,7 +74,9 @@ export async function createInfobipWhatsAppProduction(options={}) {
     if(input.canonicalLinkHandshakeOnly!==undefined&&typeof input.canonicalLinkHandshakeOnly!=='boolean')fail();
     if(input.canonicalLinkHandshakeOnly===true&&!linkHandshake)fail();
     if(singleTest&&(options.admission?.maxAttempts!==1||options.admission?.recipients?.length!==1))fail();
-    const originalQuantity=createInfobipSendAdmission(options.admission,{sender,now});
+    if(input.promotionalBeta!==undefined&&typeof input.promotionalBeta!=='boolean')fail();
+    const promotional=input.promotionalBeta===true?createInfobipPromotionalBetaScope(input,options.admission,{now}):null;
+    const originalQuantity=promotional?null:createInfobipSendAdmission(options.admission,{sender,now});
     const scheduler=options.scheduler;
     if(typeof scheduler?.set!=='function'||typeof scheduler?.clear!=='function'||typeof options.request!=='function'||
       !isWhatsAppConciergeConfigured())fail();
@@ -83,11 +86,11 @@ export async function createInfobipWhatsAppProduction(options={}) {
     if(typeof sourceDb?.getConnection!=='function')fail();
     const db=Object.freeze({getConnection:sourceDb.getConnection.bind(sourceDb)});
     const credentials=await resolveCredentials(options.credentials,refs);
-    const quantity=pilot?.renewal?createInfobipPilotRenewalAdmission(input,options.admission,{linkHashKey:credentials.linkHashKey,now})
+    const quantity=promotional?promotional.createAdmission(credentials.linkHashKey):pilot?.renewal?createInfobipPilotRenewalAdmission(input,options.admission,{linkHashKey:credentials.linkHashKey,now})
       :originalQuantity;
     const testFrom=options.admission.validFrom;
     const testInput=job=>!linkOnly&&job?.text===singleTestInput&&job.receivedAt>=testFrom;
-    const admission=pilot?Object.freeze({
+    const admission=promotional?quantity:pilot?Object.freeze({
       allows:job=>pilot.allows(job)&&quantity.allows(job),
       reserve:(c,job)=>pilot.reserve(c,job,quantity.reserve),
     }):singleTest?Object.freeze({
@@ -101,17 +104,21 @@ export async function createInfobipWhatsAppProduction(options={}) {
     const transport=createInfobipProductionTextTransport({...configuration,request});
     // Neutral transport smoke test uses the same binding/consent, durable
     // reservation, lifecycle and send locks, without invoking account tools.
-    const concierge=pilot?async input=>{
+    const concierge=promotional?async input=>{
+      if(!promotional.allowsOwner(input.accountId))throw Error('INFOBIP_PROMOTIONAL_OWNER');
+      const selected=promotional.command(input.text);if(selected.reply)return selected.reply;
+      return withConciergeConversationWritesOnly(input.email,()=>invokeConfiguredWhatsAppConcierge({...input,text:selected.text}));
+    }:pilot?async input=>{
       const text=pilot.command(input.text);
       if(!text||!pilot.allowsOwner(input.accountId))throw Error('INFOBIP_OPERATIONAL_PILOT_DENIED');
       return withConciergeConversationWritesOnly(input.email,()=>invokeConfiguredWhatsAppConcierge({...input,text}));
     }:singleTest?async()=>singleTestReply:invokeConfiguredWhatsAppConcierge;
-    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge,...(pilot?{allowsOwner:pilot.allowsOwner}:{}),
-      send:pilot?(proposal,context)=>pilot.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'})
+    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge,...(promotional?{allowsOwner:promotional.allowsOwner}:pilot?{allowsOwner:pilot.allowsOwner}:{}),
+      send:promotional?(proposal,context)=>promotional.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'}):pilot?(proposal,context)=>pilot.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'})
         :singleTest?(proposal,context)=>!linkOnly&&proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
     await preflightInfobipWhatsAppStorage(db,sqlBudget); // SELECT only; never create or repair tables.
     const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now,
-      ...(pilot?{queueLinkConfirmation:false,acceptEvent:event=>admission.allows(event)}:singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
+      ...(promotional?{queueLinkConfirmation:false,acceptEvent:promotional.acceptEvent}:pilot?{queueLinkConfirmation:false,acceptEvent:event=>admission.allows(event)}:singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
         (linkHandshake&&/^\d{6}$/.test(event.text)&&event.receivedAt>=testFrom&&quantity.allows(event))}:{})});
     const report=kind=>createInfobipReportReceiver({kind,authentication:configuration.webhookAuthentication,store,now});
     const pipeline=Object.freeze({receive,receiveDelivery:report('delivery'),receiveSeen:report('seen'),

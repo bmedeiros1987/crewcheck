@@ -26,7 +26,7 @@ export function createInfobipSqlStore(options) { return buildStore(options); }
 // calls the synthetic exercise API. No pool, env, credential discovery or DDL.
 export function createInfobipProductionStore(options, dependencies) {
   if (typeof dependencies?.concierge !== 'function' || typeof dependencies?.send !== 'function' ||
-      typeof dependencies?.admission?.allows !== 'function' || typeof dependencies?.admission?.reserve !== 'function') error();
+      typeof dependencies?.admission?.allows !== 'function' || typeof dependencies?.admission?.reserve !== 'function'||(dependencies.admission.checkSend!==undefined&&typeof dependencies.admission.checkSend!=='function')) error();
   return buildStore(options, Object.freeze({...dependencies}));
 }
 
@@ -151,7 +151,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
           // Same locks as consent/revocation/account mutation through send.
           const current = await lookupLink(c, job), state = await lockState(c, stateKey);
           if (state?.status !== 'dispatching' || state.attemptId !== attemptId) return {status: 'uncertain'};
-          if (signal?.aborted || (admission && !admission.allows(job)) || stamp(current) !== job.bindingStamp || !fresh(job, clock())) {
+          if (signal?.aborted || (admission && !admission.allows(job)) || stamp(current) !== job.bindingStamp || !fresh(job, clock()) || (admission?.checkSend&&!await admission.checkSend(c,job))) {
             await save(c, stateKey, {...state, status: 'cancelled', sealed: null}); return {status: 'cancelled'};
           }
           // Reserve the whole bounded send plus the final SQL operation before

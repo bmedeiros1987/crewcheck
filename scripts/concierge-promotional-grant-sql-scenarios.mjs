@@ -1,3 +1,7 @@
+import {Readable} from 'node:stream';
+import {createInfobipWhatsAppProduction} from '../server/infobip-whatsapp-production.mjs';
+import {CONCIERGE_GLOBAL_BUDGET_PROGRAM} from '../server/infobip-whatsapp-promotional-beta.mjs';
+import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
 import assert from 'node:assert/strict';
 import {createHash,createHmac} from 'node:crypto';
 import {createPromotionalGrantWriter,promotionalGrantManifest,createPromotionalCreditSqlResolver,CONCIERGE_PROMOTIONAL_CREDIT_SQL_SHIPPING} from '../server/concierge-promotional-credit-sql.mjs';
@@ -11,7 +15,7 @@ export async function runPromotionalGrantSqlScenarios({db,transaction,mode,epoch
  const fund=policy=>transaction(c=>grant(policy)(c,{ownerPublicId:owner}));
  const seed=async(policy,{spent=0}={})=>{
   await write(key('grant-authorization',[policy.approvalId]),{v:1,kind:'promotional-grant-authorization',status:'approved',manifest:promotionalGrantManifest(policy),approvedAt:epoch-2000,evidenceReference:'synthetic-human-approval-fixture'});
-  await write(key('global',[policy.programId,'2032-10']),{v:1,kind:'global-credit',period:'2032-10',budgetMicroUsd:50000,knownSpentMicroUsd:spent,reservedMicroUsd:0,reconciled:true,reconciledAt:epoch});
+  await write(key('global',[policy.programId,'2032-10']),{v:1,kind:'global-credit',period:'2032-10',budgetMicroUsd:policy.monthlyBudgetMicroUsd,knownSpentMicroUsd:spent,reservedMicroUsd:0,reconciled:true,reconciledAt:epoch});
  };
  assert.equal(CONCIERGE_PROMOTIONAL_CREDIT_SQL_SHIPPING,false);
  if(mode==='restart'){
@@ -19,9 +23,10 @@ export async function runPromotionalGrantSqlScenarios({db,transaction,mode,epoch
   return ['grant receipt survives actual MySQL restart without resetting consumed balance'];
  }
  await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(160) PRIMARY KEY,public_id VARCHAR(80) NOT NULL,INDEX(public_id)) ENGINE=InnoDB');
- await db.query('CREATE TABLE crewcheck_whatsapp_links(phone_hash CHAR(64) PRIMARY KEY,email VARCHAR(160) NOT NULL,consent_concierge TINYINT NOT NULL,revoked_at DATETIME(3),linked_at DATETIME(3) NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
+ await db.query('CREATE TABLE crewcheck_whatsapp_links(phone_hash CHAR(64) PRIMARY KEY,email VARCHAR(160) NOT NULL,consent_concierge TINYINT NOT NULL,revoked_at DATETIME(3),linked_at DATETIME(3) NOT NULL,updated_at DATETIME(3) NOT NULL,phone_cipher TEXT,consent_alerts TINYINT NOT NULL DEFAULT 0) ENGINE=InnoDB');
+ await db.query('CREATE TABLE crewcheck_whatsapp_link_codes(email VARCHAR(160) PRIMARY KEY,code_hash CHAR(64),expires_at DATETIME(3)) ENGINE=InnoDB');
  await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?)',['grant-owner@synthetic.invalid',owner]);
- await db.query("INSERT INTO crewcheck_whatsapp_links VALUES(?,?,1,NULL,'2032-10-24 12:00:00.000','2032-10-24 12:00:00.000')",[phoneHash,'grant-owner@synthetic.invalid']);
+ await db.query("INSERT INTO crewcheck_whatsapp_links(phone_hash,email,consent_concierge,revoked_at,linked_at,updated_at) VALUES(?,?,1,NULL,'2032-10-24 12:00:00.000','2032-10-24 12:00:00.000')",[phoneHash,'grant-owner@synthetic.invalid']);
  assert.equal((await createPromotionalGrantWriter()()).status,'disabled');
  assert.equal((await fund()).status,'denied');assert.equal(await read(key('account',[p.programId,account])),null);
  await seed(p);const grants=await Promise.all(Array.from({length:20},()=>fund()));assert.equal(grants.filter(x=>x.status==='granted').length,1);assert.equal(grants.filter(x=>x.status==='already-granted').length,19);
@@ -57,5 +62,16 @@ export async function runPromotionalGrantSqlScenarios({db,transaction,mode,epoch
  await assert.rejects(transaction(c=>grant(rollback,()=>clock)({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state')&&++updates===3)clock=epoch+10;return r;}},{ownerPublicId:owner})));clock=epoch;
  assert.equal(await read(key('account',[rollback.programId,account])),null);assert.equal(await read(key('grant-receipt',[rollback.approvalId])),null);assert.equal((await read(key('global',[rollback.programId,'2032-10']))).promotionalAllocatedMicroUsd,undefined);
  const insufficient={...p,approvalId:'synthetic-low-budget',programId:'synthetic-low-budget'};await seed(insufficient,{spent:45000});assert.equal((await fund(insufficient)).status,'denied');assert.notEqual((await read(key('account',[insufficient.programId,account])))?.kind,'account-credit');
- return ['20 concurrent grants create exactly one balance and receipt','grant replay after consumption never resets credit','grant scope/account/budget mismatch denies','real canonical SQL resolver rejects12 malformed proof/version/manifest/source vectors and preserves tariff dates','expiry after last grant UPDATE rolls back balance, allocation and receipt'];
+ const full={...p,programId:CONCIERGE_GLOBAL_BUDGET_PROGRAM,approvalId:'synthetic-composed-caller-approval',monthlyBudgetMicroUsd:20000000};await seed(full);assert.equal((await fund(full)).status,'granted');
+ await write(key('tariff',[full.programId,sender,'BR','service-text']),tariff);
+ const configuration={promotionalBeta:true,sender,baseUrl:'https://synthetic.api.infobip.com',allowedSenders:[sender],allowedBaseUrls:['https://synthetic.api.infobip.com'],authentication:'hmac-sha256',credentialReferences:{apiKey:'fixture/api',encryptionKey:'fixture/content',linkHashKey:'fixture/link',webhookSecret:'fixture/hmac'},deploymentBinding:{profileId:'synthetic-profile',subscriptionIds:['synthetic-subscription'],sender,baseUrl:'https://synthetic.api.infobip.com',publicOrigin:'https://crewcheck.example.invalid',linkHashKeyReference:'fixture/link'}};
+ const credentials={apiKey:'synthetic-api-key-no-network',encryptionKey:Buffer.alloc(32,7),linkHashKey:salt,webhookSecret:'synthetic-hmac-secret-no-network'};let engines=0,sends=0;
+ configureWhatsAppConcierge(async()=>{engines++;return 'SYNTHETIC SAVED SCHEDULE';});
+ const runtime=await createInfobipWhatsAppProduction({enabled:true,configuration,admission:{...full,maxReplies:2,maxCreditMicroUsd:24000,sender,recipient},db,now:()=>epoch,ingress:{mode:'direct-tls',publicOrigin:'https://crewcheck.example.invalid'},credentials:{resolve:async(_ref,{purpose})=>credentials[purpose]},scheduler:{set:()=>1,clear(){}},request:async(_url,{body})=>{sends++;const m=JSON.parse(body);return new Response(JSON.stringify({to:m.to,messageId:m.messageId,status:{groupId:1,groupName:'PENDING',id:26,name:'PENDING_ACCEPTED'}}));}});
+ try{for(let n=0;n<3;n++){
+  const id='synthetic-composed-question-'+n,rawBody=Buffer.from(JSON.stringify({results:[{from:recipient,to:sender,integrationType:'WHATSAPP',receivedAt:new Date(epoch).toISOString(),messageId:id,message:{type:'TEXT',text:'qual minha próxima jornada?'}}]}));
+  const req=Readable.from([rawBody]);Object.assign(req,{method:'POST',rawHeaders:['x-hub-signature','SHA256='+createHmac('sha256',credentials.webhookSecret).update(rawBody).digest('hex')],headers:{host:'crewcheck.example.invalid','content-type':'application/json'},socket:{encrypted:true}});
+  const res={writeHead(s){this.status=s;},end(){this.writableEnded=true;}};await runtime.handleRoute(req,res,new URL('/api/infobip/whatsapp/webhook','https://crewcheck.example.invalid'));assert.equal(res.status,200);await runtime.dispatch(hash(JSON.stringify(['infobip-inbound-v1',sender,id])));
+ }assert.equal(sends,2);assert.equal(engines,2);assert.equal((await read(key('account',[full.programId,account]))).availableMicroUsd,0);}finally{await runtime.dispose();}
+ return ['20 concurrent grants create exactly one balance and receipt','grant replay after consumption never resets credit','grant scope/account/budget mismatch denies','real canonical SQL resolver rejects12 malformed proof/version/manifest/source vectors and preserves tariff dates','expiry after last grant UPDATE rolls back balance, allocation and receipt','actual HMAC receiver and production caller use real MySQL grant/resolver/reservation and send only two synthetic replies'];
 }

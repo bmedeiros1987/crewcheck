@@ -16,6 +16,9 @@ on:
       - 'scripts/p1-infobip-whatsapp-off/**'
       - 'server/whatsapp.mjs'
       - 'server/concierge-read-only-scope.mjs'
+      - 'server/concierge-promotional-*.mjs'
+      - 'server/concierge-shared-credit-candidate.mjs'
+      - 'scripts/regression-infobip-promotional-caller.mjs'
       - 'server/concierge/operational-question.mjs'
       - 'server/concierge/stay-menu.mjs'
       - 'scripts/regression-concierge-operational-question.mjs'
@@ -47,6 +50,7 @@ jobs:
           node scripts/regression-concierge-operational-question.mjs
           node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
+          node scripts/regression-infobip-promotional-caller.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs
           node scripts/regression-infobip-canonical-link.mjs
@@ -64,6 +68,7 @@ jobs:
           node scripts/regression-concierge-operational-question.mjs --prepared
           node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
+          node scripts/regression-infobip-promotional-caller.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs --prepared
           node scripts/regression-infobip-canonical-link.mjs --prepared
