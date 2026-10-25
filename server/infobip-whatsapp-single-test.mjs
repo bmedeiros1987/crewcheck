@@ -1,3 +1,4 @@
+import {validateInfobipPromotionalPolicy} from './infobip-whatsapp-promotional-beta.mjs';
 import {createInfobipWhatsAppApplicationHost} from './infobip-whatsapp-application.mjs';
 import {createInfobipWhatsAppHost} from './infobip-whatsapp-host.mjs';
 import {validateInfobipOperationalPilotPolicy} from './infobip-whatsapp-operational-pilot.mjs';
@@ -24,7 +25,7 @@ export function validateInfobipSingleTestPolicy(policy) {
   return policy;
 }
 export function validateInfobipRestrictedPolicy(policy) {
-  return policy?.mode==='operational-pilot-v1'
+  return policy?.mode==='promotional-beta-v1'?validateInfobipPromotionalPolicy(policy):policy?.mode==='operational-pilot-v1'
     ?validateInfobipOperationalPilotPolicy(policy):validateInfobipSingleTestPolicy(policy);
 }
 
