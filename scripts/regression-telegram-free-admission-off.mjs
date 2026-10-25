@@ -103,6 +103,43 @@ await test('capacity refuses rather than evicting live windows and idle windows 
   assert.equal((await h.limiter.run(h.authority(0), () => assert.fail())).reason, 'cooldown');
   h.setMono(60_000); assert((await h.limiter.run(h.authority(2_001), read)).allowed); assert.equal(h.limiter.statistics().owners, 1);
 });
+await test('completion of a long read preserves the owner notice cooldown across new admissions', async () => {
+  for (const finishedAt of [60_000, 60_001, 120_000]) {
+    const h = fixture(), d = deferred(), a = h.authority();
+    const running = h.limiter.run(a, () => d.promise);
+    h.setMono(finishedAt);
+    const busy = await h.limiter.run(a, () => assert.fail());
+    assert.equal(busy.reason, 'owner_busy'); assert.equal(busy.noticeAllowed, true);
+    d.resolve(); await running;
+    h.setMono(finishedAt + 1);
+    for (let n = 0; n < 3; n++) assert((await h.limiter.run(a, read)).allowed);
+    const denied = await h.limiter.run(a, () => assert.fail());
+    assert.equal(denied.reason, 'cooldown'); assert.equal(denied.noticeAllowed, false);
+    h.setMono(finishedAt + 9_999);
+    assert.equal((await h.limiter.run(a, () => assert.fail())).noticeAllowed, false);
+    h.setMono(finishedAt + 10_000);
+    const boundary = await h.limiter.run(a, () => assert.fail());
+    assert.equal(boundary.reason, 'cooldown'); assert.equal(boundary.retryAfterMs, 1);
+    assert.equal(boundary.noticeAllowed, true);
+    h.setMono(finishedAt + 10_001); assert((await h.limiter.run(a, read)).allowed);
+  }
+});
+await test('notice-only idle entries remain bounded and are reclaimed at the exact notice expiry', async () => {
+  const h = fixture(), d = deferred(), a = h.authority(0);
+  const running = h.limiter.run(a, () => d.promise);
+  h.setMono(60_001);
+  for (let n = 1; n < limits.owners; n++) assert((await h.limiter.run(h.authority(n), read)).allowed);
+  assert.equal((await h.limiter.run(a, () => assert.fail())).noticeAllowed, true);
+  d.resolve(); await running;
+  for (let n = limits.owners; n < limits.owners + 100; n++)
+    assert.equal((await h.limiter.run(h.authority(n), () => assert.fail())).reason, 'capacity');
+  assert.deepEqual(h.limiter.statistics(), { owners: limits.owners, inFlight: 0, maxRetainedTimestamps: 1 });
+  h.setMono(70_000);
+  assert.equal((await h.limiter.run(h.authority(limits.owners), () => assert.fail())).reason, 'capacity');
+  h.setMono(70_001);
+  assert((await h.limiter.run(h.authority(limits.owners), read)).allowed);
+  assert.deepEqual(h.limiter.statistics(), { owners: limits.owners, inFlight: 0, maxRetainedTimestamps: 1 });
+});
 await test('timestamps remain bounded to six under denied flood', async () => {
   const h = fixture(), a = h.authority(); for (let i = 0; i < 3; i++) await h.limiter.run(a, read);
   h.setMono(10_000); for (let i = 0; i < 3; i++) await h.limiter.run(a, read);

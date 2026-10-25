@@ -38,7 +38,8 @@ export function createTelegramFreeAdmission({ enabled = TELEGRAM_FREE_ADMISSION_
   function prune(at) {
     for (const [key, entry] of owners) {
       entry.times = entry.times.filter(time => time > at - limits.minuteMs);
-      if (!entry.active && !entry.times.length) owners.delete(key);
+      // A completed long read may leave only a recent denial notice to retain.
+      if (!entry.active && !entry.times.length && at - entry.noticeAt >= limits.noticeMs) owners.delete(key);
     }
   }
   function deny(reason, at, entry, retryAfterMs = 1_000) {
