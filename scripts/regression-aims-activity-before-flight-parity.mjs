@@ -158,6 +158,7 @@ try {
   const expectedFlight = (start, end, legs = [['LA9801', 'OP'], ['LA9802', 'OP']], reportSource = 'published') => ['VOO', start, end, reportSource, 'published', legs];
   const userExpected = [expectedDuty('ASB', '06:30', '08:50'), expectedFlight('08:50', '14:20')];
   const publicCases = [
+    ['no flight: standby followed by reserve keeps both published occurrences', ['HSB', 'BSB', '00:30', 'BSB', '03:30', 'ASB', 'BSB', '04:10', 'BSB', '08:00'], [expectedDuty('HSB', '00:30', '03:30'), expectedDuty('ASB', '04:10', '08:00')]],
     ['literal source08:50, not takeoff09:40', [...ownReserve, '08:50', ...firstLeg, ...secondLeg], userExpected],
     ['several independent ground duties', ['HSB', 'BSB', '04:00', 'BSB', '06:10', ...ownReserve, '08:50', ...firstLeg, ...secondLeg], [expectedDuty('HSB', '04:00', '06:10'), ...userExpected]],
     ['bare reserve release is not flight APZ', ['ASB', '06:30', '08:50', ...firstLeg, ...secondLeg], [userExpected[0], expectedFlight('09:40', '14:20', undefined, 'estimated')]],
@@ -166,6 +167,69 @@ try {
     ['same flight number is not same leg identity', [...ownReserve, '08:50', ...firstLeg, ...secondLeg.map(t => t === '9802' ? '9801' : t)], [userExpected[0], expectedFlight('08:50', '14:20', [['LA9801', 'OP'], ['LA9801', 'OP']])]],
     ['overnight arrival retains literal clocks', ['ASB', 'BSB', '14:00', 'BSB', '18:00', '18:00', 'LA', '9801', '19:00', 'BSB', 'MAO', '21:40', '(320)', 'LA', '9802', '22:30', 'MAO', 'GRU', '03:50(+1)', '(320)', '04:20(+1)'], [expectedDuty('ASB', '14:00', '18:00'), expectedFlight('18:00', '04:20')]],
   ];
+  // No LA token: the text reader must still split explicit supported activities.
+  // This tests source inventory, not legal eligibility or a financial tariff.
+  const groundCodes = ['ASB', 'HSB', 'HSBE', 'CRM'];
+  for (const first of groundCodes) for (const second of groundCodes) {
+    publicCases.push([`no flight: ${first} then ${second}`,
+      [first, 'BSB', '03:00', 'BSB', '07:00', second, 'BSB', '08:00', 'BSB', '12:00'],
+      [expectedDuty(first, '03:00', '07:00'), expectedDuty(second, '08:00', '12:00')]]);
+  }
+  publicCases.push(['no flight: three independent activities', ['HSB', 'BSB', '00:30', 'BSB', '03:30', 'ASB', 'BSB', '04:10', 'BSB', '08:00', 'CRM', 'BSB', '10:00', 'BSB', '12:00'],
+    [expectedDuty('HSB', '00:30', '03:30'), expectedDuty('ASB', '04:10', '08:00'), expectedDuty('CRM', '10:00', '12:00')]]);
+  for (const code of groundCodes) publicCases.push([`single ${code} unchanged`, [code, 'BSB', '03:00', 'BSB', '07:00'], [expectedDuty(code, '03:00', '07:00')]]);
+  for (const station of ['REC', 'CPT', 'LIS']) {
+    const tokens = ['HSB', station, '00:30', station, '03:30', 'ASB', station, '04:10', station, '08:00'];
+    const expected = [expectedDuty('HSB', '00:30', '03:30'), expectedDuty('ASB', '04:10', '08:00')];
+    publicCases.push([`no flight: ${station} station pairs are not activities`, tokens, expected]);
+    for (const read of [aims.parseAimsHumanBlock, aims.parseAimsVisualColumnDays]) {
+      const days = read(tokens, { ...context, rawBlock: tokens.join(' ') });
+      assert.deepEqual(days.map(day => [day.type, day.dutyReport, day.dutyDebrief, day.dutyReportSource, day.dutyDebriefSource, []]), expected);
+      assert.equal(days.some(day => day.pairingCode === station), false);
+    }
+    const activity = ['HSB', 'BSB', '00:30', 'BSB', '03:30', station, 'BSB', '03:40', 'BSB', '04:00', 'ASB', 'BSB', '04:10', 'BSB', '08:00'];
+    const type = station === 'CPT' ? 'CRM' : 'OTHER';
+    publicCases.push([`no flight: genuine ${station} activity remains a boundary`, activity,
+      [expectedDuty('HSB', '00:30', '03:30'), expectedDuty(type, '03:40', '04:00'), expectedDuty('ASB', '04:10', '08:00')]]);
+    for (const read of [aims.parseAimsHumanBlock, aims.parseAimsVisualColumnDays]) {
+      const days = read(activity, { ...context, rawBlock: activity.join(' ') });
+      assert.equal(days.length, 3);
+      assert.equal(days[1].pairingCode, station, 'a real code outside the preceding station pairs is not discarded');
+    }
+  }
+  // Published station-owned clocks are not duration summaries, even if their
+  // values match the legacy bare-clock duration blacklist. All data fictional.
+  for (const station of ['BSB', 'REC', 'CPT', 'LIS', 'ZZZ']) {
+    publicCases.push([`literal short clocks at ${station}`, ['HSB', station, '03:10', station, '03:15', 'ASB', station, '04:20', station, '10:20'],
+      [expectedDuty('HSB', '03:10', '03:15'), expectedDuty('ASB', '04:20', '10:20')]]);
+    publicCases.push([`literal duplicated slots at ${station}`, ['HSB', '03:10', '03:10', station, station, '03:15', '03:15', 'ASB', '04:20', '04:20', station, station, '10:20', '10:20'],
+      [expectedDuty('HSB', '03:10', '03:15'), expectedDuty('ASB', '04:20', '10:20')]]);
+    publicCases.push([`literal cross-midnight clocks at ${station}`, ['HSB', station, '23:45', station, '02:00', 'ASB', station, '03:00', station, '07:00'],
+      [expectedDuty('ASB', '03:00', '07:00'), expectedDuty('HSB', '23:45', '02:00')]]);
+  }
+  for (const read of [aims.parseAimsHumanBlock, aims.parseAimsVisualColumnDays]) {
+    const days = read(['HSB', '03:10', '03:15', 'ASB', '04:20', '10:20'], context);
+    assert.equal(days[0].dutyReport, null, 'bare duration-like tokens keep legacy conservative filter');
+    assert.equal(days[0].dutyDebrief, null);
+    const duplicated = ['(...)', 'BSB', '00:55', '00:55', 'HSB', '03:10', '03:10', 'BSB', 'BSB', '03:15', '03:15', 'ASB', '04:20', '04:20', 'BSB', 'BSB', '10:20', '10:20'];
+    assert.deepEqual(read(duplicated, context).map(day => [day.type, day.dutyReport, day.dutyDebrief]), [['HSB', '03:10', '03:15'], ['ASB', '04:20', '10:20']]);
+  }
+  for (const read of [aims.parseAimsHumanBlock, aims.parseAimsVisualColumnDays]) {
+    for (const [start, estimatedEnd] of [['03:00', '09:00'], ['04:10', '10:10']]) {
+      const reserve = read(['ASB', 'BSB', start, 'BSB', start], context).find(day => day.type === 'ASB');
+      assert.deepEqual([reserve.dutyReport, reserve.dutyDebrief, reserve.dutyReportSource, reserve.dutyDebriefSource], [start, estimatedEnd, 'published', 'estimated'], 'repeated source start is not a proven release; existing labelled reserve estimate remains');
+    }
+    for (const code of ['HSB', 'HSBE']) {
+      const standby = read([code, 'BSB', '04:10', 'BSB', '04:10'], context).find(day => day.type === code);
+      assert.deepEqual([standby.dutyReport, standby.dutyDebrief, standby.dutyReportSource, standby.dutyDebriefSource], ['04:10', null, 'published', 'absent'], 'repeated standby clocks preserve absent release');
+    }
+    const training = read(['CRM', 'BSB', '04:10', 'BSB', '04:10'], context).find(day => day.type === 'CRM');
+    assert.deepEqual([training.dutyReport, training.dutyDebrief, training.dutyReportSource, training.dutyDebriefSource], ['04:10', '04:10', 'published', 'published'], 'retain existing distinct CRM station-window semantics');
+    for (const clock of ['03:00', '04:10']) {
+      const partial = read(['ASB', 'REC', clock], context).find(day => day.type === 'ASB');
+      assert.deepEqual([partial.dutyReport, partial.dutyDebrief, partial.dutyReportSource, partial.dutyDebriefSource], [null, null, 'absent', 'absent'], 'a partial colliding station pair is not a complete published ASB window');
+    }
+  }
   for (const airport of ['GRU', 'REC', 'CPT', 'LIS']) {
     publicCases.push([`residual ${airport} is not an activity`, ['(...)', airport, '00:40', '(320)', ...ownReserve, '08:50', ...firstLeg, ...secondLeg], userExpected]);
   }
@@ -202,6 +266,9 @@ try {
       const actual = days.map(day => [day.type, day.dutyReport, day.dutyDebrief, day.dutyReportSource, day.dutyDebriefSource, day.legs.map(leg => [leg.flightNumber, leg.workType])]);
       assert.deepEqual(actual, expected);
       const events = canonical.buildCanonicalRosterEvents(roster);
+      const duties = events.filter(event => event.kind === 'duty' && event.date === '25/10/2032');
+      assert.equal(new Set(duties.map(event => event.id)).size, duties.length, 'existing occurrence event IDs are unique');
+      assert.equal(new Set(duties.map(event => event.journeyId)).size, duties.length, 'ground journeys are independent occurrences');
       const flights = events.filter(event => event.kind === 'flight' && /^LA980[12]$/.test(event.flightNumber));
       assert.equal(flights.length, expected.reduce((sum, day) => sum + day[5].length, 0), 'canonical legs occur exactly once');
       assert.equal(new Set(flights.map(event => event.id)).size, flights.length, 'canonical event identities are unique');
@@ -238,6 +305,50 @@ try {
   }
   assert.deepEqual(publicFailures, [], JSON.stringify(publicFailures, null, 2));
   console.log(`PASS public import/canonical: ${publicCount} short/full text/visual cases`);
+
+  // Unavailable clocks stay unavailable; the next activity cannot supply them.
+  for (const withVisual of [false, true]) {
+    const tokens = ['HSB', 'BSB', '00:30', 'BSB', '03:30', 'ASB', 'BSB'];
+    const columns = [{ date: '25Oct', tokens }, { date: '26Oct', tokens: ['DO'] }];
+    const source = publicHeader + columns.map(col => col.date + '\n' + col.tokens.join('\n')).join('\n');
+    const rows = columns.flatMap((col, index) => [col.date, ...col.tokens].map((str, row) => ({ page: 1, key: row, text: str, items: [{ str, x: 100 + index * 100, y: 800 - row * 15, page: 1 }] })));
+    const days = aims.parseAimsRoster(source, withVisual ? rows : undefined).days.filter(day => day.date === '25/10/2032');
+    assert.deepEqual(days.map(day => [day.type, day.dutyReport, day.dutyDebrief, day.dutyReportSource, day.dutyDebriefSource]), [
+      ['HSB', '00:30', '03:30', 'published', 'published'], ['ASB', null, null, 'absent', 'absent'],
+    ]);
+  }
+  const estimatedTokens = ['ASB', 'BSB', '04:10', 'CRM', 'BSB', '10:00', 'BSB', '12:00'];
+  for (const read of [aims.parseAimsHumanBlock, aims.parseAimsVisualColumnDays]) {
+    const days = read(estimatedTokens, { ...context, rawBlock: estimatedTokens.join(' ') });
+    assert.equal(days[0].dutyReport, '04:10');
+    assert.equal(days[0].dutyDebriefSource, 'estimated', 'missing release cannot become published from the next activity');
+    assert.equal(days[1].dutyReport, '10:00');
+    assert.equal(days[1].dutyDebrief, '12:00');
+  }
+
+  // Date ownership is the published column, including a different month/year.
+  for (const [header, firstMarker, firstDate, nextMarker, nextDate] of [
+    [publicHeader, '31Oct', '31/10/2032', '01Nov', '01/11/2032'],
+    [publicHeader.replace('01/10/2032 até 31/10/2032', '01/12/2032 até 31/12/2032'), '31Dec', '31/12/2032', '01Jan', '01/01/2033'],
+  ]) for (const withVisual of [false, true]) {
+    const columns = [
+      { date: firstMarker, tokens: ['HSB', 'BSB', '00:30', 'BSB', '03:30', 'ASB', 'BSB', '04:10', 'BSB', '08:00'] },
+      { date: nextMarker, tokens: ['ASB', 'BSB', '03:00', 'BSB', '07:00', 'CRM', 'BSB', '09:00', 'BSB', '12:00'] },
+    ];
+    const source = header + columns.map(col => col.date + '\n' + col.tokens.join('\n')).join('\n');
+    const rows = columns.flatMap((col, index) => [col.date, ...col.tokens].map((str, row) => ({ page: 1, key: row, text: str, items: [{ str, x: 100 + index * 100, y: 800 - row * 15, page: 1 }] })));
+    const roster = aims.parseAimsRoster(source, withVisual ? rows : undefined);
+    assert.deepEqual(roster.days.map(day => [day.date, day.type, day.dutyReport, day.dutyDebrief]), [
+      [firstDate, 'HSB', '00:30', '03:30'], [firstDate, 'ASB', '04:10', '08:00'],
+      [nextDate, 'ASB', '03:00', '07:00'], [nextDate, 'CRM', '09:00', '12:00'],
+    ]);
+    const events = canonical.buildCanonicalRosterEvents(roster).filter(event => event.kind === 'duty');
+    assert.equal(events.length, 4);
+    assert.equal(new Set(events.map(event => event.id)).size, 4);
+    assert.deepEqual(events.map(event => event.date), [firstDate, firstDate, nextDate, nextDate]);
+    assert.equal(roster.rawText, source);
+  }
+  console.log('PASS no-flight duties: missing-clock provenance and month/year column ownership');
 
 } finally {
   cleanup();
