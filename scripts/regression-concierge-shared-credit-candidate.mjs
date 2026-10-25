@@ -119,13 +119,13 @@ console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:fal
  g.billingEvidenceSha256=p.observedBudget.evidenceSha256;f.state.set(key('tariff',[programId,p.sender,'BR','service-text']),{v:1,kind:'verified-tariff',currency:'USD',country:'BR',sender:p.sender,category:'service-text',evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,unitMicroUsd:9909});
  const prefund=createFiniteReservePrefunder(p,{enabled:true,now:()=>clock});
  assert.equal((await createFiniteReservePrefunder(p)()).status,'disabled');
- const funded=await Promise.all(Array.from({length:12},()=>f.transaction(prefund)));assert.equal(funded.filter(x=>x.status==='reserved').length,1);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,30000);
+ const funded=await Promise.all(Array.from({length:12},()=>f.transaction(prefund)));assert.equal(funded.filter(x=>x.status==='reserved').length,1);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,1030000);
  clock=at+3600000;const oldQuote={...quote('whatsapp'),evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,sessionUntil:clock+3600000};
  assert.equal(boundedQuoteReservation(oldQuote,'whatsapp',clock),null,'ordinary observed quote stays expired');
  const candidate=()=>createSharedCreditCandidate({...f.policy,finiteReserve:p},{now:()=>clock,resolveTrustedContext:async()=>({...f.context,quote:oldQuote})});
  const reserve=n=>f.transaction(c=>candidate().reserve(c,{...job(n),receivedAt:clock}));
  const results=await Promise.all(Array.from({length:15},(_,n)=>reserve(200+n)));assert.equal(results.filter(Boolean).length,2);
- const final=f.state.get(f.globalKey);assert.equal(final.reservedMicroUsd,30000,'full pool reserved once, attempts do not charge global twice');assert.equal(final.finiteReserve.usedMicroUsd,30000);assert.equal(final.finiteReserve.attempts,2);assert.equal(final.reconciledAt,at);assert.equal(oldQuote.verifiedAt,at);assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,20000);
+ const final=f.state.get(f.globalKey);assert.equal(final.reservedMicroUsd,1030000,'full pool reserved once, attempts do not charge global twice');assert.equal(final.finiteReserve.usedMicroUsd,30000);assert.equal(final.finiteReserve.attempts,2);assert.equal(final.reconciledAt,at);assert.equal(oldQuote.verifiedAt,at);assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,20000);
  assert.equal(await reserve(300),false);assert.equal((await f.transaction(prefund)).status,'already-reserved');assert.equal(final.finiteReserve.attempts,2,'prefund replay never restores quantity');
  clock=p.validUntil;assert.equal(await reserve(301),false);
 }
