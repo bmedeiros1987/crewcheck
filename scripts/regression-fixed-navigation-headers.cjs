@@ -86,6 +86,23 @@ async function capturePulseNavigationFocus(page,expectedNode=null) {
     return {active:identity(document.activeElement),expected:inspect(expectedNode),header:inspect(frame?.querySelector('.cz-menu-btn')),footer:inspect(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]')),dismiss:inspect(document.querySelector('.cc-pulse-dismiss')),modals:modals.map(modal=>({...inspect(modal),containsExpected:modal.contains(expectedNode),containsHeader:modal.contains(frame?.querySelector('.cz-menu-btn')),containsFooter:modal.contains(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]'))})),frame:frame?{identity:identity(frame),dataset:{...frame.dataset}}:null,scroll:{x:scrollX,y:scrollY},viewport:{width:innerWidth,height:innerHeight,visual:viewport?{width:viewport.width,height:viewport.height,offsetLeft:viewport.offsetLeft,offsetTop:viewport.offsetTop,pageLeft:viewport.pageLeft,pageTop:viewport.pageTop,scale:viewport.scale}:null}};
   },expectedNode);
 }
+async function captureDismissTargetGeometry(dismiss) {
+  return dismiss.evaluate(element=>{
+    const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+    const identity=node=>node?{tag:node.tagName,id:node.id,className:typeof node.className==='string'?node.className:null,role:node.getAttribute('role')}:null;
+    const finite=value=>typeof value==='number'&&!Number.isFinite(value)?String(value):value;
+    const ancestors=[];
+    for(let node=element;node;node=node.parentElement){
+      const style=getComputedStyle(node),animations=node.getAnimations().map(animation=>{
+        const effect=animation.effect,timing=effect?.getComputedTiming();
+        return {playState:animation.playState,pending:animation.pending,currentTime:finite(animation.currentTime),startTime:finite(animation.startTime),playbackRate:animation.playbackRate,timing:timing?Object.fromEntries(['delay','endDelay','duration','iterations','iterationStart','activeDuration','endTime','localTime','progress','currentIteration'].map(key=>[key,finite(timing[key])])):null,keyframes:effect?.getKeyframes().map(frame=>Object.fromEntries(['offset','computedOffset','easing','transform','translate','scale','rotate','opacity','width','height','minWidth','minHeight','zoom'].filter(key=>key in frame).map(key=>[key,frame[key]])))};
+      });
+      ancestors.push({identity:identity(node),rect:rect(node),offset:{width:node.offsetWidth,height:node.offsetHeight},client:{width:node.clientWidth,height:node.clientHeight},style:Object.fromEntries(['display','position','boxSizing','width','height','minWidth','minHeight','maxWidth','maxHeight','padding','borderWidth','transform','transformOrigin','translate','scale','rotate','zoom','animationName','animationDuration','animationDelay','animationFillMode','transitionProperty','transitionDuration','transitionDelay'].map(key=>[key,style[key]])),animations});
+    }
+    const box=element.getBoundingClientRect(),hit=document.elementFromPoint(box.left+box.width/2,box.top+box.height/2),viewport=visualViewport;
+    return {sampleTime:performance.now(),rect:rect(element),offset:{width:element.offsetWidth,height:element.offsetHeight},client:{width:element.clientWidth,height:element.clientHeight},focused:element===document.activeElement,hit:identity(hit),containsHit:Boolean(hit&&element.contains(hit)),ancestors,scroll:{x:scrollX,y:scrollY},fonts:document.fonts.status,devicePixelRatio,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,viewport:{width:innerWidth,height:innerHeight,visual:viewport?{width:viewport.width,height:viewport.height,offsetLeft:viewport.offsetLeft,offsetTop:viewport.offsetTop,scale:viewport.scale}:null}};
+  });
+}
 // Independent geometry oracle: freeze the expected existing node before the
 // dismissal can change document height; never accept an arbitrary focused Menu.
 function reachableNavigationSnapshot(snapshot,kind) {
@@ -119,7 +136,13 @@ async function activePulseBrandContract(page,{width,size}) {
   const trigger=page.locator('.cc-pulse-compact-trigger');await trigger.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger')?.getAttribute('aria-expanded')==='true');
   const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});await dismiss.focus();
-  const target=await dismiss.boundingBox();assert.ok(target.width>=44&&target.height>=44);
+  const target=await dismiss.boundingBox(),targetMeetsMinimum=target.width>=44&&target.height>=44;
+  if(!targetMeetsMinimum){
+    const diagnostic={width,size,originalBoundingBox:target,originalMeetsMinimum:targetMeetsMinimum,afterSample:await captureDismissTargetGeometry(dismiss)};
+    fs.writeFileSync(path.join(output,`${width}-${size}-dismiss-target-failure.json`),JSON.stringify(diagnostic,null,2));
+    await page.screenshot({path:path.join(output,`${width}-${size}-dismiss-target-failure.png`)});
+  }
+  assert.ok(targetMeetsMinimum,'Dismiss touch target must remain at least 44px in the original sample');
   const beforeDismissFocus=await capturePulseNavigationFocus(page);
   const expectedNavigation=reachableNavigationSnapshot(beforeDismissFocus,'header')?'header':reachableNavigationSnapshot(beforeDismissFocus,'footer')?'footer':null;
   assert.ok(expectedNavigation,'Dismissal requires a reachable enabled navigation action');
