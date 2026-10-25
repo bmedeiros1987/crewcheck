@@ -71,8 +71,8 @@ async function emptyPulseQueue(page) {
   }
   assert.equal(await page.locator('.cc-pulse-compact-trigger').count(),0,'synthetic queue must be explicitly dismissible');
 }
-async function capturePulseNavigationFocus(page) {
-  return page.evaluate(()=>{
+async function capturePulseNavigationFocus(page,expectedNode=null) {
+  return page.evaluate(expectedNode=>{
     const identity=element=>element?{tag:element.tagName,id:element.id,className:typeof element.className==='string'?element.className:null,role:element.getAttribute('role'),label:element.getAttribute('aria-label'),headerNavigation:element.getAttribute('data-header-navigation'),menuTrigger:element.getAttribute('data-crewcheck-menu-trigger')}:null;
     const inspect=element=>{
       if(!element)return null;
@@ -83,8 +83,17 @@ async function capturePulseNavigationFocus(page) {
     const modals=[...document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"], dialog[aria-modal="true"]')];
     try{for(const modal of document.querySelectorAll('dialog:modal'))if(!modals.includes(modal))modals.push(modal);}catch{}
     const frame=document.querySelector('.cz-global-header'),viewport=visualViewport;
-    return {active:identity(document.activeElement),header:inspect(frame?.querySelector('.cz-menu-btn')),footer:inspect(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]')),dismiss:inspect(document.querySelector('.cc-pulse-dismiss')),modals:modals.map(inspect),frame:frame?{identity:identity(frame),dataset:{...frame.dataset}}:null,scroll:{x:scrollX,y:scrollY},viewport:{width:innerWidth,height:innerHeight,visual:viewport?{width:viewport.width,height:viewport.height,offsetLeft:viewport.offsetLeft,offsetTop:viewport.offsetTop,pageLeft:viewport.pageLeft,pageTop:viewport.pageTop,scale:viewport.scale}:null}};
-  });
+    return {active:identity(document.activeElement),expected:inspect(expectedNode),header:inspect(frame?.querySelector('.cz-menu-btn')),footer:inspect(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]')),dismiss:inspect(document.querySelector('.cc-pulse-dismiss')),modals:modals.map(modal=>({...inspect(modal),containsExpected:modal.contains(expectedNode),containsHeader:modal.contains(frame?.querySelector('.cz-menu-btn')),containsFooter:modal.contains(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]'))})),frame:frame?{identity:identity(frame),dataset:{...frame.dataset}}:null,scroll:{x:scrollX,y:scrollY},viewport:{width:innerWidth,height:innerHeight,visual:viewport?{width:viewport.width,height:viewport.height,offsetLeft:viewport.offsetLeft,offsetTop:viewport.offsetTop,pageLeft:viewport.pageLeft,pageTop:viewport.pageTop,scale:viewport.scale}:null}};
+  },expectedNode);
+}
+// Independent geometry oracle: freeze the expected existing node before the
+// dismissal can change document height; never accept an arbitrary focused Menu.
+function reachableNavigationSnapshot(snapshot,kind) {
+  const control=snapshot[kind];
+  const hidden=ancestor=>ancestor.hidden||ancestor.inert||ancestor.ariaHidden==='true'||ancestor.display==='none'||['hidden','collapse'].includes(ancestor.visibility);
+  if(!control?.connected||control.disabled||control.ariaDisabled==='true'||control.rect.width<=0||control.rect.height<=0||!control.center.inViewport||!control.containsHit||control.ancestors.some(ancestor=>hidden(ancestor)||ancestor.opacity==='0'))return false;
+  const containment=kind==='header'?'containsHeader':kind==='footer'?'containsFooter':'containsExpected';
+  return !snapshot.modals.some(modal=>!modal[containment]&&modal.rect.width>0&&modal.rect.height>0&&!modal.ancestors.some(hidden));
 }
 async function activePulseBrandContract(page,{width,size}) {
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{id:'synthetic-header-brand',title:'SYNTHETIC header brand review',compactTitle:'Revisar',category:'compliance',tone:'atencao',priority:'alta',autoDismissMs:0,systemNotification:'never',review:{occurrence:'synthetic-header-brand',version:'v1'}}})));
@@ -112,20 +121,28 @@ async function activePulseBrandContract(page,{width,size}) {
   const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});await dismiss.focus();
   const target=await dismiss.boundingBox();assert.ok(target.width>=44&&target.height>=44);
   const beforeDismissFocus=await capturePulseNavigationFocus(page);
+  const expectedNavigation=reachableNavigationSnapshot(beforeDismissFocus,'header')?'header':reachableNavigationSnapshot(beforeDismissFocus,'footer')?'footer':null;
+  assert.ok(expectedNavigation,'Dismissal requires a reachable enabled navigation action');
+  const navigationTarget=await page.$(expectedNavigation==='header'?'.cz-global-header .cz-menu-btn':'body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]',{strict:true});
+  assert.ok(navigationTarget,'Freeze the exact existing navigation node before dismissal');
+  assert.ok(beforeDismissFocus[expectedNavigation].rect.width>=44&&beforeDismissFocus[expectedNavigation].rect.height>=44,'Navigation return target remains at least44px');
   await page.keyboard.press('Enter');
-  const immediateAfterDismissFocus=await capturePulseNavigationFocus(page);
+  const immediateAfterDismissFocus=await capturePulseNavigationFocus(page,navigationTarget);
   await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').waitFor();
   assert.equal(await mark.count(),0,'last dismissal restores the official mark');
   assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'normal subtitle returns exactly when due');
-  const navigationTarget=page.locator(width<=639?'body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]':'.cz-menu-btn');
   assert.ok(await navigationTarget.isVisible(),'dismissal target remains visible');
   const dismissalFocused=await navigationTarget.evaluate(element=>element===document.activeElement);
-  if(!dismissalFocused){
-    const atAssertionFocus=await capturePulseNavigationFocus(page),diagnostic={width,size,expected:width<=639?'bottom-menu':'header-menu',dismissalFocused,before:beforeDismissFocus,immediatelyAfter:immediateAfterDismissFocus,atAssertion:atAssertionFocus};
+  const atAssertionFocus=await capturePulseNavigationFocus(page,navigationTarget),dismissalReachable=reachableNavigationSnapshot(atAssertionFocus,'expected'),dismissalStillFocused=atAssertionFocus.expected?.focused===true;
+  if(!dismissalFocused||!dismissalReachable||!dismissalStillFocused){
+    const diagnostic={width,size,expected:expectedNavigation,dismissalFocused,dismissalReachable,dismissalStillFocused,before:beforeDismissFocus,immediatelyAfter:immediateAfterDismissFocus,atAssertion:atAssertionFocus};
     fs.writeFileSync(path.join(output,`${width}-${size}-dismissal-focus-failure.json`),JSON.stringify(diagnostic,null,2));
     await page.screenshot({path:path.join(output,`${width}-${size}-dismissal-focus-failure.png`)});
   }
   assert.equal(dismissalFocused,true,'dismissal restores keyboard focus to the reachable navigation action');
+  assert.equal(dismissalReachable,true,'Exact navigation return target remains enabled, visible and uncovered');
+  assert.equal(dismissalStillFocused,true,'Exact navigation return target is focused in the same current geometry snapshot');
+  assert.ok(atAssertionFocus.expected.rect.width>=44&&atAssertionFocus.expected.rect.height>=44,'Focused navigation return target remains at least44px');
   return geometry;
 }
 async function recovered(page) {
