@@ -129,3 +129,12 @@ console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:fal
  assert.equal(await reserve(300),false);assert.equal((await f.transaction(prefund)).status,'already-reserved');assert.equal(final.finiteReserve.attempts,2,'prefund replay never restores quantity');
  clock=p.validUntil;assert.equal(await reserve(301),false);
 }
+{
+ const f=fixture({balance:100000,budget:100000});
+ const p={v:1,basis:'explicit-risk-reserve',residualRiskAccepted:true,riskDisclosureVersion:'provisional-provider-cost-v1',approvalId:'synthetic-outside-provision',evidenceReference:'synthetic-risk-approval',programId,ownerAccountKey:account,grantManifest:'c'.repeat(64),sender:job(1).sender,recipient:job(1).recipient,approvedAt:at,validFrom:at,validUntil:at+86400000,maxAttempts:2,perAttemptMicroUsd:15000,totalMicroUsd:30000,monthlyBudgetMicroUsd:100000,observedTariff:{evidenceSha256:'d'.repeat(64),observedAt:at,observedUnitMicroUsd:9909},observedBudget:{evidenceSha256:'e'.repeat(64),observedAt:at,knownSpentMicroUsd:0,outsideConsumersReserveMicroUsd:50000}};
+ f.state.get(key('account',[programId,account])).grantManifest=p.grantManifest;f.state.get(f.globalKey).billingEvidenceSha256=p.observedBudget.evidenceSha256;
+ f.state.set(key('finite-reserve-authorization',[p.approvalId]),{v:1,kind:'finite-reserve-authorization',status:'approved',manifest:finiteReserveManifest(p),approvedAt:at,evidenceReference:p.evidenceReference});
+ f.state.set(key('tariff',[programId,p.sender,'BR','service-text']),{v:1,kind:'verified-tariff',currency:'USD',country:'BR',sender:p.sender,category:'service-text',evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,unitMicroUsd:9909});
+ assert.equal((await f.transaction(createFiniteReservePrefunder(p,{enabled:true,now:()=>at}))).status,'reserved');assert.equal(f.state.get(f.globalKey).reservedMicroUsd,80000);
+ assert.equal(await f.reserve(700),true);assert.equal(await f.reserve(701),false,'ordinary candidate cannot reuse protected outside-consumer provision');assert.equal(f.state.get(f.globalKey).reservedMicroUsd,92000);
+}
