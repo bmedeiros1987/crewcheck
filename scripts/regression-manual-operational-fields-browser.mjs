@@ -32,9 +32,29 @@ try {
  await page.evaluate(()=>window.dispatchEvent(new Event('crewcheck:manual-gate-updated')));await page.waitForFunction(()=>document.querySelector('input[placeholder="Ex.: 24"]').value==='49');
  // A same-account token change also rejects the stale editor before storage mutation.
  await typeSelect.selectOption('finger');await page.evaluate(()=>localStorage.setItem('crewcheck_auth_token','other-synthetic-token'));await page.getByRole('button',{name:'Salvar portão',exact:true}).click();assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:manual-gate:')))),concurrentBytes);
- // Commit the intentional session reset before making a fresh user choice.
- // Otherwise a still-pending auth-change effect correctly clears the synthetic selection.
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','offline-token');window.notifyAuthChange();});assert.equal(await typeSelect.inputValue(),'unknown');await typeSelect.selectOption('remote');assert.equal(await typeSelect.inputValue(),'remote');await page.getByRole('button',{name:'Salvar portão',exact:true}).click();await page.waitForFunction(()=>window.read().boardingType==='remote');
+ // Finish the synthetic notification before observing the returned session.
+ // Runtime must invalidate the rejected choice even when B never rendered.
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','offline-token');window.notifyAuthChange();});assert.equal(await typeSelect.inputValue(),'unknown');
+ // Rejected A→B→A may have no intermediate render, or may commit B before returning.
+ // Neither ordering may revive the old Finger draft, even with Save in the same JS turn.
+ for(const observeIntermediate of [false,true]) {
+  await typeSelect.selectOption('finger');
+  const beforeCycle=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:manual-gate:'))));
+  const cycle=await page.evaluate(observeIntermediate=>{
+   const save=[...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Salvar portão');
+   localStorage.setItem('crewcheck_auth_token','temporary-token');save.click();
+   const rejectedBytes=Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:manual-gate:')));
+   if(observeIntermediate)window.notifyAuthChange();
+   localStorage.setItem('crewcheck_auth_token','offline-token');window.notifyAuthChange();
+   const restoredDraft=document.querySelector('select').value;save.click();
+   return {rejectedBytes,restoredDraft,storedType:window.read().boardingType};
+  },observeIntermediate);
+  assert.deepEqual(cycle.rejectedBytes,beforeCycle,'silent-token stale Save is still rejected');
+  assert.equal(cycle.restoredDraft,'unknown','rejected session draft cannot revive on A→B→A');
+  assert.equal(cycle.storedType,'unknown','immediate Save cannot persist the rejected old type');
+  await page.waitForFunction(()=>document.querySelector('.cc-manual-gate-status').textContent.startsWith('Portão 49 salvo')); // Next input follows the visible committed receipt.
+ }
+ await typeSelect.selectOption('remote');assert.equal(await typeSelect.inputValue(),'remote');await page.getByRole('button',{name:'Salvar portão',exact:true}).click();await page.waitForFunction(()=>window.read().boardingType==='remote');
  await page.getByRole('button',{name:'Remover',exact:true}).click();await page.waitForFunction(()=>window.read().gate==='');assert.equal((await page.evaluate(()=>window.read())).boardingType,'unknown');assert.equal((await page.evaluate(()=>window.read())).status,'Embarcando');assert.equal((await page.evaluate(()=>window.read())).registration,'PR-ABC');
  await page.getByLabel('Portão de embarque',{exact:true}).fill('24');assert.equal(await typeSelect.inputValue(),'unknown');await page.getByRole('button',{name:'Salvar portão',exact:true}).click();await page.waitForFunction(()=>window.read().gate==='24');
  // Keep the actual form usable on narrow phone widths and large text, no horizontal overflow.

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useLayoutEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { DoorOpen, Trash2 } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/authClient';
 import { MANUAL_GATE_EVENT, writeManualGate, patchManualOperationalFields, manualGateRevision, manualGateIdentity, boardingTypeLabel, type BoardingType, type NextFlightLike } from '@/lib/nextFlightGate';
@@ -21,29 +21,36 @@ export function ManualGateEditor({ event }: { event: NextFlightLike }) {
   const info = useNextFlightGate(event.kind === 'flight' && !event.placeholder ? event : null);
   const manual = info?.manual || null;
   const owner = currentManualGateAccount(), token = getToken();
-  const scope = [owner, token, event.id, manualGateIdentity(event), event.canonical?.startDateTime].join('|');
+  const [sessionGeneration,setSessionGeneration] = useState(0);
+  const scope = [owner, token, event.id, manualGateIdentity(event), event.canonical?.startDateTime, sessionGeneration].join('|');
   const capturedOccurrence = [event.id,manualGateIdentity(event),event.canonical?.startDateTime].join('|');
-  const active = useRef(scope);active.current=scope;
-  useEffect(()=>()=>{if(active.current===scope)active.current='';},[scope]);
+  const active = useRef('');
+  useLayoutEffect(()=>{active.current=scope;return ()=>{if(active.current===scope)active.current='';};},[scope]);
   const initial = () => ({scope,gate:manual?.gate || '',terminal:manual?.terminal || '',status:manual?.operationalStatus?.value || '',registration:manual?.operationalRegistration?.value || '',boardingType:info?.manualBoardingType?.value || 'unknown' as BoardingType,revision:manualGateRevision(manual,owner,event)});
   const [draft,setDraft] = useState(initial);
   const values = draft.scope === scope ? draft : initial();
   const {gate,terminal,status,registration,boardingType} = values;
   const update = (field:'gate'|'terminal'|'status'|'registration',value:string) => setDraft({...values,[field]:value,...(field === 'gate' && value !== gate ? {boardingType:'unknown' as BoardingType} : {})});
-  const [notice,setNotice] = useState({scope:'',text:''});
-  const message = notice.scope === scope ? notice.text : '';
-  const setMessage = (text:string) => setNotice({scope,text});
+  const [notice,setNotice] = useState({scope:'',text:'',sessionChanged:false});
+  const message = notice.sessionChanged || notice.scope === scope ? notice.text : '';
+  const setMessage = (text:string) => setNotice({scope,text,sessionChanged:false});
+  const invalidateSession = () => {
+    // Revoke old callbacks now; a returned token must not revive this draft (A→B→A).
+    active.current='';setSessionGeneration(value=>value+1);
+    setNotice({scope:'',text:'A conta ou sessão mudou. Reveja a programação.',sessionChanged:true});
+  };
   const gateId = useId();
   const terminalId = useId(), boardingTypeId = useId();
   const statusId = useId(), registrationId = useId();
-  useEffect(() => { setDraft(initial()); }, [scope,manual?.gate,manual?.terminal,manual?.setAtEpochMs,manual?.operationalStatus?.setAtEpochMs,manual?.operationalRegistration?.setAtEpochMs,manualGateRevision(manual,owner,event)]);
+  // Commit identity/revision resets before a new input or Save can observe the old draft.
+  useLayoutEffect(() => { setDraft(initial()); }, [scope,manual?.gate,manual?.terminal,manual?.setAtEpochMs,manual?.operationalStatus?.setAtEpochMs,manual?.operationalRegistration?.setAtEpochMs,manualGateRevision(manual,owner,event)]);
   const sessionCurrent = () => Boolean(active.current === scope && token && owner !== 'local' && currentManualGateAccount() === owner && getToken() === token
     && [event.id,manualGateIdentity(event),event.canonical?.startDateTime].join('|') === capturedOccurrence);
 
   if (!info) return null;
 
   function save(value: string, nextTerminal: string) {
-    if (!sessionCurrent()) { setMessage('A conta ou sessão mudou. Reveja a programação.'); return; }
+    if (!sessionCurrent()) { invalidateSession(); return; }
     const result = writeManualGate(window.localStorage, owner, event, { gate: value, terminal: nextTerminal, author: authorLabel(), boardingType: value ? boardingType : 'unknown', expectedManualRevision: values.revision });
     if (!result.ok) { setMessage(result.message); return; }
     setMessage(result.entry ? `Portão ${result.entry.gate} salvo para ${result.entry.flight} em ${result.entry.date.split('-').reverse().join('/')}.` : 'Portão manual removido.');
@@ -51,7 +58,7 @@ export function ManualGateEditor({ event }: { event: NextFlightLike }) {
   }
 
   function saveField(field:'status'|'registration',value:string|null) {
-    if (!sessionCurrent()) { setMessage('A conta ou sessão mudou. Reveja a programação.'); return; }
+    if (!sessionCurrent()) { invalidateSession(); return; }
     const result = patchManualOperationalFields(window.localStorage,owner,event,{[field]:value},authorLabel());
     if (!result.ok) { setMessage(result.message); return; }
     setMessage(value === null ? 'Informação manual removida deste campo.' : 'Informação manual salva para esta ocorrência neste dispositivo.');
