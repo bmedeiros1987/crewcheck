@@ -8,24 +8,26 @@ try{
  const session=await browser.newContext({viewport:{width:390,height:844}}),page=await session.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-act-a',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-token-a');localStorage.setItem('crewcheck:financial-privacy:v2:synthetic-act-a','hidden');localStorage.setItem('crewcheck:financial-privacy:v2:synthetic-act-b','hidden');});
  await page.goto('http://127.0.0.1:'+server.address().port);
+ const control=page.locator('[data-financial-act-context]');
  const key='crewcheck_financial_act_applicability_v1:synthetic-act-a',saved=()=>page.evaluate(k=>localStorage.getItem(k),key);
  assert.equal(await saved(),null);assert(await page.getByText(/Empresa e ACT ainda não confirmados/).isVisible());
  await page.getByText('Confirmar ou revisar aplicação financeira do ACT',{exact:true}).click();
- assert.equal(await page.getByLabel('Empregador',{exact:true}).inputValue(),'');assert.equal(await page.getByLabel('Perfil do ACT',{exact:true}).inputValue(),'');
+ assert.equal(await control.getByLabel(/^Empregador/).count(),1);assert.equal(await control.getByLabel(/^Perfil do ACT/).count(),1);assert.equal(await control.getByLabel(/^Ação/).count(),1);
+ assert.equal(await control.getByLabel(/^Empregador/).inputValue(),'');assert.equal(await control.getByLabel(/^Perfil do ACT/).inputValue(),'');
  const prepare=page.getByRole('button',{name:'Preparar declaração sem gravar',exact:true});await prepare.click();assert.equal(await saved(),null);assert(await page.getByRole('status').filter({hasText:'Selecione empresa'}).isVisible());
- await page.getByLabel('Empregador',{exact:true}).selectOption('TAM_LINHAS_AEREAS_SA');await page.getByLabel('Perfil do ACT',{exact:true}).selectOption('pilot');await page.getByLabel(/Declaro que meu vínculo/).check();
+ await control.getByLabel(/^Empregador/).selectOption('TAM_LINHAS_AEREAS_SA');await control.getByLabel(/^Perfil do ACT/).selectOption('pilot');await control.getByLabel(/Declaro que meu vínculo/).check();
  await prepare.click();assert.equal(await saved(),null);await page.getByRole('button',{name:'Cancelar prévia',exact:true}).click();assert.equal(await saved(),null);
  await prepare.click();await page.getByRole('button',{name:'Confirmar e salvar declaração nesta conta',exact:true}).click();await page.getByRole('status').filter({hasText:'Declaração financeira salva'}).waitFor();
  let raw=await saved();assert.equal(JSON.parse(raw).events[0].role,'pilot');assert(!raw.includes('token'));assert(!raw.includes('109.44'));
  await page.reload();assert.equal(await saved(),raw);await page.getByText('Confirmar ou revisar aplicação financeira do ACT',{exact:true}).click();
- await page.getByLabel('Ação',{exact:true}).selectOption('revoke');await page.getByLabel('Revogar desde',{exact:true}).fill('2026-06-01');await prepare.click();
+ await control.getByLabel(/^Ação/).selectOption('revoke');await control.getByLabel('Revogar desde',{exact:true}).fill('2026-06-01');await prepare.click();
  // Another tab with same revision but changed bytes defeats the exact reviewed snapshot, not just revision.
  const other=await session.newPage();await other.goto('http://127.0.0.1:'+server.address().port);await other.evaluate(k=>{const h=JSON.parse(localStorage.getItem(k));h.events[0].role='cabin';localStorage.setItem(k,JSON.stringify(h));},key);
  await page.waitForFunction(()=>!document.querySelector('[aria-label="Prévia da aplicação financeira"]'));
  assert.equal(await page.getByRole('button',{name:'Confirmar e salvar declaração nesta conta',exact:true}).count(),0);
  await prepare.click();
  await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-act-b',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-token-b');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
- assert.equal(await page.getByRole('button',{name:'Confirmar e salvar declaração nesta conta',exact:true}).count(),0);assert.equal(await page.getByLabel('Empregador',{exact:true}).inputValue(),'');
+ assert.equal(await page.getByRole('button',{name:'Confirmar e salvar declaração nesta conta',exact:true}).count(),0);assert.equal(await control.getByLabel(/^Empregador/).inputValue(),'');
  assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_financial_act_applicability_v1:synthetic-act-b')),null);
  // Explicit hidden preference conceals minimum subtotal and inspection amounts.
  assert(!/28,70/.test(await page.locator('[data-allowance-minimum-reference]').innerText()));

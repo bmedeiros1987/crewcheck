@@ -78,11 +78,13 @@ try {
     const control = page.locator('[data-financial-act-context]');
     assert.match(await control.innerText(), /Empresa e ACT ainda não confirmados/);
     await control.getByText('Confirmar ou revisar aplicação financeira do ACT', { exact: true }).click();
-    assert.equal(await control.getByLabel('Empregador', { exact: true }).inputValue(), '');
-    assert.equal(await control.getByLabel('Perfil do ACT', { exact: true }).inputValue(), '');
+    assert.equal(await control.getByLabel(/^Empregador/).count(), 1);
+    assert.equal(await control.getByLabel(/^Perfil do ACT/).count(), 1);
+    assert.equal(await control.getByLabel(/^Empregador/).inputValue(), '');
+    assert.equal(await control.getByLabel(/^Perfil do ACT/).inputValue(), '');
     const before = await page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith('crewcheck_financial_')).sort().map(key => [key, localStorage.getItem(key)])));
-    await control.getByLabel('Empregador', { exact: true }).selectOption('TAM_LINHAS_AEREAS_SA');
-    await control.getByLabel('Perfil do ACT', { exact: true }).selectOption(role);
+    await control.getByLabel(/^Empregador/).selectOption('TAM_LINHAS_AEREAS_SA');
+    await control.getByLabel(/^Perfil do ACT/).selectOption(role);
     await control.getByLabel(/Declaro que meu vínculo/).check();
     const prepare = control.getByRole('button', { name: 'Preparar declaração sem gravar', exact: true });
     await prepare.click();
