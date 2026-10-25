@@ -1,0 +1,29 @@
+name: Concierge shared credits OFF candidate
+on:
+  pull_request:
+    paths:
+      - 'server/concierge-shared-credit-candidate.mjs'
+      - 'server/infobip-whatsapp-sql-budget.mjs'
+      - 'scripts/regression-concierge-shared-credit-candidate.mjs'
+      - 'scripts/regression-concierge-credit-mysql*'
+      - 'docs/concierge-shared-credit-sql-off.md'
+      - '.github/workflows/concierge-credit-offline.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-credit-reservations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Synthetic contract, no transport
+        run: node scripts/regression-concierge-shared-credit-candidate.mjs
+      - name: Real isolated InnoDB, concurrency and restart without networking
+        run: bash scripts/regression-concierge-credit-mysql-ci.sh
