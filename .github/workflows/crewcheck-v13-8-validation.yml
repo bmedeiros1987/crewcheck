@@ -135,6 +135,7 @@ jobs:
           node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-escala-contact-dom.mjs
           node scripts/regression-escala-contact-browser.mjs
+          node scripts/regression-standby-sequence-card-browser.mjs --raw
       - name: Prepare canonical application and build shipping CSS for layout fixtures
         run: npm run build
       - name: Verify built Notifications navigation with synthetic accounts
@@ -162,6 +163,7 @@ jobs:
           node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-escala-contact-dom.mjs
           node scripts/regression-escala-contact-browser.mjs
+          node scripts/regression-standby-sequence-card-browser.mjs
           node scripts/regression-wakeup-session-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
