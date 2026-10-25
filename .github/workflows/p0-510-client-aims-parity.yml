@@ -7,6 +7,8 @@ on:
       - 'client/src/lib/aimsParser.ts'
       - 'scripts/lib/ts-module-harness.mjs'
       - 'scripts/regression-p0-510-client-aims-parity-current.mjs'
+      - 'scripts/regression-aims-activity-before-flight-parity.mjs'
+      - 'server/rosterParser.mjs'
       - '.github/workflows/p0-510-client-aims-parity.yml'
   workflow_dispatch:
 
@@ -28,10 +30,14 @@ jobs:
       - run: npm ci
       - name: Validate client AIMS parity before preparation
         run: node scripts/regression-p0-510-client-aims-parity-current.mjs
+      - name: Activities before flights match the server, before preparation
+        run: for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ="$zone" node scripts/regression-aims-activity-before-flight-parity.mjs; done
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Validate client AIMS parity after preparation
         run: node scripts/regression-p0-510-client-aims-parity-current.mjs
+      - name: Activities before flights match the server, after preparation
+        run: for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ="$zone" node scripts/regression-aims-activity-before-flight-parity.mjs; done
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Web build
