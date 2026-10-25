@@ -134,6 +134,8 @@ jobs:
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-escala-contact-dom.mjs
+          node scripts/regression-guest-invitation-dom.cjs
+          node scripts/regression-guest-invitation-browser.cjs
           node scripts/regression-escala-contact-browser.mjs
           node scripts/regression-standby-sequence-card-browser.mjs --raw
       - name: Prepare canonical application and build shipping CSS for layout fixtures
@@ -162,6 +164,8 @@ jobs:
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-escala-contact-dom.mjs
+          node scripts/regression-guest-invitation-dom.cjs
+          node scripts/regression-guest-invitation-browser.cjs
           node scripts/regression-escala-contact-browser.mjs
           node scripts/regression-standby-sequence-card-browser.mjs
           node scripts/regression-wakeup-session-browser.mjs
@@ -408,3 +412,4 @@ jobs:
             ${{ runner.temp }}/elevenlabs-dual-voice-regression.log
           if-no-files-found: ignore
           retention-days: 7
+
