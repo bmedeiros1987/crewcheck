@@ -97,7 +97,9 @@ export function createFiniteReserveSendGate(input,{enabled=false,now=Date.now,re
   const [result]=await c.query(update,[JSON.stringify({...r,state:'send-authorized',sendAuthorizedAt:at}),requestKey]);
   if(result.affectedRows!==1)throw Error('FINITE_SEND_WRITE');
   // Writes exist now: expiry must roll the transaction back, never return false.
-  if(!timely(now(),j,q,at)||c.signal?.aborted)throw Error('FINITE_SEND_EXPIRED');
+  // Every deadline checked before the write is checked again, account grant included.
+  const after=now();
+  if(!timely(after,j,q,at)||(a.expiresAt!==undefined&&after>=a.expiresAt)||c.signal?.aborted)throw Error('FINITE_SEND_EXPIRED');
   return true;
  }});
 }

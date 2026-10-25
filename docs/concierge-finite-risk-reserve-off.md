@@ -27,7 +27,7 @@ Final send gate (prepared, OFF, wired nowhere): createFiniteReserveSendGate retu
    - the approved authority;
    - this event's credit-request marker: still reserved, with the same finite manifest, basis, per-attempt amount, account and period.
 
-It then consumes the marker (state send-authorized), so a retry, replay or concurrent check is denied; expiry after that write throws and rolls back.
+It then consumes the marker (state send-authorized), so a retry, replay or concurrent check is denied. Every deadline checked before that write is checked again after it, the account grant's expiresAt included; any expiry there throws and rolls back.
 
 The single-send guarantee is the store's committed no-retry dispatching marker, not this one. If the store transaction rolls back after a real send (e.g. COMMIT fails), the request marker returns to reserved, so reserved never proves a message was not sent and must not drive a refund. Use the gate only behind that store marker. A denial releases nothing: the event's reserved credit and finite attempt stay used (fail closed, no refund method), and errors before the gate's write leave the job uncertain.
 

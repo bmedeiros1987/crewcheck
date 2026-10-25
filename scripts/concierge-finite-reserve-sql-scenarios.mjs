@@ -113,6 +113,10 @@ export async function runFiniteReserveSqlScenarios({db,transaction,mode,epoch}){
   // Expiry after the consuming write rolls back: the reservation stays usable.
   let reason='';await assert.rejects(transaction(c=>gate().checkSend({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state'))clock=approvedTariffUntil;return r;}},sendJob(3)).catch(e=>{reason=e.message;throw e;})));
   assert.equal(reason,'FINITE_SEND_EXPIRED');clock=epoch+3600000;assert.equal(await marker(3),'reserved','expiry after the write rolls back');
+  // The account grant expiring during the consuming write also rolls back.
+  {const aBefore=await read(accountKey);await write(accountKey,{...aBefore,validFrom:epoch,expiresAt:clock+5});assert(clock+5<approvedTariffUntil,'grant must expire before the tariff to isolate the cause');const held=await read(accountKey);
+   let why='';await assert.rejects(transaction(c=>gate().checkSend({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state'))clock=held.expiresAt;return r;}},sendJob(3)).catch(e=>{why=e.message;throw e;})));
+   assert.equal(why,'FINITE_SEND_EXPIRED');clock=epoch+3600000;assert.equal(await marker(3),'reserved','grant expiry during the write leaves no authorization');assert.deepEqual(await read(accountKey),held);await write(accountKey,aBefore);}
   // Authorize once: sequential replay and concurrent final checks.
   assert.equal(await send(1),true);assert.equal(await marker(1),'send-authorized');assert.equal(await send(1),false,'same event is never authorized twice');
   assert.equal((await Promise.all(Array.from({length:12},()=>send(2)))).filter(Boolean).length,1,'concurrent final checks authorize one send');assert.equal(await marker(2),'send-authorized');
