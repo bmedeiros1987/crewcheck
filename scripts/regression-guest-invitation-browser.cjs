@@ -3,6 +3,8 @@ const ts=require('typescript'),esbuild=require('esbuild');
 const fixtureRequire=process.env.MENU_PLAYWRIGHT_PACKAGE?createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE):require;
 const {chromium}=fixtureRequire('playwright');
 const source=fs.readFileSync('client/src/components/platform/PlatformCenter.tsx','utf8');
+assert(source.includes('return <section className="cp-center cc-sharing-center">'),'fixture must retain the current production CommunityCenter ancestor');
+assert(source.includes("{tab === 'visitors' && <VisitorsPanel/>}"),'fixture must retain the production visitor panel mount');
 const ast=ts.createSourceFile('panel.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const selected=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&['PermissionEditor','VisitorsPanel'].includes(n.name?.text)||ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText()==='PERMISSION_LABELS')).map(n=>n.getText()).join('\n');
 const defaults=fs.readFileSync('client/src/lib/platformClient.ts','utf8').match(/export const defaultVisitorPermissions:[\s\S]*?\n};/)[0].replace('export ','');
@@ -15,7 +17,7 @@ const toast={success(){},error(){}};${icons}\n${defaults}\n${entry}\n${selected}
 (async()=>{
  const result=await esbuild.build({stdin:{contents:fixture,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,platform:'browser',format:'iife'});
  const css=fs.readFileSync('client/src/platform-v13-8.css','utf8');
- const html='<!doctype html><html lang="pt-BR"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:8px;box-sizing:border-box}*{box-sizing:border-box}'+css+'</style><div id="root"></div><script src="/fixture.js"></script></html>';
+ const html='<!doctype html><html lang="pt-BR"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:8px;box-sizing:border-box}*{box-sizing:border-box}'+css+'</style><section id="root" class="cp-center cc-sharing-center"></section><script src="/fixture.js"></script></html>';
  const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?result.outputFiles[0].text:html)});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${server.address().port}`;
  let browser;try{
@@ -30,8 +32,10 @@ const toast={success(){},error(){}};${icons}\n${defaults}\n${entry}\n${selected}
    const boxes=page.locator('input[type=checkbox]');assert.deepEqual(await boxes.evaluateAll(items=>items.map(x=>x.checked)),[true,true,false,false,true,false,true,true,false]);
    await boxes.nth(2).check();await button('Voltar aos convidados').click();assert.equal(await button('Familiar').evaluate(el=>el===document.activeElement),true);assert.equal(await page.locator('input[type=email]').count(),0);await button('Colega').click();
    await page.getByRole('heading',{name:'Convidar colega',exact:true}).waitFor();assert.equal(await page.evaluate(()=>document.activeElement===document.querySelector('h3')),true);assert.equal(await page.locator('input[type=email]').inputValue(),'synthetic@example.invalid');assert(await boxes.nth(2).isChecked());
-   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,`horizontal overflow ${width}px zoom ${zoom}`);
+   const geometry=await page.evaluate(()=>({viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,overflowing:[...document.querySelectorAll('#root *')].map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName,class:el.className,text:(el.textContent||'').slice(0,100),left:r.left,right:r.right,width:r.width,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth}}).filter(r=>r.right>innerWidth+1||r.left < -1)}));
    await page.screenshot({path:path.join(out,`${width}-${zoom}.png`),fullPage:true});
+   console.log('guest fixture geometry',JSON.stringify({width,zoom,...geometry}));
+   assert.equal(geometry.scrollWidth>width+1,false,`horizontal overflow ${width}px zoom ${zoom}`);
    assert.equal(await page.evaluate(()=>window.qa.requests.length),0);await button('Enviar convite pelo CrewCheck').click();
    assert.equal(await page.evaluate(()=>window.qa.requests.length),1);assert(await button('Voltar aos convidados').isDisabled());
    const payload=await page.evaluate(()=>window.qa.requests[0]);assert.deepEqual(Object.keys(payload).sort(),['displayName','email','permissions','telegram']);assert.equal(payload.permissions.hotels,true);

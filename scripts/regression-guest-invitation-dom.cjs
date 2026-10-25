@@ -2,9 +2,11 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert/strict'),ts=requi
 const {createRequire}=require('module');
 const fixtureRequire=process.env.NOTIFICATIONS_JSDOM_PACKAGE ? createRequire(process.env.NOTIFICATIONS_JSDOM_PACKAGE) : require;
 const {JSDOM}=fixtureRequire('jsdom');
-const dom=new JSDOM('<div id="root"></div>',{url:'https://fixture.invalid'});Object.assign(global,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event});
+const dom=new JSDOM('<section id="root" class="cp-center cc-sharing-center"></section>',{url:'https://fixture.invalid'});Object.assign(global,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event});
 const React=require('react'),{createRoot}=require('react-dom/client'),{act}=require('react-dom/test-utils');global.IS_REACT_ACT_ENVIRONMENT=true;
 const source=fs.readFileSync('client/src/components/platform/PlatformCenter.tsx','utf8');
+assert(source.includes('return <section className="cp-center cc-sharing-center">'),'fixture must retain the current production CommunityCenter ancestor');
+assert(source.includes("{tab === 'visitors' && <VisitorsPanel/>}"),'fixture must retain the production visitor panel mount');
 assert(!source.includes('Quarto, localização, hotel e escala ficam desligados'));
 assert(source.includes('Revise as permissões antes de enviar. O convidado acessa os itens autorizados pelo titular.'));const tree=ts.createSourceFile('p.tsx',source,99,true,4);
 const selected=tree.statements.filter(n=>ts.isFunctionDeclaration(n)&&['PermissionEditor','VisitorsPanel'].includes(n.name?.text)||ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText()==='PERMISSION_LABELS')).map(n=>n.getText()).join('\n');
