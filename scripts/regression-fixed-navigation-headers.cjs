@@ -71,6 +71,21 @@ async function emptyPulseQueue(page) {
   }
   assert.equal(await page.locator('.cc-pulse-compact-trigger').count(),0,'synthetic queue must be explicitly dismissible');
 }
+async function capturePulseNavigationFocus(page) {
+  return page.evaluate(()=>{
+    const identity=element=>element?{tag:element.tagName,id:element.id,className:typeof element.className==='string'?element.className:null,role:element.getAttribute('role'),label:element.getAttribute('aria-label'),headerNavigation:element.getAttribute('data-header-navigation'),menuTrigger:element.getAttribute('data-crewcheck-menu-trigger')}:null;
+    const inspect=element=>{
+      if(!element)return null;
+      const rect=element.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y),ancestors=[];
+      for(let node=element;node;node=node.parentElement){const style=getComputedStyle(node);ancestors.push({identity:identity(node),hidden:node.hasAttribute('hidden'),inert:node.hasAttribute('inert'),ariaHidden:node.getAttribute('aria-hidden'),display:style.display,visibility:style.visibility,opacity:style.opacity,pointerEvents:style.pointerEvents,overflowX:style.overflowX,overflowY:style.overflowY});}
+      return {identity:identity(element),connected:element.isConnected,focused:element===document.activeElement,disabled:element.matches(':disabled'),ariaDisabled:element.getAttribute('aria-disabled'),rect:{x:rect.x,y:rect.y,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},center:{x,y,inViewport:x>=0&&y>=0&&x<innerWidth&&y<innerHeight},hit:identity(hit),containsHit:Boolean(hit&&element.contains(hit)),ancestors};
+    };
+    const modals=[...document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"], dialog[aria-modal="true"]')];
+    try{for(const modal of document.querySelectorAll('dialog:modal'))if(!modals.includes(modal))modals.push(modal);}catch{}
+    const frame=document.querySelector('.cz-global-header'),viewport=visualViewport;
+    return {active:identity(document.activeElement),header:inspect(frame?.querySelector('.cz-menu-btn')),footer:inspect(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]')),dismiss:inspect(document.querySelector('.cc-pulse-dismiss')),modals:modals.map(inspect),frame:frame?{identity:identity(frame),dataset:{...frame.dataset}}:null,scroll:{x:scrollX,y:scrollY},viewport:{width:innerWidth,height:innerHeight,visual:viewport?{width:viewport.width,height:viewport.height,offsetLeft:viewport.offsetLeft,offsetTop:viewport.offsetTop,pageLeft:viewport.pageLeft,pageTop:viewport.pageTop,scale:viewport.scale}:null}};
+  });
+}
 async function activePulseBrandContract(page,{width,size}) {
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{id:'synthetic-header-brand',title:'SYNTHETIC header brand review',compactTitle:'Revisar',category:'compliance',tone:'atencao',priority:'alta',autoDismissMs:0,systemNotification:'never',review:{occurrence:'synthetic-header-brand',version:'v1'}}})));
   const mark=page.getByRole('img',{name:'Notificações CrewCheck',exact:true});
@@ -96,12 +111,21 @@ async function activePulseBrandContract(page,{width,size}) {
   await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger')?.getAttribute('aria-expanded')==='true');
   const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});await dismiss.focus();
   const target=await dismiss.boundingBox();assert.ok(target.width>=44&&target.height>=44);
-  await page.keyboard.press('Enter');await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').waitFor();
+  const beforeDismissFocus=await capturePulseNavigationFocus(page);
+  await page.keyboard.press('Enter');
+  const immediateAfterDismissFocus=await capturePulseNavigationFocus(page);
+  await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').waitFor();
   assert.equal(await mark.count(),0,'last dismissal restores the official mark');
   assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'normal subtitle returns exactly when due');
   const navigationTarget=page.locator(width<=639?'body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]':'.cz-menu-btn');
   assert.ok(await navigationTarget.isVisible(),'dismissal target remains visible');
-  assert.equal(await navigationTarget.evaluate(element=>element===document.activeElement),true,'dismissal restores keyboard focus to the reachable navigation action');
+  const dismissalFocused=await navigationTarget.evaluate(element=>element===document.activeElement);
+  if(!dismissalFocused){
+    const atAssertionFocus=await capturePulseNavigationFocus(page),diagnostic={width,size,expected:width<=639?'bottom-menu':'header-menu',dismissalFocused,before:beforeDismissFocus,immediatelyAfter:immediateAfterDismissFocus,atAssertion:atAssertionFocus};
+    fs.writeFileSync(path.join(output,`${width}-${size}-dismissal-focus-failure.json`),JSON.stringify(diagnostic,null,2));
+    await page.screenshot({path:path.join(output,`${width}-${size}-dismissal-focus-failure.png`)});
+  }
+  assert.equal(dismissalFocused,true,'dismissal restores keyboard focus to the reachable navigation action');
   return geometry;
 }
 async function recovered(page) {
