@@ -4,6 +4,9 @@ import {Readable} from 'node:stream';
 import {fixture,sender,epoch,secrets} from './infobip-production-sql.mjs';
 import {createPromotionalGrantWriter,promotionalGrantManifest} from '../../server/concierge-promotional-credit-sql.mjs';
 import {finiteCohortManifest,finiteCohortMemberId,finiteCohortTariffKey,createFiniteCohortPrefunder} from '../../server/concierge-finite-reserve-off.mjs';
+import {createInfobipProductionStore} from '../../server/infobip-whatsapp-store.mjs';
+import {createInfobipInboundReceiver} from '../../server/infobip-whatsapp-candidate.mjs';
+import {createInfobipFiniteBetaScope} from '../../server/infobip-whatsapp-finite-beta.mjs';
 import {createInfobipSqlBudget} from '../../server/infobip-whatsapp-sql-budget.mjs';
 import {configureWhatsAppConcierge} from '../../server/whatsapp.mjs';
 import {isConciergeConversationWritesOnly} from '../../server/concierge-read-only-scope.mjs';
@@ -32,6 +35,21 @@ export function cohortPolicy(count=2){
   totalMicroUsd:members.reduce((sum,m)=>sum+m.totalMicroUsd,0),maxAttempts:members.reduce((sum,m)=>sum+m.maxAttempts,0),
   observedBudget:{evidenceSha256:hash('synthetic-billing'),observedAt:epoch,knownSpentMicroUsd:10000,
    initialReservedMicroUsd:24000,outsideConsumersReserveMicroUsd:100000},members};
+}
+
+// Ingress-only staging for explicit-dispatch tests. A no-op scheduler does NOT
+// disable the HTTP runtime's direct tick. Reuse the production owner/admission
+// and authenticated receiver contracts, without binding that auto-dispatch loop.
+// Engine/send capabilities are forbidden here; no SQL result is substituted.
+export function createCohortIngressReceiver({configuration,admission,db,now}){
+ const scope=createInfobipFiniteBetaScope(configuration,admission,{now});
+ const forbidden=()=>assert.fail('INGRESS_STAGING_MUST_NOT_DISPATCH');
+ const store=createInfobipProductionStore({db,sender:configuration.sender,
+  encryptionKey:secrets.encryptionKey,linkHashKey:secrets.linkHashKey,now},
+  {concierge:forbidden,send:forbidden,allowsOwner:scope.allowsOwner,admission:scope.createAdmission(secrets.linkHashKey)});
+ return createInfobipInboundReceiver({sender:configuration.sender,
+  authentication:{mode:'hmac-sha256',secretKey:secrets.webhookSecret},store,now,
+  acceptEvent:scope.acceptEvent,queueLinkConfirmation:false});
 }
 
 // Extend the existing serial synthetic transaction fixture only for distinct
@@ -107,12 +125,22 @@ export async function cohortFixture({count=2,fund=true,grant=true,policy=cohortP
   return {provider:'infobip',kind:'text',sender,recipient:m.recipient,eventKey:eventKey(id),receivedAt:state.clock,
    bindingStamp:JSON.stringify([profile?.public_id,JSON.stringify([String(link?.linked_at),String(link?.updated_at)]),'infobip',sender,m.recipient])};
  };
+ const receiveStaged=createCohortIngressReceiver(options);
+ async function stage(index,id,text='qual minha próxima jornada?',{validHmac=true,from=p.members[index].recipient}={}){
+  const before={global:structuredClone(state.rows.get(globalKey)),accounts:p.members.map(m=>structuredClone(state.rows.get(accountKey(m)))),request:structuredClone(state.rows.get(requestKey(id))),engines,sends};
+  const rawBody=Buffer.from(JSON.stringify({results:[{from,to:sender,integrationType:'WHATSAPP',receivedAt:new Date(state.clock).toISOString(),messageId:id,message:{type:'TEXT',text}}]}));
+  const result=await receiveStaged({method:'POST',rawHeaders:['x-hub-signature','SHA256='+(validHmac?createHmac('sha256',secrets.webhookSecret).update(rawBody).digest('hex'):'0'.repeat(64))],rawBody});
+  assert.deepEqual(state.rows.get(globalKey),before.global);assert.deepEqual(p.members.map(m=>state.rows.get(accountKey(m))),before.accounts);
+  assert.deepEqual(state.rows.get(requestKey(id)),before.request);assert.equal(engines,before.engines);assert.equal(sends,before.sends);
+  if(result.accepted===1){const held=state.rows.get('crewcheck-infobip-inbound-v1:'+eventKey(id));assert.equal(held.v,1);assert.equal(held.status,'held');assert.equal(held.marker,null);assert(held.sealed);assert.equal(held.ownerHash,phoneHash(ownerId(index)));}
+  return result;
+ }
  async function route(runtime,index,id,text='qual minha próxima jornada?',{validHmac=true,from=p.members[index].recipient}={}){
   const rawBody=Buffer.from(JSON.stringify({results:[{from,to:sender,integrationType:'WHATSAPP',receivedAt:new Date(state.clock).toISOString(),messageId:id,message:{type:'TEXT',text}}]}));
   const req=Readable.from([rawBody]);Object.assign(req,{method:'POST',rawHeaders:['x-hub-signature','SHA256='+(validHmac?createHmac('sha256',secrets.webhookSecret).update(rawBody).digest('hex'):'0'.repeat(64))],headers:{host:'crewcheck.example.invalid','content-type':'application/json'},socket:{encrypted:true}});
   const res={writeHead(status){this.status=status;},end(){this.writableEnded=true;}};await runtime.handleRoute(req,res,new URL('/api/infobip/whatsapp/webhook',publicOrigin));return res.status;
  }
  return {state,db,p,transaction,prefund,globalKey,accountKey,authorityKey,receiptKey,cohortAuthorityKey,envelope,options,
-  eventKey,requestKey,job,route,memberId:m=>finiteCohortMemberId(p,m),calls,stats:()=>({engines,sends}),
+  eventKey,requestKey,job,route,stage,memberId:m=>finiteCohortMemberId(p,m),calls,stats:()=>({engines,sends}),
   setEngine:fn=>engineEffect=fn,setSql:fn=>sqlEffect=fn,setRequest:fn=>requestEffect=fn,setCommitFailure:value=>commitFailure=value};
 }

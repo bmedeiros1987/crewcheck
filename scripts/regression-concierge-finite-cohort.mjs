@@ -16,7 +16,7 @@ const checks=[];let stubCalls=0;
 const test=async(name,run)=>{await run();checks.push(name);};
 const snapshot=f=>JSON.stringify([...f.state.rows]);
 async function runtime(f,run){const r=await createInfobipWhatsAppProduction(f.options);try{return await run(r);}finally{await r.dispose();}}
-async function send(f,r,i,id){assert.equal(await f.route(r,i,id),200);return r.dispatch(f.eventKey(id));}
+async function send(f,r,i,id){const received=await f.stage(i,id);assert.equal(received.status,200);assert.equal(received.accepted,1);return r.dispatch(f.eventKey(id));}
 function conservation(f,counts){
  const g=f.state.rows.get(f.globalKey),rows=finiteCohortState(f.p,g,f.state.clock);assert(rows);
  let used=0,attempts=0;
@@ -106,7 +106,7 @@ await test('unknown initial COMMIT does not authorize automatic retry or a secon
  }
 });
 
-await test('new explicit mode uses actual HMAC production dispatcher for different-cost members without fanout',async()=>{
+await test('new explicit mode uses authenticated staging and actual production dispatcher for different-cost members without fanout',async()=>{
  const f=await cohortFixture();f.state.clock=epoch+3600000;assert.equal(validateInfobipRestrictedPolicy(f.envelope),f.envelope);
  for(const change of [p=>p.mode='finite-risk-beta-v1',p=>p.configuration.finiteBeta=false,p=>p.configuration.promotionalBeta=true,p=>p.configuration.operationalPilotRenewal={},p=>p.admission.grant={},p=>p.admission.finiteReserve={},p=>p.maxCostUsd='20']){
   const bad=structuredClone(f.envelope);change(bad);assert.throws(()=>validateInfobipRestrictedPolicy(bad));
@@ -116,13 +116,48 @@ await test('new explicit mode uses actual HMAC production dispatcher for differe
  assert.equal(await f.transaction(c=>ordinary(c,f.job(0,'ordinary-stale'))),null);f.state.clock=epoch;assert(await f.transaction(c=>ordinary(c,f.job(0,'ordinary-fresh'))));f.state.clock=epoch+3600000;
  await runtime(f,async r=>{
   assert.equal(await f.route(r,0,'bad-hmac','menu',{validHmac:false}),401);
-  assert.equal(await f.route(r,0,'first'),200);await Promise.all(Array.from({length:12},()=>r.dispatch(f.eventKey('first'))));
-  await f.route(r,1,'first');await r.dispatch(f.eventKey('first'));assert.deepEqual(f.calls,[m.recipient]);
+  assert.equal((await f.stage(0,'first')).accepted,1);await Promise.all(Array.from({length:12},()=>r.dispatch(f.eventKey('first'))));
+  await f.stage(1,'first');await r.dispatch(f.eventKey('first'));assert.deepEqual(f.calls,[m.recipient]);
   assert.equal((await send(f,r,1,'second')).status,'accepted_unconfirmed');conservation(f,[1,1]);
  });
  await runtime(f,async r=>{await r.dispatch(f.eventKey('first'));await r.dispatch(f.eventKey('second'));assert.equal(f.stats().sends,2);
   await send(f,r,0,'third');await send(f,r,1,'fourth');await send(f,r,0,'exhausted');});
  conservation(f,[2,2]);assert.equal(f.stats().sends,4);assert.equal(f.state.rows.get(f.globalKey).finiteReserve.usedMicroUsd,50000);stubCalls+=f.stats().sends;
+});
+
+await test('ingress-only staging retains HMAC and canonical owner guards without debiting',async()=>{
+ const f=await cohortFixture(),before=snapshot(f);
+ assert.equal((await f.stage(0,'staging-bad-hmac','menu',{validHmac:false})).status,401);assert.equal(snapshot(f),before);
+ f.state.profiles.get(ownerEmail(0)).public_id='synthetic-not-approved-owner';
+ const denied=await f.stage(0,'staging-wrong-owner');assert.equal(denied.status,200);assert.equal(denied.accepted,0);assert.equal(denied.denied,1);
+ assert.equal(snapshot(f),before);assert.deepEqual(f.stats(),{engines:0,sends:0});
+});
+
+await test('full HTTP route auto-tick and one explicit contender conserve exactly one attempt',async()=>{
+ const f=await cohortFixture(),id='automatic-explicit-contention',inboundKey='crewcheck-infobip-inbound-v1:'+f.eventKey(id);
+ let selected=false,explicit,heldReads=0,started;const automaticStarted=new Promise(resolve=>started=resolve);
+ await runtime(f,async r=>{
+  f.setSql((sql,args,result)=>{
+   if(sql.startsWith('SELECT state_key FROM')&&sql.includes("'held'")&&result[0].some(row=>row.state_key===inboundKey))selected=true;
+   if(selected&&sql.startsWith('SELECT payload')&&args[0]===inboundKey){
+    const row=result[0][0],state=row&&(typeof row.payload==='string'?JSON.parse(row.payload):row.payload);
+    if(state?.status==='held')heldReads++;
+    // Queue exactly one explicit attempt during the automatic initial read.
+    // The serial fixture then lets both initial reads observe held, while the
+    // automatic preparation wins. Real runtime/store behavior is unchanged.
+    if(!explicit){started();explicit=r.dispatch(f.eventKey(id));}
+   }
+  });
+  assert.equal(await f.route(r,0,id),200);
+  let timer;try{await Promise.race([automaticStarted,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('HTTP_AUTOMATIC_DISPATCH_NOT_SEEN')),500);})]);}finally{clearTimeout(timer);}
+  await r.maintain(); // Only join after the HTTP-triggered dispatch is proven.
+  assert(explicit,'HTTP route must dispatch despite the no-op scheduler');
+  assert.equal((await explicit).status,'blocked');assert(heldReads>=2);
+  assert.equal(f.state.rows.get(inboundKey).status,'accepted_unconfirmed');
+  assert.equal(f.state.rows.get(inboundKey).engineActive,false);
+  assert.equal(f.state.rows.get(f.requestKey(id)).state,'send-authorized');
+  assert.deepEqual(f.stats(),{engines:1,sends:1});conservation(f,[1,0]);
+ });stubCalls++;
 });
 
 for(const fault of ['missing-member','extra-member','used-sum','attempt-sum','member-product','balanced-product','member-cap','account-drift','r0','hold','spent-floor','budget-time','grant-revoked','receipt-amount','cohort-revoked','binding','target-tariff'])await test('same-manifest replay and direct resolver reject corrupt state without repair: '+fault,async()=>{
@@ -194,8 +229,9 @@ await test('cohort A/B and ordinary consumer share boundary without reserving co
  const credit=createSharedCreditCandidate({enabled:true,budgetApproved:true,programId,monthlyBudgetMicroUsd:20000000,allowedChannels:['voice']},{now:()=>f.state.clock,resolveTrustedContext:async()=>context});
  const job={...context,eventKey:hash('synthetic-ordinary-first'),channel:'voice'};
  await runtime(f,async r=>{
-  await f.route(r,0,'boundary-A');await f.route(r,1,'boundary-B');
-  const [, , reserved]=await Promise.all([r.dispatch(f.eventKey('boundary-A')),r.dispatch(f.eventKey('boundary-B')),f.transaction(c=>credit.reserve(c,job))]);assert.equal(reserved,true);
+  assert.equal((await f.stage(0,'boundary-A')).accepted,1);assert.equal((await f.stage(1,'boundary-B')).accepted,1);
+  assert.deepEqual(f.stats(),{engines:0,sends:0});conservation(f,[0,0]);
+  const [a,b,reserved]=await Promise.all([r.dispatch(f.eventKey('boundary-A')),r.dispatch(f.eventKey('boundary-B')),f.transaction(c=>credit.reserve(c,job))]);assert.equal(a.status,'accepted_unconfirmed');assert.equal(b.status,'accepted_unconfirmed');assert.equal(reserved,true);
   assert.equal(await f.transaction(c=>credit.reserve(c,{...job,eventKey:hash('synthetic-ordinary-second')})),false);
  });
  conservation(f,[1,1]);assert.equal(f.state.rows.get(f.globalKey).reservedMicroUsd,20000000-p.observedBudget.knownSpentMicroUsd);assert.equal(f.stats().sends,2);stubCalls+=2;
@@ -224,9 +260,9 @@ await test('captured policy and callable capabilities cannot be broadened after 
   f.options.request=()=>assert.fail('REPLACED_REQUEST_USED');f.options.configuration.allowedSenders.push('12025559992');
   assert(await f.transaction(c=>resolve(c,job)));
   assert.equal(await f.transaction(c=>resolve(c,{...job,recipient:f.p.members[0].recipient})),null);
-  assert.equal(await f.route(r,0,'immutable','menu',{from:m.recipient}),200);
+  assert.equal((await f.stage(0,'immutable','menu',{from:m.recipient})).accepted,1);
   assert.equal((await r.dispatch(f.eventKey('immutable'))).status,'accepted_unconfirmed');
-  await f.route(r,0,'not-enrolled','menu');await r.dispatch(f.eventKey('not-enrolled'));assert.equal(f.stats().sends,1);
+  assert.equal((await f.stage(0,'not-enrolled','menu')).denied,1);await r.dispatch(f.eventKey('not-enrolled'));assert.equal(f.stats().sends,1);
  });stubCalls++;
 });
 

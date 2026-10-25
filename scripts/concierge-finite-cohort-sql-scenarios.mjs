@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash,createHmac} from 'node:crypto';
 import {Readable} from 'node:stream';
-import {cohortPolicy,epoch,ownerId,ownerEmail,secrets,sender,programId} from './fixtures/infobip-cohort-sql.mjs';
+import {cohortPolicy,createCohortIngressReceiver,epoch,ownerId,ownerEmail,secrets,sender,programId} from './fixtures/infobip-cohort-sql.mjs';
 import {createPromotionalGrantWriter,promotionalGrantManifest} from '../server/concierge-promotional-credit-sql.mjs';
 import {finiteCohortPolicy,finiteCohortManifest,finiteCohortMemberId,finiteCohortTariffKey,finiteCohortState,createFiniteCohortPrefunder} from '../server/concierge-finite-reserve-off.mjs';
 import {createFiniteCohortSqlResolver} from '../server/concierge-finite-credit-sql.mjs';
@@ -88,6 +88,16 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
   sends++;const message=JSON.parse(body),m=p.members.find(m=>m.recipient===message.to);assert(m);assert((await read(accountKey(m))).reservedMicroUsd>=m.perAttemptMicroUsd);
   return new Response(JSON.stringify({to:message.to,messageId:message.messageId,status:{groupId:1,groupName:'PENDING',id:26,name:'PENDING_ACCEPTED'}}));
  }};
+ const receiveStaged=createCohortIngressReceiver(options);
+ async function stage(index,id){
+  const member=p.members[index],before={global:await read(globalKey),account:await read(accountKey(member)),request:await read(requestKey(id)),sends,engines};
+  const rawBody=Buffer.from(JSON.stringify({results:[{from:member.recipient,to:sender,integrationType:'WHATSAPP',receivedAt:new Date(clock).toISOString(),messageId:id,message:{type:'TEXT',text:'qual minha próxima jornada?'}}]}));
+  const result=await receiveStaged({method:'POST',rawHeaders:['x-hub-signature','SHA256='+hmacWebhook(rawBody)],rawBody});
+  assert.equal(result.status,200);assert.equal(result.accepted,1);assert.equal(result.duplicates,0);assert.equal(result.denied,0);
+  const held=await read('crewcheck-infobip-inbound-v1:'+eventKey(id));assert.equal(held.v,1);assert.equal(held.status,'held');assert.equal(held.marker,null);assert(held.sealed);assert.equal(held.ownerHash,hmac(ownerId(index)));
+  assert.deepEqual(await read(globalKey),before.global);assert.deepEqual(await read(accountKey(member)),before.account);
+  assert.deepEqual(await read(requestKey(id)),before.request);assert.equal(sends,before.sends);assert.equal(engines,before.engines);
+ }
  async function route(runtime,index,id){
   const rawBody=Buffer.from(JSON.stringify({results:[{from:p.members[index].recipient,to:sender,integrationType:'WHATSAPP',receivedAt:new Date(clock).toISOString(),messageId:id,message:{type:'TEXT',text:'qual minha próxima jornada?'}}]}));
   const req=Readable.from([rawBody]);Object.assign(req,{method:'POST',rawHeaders:['x-hub-signature','SHA256='+hmacWebhook(rawBody)],headers:{host:'crewcheck.example.invalid','content-type':'application/json'},socket:{encrypted:true}});
@@ -99,8 +109,9 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
   const runtime=await createInfobipWhatsAppProduction(options);
   try{
    for(let i=0;i<8;i++)await runtime.dispatch(eventKey('cohort-first-'+i));await runtime.dispatch(eventKey('cohort-revoked'));await runtime.dispatch(eventKey('cohort-unknown'));assert.equal(sends,0);
-   for(let i=0;i<8;i++){await route(runtime,i,'cohort-last-'+i);assert.equal((await runtime.dispatch(eventKey('cohort-last-'+i))).status,'accepted_unconfirmed');}
-   await route(runtime,0,'cohort-exhausted');await runtime.dispatch(eventKey('cohort-exhausted'));assert.equal(sends,8);await check(Array(8).fill(2));
+   for(let i=0;i<7;i++){await stage(i,'cohort-last-'+i);assert.equal((await runtime.dispatch(eventKey('cohort-last-'+i))).status,'accepted_unconfirmed');}
+   await route(runtime,7,'cohort-last-7');await runtime.maintain();assert.equal((await read('crewcheck-infobip-inbound-v1:'+eventKey('cohort-last-7'))).status,'accepted_unconfirmed');
+   await stage(0,'cohort-exhausted');await runtime.dispatch(eventKey('cohort-exhausted'));assert.equal(sends,8);await check(Array(8).fill(2));
    assert.equal((await transaction(prefund)).status,'already-reserved');
   }finally{await runtime.dispose();}
   console.log(JSON.stringify({suite:'finite cohort actual MySQL restart',stubProviderCalls:sends,realProviderCalls:0,externalCalls:0}));
@@ -152,10 +163,11 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
  const ordinary=createSharedCreditCandidate({enabled:true,budgetApproved:true,programId,monthlyBudgetMicroUsd:20000000,allowedChannels:['voice']},{now:()=>clock,resolveTrustedContext:async()=>context});
  const runtime=await createInfobipWhatsAppProduction(options);
  try{
-  await route(runtime,0,'cohort-first-0');await route(runtime,1,'cohort-first-1');
+  await stage(0,'cohort-first-0');await stage(1,'cohort-first-1');
+  assert.equal(sends,0);assert.equal(engines,0);await check(Array(8).fill(0));
   const results=await Promise.all([runtime.dispatch(eventKey('cohort-first-0')),runtime.dispatch(eventKey('cohort-first-1')),transaction(c=>ordinary.reserve(c,{...context,eventKey:hash('cohort-ordinary'),channel:'voice'}))]);
   const boundaryGlobal=await read(globalKey);
-  console.log(JSON.stringify({suite:'DIAGNOSTIC original cohort boundary schedule; strict assertions unchanged',
+  console.log(JSON.stringify({suite:'cohort explicit A/B boundary after authenticated staging; strict assertions unchanged',
    statuses:results.slice(0,2).map(result=>result.status),ordinaryReserved:results[2],sqlErrors:dispatchSqlErrors,destroyedConnections:dispatchDestroyed,
    stubProviderCalls:sends,realProviderCalls:0,globalReserved:boundaryGlobal.reservedMicroUsd,
    aggregateAttempts:boundaryGlobal.finiteReserve.attempts,aggregateUsed:boundaryGlobal.finiteReserve.usedMicroUsd,
@@ -167,10 +179,13 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
   assert.equal((await read(globalKey)).reservedMicroUsd,20000000-p.observedBudget.knownSpentMicroUsd);
   assert.equal(await transaction(c=>ordinary.reserve(c,{...context,eventKey:hash('cohort-ordinary-extra'),channel:'voice'})),false);
   await Promise.all(Array.from({length:12},()=>runtime.dispatch(eventKey('cohort-first-0'))));assert.equal(sends,2);
-  clock=epoch+3600000;revoke=true;await route(runtime,2,'cohort-revoked');await runtime.dispatch(eventKey('cohort-revoked'));assert.equal(sends,2);
+  clock=epoch+3600000;revoke=true;await stage(2,'cohort-revoked');await runtime.dispatch(eventKey('cohort-revoked'));assert.equal(sends,2);
   await write(grantKey(p.members[2]),{...await read(grantKey(p.members[2])),status:'approved'});
-  loseAck=true;await route(runtime,3,'cohort-unknown');assert.equal((await runtime.dispatch(eventKey('cohort-unknown'))).status,'uncertain');assert.equal(sends,3);await runtime.dispatch(eventKey('cohort-unknown'));assert.equal(sends,3);
-  for(let i=4;i<8;i++){await route(runtime,i,'cohort-first-'+i);assert.equal((await runtime.dispatch(eventKey('cohort-first-'+i))).status,'accepted_unconfirmed');}
+  loseAck=true;await stage(3,'cohort-unknown');assert.equal((await runtime.dispatch(eventKey('cohort-unknown'))).status,'uncertain');assert.equal(sends,3);await runtime.dispatch(eventKey('cohort-unknown'));assert.equal(sends,3);
+  for(let i=4;i<7;i++){await stage(i,'cohort-first-'+i);assert.equal((await runtime.dispatch(eventKey('cohort-first-'+i))).status,'accepted_unconfirmed');}
+  // Full HTTP route separately exercises its automatic tick, never followed
+  // by a competing explicit dispatch when asserting an accepted result.
+  await route(runtime,7,'cohort-first-7');await runtime.maintain();assert.equal((await read('crewcheck-infobip-inbound-v1:'+eventKey('cohort-first-7'))).status,'accepted_unconfirmed');
   await check(Array(8).fill(1));assert.equal(sends,7);assert.equal(engines,8);
   assert.equal((await read(requestKey('cohort-revoked'))).state,'reserved');assert.equal((await read(requestKey('cohort-unknown'))).state,'send-authorized');
  }finally{await runtime.dispose();}
