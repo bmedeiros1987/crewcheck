@@ -122,7 +122,11 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
         try {proposal = await prepareInfobipReply(job, {
           lookupLink: event => transaction(c => lookupLink(c, event)),
           concierge: async input=>{
-            try {return job.kind==='link_confirmation'?job.text:await concierge(input);}
+            try {
+              // SQL/COMMIT and the fresh link lookup may cross admission expiry.
+              if(signal?.aborted||(admission&&!admission.allows(job)))return null;
+              return job.kind==='link_confirmation'?job.text:await concierge(input);
+            }
             finally {await finishEngine();}
           },now: clock,signal,
         });} finally {
