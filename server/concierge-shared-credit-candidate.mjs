@@ -1,3 +1,4 @@
+import {paidEntitlementValid} from './concierge-paid-entitlement.mjs';
 import {finiteReservePolicy,finiteReserveAmount,finiteReserveManifest,finiteCohortPolicy,finiteCohortManifest,finiteCohortMemberId,
  finiteCohortAmount,finiteCohortState,finiteCohortAccountValid,finiteCohortAuthorityValid} from './concierge-finite-reserve-off.mjs';
 import {createHash} from 'node:crypto';
@@ -68,7 +69,7 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
   const a=states.get(accountKey),g=states.get(globalKey);
   if(finite){const [proofs]=await c.query(select,[sharedCreditKey('finite-reserve-authorization',[finite.approvalId])]);const proof=parse(proofs[0]?.payload);if(proofs.length!==1||proof?.v!==1||proof.kind!=='finite-reserve-authorization'||proof.status!=='approved'||proof.manifest!==finiteReserveManifest(finite)||proof.evidenceReference!==finite.evidenceReference||proof.approvedAt!==finite.approvedAt)return false;}
   if(cohort){const [proofs]=await c.query(select,[sharedCreditKey('finite-reserve-authorization',[cohort.approvalId])]);if(proofs.length!==1||!finiteCohortAuthorityValid(cohort,parse(proofs[0]?.payload)))return false;}
-  const fresh=()=>{const current=now();return Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&(a.validFrom===undefined&&a.expiresAt===undefined||(int(a.validFrom)&&int(a.expiresAt)&&current>=a.validFrom&&current<a.expiresAt))&&(finite?finiteReserveAmount(finite,context,a,g,job,current)===amount:cohort?finiteCohortAmount(cohort,member,context,a,g,job,current)===amount:boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000);};
+  const fresh=()=>{const current=now();return (!cohort||paidEntitlementValid(c,context.paidProof,context))&&Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&(a.validFrom===undefined&&a.expiresAt===undefined||(int(a.validFrom)&&int(a.expiresAt)&&current>=a.validFrom&&current<a.expiresAt))&&(finite?finiteReserveAmount(finite,context,a,g,job,current)===amount:cohort?finiteCohortAmount(cohort,member,context,a,g,job,current)===amount:boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000);};
   if(a.v!==1||a.kind!=='account-credit'||a.accountKey!==account||!int(a.availableMicroUsd)||!int(a.reservedMicroUsd)||
    g.v!==1||g.kind!=='global-credit'||g.period!==period||g.budgetMicroUsd!==budget||
    !int(g.knownSpentMicroUsd)||!int(g.reservedMicroUsd)||g.reconciled!==true||

@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'server/concierge-shared-credit-candidate.mjs'
+      - 'server/concierge-paid-entitlement.mjs'
+      - 'server/platform-entitlement.mjs'
+      - 'server/profile-locks.mjs'
+      - 'server/mysql-platform-adapter.mjs'
+      - 'migrations/20260715_003_aiven_mysql_full_platform.sql'
       - 'server/concierge-finite-reserve-off.mjs'
       - 'server/concierge-finite-admission-off.mjs'
       - 'server/concierge-finite-credit-sql.mjs'
@@ -24,6 +29,7 @@ on:
       - 'docs/concierge-finite-dispatch-off.md'
       - 'docs/concierge-finite-caller-off.md'
       - 'docs/concierge-finite-cohort-off.md'
+      - 'docs/concierge-paid-cohort-off.md'
       # Canonical preparation imports versioned and non-versioned scripts;
       # this also includes the actual-store regression and shared SQL fixture.
       - 'scripts/**'
@@ -53,6 +59,8 @@ jobs:
         run: node scripts/regression-concierge-finite-dispatch-off.mjs
       - name: Finite cohort max8 and production caller, synthetic I/O only
         run: node scripts/regression-concierge-finite-cohort.mjs
+      - name: Canonical paid cohort and invocation fences, synthetic I/O only
+        run: node scripts/regression-concierge-paid-cohort.mjs
       - name: Real isolated InnoDB, concurrency and restart without networking
         run: bash scripts/regression-concierge-credit-mysql-ci.sh
       # Keep the owned MySQL runner above preparation: it requires a clean tree.
@@ -62,5 +70,6 @@ jobs:
         run: |
           node scripts/regression-concierge-finite-dispatch-off.mjs
           node scripts/regression-concierge-finite-cohort.mjs
+          node scripts/regression-concierge-paid-cohort.mjs
           node scripts/regression-concierge-promotional-admission.mjs
           node scripts/regression-concierge-shared-credit-candidate.mjs

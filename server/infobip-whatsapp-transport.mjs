@@ -1,4 +1,5 @@
 import { INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
+import {consumeFiniteCohortRequestFence} from './concierge-finite-reserve-off.mjs';
 
 const phone = value => typeof value === 'string' && /^[1-9]\d{7,14}$/.test(value);
 const messageId = value => typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value);
@@ -46,18 +47,23 @@ async function responseJson(response) {
 export function createInfobipTextTransport(options) { return buildTransport(options,false); }
 // Same bounded request implementation; no synthetic entrypoint on this surface.
 export function createInfobipProductionTextTransport(options) { return buildTransport(options,true); }
-function buildTransport({ baseUrl, sender, apiKey, request, timeoutMs = 5_000 }, production) {
+function buildTransport({ baseUrl, sender, apiKey, request, timeoutMs = 5_000, requirePaidEntitlement=false }, production) {
   if (typeof request !== 'function' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5_000) throw Error('INFOBIP_CONFIGURATION');
   origin(baseUrl);
   if (!phone(sender) || typeof apiKey !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(apiKey)) throw Error('INFOBIP_CONFIGURATION');
   const configuration = Object.freeze({baseUrl, sender, apiKey});
-  async function sendRequest(proposal,{signal:externalSignal}={}) {
+  async function sendRequest(proposal,{signal:externalSignal,paidFence,attemptId}={}) {
       let built;
       try { built = buildInfobipTextRequest(proposal, configuration); }
       catch { return {status: 'blocked'}; }
+      const builtMessage=JSON.parse(built.options.body);
+      const requestIdentity=Object.freeze({provider:'infobip',sender:builtMessage.from,recipient:builtMessage.to,messageId:builtMessage.messageId,bindingStamp:proposal.bindingStamp});
       const controller = new AbortController();
       let timer;
       const work = async () => {
+        // Final synchronous fence: construction and all awaited gate SQL have
+        // finished. No Promise/thenable or optional policy flag can grant I/O.
+        if(requirePaidEntitlement===true&&!consumeFiniteCohortRequestFence(paidFence,requestIdentity,attemptId,externalSignal))return {status:'blocked'};
         const response = await request(built.url, {...built.options, signal: controller.signal});
         // Never follow provider redirects and never echo raw error diagnostics.
         if (response?.redirected || !Number.isInteger(response?.status) || response.status < 200 || response.status >= 300) return {status: 'uncertain'};

@@ -252,7 +252,7 @@ await test('cohort A/B and ordinary consumer share boundary without reserving co
 
 await test('bounded query timeout destroys synthetic connection without partial cohort hold',async()=>{
  const f=await cohortFixture({count:8,fund:false}),before=snapshot(f);f.setSql(async sql=>{if(sql.startsWith('SELECT email,consent'))await new Promise(resolve=>setTimeout(resolve,30));});
- const short=createInfobipSqlBudget(f.db,{transactionMs:40,queryMs:10});await assert.rejects(short(f.prefund));await new Promise(resolve=>setTimeout(resolve,50));assert.equal(snapshot(f),before);
+ const short=createInfobipSqlBudget(f.db,{transactionMs:40,queryMs:10,repeatableRead:true});await assert.rejects(short(f.prefund));await new Promise(resolve=>setTimeout(resolve,50));assert.equal(snapshot(f),before);
 });
 
 await test('maximum eight selected canonical owners each spend only their own fixed allocation',async()=>{

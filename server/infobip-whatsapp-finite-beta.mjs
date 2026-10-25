@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {createFiniteReserveAdmission,createFiniteCohortAdmission} from './concierge-finite-admission-off.mjs';
-import {finiteCreditPolicy,createFiniteCreditSqlResolver,createFiniteCohortSqlResolver} from './concierge-finite-credit-sql.mjs';
+import {finiteCreditPolicy,createFiniteCreditSqlResolver,createFiniteCohortSqlResolver,createFiniteCohortEntitlementReader} from './concierge-finite-credit-sql.mjs';
 import {finiteCohortPolicy,finiteCohortMemberId} from './concierge-finite-reserve-off.mjs';
 import {CONCIERGE_GLOBAL_BUDGET_PROGRAM,restrictedConciergeCommand} from './infobip-whatsapp-promotional-beta.mjs';
 
@@ -16,8 +16,8 @@ const usdMicro=value=>{
 
 // Explicit finite mode only. No stale ordinary-policy fallback, grant writer,
 // prefunder, credential discovery, timer or production activation here.
-export function createInfobipFiniteBetaScope(configuration,admission,{now=Date.now}={}){
- if(admission?.finiteCohort!==undefined)return createInfobipFiniteCohortScope(configuration,admission,{now});
+export function createInfobipFiniteBetaScope(configuration,admission,{now=Date.now,trustLegacyPremiumProfile=false}={}){
+ if(admission?.finiteCohort!==undefined)return createInfobipFiniteCohortScope(configuration,admission,{now,trustLegacyPremiumProfile});
  if(configuration?.finiteBeta!==true||admission?.enabled!==true||typeof now!=='function'||configuration.operationalPilotRenewal!==undefined||
   [configuration.singleMessageTest,configuration.operationalPilot,configuration.promotionalBeta,
    configuration.canonicalLinkHandshake,configuration.canonicalLinkHandshakeOnly].some(value=>value!==undefined&&value!==false))fail();
@@ -43,7 +43,7 @@ export function validateInfobipFinitePolicy(policy){
  createInfobipFiniteBetaScope(policy.configuration,policy.admission);return policy;
 }
 
-export function createInfobipFiniteCohortScope(configuration,admission,{now=Date.now}={}){
+export function createInfobipFiniteCohortScope(configuration,admission,{now=Date.now,trustLegacyPremiumProfile=false}={}){
  if(configuration?.finiteBeta!==true||admission?.enabled!==true||admission.finiteReserve!==undefined||admission.grant!==undefined||
   typeof now!=='function'||configuration.operationalPilotRenewal!==undefined||
   [configuration.singleMessageTest,configuration.operationalPilot,configuration.promotionalBeta,
@@ -51,7 +51,7 @@ export function createInfobipFiniteCohortScope(configuration,admission,{now=Date
  const p=finiteCohortPolicy(admission.finiteCohort),members=new Map(p.members.map(m=>[m.recipient,m]));
  if(configuration.sender!==p.sender||p.programId!==CONCIERGE_GLOBAL_BUDGET_PROGRAM)fail();
  const owners=new Set(p.members.map(m=>m.ownerAccountKey));
- return Object.freeze({allowsOwner:id=>typeof id==='string'&&owners.has(hash(id)),
+ return Object.freeze({requiresPaidEntitlement:true,allowsOwner:id=>typeof id==='string'&&owners.has(hash(id)),
   acceptEvent:event=>{
    const m=members.get(event?.recipient),at=now();
    return Boolean(m)&&int(at)&&at>=p.validFrom&&at<p.validUntil&&at<m.observedTariff.validUntil&&
@@ -59,8 +59,10 @@ export function createInfobipFiniteCohortScope(configuration,admission,{now=Date
     at-event.receivedAt<=900000&&typeof event.text==='string'&&event.text.length>0&&event.text.length<=600&&!/^\d{6}$/.test(event.text);
   },
   createAdmission:linkHashKey=>{
-   const resolvers=new Map(p.members.map(m=>{const id=finiteCohortMemberId(p,m);return [id,createFiniteCohortSqlResolver(p,id,{linkHashKey,now})];}));
-   return createFiniteCohortAdmission(p,{enabled:true,now,resolveMemberContext:(c,j,id)=>resolvers.get(id)(c,j)});
+   const dependencies={linkHashKey,now,trustLegacyPremiumProfile};
+   const resolvers=new Map(p.members.map(m=>{const id=finiteCohortMemberId(p,m);return [id,createFiniteCohortSqlResolver(p,id,dependencies)];}));
+   const readers=new Map(p.members.map(m=>{const id=finiteCohortMemberId(p,m);return [id,createFiniteCohortEntitlementReader(p,id,dependencies)];}));
+   return createFiniteCohortAdmission(p,{enabled:true,now,resolveMemberContext:(c,j,id)=>resolvers.get(id)(c,j),readMemberEntitlement:(c,j,id)=>readers.get(id)(c,j)});
   },
   // Existing store builds the proposal from the one sealed inbound job. This
   // scope admits that recipient only; it never enumerates recipients to send.

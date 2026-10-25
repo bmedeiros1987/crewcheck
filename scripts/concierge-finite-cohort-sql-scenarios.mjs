@@ -1,3 +1,4 @@
+import {preparePaidCohortFixture,seedPaidCohortMember,runPaidCohortSqlScenarios,runPaidCohortCallerTransitions} from './concierge-paid-cohort-sql-scenarios.mjs';
 import assert from 'node:assert/strict';
 import {createHash,createHmac} from 'node:crypto';
 import {Readable} from 'node:stream';
@@ -16,7 +17,8 @@ import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs'
 // Existing socket-only owned disposable MySQL runner ONLY. Same fixed program;
 // a separate synthetic billing month avoids replacing the v1 October fixture.
 // This is test isolation, never a program/month reset or operator procedure.
-export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
+export async function runFiniteCohortSqlScenarios({db,transaction:ordinaryTransaction,mode}){
+ const transaction=createInfobipSqlBudget(db,{repeatableRead:true});
  const hash=value=>createHash('sha256').update(value).digest('hex'),hmac=value=>createHmac('sha256',secrets.linkHashKey).update(value).digest('hex');
  const p=cohortPolicy(8),period='2032-01',globalKey=key('global',[programId,period]);
  p.observedBudget.outsideConsumersReserveMicroUsd=20000000-p.observedBudget.knownSpentMicroUsd-p.observedBudget.initialReservedMicroUsd-p.totalMicroUsd-10000;
@@ -29,9 +31,12 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
  let clock=epoch,sends=0,engines=0,loseAck=false,revoke=false,connectionOrdinal=0;
  const dispatchSqlErrors=[],dispatchDestroyed=[];
  if(mode==='suite'){
+  await preparePaidCohortFixture(db);
+  await runPaidCohortSqlScenarios({db});
   await write(globalKey,{v:1,kind:'global-credit',period,budgetMicroUsd:20000000,knownSpentMicroUsd:p.observedBudget.knownSpentMicroUsd,reservedMicroUsd:p.observedBudget.initialReservedMicroUsd,reconciled:true,reconciledAt:epoch,billingEvidenceSha256:p.observedBudget.evidenceSha256,promotionalAllocatedMicroUsd:0});
   for(const [i,m]of p.members.entries()){
-   await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?)',[ownerEmail(i),ownerId(i)]);
+   await db.query('INSERT INTO crewcheck_platform_profiles(email,public_id) VALUES(?,?)',[ownerEmail(i),ownerId(i)]);
+   await seedPaidCohortMember(db,ownerEmail(i),epoch);
    await db.query("INSERT INTO crewcheck_whatsapp_links(phone_hash,email,consent_concierge,revoked_at,linked_at,updated_at) VALUES(?,?,1,NULL,'2032-01-01 12:00:00.000','2032-01-01 12:00:00.000')",[m.recipientHash,ownerEmail(i)]);
   }
  }
@@ -81,7 +86,7 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
    async commit(){await observe('commit');if(loseAck&&sends>=3){loseAck=false;throw Error('SYNTHETIC_COHORT_FINAL_ACK_LOST');}}
   };
  }};
- configureWhatsAppConcierge(async()=>{engines++;if(revoke){revoke=false;await write(grantKey(p.members[2]),{...await read(grantKey(p.members[2])),status:'revoked'});}return 'SYNTHETIC CANONICAL OWNER SCHEDULE';});
+ const mainConcierge=async input=>{engines++;await ordinaryTransaction(c=>c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[input.email]));if(revoke){revoke=false;await write(grantKey(p.members[2]),{...await read(grantKey(p.members[2])),status:'revoked'});}return 'SYNTHETIC CANONICAL OWNER SCHEDULE';};configureWhatsAppConcierge(mainConcierge);
  const baseUrl='https://synthetic.api.infobip.com',publicOrigin='https://crewcheck.example.invalid';
  const configuration={finiteBeta:true,sender,baseUrl,allowedSenders:[sender],allowedBaseUrls:[baseUrl],authentication:'hmac-sha256',credentialReferences:{apiKey:'fixture/api',encryptionKey:'fixture/content',linkHashKey:'fixture/link',webhookSecret:'fixture/webhook'},deploymentBinding:{profileId:'synthetic-cohort-profile',subscriptionIds:['synthetic-cohort-subscription'],sender,baseUrl,publicOrigin,linkHashKeyReference:'fixture/link'}};
  const options={enabled:true,configuration,admission:{enabled:true,finiteCohort:p},db:ackDb,now:()=>clock,ingress:{mode:'direct-tls',publicOrigin},credentials:{resolve:async(_ref,{purpose})=>secrets[purpose]},scheduler:{set:()=>1,clear(){}},request:async(_url,{body})=>{
@@ -120,6 +125,7 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
  assert.equal(mode,'suite');
  await runCanonicalPointLockScenarios({db,transaction,p,globalKey,read});
  await runPrefundConcurrencyScenarios({db,transaction});
+ configureWhatsAppConcierge(mainConcierge);
  for(const m of p.members){
   const t=m.observedTariff;
   await write(grantKey(m),{v:1,kind:'promotional-grant-authorization',status:'approved',manifest:m.grantManifest,approvedAt:epoch,evidenceReference:'synthetic-original-grant'});
@@ -146,7 +152,11 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
  // -> all profiles. Force that conflict; one complete owned transaction aborts.
  const lifecycle=await db.getConnection();await lifecycle.beginTransaction();await lifecycle.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[ownerEmail(0)]);
  let signal;const profileRead=new Promise(resolve=>signal=resolve);
- const pending=transaction(c=>prefund({...c,query:async(sql,args)=>{if(sql.startsWith('SELECT public_id'))signal();return c.query(sql,args);}}));
+ const observedPrefund=createInfobipSqlBudget({async getConnection(){
+  const raw=await db.getConnection();return {query:async(sql,args)=>{if(sql.startsWith('SELECT public_id'))signal();return raw.query(sql,args);},
+   beginTransaction:raw.beginTransaction.bind(raw),commit:raw.commit.bind(raw),rollback:raw.rollback.bind(raw),release:raw.release.bind(raw),destroy:raw.destroy.bind(raw)};
+ }},{repeatableRead:true});
+ const pending=observedPrefund(prefund);
  // Attach rejection immediately; a deadlock can abort either transaction.
  const observed=pending.then(value=>({value}),error=>({error}));await profileRead;
  try{await lifecycle.query('SELECT phone_hash FROM crewcheck_whatsapp_links WHERE phone_hash=? FOR UPDATE',[p.members[0].recipientHash]);}catch(error){assert.equal(error.code,'ER_LOCK_DEADLOCK');}finally{await lifecycle.rollback();lifecycle.release();}
@@ -166,7 +176,7 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
  try{
   await stage(0,'cohort-first-0');await stage(1,'cohort-first-1');
   assert.equal(sends,0);assert.equal(engines,0);await check(Array(8).fill(0));
-  const results=await Promise.all([runtime.dispatch(eventKey('cohort-first-0')),runtime.dispatch(eventKey('cohort-first-1')),transaction(c=>ordinary.reserve(c,{...context,eventKey:hash('cohort-ordinary'),channel:'voice'}))]);
+  const results=await Promise.all([runtime.dispatch(eventKey('cohort-first-0')),runtime.dispatch(eventKey('cohort-first-1')),ordinaryTransaction(c=>ordinary.reserve(c,{...context,eventKey:hash('cohort-ordinary'),channel:'voice'}))]);
   const boundaryGlobal=await read(globalKey);
   console.log(JSON.stringify({suite:'cohort explicit A/B boundary after authenticated staging; strict assertions unchanged',
    statuses:results.slice(0,2).map(result=>result.status),ordinaryReserved:results[2],sqlErrors:dispatchSqlErrors,destroyedConnections:dispatchDestroyed,
@@ -187,6 +197,12 @@ export async function runFiniteCohortSqlScenarios({db,transaction,mode}){
   // Full HTTP route separately exercises its automatic tick, never followed
   // by a competing explicit dispatch when asserting an accepted result.
   await route(runtime,7,'cohort-first-7');await runtime.maintain();assert.equal((await read('crewcheck-infobip-inbound-v1:'+eventKey('cohort-first-7'))).status,'accepted_unconfirmed');
+  const beforePaidDenial=await read(globalKey);
+  await db.query("UPDATE crewcheck_platform_subscriptions SET status='canceled' WHERE email=?",[ownerEmail(0)]);
+  await stage(0,'cohort-free-denied');await runtime.dispatch(eventKey('cohort-free-denied'));
+  assert.equal(sends,7);assert.equal(engines,8);assert.equal(await read(requestKey('cohort-free-denied')),null);assert.deepEqual(await read(globalKey),beforePaidDenial);
+  assert.equal((await transaction(prefund)).status,'denied');assert.deepEqual(await read(globalKey),beforePaidDenial);
+  await db.query("UPDATE crewcheck_platform_subscriptions SET status='active' WHERE email=?",[ownerEmail(0)]);
   await check(Array(8).fill(1));assert.equal(sends,7);assert.equal(engines,8);
   assert.equal((await read(requestKey('cohort-revoked'))).state,'reserved');assert.equal((await read(requestKey('cohort-unknown'))).state,'send-authorized');
  }finally{await runtime.dispose();}
@@ -202,7 +218,7 @@ async function runPrefundConcurrencyScenarios({db,transaction}){
  const hmac=value=>createHmac('sha256',secrets.linkHashKey).update(value).digest('hex');
  const read=async k=>{const [rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[k]);return rows.length?(typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload):null;};
  const write=(k,v)=>db.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES(?,?,NOW(3))',[k,JSON.stringify(v)]);
- for(const [index,kind]of ['grant','spend','unlink','deletion','aggregate-cap'].entries()){
+ for(const [index,kind]of ['grant','spend','unlink','deletion','aggregate-cap','paid-phases'].entries()){
   const at=Date.parse(`2032-0${index+2}-01T12:00:00Z`),month=`2032-0${index+2}`,tag='synthetic-prefund-race-'+kind;
   const p=cohortPolicy(8),owners=[];p.approvalId=tag+'-risk';p.evidenceReference=tag+'-reference';p.approvedAt=p.validFrom=at;p.validUntil=at+6*3600000;
   Object.assign(p.observedBudget,{evidenceSha256:hash(tag+'-billing'),observedAt:at});
@@ -217,7 +233,8 @@ async function runPrefundConcurrencyScenarios({db,transaction}){
    m.ownerAccountKey=hash(publicId);m.recipient=String(12025552000+index*100+i);m.recipientHash=hmac(m.recipient);
    Object.assign(m.grant,{approvalId:tag+'-grant-'+i,ownerAccountKey:m.ownerAccountKey,validFrom:at,validUntil:at+86400000});m.grantManifest=promotionalGrantManifest(m.grant);
    Object.assign(m.observedTariff,{evidenceSha256:hash(tag+'-tariff-'+i),observedAt:at,validUntil:p.validUntil,sourceId:tag+'-price-'+i});
-   await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?)',[email,publicId]);
+   await db.query('INSERT INTO crewcheck_platform_profiles(email,public_id) VALUES(?,?)',[email,publicId]);
+   await seedPaidCohortMember(db,email,at);
    await db.query('INSERT INTO crewcheck_whatsapp_links(phone_hash,email,consent_concierge,revoked_at,linked_at,updated_at) VALUES(?,?,1,NULL,?,?)',[m.recipientHash,email,new Date(at),new Date(at)]);
    const [[link]]=await db.query('SELECT linked_at,updated_at FROM crewcheck_whatsapp_links WHERE phone_hash=?',[m.recipientHash]);
    m.bindingHash=hmac(JSON.stringify([publicId,JSON.stringify([String(link.linked_at),String(link.updated_at)]),'infobip',sender,m.recipient]));
@@ -233,6 +250,7 @@ async function runPrefundConcurrencyScenarios({db,transaction}){
   }
   await write(key('finite-reserve-authorization',[p.approvalId]),{v:2,kind:'finite-reserve-authorization',status:'approved',manifest:finiteCohortManifest(p),approvedAt:at,evidenceReference:p.evidenceReference});
   const prefund=createFiniteCohortPrefunder(p,{enabled:true,now:()=>at,linkHashKey:secrets.linkHashKey});
+  if(kind==='paid-phases'){await runPaidCohortCallerTransitions({db,transaction,p,owners,at,prefund,globalKey,read});continue;}
   if(kind==='aggregate-cap'){
    assert.equal(p.members.length,8);assert.equal(p.maxAttempts,10000);
    assert.equal((await transaction(prefund)).status,'reserved');const held=await read(globalKey);assert(finiteCohortState(p,held,at));
@@ -253,13 +271,13 @@ async function runPrefundConcurrencyScenarios({db,transaction}){
    console.log(JSON.stringify({suite:'actual MySQL max8 aggregate10000 boundary; no10001 attempt',stubProviderCalls:0,realProviderCalls:0}));continue;
   }
   const other=tag+'-ordinary-owner',otherKey=hash(other),otherAccountKey=key('account',[programId,otherKey]);
-  await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?)',[tag+'-ordinary@synthetic.invalid',other]);
+  await db.query('INSERT INTO crewcheck_platform_profiles(email,public_id) VALUES(?,?)',[tag+'-ordinary@synthetic.invalid',other]);
   const rawErrors=[],queryCounts={prefund:0,competitor:0};
   const observedPool=label=>({async getConnection(){
    const c=await db.getConnection();return {beginTransaction:c.beginTransaction.bind(c),commit:c.commit.bind(c),rollback:c.rollback.bind(c),release:c.release.bind(c),destroy:c.destroy.bind(c),
     async query(sql,args){queryCounts[label]++;try{return await c.query(sql,args);}catch(error){rawErrors.push({label,code:error.code});throw error;}}};
   }});
-  const prefundTransaction=createInfobipSqlBudget(observedPool('prefund'));
+  const prefundTransaction=createInfobipSqlBudget(observedPool('prefund'),{repeatableRead:true});
   const competitorDb=observedPool('competitor'),competitorTransaction=createInfobipSqlBudget(competitorDb);
   let competitor,uninstall=()=>{};
   if(kind==='grant'){

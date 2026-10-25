@@ -56,18 +56,32 @@ export function createCohortIngressReceiver({configuration,admission,db,now}){
 // canonical links/profiles. It is NOT an InnoDB lock/concurrency substitute.
 export async function cohortFixture({count=2,fund=true,grant=true,policy=cohortPolicy(count)}={}){
  const {state,db}=fixture(),p=structuredClone(policy),approved=structuredClone(p);let engines=0,sends=0,engineEffect=()=>{},sqlEffect=()=>{};
- const calls=[];let commitFailure=null;
+ const calls=[];let commitFailure=null,activeTransaction=null;
  let requestEffect=async message=>new Response(JSON.stringify({to:message.to,messageId:message.messageId,
   status:{groupId:1,groupName:'PENDING',id:26,name:'PENDING_ACCEPTED'}}));
  state.links=new Map(p.members.map((m,i)=>[m.recipientHash,{email:ownerEmail(i),phone_hash:m.recipientHash,phone_last4:m.recipient.slice(-4),
   consent_concierge:1,consent_alerts:0,revoked_at:null,linked_at:'2032-01-01 12:00:00.000',updated_at:'2032-01-01 12:00:00.000'}]));
- state.profiles=new Map(p.members.map((_m,i)=>[ownerEmail(i),{email:ownerEmail(i),public_id:ownerId(i)}]));
+ state.profiles=new Map(p.members.map((_m,i)=>[ownerEmail(i),{email:ownerEmail(i),public_id:ownerId(i),plan:'free'}]));
+ state.subscriptions=new Map(p.members.map((_m,i)=>[ownerEmail(i),{email:ownerEmail(i),plan:'premium_monthly',status:'active',current_period_end:new Date(epoch+86400000),provider:'synthetic',product_id:null,cancel_at_period_end:0}]));
  const acquire=db.getConnection.bind(db);
  db.getConnection=async()=>{
-  const c=await acquire(),query=c.query.bind(c),commit=c.commit.bind(c);
+  const c=await acquire(),query=c.query.bind(c),commit=c.commit.bind(c),begin=c.beginTransaction.bind(c),release=c.release.bind(c),destroy=c.destroy.bind(c);
+  let finish,completion;
+  c.beginTransaction=async()=>{await begin();completion=new Promise(resolve=>finish=resolve);activeTransaction=completion;};
+  const finished=()=>{finish?.();if(activeTransaction===completion)activeTransaction=null;};
+  c.release=()=>{release();finished();};c.destroy=()=>{destroy();finished();};
   c.query=async(sql,args=[])=>{
    let result;
-   if(sql.startsWith('SELECT email,consent_concierge')){state.queries.push(sql);const row=state.links.get(args[0]);result=[row?[structuredClone(row)]:[]];}
+   if(sql==='SET TRANSACTION ISOLATION LEVEL REPEATABLE READ'){state.queries.push(sql);result=[[]];}
+   else if(sql.startsWith('SELECT * FROM crewcheck_platform_profiles')){state.queries.push(sql);const row=state.profiles.get(args[0]);result=[row?[structuredClone(row)]:[]];}
+   else if(sql.startsWith('SELECT * FROM crewcheck_platform_subscriptions')){state.queries.push(sql);const row=state.subscriptions.get(args[0]);result=[row?[structuredClone(row)]:[]];}
+   else if(sql.includes('information_schema.')&&args?.includes('crewcheck_platform_subscriptions')){
+    state.queries.push(sql);
+    if(sql.includes('.TABLES'))result=[state.paidSchemaMissing?[]:[{name:'crewcheck_platform_subscriptions',engine:'InnoDB'}]];
+    else if(sql.includes('.COLUMNS'))result=[[{name:'crewcheck_platform_profiles',column_name:'plan'},...['email','plan','status','current_period_end','provider','product_id','cancel_at_period_end'].map(column_name=>({name:'crewcheck_platform_subscriptions',column_name}))].filter(row=>!state.paidColumnMissing||row.column_name!=='plan')];
+    else result=[state.paidIndexMissing?[]:[{name:'crewcheck_platform_subscriptions',index_name:'PRIMARY',column_name:'email',non_unique:0,sequence_no:1,sub_part:null}]];
+   }
+   else if(sql.startsWith('SELECT email,consent_concierge')){state.queries.push(sql);const row=state.links.get(args[0]);result=[row?[structuredClone(row)]:[]];}
    else if(sql.startsWith('SELECT public_id')){
     state.queries.push(sql);const byPublic=sql.includes('BINARY public_id=BINARY ?');
     if(sql.includes('=? AND BINARY ')){assert.equal(args.length,2);assert.equal(args[0],args[1],'indexed and byte-exact parameters must identify the same row');}
@@ -83,7 +97,7 @@ export async function cohortFixture({count=2,fund=true,grant=true,policy=cohortP
   };
   return c;
  };
- const transaction=createInfobipSqlBudget(db),globalKey=key('global',[p.programId,'2032-01']);
+ const transaction=createInfobipSqlBudget(db,{repeatableRead:true}),globalKey=key('global',[p.programId,'2032-01']);
  const accountKey=m=>key('account',[p.programId,m.ownerAccountKey]);
  const authorityKey=m=>key('grant-authorization',[m.grant.approvalId]);
  const receiptKey=m=>key('grant-receipt',[m.grant.approvalId]);
@@ -109,6 +123,9 @@ export async function cohortFixture({count=2,fund=true,grant=true,policy=cohortP
  configureWhatsAppConcierge(async input=>{
   engines++;assert(isConciergeConversationWritesOnly({email:input.email}));
   const profile=state.profiles.get(input.email);assert(profile&&approved.members.some(m=>m.ownerAccountKey===hash(profile.public_id)));
+  // Model engine DB work on its own client: it cannot alter committed rows
+  // until the invoking authorization transaction has released its locks.
+  const authorizedTransaction=activeTransaction;if(authorizedTransaction)await authorizedTransaction;
   await engineEffect(input);return 'SYNTHETIC OWN SAVED SCHEDULE';
  });
  const admission={enabled:true,finiteCohort:p};

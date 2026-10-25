@@ -27,6 +27,7 @@ export function createInfobipSqlStore(options) { return buildStore(options); }
 export function createInfobipProductionStore(options, dependencies) {
   if (typeof dependencies?.concierge !== 'function' || typeof dependencies?.send !== 'function' ||
       typeof dependencies?.admission?.allows !== 'function' || typeof dependencies?.admission?.reserve !== 'function'||(dependencies.admission.checkSend!==undefined&&typeof dependencies.admission.checkSend!=='function')) error();
+  if(dependencies.admission.requiresPaidEntitlement===true&&['checkSend','prepareEngine','afterReserve','requestFence'].some(name=>typeof dependencies.admission[name]!=='function'))error();
   return buildStore(options, Object.freeze({...dependencies}));
 }
 
@@ -67,7 +68,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
     return { accountId: owners[0].public_id, email: link.email, provider: 'infobip', sender, recipient: event.recipient,
       revision: revision(link), consentConcierge: true, revoked: false };
   }
-  const transaction = createInfobipSqlBudget(db, sqlBudget);
+  const transaction = createInfobipSqlBudget(db, {...sqlBudget,...(production?.admission?.requiresPaidEntitlement===true?{repeatableRead:true}:{})});
   const erase = async (c,email,expectedPublicId) => {
     if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) error();
     if (expectedPublicId !== undefined) await lockCanonicalWhatsAppOwner(c,email,expectedPublicId);
@@ -103,7 +104,8 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
             if(signal?.aborted||stamp(current)!==job.bindingStamp||!fresh(job,clock())||!await admission.reserve(c,job)){
               await save(c,stateKey,{...state,status:'cancelled',sealed:null});return null;
             }
-            preparationOwner=current.email;const token=randomUUID();await save(c,stateKey,{...state,status:'preparing',preparationId:token,engineActive:true,engineOwner:infobipEngineOwner(current.accountId)});return token;
+            preparationOwner=current.email;const token=randomUUID();await save(c,stateKey,{...state,status:'preparing',preparationId:token,engineActive:true,engineOwner:infobipEngineOwner(current.accountId)});
+            if(admission.requiresPaidEntitlement===true&&admission.afterReserve(c,job)!==true)error();return token;
           });
           if(!preparationId)return {status:'blocked'};
         }
@@ -126,6 +128,30 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
             try {
               // SQL/COMMIT and the fresh link lookup may cross admission expiry.
               if(signal?.aborted||(admission&&!admission.allows(job)))return null;
+              if(admission?.requiresPaidEntitlement===true){
+                // Authorize invocation, not an earlier reservation. Never await
+                // engine SQL while holding its profile/subscription locks.
+                let work,authorized=false;
+                try {
+                  await transaction(async c=>{
+                    const current=await lookupLink(c,job);
+                    const authority=await admission.prepareEngine(c,job);
+                    const state=await lockState(c,stateKey);
+                    if(state?.status!=='preparing'||state.preparationId!==preparationId||state.engineActive!==true||
+                      state.engineOwner!==infobipEngineOwner(current?.accountId||'')||stamp(current)!==job.bindingStamp||
+                      current?.email!==preparationOwner||input.accountId!==current?.accountId||input.email!==current?.email||
+                      signal?.aborted||input.signal?.aborted||c.signal.aborted||!fresh(job,clock())||authority?.ready()!==true)return;
+                    // Rejection handling is attached immediately, before COMMIT.
+                    // A non-thenable result prevents the SQL owner awaiting work.
+                    try {work=Promise.resolve(concierge({...input,signal:AbortSignal.any([input.signal,c.signal,...(signal?[signal]:[])])})).then(value=>({ok:true,value}),()=>({ok:false}));}
+                    catch {work=Promise.resolve({ok:false});}
+                    return {invoked:true};
+                  });
+                  authorized=true;
+                } catch {authorized=false;}
+                const settled=work?await work:null;
+                return authorized&&settled?.ok?settled.value:null;
+              }
               return job.kind==='link_confirmation'?job.text:await concierge(input);
             }
             finally {await finishEngine();}
@@ -152,15 +178,18 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
           // Same locks as consent/revocation/account mutation through send.
           const current = await lookupLink(c, job), state = await lockState(c, stateKey);
           if (state?.status !== 'dispatching' || state.attemptId !== attemptId) return {status: 'uncertain'};
-          if (signal?.aborted || (admission && !admission.allows(job)) || stamp(current) !== job.bindingStamp || !fresh(job, clock()) || (admission?.checkSend&&!await admission.checkSend(c,job))) {
+          if (signal?.aborted || (admission && !admission.allows(job)) || stamp(current) !== job.bindingStamp || !fresh(job, clock()) || (admission?.checkSend&&!await admission.checkSend(c,job,attemptId))) {
             await save(c, stateKey, {...state, status: 'cancelled', sealed: null}); return {status: 'cancelled'};
           }
           // Reserve the whole bounded send plus the final SQL operation before
           // starting I/O. Never start a send at the end of a transaction budget.
           if (c.signal.aborted || c.remainingMs() < timeoutMs + 2_000) error();
           let result, timer; const controller = new AbortController();
+          const sendSignal=AbortSignal.any([controller.signal,c.signal,...(signal?[signal]:[])]);
+          const paidFence=admission?.requiresPaidEntitlement===true?admission.requestFence(c,job,attemptId,[sendSignal],timeoutMs):undefined;
+          if(admission?.requiresPaidEntitlement===true&&!paidFence)error();
           try { result = await Promise.race([
-            send({...proposal, messageId: `cc-${eventKey}`}, {signal: AbortSignal.any([controller.signal, c.signal,...(signal?[signal]:[])])}),
+            send({...proposal, messageId: `cc-${eventKey}`}, {signal:sendSignal,...(paidFence?{paidFence,attemptId}:{})}),
             new Promise(resolve => { timer = setTimeout(() => {controller.abort(); resolve({status: 'uncertain'});}, timeoutMs); }),
           ]); }
           catch { result = {status: 'uncertain'}; }

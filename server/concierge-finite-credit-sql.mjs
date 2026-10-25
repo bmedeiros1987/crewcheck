@@ -1,7 +1,8 @@
 import {createHmac} from 'node:crypto';
 import {finiteReservePolicy,finiteReserveManifest,finiteCohortPolicy,finiteCohortMemberId,finiteCohortTariffKey,
  finiteCohortTariffValid,finiteCohortAccountValid,finiteCohortAuthorityValid,finiteCohortState} from './concierge-finite-reserve-off.mjs';
-import {createLockedPromotionalGrantReader,promotionalGrantManifest} from './concierge-promotional-credit-sql.mjs';
+import {createLockedPromotionalGrantReader,promotionalGrantManifest,lockCanonicalCreditIdentities} from './concierge-promotional-credit-sql.mjs';
+import {readPaidCanonicalEntitlement,paidEntitlementValid} from './concierge-paid-entitlement.mjs';
 import {sharedCreditKey} from './concierge-shared-credit-candidate.mjs';
 
 export const FINITE_CREDIT_SQL_SHIPPING=false;
@@ -63,15 +64,32 @@ export function createFiniteCreditSqlResolver({finiteReserve,grant,linkHashKey,n
 
 // A cohort resolver is bound to exactly one approved member. It never falls
 // back to the v1 tariff slot or derives membership from an incoming job.
-export function createFiniteCohortSqlResolver(input,memberId,{linkHashKey,now=Date.now}={}){
+export function createFiniteCohortEntitlementReader(input,memberId,{linkHashKey,now=Date.now,trustLegacyPremiumProfile=false}={}){
+ const p=finiteCohortPolicy(input),m=p.members.find(member=>finiteCohortMemberId(p,member)===memberId);
+ if(!m||typeof now!=='function'||typeof linkHashKey!=='string'||linkHashKey.length<32||
+  createHmac('sha256',linkHashKey).update(m.recipient).digest('hex')!==m.recipientHash)fail();
+ return async(c,j)=>{
+  if(j?.sender!==p.sender||j.recipient!==m.recipient)return null;
+  const identities=await lockCanonicalCreditIdentities(c,[{ownerAccountKey:m.ownerAccountKey,sender:p.sender,recipient:m.recipient,phoneHash:m.recipientHash}]);
+  const identity=identities?.get(m.ownerAccountKey);
+  if(!identity||identity.bindingStamp!==j.bindingStamp||createHmac('sha256',linkHashKey).update(identity.bindingStamp).digest('hex')!==m.bindingHash)return null;
+  const paidProof=await readPaidCanonicalEntitlement(c,identity,{now,trustLegacyPremiumProfile});
+  return paidProof?{accountKey:m.ownerAccountKey,bindingStamp:identity.bindingStamp,paidProof}:null;
+ };
+}
+export function createFiniteCohortSqlResolver(input,memberId,{linkHashKey,now=Date.now,trustLegacyPremiumProfile=false}={}){
  const p=finiteCohortPolicy(input),m=p.members.find(member=>finiteCohortMemberId(p,member)===memberId);
  if(!m||typeof now!=='function'||typeof linkHashKey!=='string'||linkHashKey.length<32||
   createHmac('sha256',linkHashKey).update(m.recipient).digest('hex')!==m.recipientHash)fail();
  const readGrant=createLockedPromotionalGrantReader({programId:p.programId,approvalId:m.grant.approvalId,
   ownerAccountKey:m.ownerAccountKey,sender:p.sender,recipient:m.recipient,linkHashKey,
   expectedGrantManifest:m.grantManifest,expectedValidFrom:m.grant.validFrom,expectedValidUntil:m.grant.validUntil,now});
+ const readPaid=createFiniteCohortEntitlementReader(p,memberId,{linkHashKey,now,trustLegacyPremiumProfile});
  return async(c,j)=>{
   const started=now();if(!int(started)||started<p.validFrom||started>=p.validUntil||c?.signal?.aborted)return null;
+  // All identity/plan locks precede financial rows. The unchanged grant reader
+  // only re-enters the exact already-held identity rows; ordinary/v1 is intact.
+  const paid=await readPaid(c,j);if(!paid)return null;
   const identity=await readGrant(c,j);if(!identity||identity.receipt.amountMicroUsd!==m.totalMicroUsd||
    createHmac('sha256',linkHashKey).update(identity.context.bindingStamp).digest('hex')!==m.bindingHash)return null;
   const tariff=await lock(c,finiteCohortTariffKey(p,m));
@@ -79,8 +97,8 @@ export function createFiniteCohortSqlResolver(input,memberId,{linkHashKey,now=Da
   const authority=await lock(c,sharedCreditKey('finite-reserve-authorization',[p.approvalId]));
   const at=now(),row=finiteCohortState(p,global,at)?.get(memberId);
   if(!int(at)||at<started||at<identity.at||at<j.receivedAt||at-j.receivedAt>900000||c.signal?.aborted||
-   !row||!finiteCohortAccountValid(m,identity.account,row.usedMicroUsd,at)||!finiteCohortAuthorityValid(p,authority)||
+   !paidEntitlementValid(c,paid.paidProof,paid)||!row||!finiteCohortAccountValid(m,identity.account,row.usedMicroUsd,at)||!finiteCohortAuthorityValid(p,authority)||
    !finiteCohortTariffValid(p,m,tariff,at))return null;
-  return {...identity.context,quote:{...tariff,channel:'whatsapp',sessionUntil:j.receivedAt+86400000}};
+  return {...identity.context,paidProof:paid.paidProof,quote:{...tariff,channel:'whatsapp',sessionUntil:j.receivedAt+86400000}};
  };
 }

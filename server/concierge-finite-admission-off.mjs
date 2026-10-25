@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {createSharedCreditCandidate} from './concierge-shared-credit-candidate.mjs';
 import {finiteReservePolicy,createFiniteReserveSendGate,finiteCohortPolicy,finiteCohortMemberId,createFiniteCohortSendGate} from './concierge-finite-reserve-off.mjs';
+import {paidEntitlementValid} from './concierge-paid-entitlement.mjs';
 
 // Unmounted composition boundary only. No resolver, funding, policy mode,
 // transport, environment discovery or authority provisioning is supplied here.
@@ -50,13 +51,15 @@ export function createFiniteReserveAdmission(input,{enabled=false,now=Date.now,r
  return Object.freeze({allows,reserve,checkSend:gate.checkSend});
 }
 
-export function createFiniteCohortAdmission(input,{enabled=false,now=Date.now,resolveMemberContext}={}){
+export function createFiniteCohortAdmission(input,{enabled=false,now=Date.now,resolveMemberContext,readMemberEntitlement}={}){
  if(enabled!==true)return Object.freeze({allows:()=>false,reserve:async()=>false,checkSend:async()=>false});
- if(typeof now!=='function'||typeof resolveMemberContext!=='function')throw Error('FINITE_COHORT_ADMISSION');
+ if(typeof now!=='function'||typeof resolveMemberContext!=='function'||typeof readMemberEntitlement!=='function')throw Error('FINITE_COHORT_ADMISSION');
  const p=finiteCohortPolicy(input),members=new Map(p.members.map(m=>[m.recipient,m]));
  const capabilities=new Map(p.members.map(m=>{
-  const id=finiteCohortMemberId(p,m),dependencies={enabled:true,now,resolveTrustedContext:(c,j)=>resolveMemberContext(c,j,id)};
-  return [id,{credit:createSharedCreditCandidate({enabled:true,budgetApproved:true,programId:p.programId,
+  const id=finiteCohortMemberId(p,m),contexts=new WeakMap(),dependencies={enabled:true,now,resolveTrustedContext:async(c,j)=>{
+   const context=await resolveMemberContext(c,j,id);contexts.set(c,context);return context;
+  }};
+  return [id,{contexts,credit:createSharedCreditCandidate({enabled:true,budgetApproved:true,programId:p.programId,
    monthlyBudgetMicroUsd:p.monthlyBudgetMicroUsd,allowedChannels:['whatsapp'],finiteCohort:p,cohortMemberId:id},dependencies),
    gate:createFiniteCohortSendGate(p,id,dependencies)}];
  }));
@@ -67,13 +70,24 @@ export function createFiniteCohortAdmission(input,{enabled=false,now=Date.now,re
    owner(job,{...p,recipient:m.recipient})===m.ownerAccountKey&&hex(job.eventKey)&&int(job.receivedAt)&&
    job.receivedAt>=p.validFrom&&job.receivedAt<=at&&at-job.receivedAt<=900000?m:null;
  }
- return Object.freeze({allows:job=>Boolean(selected(job)),async reserve(c,job){
+ const afterReserve=(c,job)=>{
+  const m=selected(job),context=m&&capabilities.get(finiteCohortMemberId(p,m)).contexts.get(c);
+  return Boolean(context)&&paidEntitlementValid(c,context.paidProof,context);
+ };
+ return Object.freeze({requiresPaidEntitlement:true,allows:job=>Boolean(selected(job)),afterReserve,async reserve(c,job){
   const m=selected(job);if(!m||c?.signal?.aborted)return false;
   const capability=capabilities.get(finiteCohortMemberId(p,m));
   if(!await capability.credit.reserve(c,{...job,accountKey:m.ownerAccountKey,channel:'whatsapp'}))return false;
-  if(!selected(job)||c.signal?.aborted)throw Error('FINITE_COHORT_EXPIRED');
+  if(!afterReserve(c,job)||c.signal?.aborted)throw Error('FINITE_COHORT_EXPIRED');
   return true;
- },async checkSend(c,job){
-  const m=selected(job);return Boolean(m)&&capabilities.get(finiteCohortMemberId(p,m)).gate.checkSend(c,job);
+ },async checkSend(c,job,attemptId){
+  const m=selected(job);return Boolean(m)&&capabilities.get(finiteCohortMemberId(p,m)).gate.checkSend(c,job,attemptId);
+ },async prepareEngine(c,job){
+  const m=selected(job);if(!m)return null;
+  const context=await readMemberEntitlement(c,job,finiteCohortMemberId(p,m));
+  if(!context)return null;
+  return Object.freeze({ready:()=>Boolean(selected(job))&&paidEntitlementValid(c,context.paidProof,context)});
+ },requestFence(c,job,attemptId,signals,timeoutMs){
+  const m=selected(job);return m?capabilities.get(finiteCohortMemberId(p,m)).gate.requestFence(c,job,attemptId,signals,timeoutMs):null;
  }});
 }

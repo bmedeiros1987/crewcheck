@@ -1,6 +1,8 @@
 import {createHash,createHmac} from 'node:crypto';
 import {sharedCreditKey} from './concierge-shared-credit-candidate.mjs';
 import {promotionalGrantManifest,lockCanonicalCreditIdentities} from './concierge-promotional-credit-sql.mjs';
+import {readPaidCanonicalEntitlement,paidEntitlementValid} from './concierge-paid-entitlement.mjs';
+import {assertPaidCohortStorage,assertCanonicalWhatsAppStorage} from './infobip-whatsapp-preflight.mjs';
 export const FINITE_RESERVE_SHIPPING=false;
 const int=n=>Number.isSafeInteger(n)&&n>=0;
 const hex=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
@@ -208,7 +210,7 @@ export function finiteCohortAmount(p,m,context,a,g,j,at){
  return m.perAttemptMicroUsd;
 }
 
-export function createFiniteCohortPrefunder(input,{enabled=false,now=Date.now,linkHashKey}={}){
+export function createFiniteCohortPrefunder(input,{enabled=false,now=Date.now,linkHashKey,trustLegacyPremiumProfile=false}={}){
  if(enabled!==true)return async()=>({status:'disabled'});
  const p=finiteCohortPolicy(input),manifest=finiteCohortManifest(p),b=p.observedBudget;
  if(typeof now!=='function'||typeof linkHashKey!=='string'||linkHashKey.length<32)cohortFail();
@@ -218,11 +220,19 @@ export function createFiniteCohortPrefunder(input,{enabled=false,now=Date.now,li
  return async c=>{
   const started=now(),valid=()=>cohortTime(p,now(),started)&&!c.signal?.aborted;
   if(!valid())return {status:'denied'};
+  await assertCanonicalWhatsAppStorage(c);
+  await assertPaidCohortStorage(c);
   // All canonical links/profiles precede any financial row, including all
   // members' original proofs. Grants must have committed separately first.
   const identities=await lockCanonicalCreditIdentities(c,members.map(m=>({ownerAccountKey:m.ownerAccountKey,sender:p.sender,recipient:m.recipient,phoneHash:m.recipientHash})));
   if(!identities||!valid())return {status:'denied'};
   if(members.some(m=>createHmac('sha256',linkHashKey).update(identities.get(m.ownerAccountKey).bindingStamp).digest('hex')!==m.bindingHash))return {status:'denied'};
+  const paid=new Map();
+  for(const identity of [...identities.values()].sort((a,b)=>a.link.email.localeCompare(b.link.email))){
+   const proof=await readPaidCanonicalEntitlement(c,identity,{now,trustLegacyPremiumProfile});
+   if(!proof)return {status:'denied'};paid.set(identity.target.ownerAccountKey,proof);
+  }
+  const allPaid=()=>members.every(m=>paidEntitlementValid(c,paid.get(m.ownerAccountKey),{accountKey:m.ownerAccountKey,bindingStamp:identities.get(m.ownerAccountKey).bindingStamp}));
   const records=new Map(),read=async key=>{const [rows]=await c.query(select,[key]);return rows.length===1?parse(rows[0].payload):null;};
   for(const field of ['accountKey','authorityKey','receiptKey','tariffKey']){
    for(const key of members.map(m=>m[field]).sort())records.set(key,await read(key));
@@ -243,11 +253,11 @@ export function createFiniteCohortPrefunder(input,{enabled=false,now=Date.now,li
     receipt.kind==='promotional-grant-receipt'&&receipt.state==='granted'&&receipt.manifest===m.grantManifest&&
     receipt.amountMicroUsd===m.totalMicroUsd&&finiteCohortTariffValid(p,m,records.get(m.tariffKey),at);
   });
-  if(!membersValid()||!valid())return {status:'denied'};
+  if(!membersValid()||!valid()||!allPaid())return {status:'denied'};
   // Even identical replay must prove all current members and complete counters.
   // Revoked/expired/corrupt replay denies without repairing or releasing a hold.
   if(hasPrevious)return {status:'already-reserved'};
-  const fresh=()=>valid()&&membersValid()&&now()>=b.observedAt&&now()-b.observedAt<=900000&&
+  const fresh=()=>valid()&&membersValid()&&allPaid()&&now()>=b.observedAt&&now()-b.observedAt<=900000&&
    members.every(m=>now()>=m.observedTariff.observedAt&&now()-m.observedTariff.observedAt<=900000);
   if(g?.v!==1||g.kind!=='global-credit'||g.period!==period(p.validFrom)||g.budgetMicroUsd!==p.monthlyBudgetMicroUsd||
    g.reconciled!==true||g.reconciledAt!==b.observedAt||g.billingEvidenceSha256!==b.evidenceSha256||
@@ -272,10 +282,12 @@ export function createFiniteCohortSendGate(input,memberId,{enabled=false,now=Dat
   j.sender===p.sender&&j.recipient===m.recipient&&hex(j.eventKey)&&int(j.receivedAt)&&j.receivedAt>=p.validFrom&&
   j.receivedAt<=at&&at-j.receivedAt<=900000&&q?.channel==='whatsapp'&&q.sessionUntil===j.receivedAt+86400000&&
   finiteCohortTariffValid(p,m,q,at);
- return Object.freeze({async checkSend(c,j){
+ const ready=new WeakMap();
+ return Object.freeze({async checkSend(c,j,attemptId){
+  ready.delete(c);
   const started=now();if(!cohortTime(p,started)||c?.signal?.aborted)return false;
   const job={...j,accountKey:m.ownerAccountKey,channel:'whatsapp'},context=await resolveTrustedContext(c,job),q=context?.quote;
-  if(context?.linked!==true||context.consent!==true||context.accountKey!==m.ownerAccountKey||context.bindingStamp!==j?.bindingStamp||
+  if(context?.linked!==true||context.consent!==true||context.accountKey!==m.ownerAccountKey||context.bindingStamp!==j?.bindingStamp||!paidEntitlementValid(c,context.paidProof,context)||
    context.sender!==p.sender||context.recipient!==m.recipient||!matches(started,j,q))return false;
   const read=async key=>{const [rows]=await c.query(select,[key]);return rows.length===1?parse(rows[0].payload):null;};
   const a=await read(sharedCreditKey('account',[p.programId,m.ownerAccountKey])),tariff=await read(finiteCohortTariffKey(p,m));
@@ -289,9 +301,45 @@ export function createFiniteCohortSendGate(input,memberId,{enabled=false,now=Dat
    r.cohortManifest!==finiteCohortManifest(p)||r.memberId!==memberId||r.accountKey!==m.ownerAccountKey||
    r.targetHash!==m.recipientHash||r.tariffEvidenceSha256!==m.observedTariff.evidenceSha256||
    r.quoteSourceId!==m.observedTariff.sourceId||r.channel!=='whatsapp'||r.period!==period(at)||r.amountMicroUsd!==m.perAttemptMicroUsd)return false;
+  // The store already holds this exact inbound row. Re-read that durable
+  // marker, not a caller claim. A direct financial-only check without an
+  // attempt can never mint the provider capability.
+  if(attemptId!==undefined){
+   if(typeof attemptId!=='string'||!attemptId)return false;
+   const inbound=await read('crewcheck-infobip-inbound-v1:'+j.eventKey);
+   if(inbound?.v!==1||inbound.status!=='dispatching'||inbound.attemptId!==attemptId||inbound.engineActive!==false||inbound.engineOwner!==null)return false;
+  }
   const [result]=await c.query(update,[JSON.stringify({...r,state:'send-authorized',sendAuthorizedAt:at}),requestKey]);
   if(result.affectedRows!==1)throw Error('FINITE_COHORT_WRITE');
-  const after=now();if(!matches(after,j,q,at)||!finiteCohortAccountValid(m,a,row.usedMicroUsd,after)||c.signal?.aborted)throw Error('FINITE_COHORT_EXPIRED');
+  const financialFresh=()=>{const current=now();return matches(current,j,q,at)&&finiteCohortAccountValid(m,a,row.usedMicroUsd,current)&&finiteCohortTariffValid(p,m,tariff,current)&&Boolean(finiteCohortState(p,g,current))&&!c.signal?.aborted;};
+  if(!financialFresh()||!paidEntitlementValid(c,context.paidProof,context))throw Error('FINITE_COHORT_EXPIRED');
+  if(attemptId!==undefined)ready.set(c,{eventKey:j.eventKey,attemptId,bindingStamp:j.bindingStamp,context,financialFresh});
   return true;
+ },requestFence(c,j,attemptId,signals,timeoutMs){
+  const saved=ready.get(c);ready.delete(c);
+  if(!saved||saved.eventKey!==j.eventKey||saved.bindingStamp!==j.bindingStamp||saved.attemptId!==attemptId)return null;
+  return mintCohortRequestFence(c,saved.context.paidProof,{accountKey:m.ownerAccountKey,bindingStamp:j.bindingStamp,
+   eventKey:j.eventKey,attemptId,sender:p.sender,recipient:m.recipient,financiallyValid:saved.financialFresh,signals,timeoutMs});
  }});
+}
+
+// Minting is private to the real gate, after locked financial/request and exact
+// inbound-attempt verification. The transport can consume, never mint, a token.
+const cohortRequestFences=new WeakMap();
+function mintCohortRequestFence(c,proof,{accountKey,bindingStamp,eventKey,attemptId,sender,recipient,financiallyValid,signals=[],timeoutMs=5000}){
+ if(!paidEntitlementValid(c,proof,{accountKey,bindingStamp})||financiallyValid()!==true||
+  typeof attemptId!=='string'||!attemptId||!Array.isArray(signals)||!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>5000)return null;
+ const fence=Object.freeze({});
+ cohortRequestFences.set(fence,{used:false,c,proof,accountKey,bindingStamp,eventKey,attemptId,sender,recipient,financiallyValid,signals:[...signals],timeoutMs});
+ return fence;
+}
+export function consumeFiniteCohortRequestFence(fence,request,attemptId,signal){
+ const authority=cohortRequestFences.get(fence);if(!authority||authority.used)return false;
+ authority.used=true;
+ const {c,proof,accountKey,bindingStamp,eventKey,sender,recipient,financiallyValid,signals,timeoutMs}=authority;
+ try {
+  return attemptId===authority.attemptId&&request?.provider==='infobip'&&request.sender===sender&&request.recipient===recipient&&
+   request.bindingStamp===bindingStamp&&request.messageId===`cc-${eventKey}`&&!signal?.aborted&&!signals.some(value=>value?.aborted)&&
+   !c.signal.aborted&&c.remainingMs()>=timeoutMs+2000&&paidEntitlementValid(c,proof,{accountKey,bindingStamp})&&financiallyValid()===true;
+ }catch{return false;}
 }
