@@ -241,8 +241,20 @@ async function visibleTextBounds(page, selector) {
       const activeBrand=await activePulseBrandContract(page,{width,size});
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[],'restored normal header remains readable');
       await settle(page);
-      const headerDocY=header.y+await page.evaluate(()=>scrollY);
-      for(const top of [900,0,160]) {await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);const current=await box('.cz-global-header');const actualScroll=await page.evaluate(()=>scrollY);assert.ok(Math.abs(current.y+actualScroll-headerDocY)<=1,'Header follows document scroll');}
+      // Focus during the Pulse contract can scroll the page. Do not combine a
+      // pre-interaction viewport rectangle with a post-interaction scrollY.
+      const readHeaderDocumentPosition=()=>page.evaluate(()=>{const rect=document.querySelector('.cz-global-header').getBoundingClientRect(),actualScroll=scrollY;return {y:rect.y,height:rect.height,actualScroll,documentY:rect.y+actualScroll};});
+      const headerDocumentBaseline=await readHeaderDocumentPosition();
+      for(const top of [900,0,160]) {
+        await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);
+        const current=await readHeaderDocumentPosition(),delta=Math.abs(current.documentY-headerDocumentBaseline.documentY);
+        if(delta>1){
+          const failure={width,theme,size,requestedScroll:top,baseline:headerDocumentBaseline,current,delta};
+          fs.writeFileSync(path.join(output,`${width}-${theme}-${size}-scroll-${top}-failure.json`),JSON.stringify(failure,null,2));
+          await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-scroll-${top}-failure.png`)});
+        }
+        assert.ok(delta<=1,'Header follows document scroll: '+JSON.stringify({baseline:headerDocumentBaseline,current,requestedScroll:top,delta}));
+      }
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[]);
       const before=await page.evaluate(()=>window.scrollY);
       await page.locator('body > nav.cz-bottom-nav > button').last().click();await page.locator('.cz-menu-overlay').waitFor();await settle(page);
