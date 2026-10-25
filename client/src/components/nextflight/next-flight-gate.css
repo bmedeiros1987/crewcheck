@@ -39,9 +39,9 @@ html[data-crew-theme="light"] .cz-app[data-version] .cc-next-gate button:focus-v
 @media (prefers-reduced-motion:reduce){.cc-next-gate *{transition:none!important}}
 
 /* Portão manual no Radar */
-.cc-manual-gate form{display:grid;gap:6px;max-width:420px}
+.cc-manual-gate form{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;min-width:0;max-width:420px}
 .cc-manual-gate label{font-size:.85rem;font-weight:600}
-.cc-manual-gate :is(input,select){min-height:44px;padding:8px 10px;border-radius:10px;border:1px solid currentColor;background:transparent;color:inherit;font-size:1rem;text-transform:uppercase}
+.cc-manual-gate :is(input,select){box-sizing:border-box;min-width:0;max-width:100%;width:100%;min-height:44px;padding:8px 10px;border-radius:10px;border:1px solid currentColor;background:transparent;color:inherit;font-size:1rem;text-transform:uppercase}
 .cc-manual-gate p{margin:4px 0;font-size:.88rem;line-height:1.4}
 .cc-manual-gate h2{display:flex;align-items:center;gap:6px}
 .cc-manual-gate h2 svg{width:20px;height:20px}
@@ -53,5 +53,5 @@ html[data-crew-theme="light"] .cz-app[data-version] .cc-next-gate button:focus-v
 .cc-gate-review button { min-height: 44px; padding: 10px 14px; font: inherit; }
 .cc-gate-review [role='status']:empty { display: none; }
 
-.cc-manual-gate select{box-sizing:border-box;font:inherit;text-transform:none;min-width:0;max-width:100%;width:100%}
+.cc-manual-gate select{font:inherit;text-transform:none}
 .cc-manual-gate select:focus-visible{outline:3px solid var(--cc-ng-accent,#61b6ff);outline-offset:2px}

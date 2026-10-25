@@ -61,7 +61,10 @@ try {
  for(const width of [320,390])for(const fontSize of ['100%','200%']) {
   await page.setViewportSize({width,height:844});await page.evaluate(size=>document.documentElement.style.fontSize=size,fontSize);
   const geometry=await typeSelect.evaluate(el=>({x:el.getBoundingClientRect().x,right:el.getBoundingClientRect().right,height:el.getBoundingClientRect().height,viewport:innerWidth,scroll:document.documentElement.scrollWidth}));
-  assert(geometry.x>=0&&geometry.right<=geometry.viewport+1&&geometry.height>=44,JSON.stringify({width,fontSize,geometry}));assert(geometry.scroll<=geometry.viewport+1,JSON.stringify({width,fontSize,geometry}));
+  const controls=await page.locator('.cc-manual-gate input,.cc-manual-gate select,.cc-manual-gate button').evaluateAll(elements=>elements.map(el=>({tag:el.tagName,label:el.getAttribute('placeholder')||el.textContent.trim(),x:el.getBoundingClientRect().x,right:el.getBoundingClientRect().right,height:el.getBoundingClientRect().height})));
+  assert(geometry.x>=0&&geometry.right<=geometry.viewport+1&&geometry.height>=44,JSON.stringify({width,fontSize,geometry,controls}));assert(geometry.scroll<=geometry.viewport+1,JSON.stringify({width,fontSize,geometry,controls}));
+  assert(controls.every(control=>control.x>=0&&control.right<=width+1),JSON.stringify({width,fontSize,controls}));
+  assert(controls.filter(control=>control.tag!=='BUTTON').every(control=>control.height>=44),'manual inputs and selector keep 44px targets');
  }
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.documentElement.style.fontSize='100%');
  await page.getByRole('button',{name:'Remover status manual'}).click();await page.waitForFunction(()=>window.read().status==='');info=await page.evaluate(()=>window.read());assert.equal(info.gate,'24');assert.equal(info.registration,'PR-ABC');
