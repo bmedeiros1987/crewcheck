@@ -1,3 +1,4 @@
+import {createFiniteReservePrefunder,finiteReserveManifest} from '../server/concierge-finite-reserve-off.mjs';
 import assert from 'node:assert/strict';
 import {createSharedCreditCandidate,sharedCreditKey as key,boundedQuoteReservation,CONCIERGE_SHARED_CREDIT_SHIPPING} from '../server/concierge-shared-credit-candidate.mjs';
 // Serializable transaction model only. No MySQL isolation/restart claim.
@@ -107,3 +108,22 @@ for(const boundary of ['locked-read','request-insert','last-update','stale-quote
  assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,1000000);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,0);assert.equal(f.state.has(key('request',[programId,event(71)])),false,'expired request has no committed marker/debit');
 }
 console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:false,syntheticTransactionalModel:true,realMysqlOrRestartTested:false,concurrentUsers:35,accountCreditAndGlobalBudgetAtomic:true,sharedMessageVoiceBalance:true,channelPreferenceDoesNotMintCredits:true,uncertainReservationRetained:true,externalCalls:0,providerCalls:0}));
+
+// Explicit risk authority is a different basis, never a refreshed tariff.
+{
+ const f=fixture({balance:50000}),g=f.state.get(f.globalKey);let clock=at;
+ const p={v:1,basis:'explicit-risk-reserve',residualRiskAccepted:true,riskDisclosureVersion:'provisional-provider-cost-v1',approvalId:'synthetic-finite-authority',evidenceReference:'synthetic-specific-risk-approval',programId,ownerAccountKey:account,grantManifest:'c'.repeat(64),sender:job(1).sender,recipient:job(1).recipient,approvedAt:at,validFrom:at,validUntil:at+86400000,maxAttempts:2,perAttemptMicroUsd:15000,totalMicroUsd:30000,monthlyBudgetMicroUsd:20000000,observedTariff:{evidenceSha256:'d'.repeat(64),observedAt:at,observedUnitMicroUsd:9909},observedBudget:{evidenceSha256:'e'.repeat(64),observedAt:at,knownSpentMicroUsd:0,outsideConsumersReserveMicroUsd:1000000}};
+ const accountRow=f.state.get(key('account',[programId,account]));accountRow.grantManifest=p.grantManifest;
+ const authKey=key('finite-reserve-authorization',[p.approvalId]);f.state.set(authKey,{v:1,kind:'finite-reserve-authorization',status:'approved',manifest:finiteReserveManifest(p),approvedAt:p.approvedAt,evidenceReference:p.evidenceReference});
+ const prefund=createFiniteReservePrefunder(p,{enabled:true,now:()=>clock});
+ assert.equal((await createFiniteReservePrefunder(p)()).status,'disabled');
+ const funded=await Promise.all(Array.from({length:12},()=>f.transaction(prefund)));assert.equal(funded.filter(x=>x.status==='reserved').length,1);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,30000);
+ clock=at+3600000;const oldQuote={...quote('whatsapp'),evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,sessionUntil:clock+3600000};
+ assert.equal(boundedQuoteReservation(oldQuote,'whatsapp',clock),null,'ordinary observed quote stays expired');
+ const candidate=()=>createSharedCreditCandidate({...f.policy,finiteReserve:p},{now:()=>clock,resolveTrustedContext:async()=>({...f.context,quote:oldQuote})});
+ const reserve=n=>f.transaction(c=>candidate().reserve(c,{...job(n),receivedAt:clock}));
+ const results=await Promise.all(Array.from({length:15},(_,n)=>reserve(200+n)));assert.equal(results.filter(Boolean).length,2);
+ const final=f.state.get(f.globalKey);assert.equal(final.reservedMicroUsd,30000,'full pool reserved once, attempts do not charge global twice');assert.equal(final.finiteReserve.usedMicroUsd,30000);assert.equal(final.finiteReserve.attempts,2);assert.equal(final.reconciledAt,at);assert.equal(oldQuote.verifiedAt,at);assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,20000);
+ assert.equal(await reserve(300),false);assert.equal((await f.transaction(prefund)).status,'already-reserved');assert.equal(final.finiteReserve.attempts,2,'prefund replay never restores quantity');
+ clock=p.validUntil;assert.equal(await reserve(301),false);
+}
