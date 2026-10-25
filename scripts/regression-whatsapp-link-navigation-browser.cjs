@@ -56,7 +56,7 @@ const server = http.createServer((req, res) => context.respond(req, res, new URL
     await page.getByText('Vínculo compatível com o teste Infobip · final 0101.',{exact:false}).waitFor();
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })));
     await page.locator('.cc-notification-center').waitFor({ state: 'detached' });
-    await page.getByLabel('Menu', { exact: true }).click();
+    await page.locator('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]').click();
     await page.getByRole('button', { name: 'Notificações', exact: true }).click();
     await page.locator('.cc-notification-center').waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event('crewcheck:auth-changed')));
