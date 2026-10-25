@@ -53,3 +53,51 @@ export function createFiniteReservePrefunder(input,{enabled=false,now=Date.now}=
   const [result]=await c.query(update,[JSON.stringify(value),globalKey]);if(result.affectedRows!==1)throw Error('FINITE_RESERVE_WRITE');if(!fresh())throw Error('FINITE_RESERVE_EXPIRED');return {status:'reserved'};
  };
 }
+
+// Final send gate for the finite basis, OFF by default and wired nowhere. It has
+// the shape the production store already calls inside its last transaction,
+// right before provider I/O: admission.checkSend(c,job). Every check is redone
+// under row locks there and the event's request marker is consumed, so a second
+// check denies. Only use it behind the store's committed no-retry 'dispatching'
+// marker: that marker, not this one, guarantees a single provider send (if the
+// transaction rolls back after a real send, this marker returns to 'reserved',
+// which therefore never proves a message was not sent nor allows a refund).
+// A denial releases nothing: the reserved credit and attempt stay used.
+const finiteJobOwner=(j,p)=>{try{const s=JSON.parse(j?.bindingStamp);return Array.isArray(s)&&s.length===5&&typeof s[0]==='string'&&s[0]&&typeof s[1]==='string'&&s[1]&&s[2]==='infobip'&&s[3]===p.sender&&s[4]===p.recipient?createHash('sha256').update(s[0]).digest('hex'):null;}catch{return null;}};
+export function createFiniteReserveSendGate(input,{enabled=false,now=Date.now,resolveTrustedContext}={}){
+ if(enabled!==true)return Object.freeze({checkSend:async()=>false});
+ const p=finiteReservePolicy(input),manifest=finiteReserveManifest(p);
+ if(typeof now!=='function'||typeof resolveTrustedContext!=='function')throw Error('FINITE_SEND_GATE');
+ const accountKey=sharedCreditKey('account',[p.programId,p.ownerAccountKey]),tariffKey=sharedCreditKey('tariff',[p.programId,p.sender,'BR','service-text']);
+ const authorityKey=sharedCreditKey('finite-reserve-authorization',[p.approvalId]),globalKey=sharedCreditKey('global',[p.programId,period(p.validFrom)]);
+ // Deadlines: authority window, message age, service session and approved tariff validity.
+ const timely=(at,j,q,since=at)=>int(at)&&at>=since&&at>=p.validFrom&&at<p.validUntil&&period(at)===period(p.validFrom)&&j.receivedAt<=at&&at-j.receivedAt<=900000&&at<q.sessionUntil&&at<p.observedTariff.validUntil;
+ return Object.freeze({async checkSend(c,j){
+  const started=now();if(!int(started))return false;
+  if(c?.signal?.aborted||j?.provider!=='infobip'||j.kind==='link_confirmation'||j.sender!==p.sender||j.recipient!==p.recipient||!hex(j.eventKey)||!int(j.receivedAt)||j.receivedAt<p.validFrom||finiteJobOwner(j,p)!==p.ownerAccountKey)return false;
+  const job={...j,accountKey:p.ownerAccountKey,channel:'whatsapp'};
+  // Canonical identity: current link, consent and binding, under their own locks.
+  const context=await resolveTrustedContext(c,job),q=context?.quote;
+  if(context?.linked!==true||context.consent!==true||context.accountKey!==p.ownerAccountKey||context.bindingStamp!==j.bindingStamp||context.sender!==p.sender||context.recipient!==p.recipient
+   ||q?.channel!=='whatsapp'||q.currency!=='USD'||q.country!=='BR'||q.category!=='service-text'||q.sender!==p.sender||!int(q.sessionUntil)||q.verifiedAt!==p.observedTariff.observedAt||q.evidenceSha256!==p.observedTariff.evidenceSha256||q.unitMicroUsd!==p.observedTariff.observedUnitMicroUsd||q.validUntil!==p.observedTariff.validUntil||!timely(started,j,q))return false;
+  const read=async k=>{const [r]=await c.query(select,[k]);return r.length===1?parse(r[0].payload):null;};
+  const requestKey=sharedCreditKey('request',[p.programId,j.eventKey]);
+  // Same order as resolver, reservation and prefunding: account, tariff, global, authority, request.
+  const a=await read(accountKey),tariff=await read(tariffKey),g=await read(globalKey),authority=await read(authorityKey),r=await read(requestKey),e=g?.finiteReserve,at=now();
+  if(!timely(at,j,q,started)||c.signal?.aborted
+   ||authority?.v!==1||authority.kind!=='finite-reserve-authorization'||authority.status!=='approved'||authority.manifest!==manifest||authority.evidenceReference!==p.evidenceReference||authority.approvedAt!==p.approvedAt
+   ||a?.v!==1||a.kind!=='account-credit'||a.accountKey!==p.ownerAccountKey||a.grantManifest!==p.grantManifest||!int(a.reservedMicroUsd)||a.reservedMicroUsd<p.perAttemptMicroUsd
+   ||!(a.validFrom===undefined&&a.expiresAt===undefined||int(a.validFrom)&&int(a.expiresAt)&&at>=a.validFrom&&at<a.expiresAt)
+   ||tariff?.v!==1||tariff.kind!=='verified-tariff'||tariff.currency!=='USD'||tariff.country!=='BR'||tariff.category!=='service-text'||tariff.sender!==p.sender||tariff.verifiedAt!==p.observedTariff.observedAt||tariff.evidenceSha256!==p.observedTariff.evidenceSha256||tariff.unitMicroUsd!==p.observedTariff.observedUnitMicroUsd||tariff.validUntil!==p.observedTariff.validUntil
+   ||g?.v!==1||g.kind!=='global-credit'||g.reconciled!==true||g.billingEvidenceSha256!==p.observedBudget.evidenceSha256||g.period!==period(at)||g.budgetMicroUsd!==p.monthlyBudgetMicroUsd||!int(g.knownSpentMicroUsd)||!int(g.reservedMicroUsd)||g.reservedMicroUsd<p.totalMicroUsd+p.observedBudget.outsideConsumersReserveMicroUsd||g.knownSpentMicroUsd+g.reservedMicroUsd>p.monthlyBudgetMicroUsd
+   ||e?.v!==1||e.kind!=='finite-risk-reserve'||e.status!=='reserved'||e.manifest!==manifest||e.accountKey!==p.ownerAccountKey||e.totalMicroUsd!==p.totalMicroUsd||e.outsideReserveMicroUsd!==p.observedBudget.outsideConsumersReserveMicroUsd||!int(e.attempts)||e.attempts<1||e.attempts>p.maxAttempts||e.usedMicroUsd!==e.attempts*p.perAttemptMicroUsd||e.usedMicroUsd>p.totalMicroUsd
+   ||r?.v!==1||r.kind!=='credit-request'||r.state!=='reserved'||r.period!==period(at)||r.accountKey!==p.ownerAccountKey||r.channel!=='whatsapp'||r.amountMicroUsd!==p.perAttemptMicroUsd||r.reservationBasis!=='explicit-risk-reserve'||r.finiteManifest!==manifest)return false;
+  // Consume the reservation for this event: a second check (retry, replay or
+  // concurrent dispatch) finds it no longer 'reserved' and denies.
+  const [result]=await c.query(update,[JSON.stringify({...r,state:'send-authorized',sendAuthorizedAt:at}),requestKey]);
+  if(result.affectedRows!==1)throw Error('FINITE_SEND_WRITE');
+  // Writes exist now: expiry must roll the transaction back, never return false.
+  if(!timely(now(),j,q,at)||c.signal?.aborted)throw Error('FINITE_SEND_EXPIRED');
+  return true;
+ }});
+}

@@ -14,4 +14,31 @@ All deadlines use the injected application clock shared with the canonical resol
 
 Observed verifiedAt/reconciledAt stay unchanged. A stale observed quote remains rejected by the ordinary quote checker. Only the separately configured explicit-risk path uses the fixed ceiling after 15 minutes. That ceiling is an app exposure reservation, not a guaranteed Infobip tariff or absolute invoice cap. Actual fees, inbound charges, adjustments, taxes and consumers outside this ledger remain risks requiring coverage/approval. Never label a risk approval as provider reconciliation.
 
-Remaining integration gates: reviewed trusted canonical/grant resolver that separates identity from financial evidence; final-send authorization under this same finite authority; approved authority provisioning/revocation lifecycle; exact external-consumer coverage and real permission/evidence; specific human approval of recipient, amount, period and risk. No finite reserve is currently approved or active. Existing pilots1/1 and3/3 remain consumed and separate. Voice is excluded.
+Final send gate (prepared, OFF, wired nowhere): createFiniteReserveSendGate returns an object with checkSend(c,job). The production store already calls that method in its last transaction, right before provider I/O. It denies unless enabled is the literal true, and FINITE_RESERVE_SHIPPING stays false. Under the store's transaction it rechecks, in order:
+
+1. the message: provider, non-link kind, sender/recipient, owner binding, event key, age ≤ 15 min;
+2. canonical identity reported by the trusted resolver: link, consent, binding, owner. The gate denies on these itself and does not rely on the resolver filtering;
+3. the quote's approved observation and tariff validity, and the live service session;
+4. the authority window and period, with a clock that must not move backwards;
+5. the locked rows:
+   - the account hold and grant validity;
+   - the approved tariff row;
+   - the global finite reserve: reconciled, approved billing evidence, still reserved, usage consistent with attempts;
+   - the approved authority;
+   - this event's credit-request marker: still reserved, with the same finite manifest, basis, per-attempt amount, account and period.
+
+It then consumes the marker (state send-authorized), so a retry, replay or concurrent check is denied; expiry after that write throws and rolls back.
+
+The single-send guarantee is the store's committed no-retry dispatching marker, not this one. If the store transaction rolls back after a real send (e.g. COMMIT fails), the request marker returns to reserved, so reserved never proves a message was not sent and must not drive a refund. Use the gate only behind that store marker. A denial releases nothing: the event's reserved credit and finite attempt stay used (fail closed, no refund method), and errors before the gate's write leave the job uncertain.
+
+Real MySQL 8.4 synthetic tests cover:
+
+- deny-by-default;
+- each denial reason above, including tampered marker/authority/global/tariff/account rows, an expired session and a backwards clock;
+- rollback after the write;
+- one authorization out of 12 concurrent checks;
+- single use across an actual restart.
+
+Not yet exercised through the real store's dispatch (send failure/timeout after the gate); that belongs to the wiring step.
+
+Remaining integration gates: reviewed trusted canonical/grant resolver that separates identity from financial evidence; wiring the prepared final send gate into a reviewed finite admission (allows/reserve/checkSend) under this same finite authority; approved authority provisioning/revocation lifecycle; exact external-consumer coverage and real permission/evidence; specific human approval of recipient, amount, period and risk. No finite reserve is currently approved or active. Existing pilots1/1 and3/3 remain consumed and separate. Voice is excluded.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {createFiniteReservePrefunder,finiteReserveManifest} from '../server/concierge-finite-reserve-off.mjs';
+import {createFiniteReservePrefunder,createFiniteReserveSendGate,finiteReserveManifest,FINITE_RESERVE_SHIPPING} from '../server/concierge-finite-reserve-off.mjs';
 import {createSharedCreditCandidate,sharedCreditKey as key} from '../server/concierge-shared-credit-candidate.mjs';
 export async function runFiniteReserveSqlScenarios({db,transaction,mode,epoch}){
  const hash=s=>createHash('sha256').update(s).digest('hex'),account=hash('SYNTHETIC-PROMOTIONAL-OWNER'),programId='synthetic-finite-reserve',sender='12025550100',recipient='12025550101';const approvedTariffUntil=epoch+3600000+10;let clock=epoch,tariffValidUntil=approvedTariffUntil;
@@ -15,9 +15,19 @@ export async function runFiniteReserveSqlScenarios({db,transaction,mode,epoch}){
  const candidate=()=>createSharedCreditCandidate({enabled:true,budgetApproved:true,monthlyBudgetMicroUsd:20000000,programId,allowedChannels:['whatsapp'],finiteReserve:p},{resolveTrustedContext:context,now:()=>clock});
  const job=n=>({accountKey:account,sender,recipient,bindingStamp:'synthetic-finite-binding',eventKey:hash('finite-risk-'+n),channel:'whatsapp',receivedAt:clock});
  const reserve=n=>transaction(c=>candidate().reserve(c,job(n))),prefund=createFiniteReservePrefunder(p,{enabled:true,now:()=>clock});
+ // Final send gate fixtures: store-shaped job and a test resolver that reads the
+ // canonical link consent under its row lock before the finite context.
+ const sendStamp=JSON.stringify(['SYNTHETIC-PROMOTIONAL-OWNER','synthetic-revision-1','infobip',sender,recipient]);
+ const sendJob=(n,extra={})=>({provider:'infobip',kind:'text',sender,recipient,eventKey:hash('finite-risk-'+n),receivedAt:clock,bindingStamp:sendStamp,...extra});
+ const gateContext=async(c,j)=>{const [links]=await c.query('SELECT consent_concierge,revoked_at FROM credit_qa_links WHERE BINARY phone_hash=BINARY ? FOR UPDATE',[hash(j.recipient)]);if(links.length!==1||Number(links[0].consent_concierge)!==1||links[0].revoked_at!==null)return null;const r=await context(c,j);return r&&{...r,bindingStamp:j.bindingStamp};};
+ const gate=()=>createFiniteReserveSendGate(p,{enabled:true,now:()=>clock,resolveTrustedContext:gateContext});
+ const send=(n,extra)=>transaction(c=>gate().checkSend(c,sendJob(n,extra)));
+ const marker=async n=>(await read(key('request',[programId,hash('finite-risk-'+n)])))?.state;
  if(mode==='restart'){
   clock=epoch+3600000;assert.equal((await transaction(prefund)).status,'already-reserved');assert.equal(await reserve(1),false);assert.equal(await reserve(3),false);assert.equal(await reserve(4),true);assert.equal(await reserve(5),false);const g=await read(globalKey);assert.equal(g.reservedMicroUsd,1060000);assert.equal(g.finiteReserve.attempts,4);assert.equal(g.reconciledAt,epoch);assert.equal((await read(accountKey)).availableMicroUsd,0);
-  return ['finite prefunded exposure and uncertain attempt survive actual MySQL restart without freshness rewrite or reset'];
+  assert.equal(await send(1),false,'send authorization survives restart: never a second send');assert.equal(await marker(1),'send-authorized');
+  assert.equal(await send(4),true);assert.equal(await send(4),false);assert.equal(await marker(4),'send-authorized');
+  return ['finite prefunded exposure and uncertain attempt survive actual MySQL restart without freshness rewrite or reset','final send authorization is single-use across actual MySQL restart'];
  }
  await write(accountKey,{v:1,kind:'account-credit',accountKey:account,grantManifest:p.grantManifest,availableMicroUsd:60000,reservedMicroUsd:0});
  await write(globalKey,{v:1,kind:'global-credit',period:'2032-10',budgetMicroUsd:20000000,knownSpentMicroUsd:4000000,reservedMicroUsd:0,reconciled:true,reconciledAt:epoch,billingEvidenceSha256:p.observedBudget.evidenceSha256});
@@ -56,6 +66,57 @@ export async function runFiniteReserveSqlScenarios({db,transaction,mode,epoch}){
  await assert.rejects(transaction(c=>candidate().reserve({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state')&&++writes===3)clock=p.validUntil;return r;}},job(7))));clock=epoch+3600000;assert.deepEqual(await read(accountKey),before);assert.deepEqual(await read(globalKey),beforeGlobal);assert.equal(await read(key('request',[programId,job(7).eventKey])),null);
  await assert.rejects(async()=>{const c=await db.getConnection();try{await c.beginTransaction();assert.equal(await candidate().reserve(c,job(3)),true);await c.commit();throw Error('SYNTHETIC_ACK_LOST_AFTER_REAL_COMMIT');}finally{c.release();}},/ACK_LOST/);
  assert.equal(await reserve(3),false);assert.equal((await read(globalKey)).finiteReserve.attempts,3);assert.equal((await read(globalKey)).reconciledAt,epoch);assert.equal((await read(globalKey)).finiteReserve.observedTariffAt,epoch);
+ // Final send gate (OFF by default): denies unless every condition holds; authorizes once.
+ {
+  const forbidden={query:()=>assert.fail('disabled gate must not touch SQL')};
+  for(const options of [{},{enabled:'true'},{enabled:1}])assert.equal(await createFiniteReserveSendGate(p,{...options,now:()=>clock,resolveTrustedContext:gateContext}).checkSend(forbidden,sendJob(1)),false,'deny by default');
+  assert.equal(FINITE_RESERVE_SHIPPING,false);assert.equal(await marker(1),'reserved');
+  const denied=async(label,run)=>{assert.equal(await run(),false,label);assert.equal(await marker(3),'reserved',label+': reservation untouched');};
+  await write(authKey,{...authority,status:'revoked'});await denied('revoked authorization',()=>send(3));await write(authKey,authority);
+  await denied('other recipient',()=>send(3,{recipient:'12025550199'}));
+  await denied('other owner binding',()=>send(3,{bindingStamp:JSON.stringify(['SYNTHETIC-OTHER','synthetic-revision-1','infobip',sender,recipient])}));
+  await denied('link confirmation is not a reply',()=>send(3,{kind:'link_confirmation'}));
+  await db.query('UPDATE credit_qa_links SET consent_concierge=0 WHERE phone_hash=?',[hash(recipient)]);await denied('consent withdrawn',()=>send(3));await db.query('UPDATE credit_qa_links SET consent_concierge=1 WHERE phone_hash=?',[hash(recipient)]);
+  await db.query('UPDATE credit_qa_links SET revoked_at=NOW(3) WHERE phone_hash=?',[hash(recipient)]);await denied('link revoked',()=>send(3));await db.query('UPDATE credit_qa_links SET revoked_at=NULL WHERE phone_hash=?',[hash(recipient)]);
+  // The gate does not rely on the resolver filtering: a reported lack of link, consent or binding denies too.
+  for(const [label,change] of [['resolver reports no consent',{consent:false}],['resolver reports no link',{linked:false}],['resolver reports another binding',{bindingStamp:'other-binding'}]]){
+   const reporting=createFiniteReserveSendGate(p,{enabled:true,now:()=>clock,resolveTrustedContext:async(c,j)=>{const r=await gateContext(c,j);return r&&{...r,...change};}});
+   await denied(label,()=>transaction(c=>reporting.checkSend(c,sendJob(3))));
+  }
+  await denied('message older than 15 minutes',()=>send(3,{receivedAt:clock-900001}));
+  clock=approvedTariffUntil;await denied('approved tariff validity elapsed',()=>send(3));clock=epoch+3600000;
+  clock=p.validUntil;await denied('authorization window elapsed',()=>send(3));clock=epoch+3600000;
+  tariffValidUntil=approvedTariffUntil+1;await denied('rewritten tariff validity',()=>send(3));tariffValidUntil=approvedTariffUntil;
+  assert.equal(await send(50),false,'event without a reservation cannot send');assert.equal(await marker(50),undefined);
+  const gBefore=await read(globalKey);await write(globalKey,{...gBefore,finiteReserve:{...gBefore.finiteReserve,status:'released'}});await denied('finite reserve no longer held',()=>send(3));await write(globalKey,gBefore);
+  const aBefore=await read(accountKey);await write(accountKey,{...aBefore,reservedMicroUsd:0});await denied('account hold missing',()=>send(3));await write(accountKey,aBefore);
+  // Any locked row that no longer matches the approved reservation denies.
+  const tamper=async(label,k,change)=>{const before=await read(k);await write(k,change(before));await denied(label,()=>send(3));await write(k,before);};
+  const request3=key('request',[programId,hash('finite-risk-3')]),tariffKey3=key('tariff',[programId,sender,'BR','service-text']);
+  await tamper('marker amount differs',request3,r=>({...r,amountMicroUsd:r.amountMicroUsd+1}));
+  await tamper('marker under another manifest',request3,r=>({...r,finiteManifest:'0'.repeat(64)}));
+  await tamper('ordinary-basis marker',request3,({reservationBasis,finiteManifest,...r})=>r);
+  await tamper('marker for another account',request3,r=>({...r,accountKey:'1'.repeat(64)}));
+  await tamper('marker in another period',request3,r=>({...r,period:'2032-11'}));
+  await tamper('authority under another manifest',authKey,x=>({...x,manifest:'2'.repeat(64)}));
+  await tamper('global usage inconsistent with attempts',globalKey,x=>({...x,finiteReserve:{...x.finiteReserve,usedMicroUsd:x.finiteReserve.usedMicroUsd+1}}));
+  await tamper('global not reconciled',globalKey,x=>({...x,reconciled:false}));
+  await tamper('global billing evidence differs',globalKey,x=>({...x,billingEvidenceSha256:'3'.repeat(64)}));
+  await tamper('tariff unit price differs',tariffKey3,x=>({...x,unitMicroUsd:x.unitMicroUsd+1}));
+  await tamper('tariff observation differs',tariffKey3,x=>({...x,verifiedAt:x.verifiedAt+1}));
+  await tamper('account grant expired',accountKey,x=>({...x,validFrom:epoch,expiresAt:clock}));
+  const quoteGate=change=>createFiniteReserveSendGate(p,{enabled:true,now:()=>clock,resolveTrustedContext:async(c,j)=>{const r=await gateContext(c,j);return r&&{...r,quote:{...r.quote,...change}};}});
+  await denied('service session expired',()=>transaction(c=>quoteGate({sessionUntil:clock}).checkSend(c,sendJob(3))));
+  await denied('quote from another observation',()=>transaction(c=>quoteGate({verifiedAt:epoch+1}).checkSend(c,sendJob(3))));
+  let ticks=[epoch+3600000,epoch+3599999];const backwards=createFiniteReserveSendGate(p,{enabled:true,now:()=>ticks.length>1?ticks.shift():ticks[0],resolveTrustedContext:gateContext});
+  await denied('clock moving backwards',()=>transaction(c=>backwards.checkSend(c,sendJob(3))));
+  // Expiry after the consuming write rolls back: the reservation stays usable.
+  let reason='';await assert.rejects(transaction(c=>gate().checkSend({...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(sql.startsWith('UPDATE crewcheck_telegram_state'))clock=approvedTariffUntil;return r;}},sendJob(3)).catch(e=>{reason=e.message;throw e;})));
+  assert.equal(reason,'FINITE_SEND_EXPIRED');clock=epoch+3600000;assert.equal(await marker(3),'reserved','expiry after the write rolls back');
+  // Authorize once: sequential replay and concurrent final checks.
+  assert.equal(await send(1),true);assert.equal(await marker(1),'send-authorized');assert.equal(await send(1),false,'same event is never authorized twice');
+  assert.equal((await Promise.all(Array.from({length:12},()=>send(2)))).filter(Boolean).length,1,'concurrent final checks authorize one send');assert.equal(await marker(2),'send-authorized');
+ }
  // Mixed SQL order: another account holds the shared tariff lock before
  // requesting global; prefunding must wait for tariff without holding global.
  clock=epoch;const mixed={...p,programId:'synthetic-finite-mixed',approvalId:'synthetic-finite-mixed-approval'},mixGlobal=key('global',[mixed.programId,'2032-10']),mixTariff=key('tariff',[mixed.programId,sender,'BR','service-text']),otherAccount=hash('SYNTHETIC-OTHER-FINITE-ACCOUNT');
@@ -69,5 +130,5 @@ export async function runFiniteReserveSqlScenarios({db,transaction,mode,epoch}){
  const normal=transaction(c=>ordinary.reserve(c,{...job(8),accountKey:otherAccount}));await tariffHeld;
  const funding=transaction(c=>createFiniteReservePrefunder(mixed,{enabled:true,now:()=>clock})({...c,query:async(sql,args)=>{if(sql.startsWith('SELECT payload')&&args[0]===mixTariff)release();return c.query(sql,args);}}));
  const [ordinaryResult,fundResult]=await Promise.all([normal,funding]);assert.equal(ordinaryResult,true);assert.equal(fundResult.status,'reserved');assert.equal((await read(mixGlobal)).reservedMicroUsd,1072000);
- return ['finite exposure upfront allocation concurrent20 reserves once;24 copies debit once; revoked authority denies; final UPDATE expiry rolls back; lost acknowledgement retains usage; no timestamp refresh; mixed-account ordinary tariff-before-global and prefunding complete without deadlock','tariff validUntil bound by the approval and enforced: expired/missing/non-integer/rewritten denies funding and spending; expiry after locked read denies; expiry after real UPDATE rolls back hold, account, global and request marker'];
+ return ['finite exposure upfront allocation concurrent20 reserves once;24 copies debit once; revoked authority denies; final UPDATE expiry rolls back; lost acknowledgement retains usage; no timestamp refresh; mixed-account ordinary tariff-before-global and prefunding complete without deadlock','tariff validUntil bound by the approval and enforced: expired/missing/non-integer/rewritten denies funding and spending; final send gate denies by default and on revoked authority, other recipient/owner, withdrawn consent or revoked link, stale message, elapsed tariff/authority, missing reservation, released reserve or missing account hold; expiry after its write rolls back; one send per event under 12 concurrent checks; expiry after locked read denies; expiry after real UPDATE rolls back hold, account, global and request marker'];
 }
