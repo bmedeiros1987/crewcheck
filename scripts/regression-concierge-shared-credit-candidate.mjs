@@ -1,3 +1,4 @@
+import {createFiniteReservePrefunder,finiteReserveManifest} from '../server/concierge-finite-reserve-off.mjs';
 import assert from 'node:assert/strict';
 import {createSharedCreditCandidate,sharedCreditKey as key,boundedQuoteReservation,CONCIERGE_SHARED_CREDIT_SHIPPING} from '../server/concierge-shared-credit-candidate.mjs';
 // Serializable transaction model only. No MySQL isolation/restart claim.
@@ -107,3 +108,51 @@ for(const boundary of ['locked-read','request-insert','last-update','stale-quote
  assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,1000000);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,0);assert.equal(f.state.has(key('request',[programId,event(71)])),false,'expired request has no committed marker/debit');
 }
 console.log(JSON.stringify({suite:'Unwired shared-credit candidate',shipping:false,syntheticTransactionalModel:true,realMysqlOrRestartTested:false,concurrentUsers:35,accountCreditAndGlobalBudgetAtomic:true,sharedMessageVoiceBalance:true,channelPreferenceDoesNotMintCredits:true,uncertainReservationRetained:true,externalCalls:0,providerCalls:0}));
+
+// Explicit risk authority is a different basis, never a refreshed tariff.
+{
+ const f=fixture({balance:50000}),g=f.state.get(f.globalKey);let clock=at;
+ const p={v:1,basis:'explicit-risk-reserve',residualRiskAccepted:true,riskDisclosureVersion:'provisional-provider-cost-v1',approvalId:'synthetic-finite-authority',evidenceReference:'synthetic-specific-risk-approval',programId,ownerAccountKey:account,grantManifest:'c'.repeat(64),sender:job(1).sender,recipient:job(1).recipient,approvedAt:at,validFrom:at,validUntil:at+86400000,maxAttempts:2,perAttemptMicroUsd:15000,totalMicroUsd:30000,monthlyBudgetMicroUsd:20000000,observedTariff:{evidenceSha256:'d'.repeat(64),observedAt:at,validUntil:at+2*86400000,observedUnitMicroUsd:9909},observedBudget:{evidenceSha256:'e'.repeat(64),observedAt:at,knownSpentMicroUsd:0,outsideConsumersReserveMicroUsd:1000000}};
+ for(const bad of [{...p,residualRiskAccepted:false},{...p,grantManifest:undefined},{...p,validUntil:at+8*86400000},{...p,maxAttempts:3}])assert.throws(()=>createFiniteReservePrefunder(bad,{enabled:true}),/FINITE_RESERVE_POLICY/);
+ const accountRow=f.state.get(key('account',[programId,account]));accountRow.grantManifest=p.grantManifest;
+ const authKey=key('finite-reserve-authorization',[p.approvalId]);f.state.set(authKey,{v:1,kind:'finite-reserve-authorization',status:'approved',manifest:finiteReserveManifest(p),approvedAt:p.approvedAt,evidenceReference:p.evidenceReference});
+ g.billingEvidenceSha256=p.observedBudget.evidenceSha256;f.state.set(key('tariff',[programId,p.sender,'BR','service-text']),{v:1,kind:'verified-tariff',currency:'USD',country:'BR',sender:p.sender,category:'service-text',evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,unitMicroUsd:9909,validUntil:at+2*86400000});
+ const prefund=createFiniteReservePrefunder(p,{enabled:true,now:()=>clock});
+ assert.equal((await createFiniteReservePrefunder(p)()).status,'disabled');
+ const funded=await Promise.all(Array.from({length:12},()=>f.transaction(prefund)));assert.equal(funded.filter(x=>x.status==='reserved').length,1);assert.equal(f.state.get(f.globalKey).reservedMicroUsd,1030000);
+ clock=at+3600000;const oldQuote={...quote('whatsapp'),evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,sessionUntil:clock+3600000,validUntil:at+2*86400000};
+ assert.equal(boundedQuoteReservation(oldQuote,'whatsapp',clock),null,'ordinary observed quote stays expired');
+ const candidate=()=>createSharedCreditCandidate({...f.policy,finiteReserve:p},{now:()=>clock,resolveTrustedContext:async()=>({...f.context,quote:oldQuote})});
+ const reserve=n=>f.transaction(c=>candidate().reserve(c,{...job(n),receivedAt:clock}));
+ const results=await Promise.all(Array.from({length:15},(_,n)=>reserve(200+n)));assert.equal(results.filter(Boolean).length,2);
+ const final=f.state.get(f.globalKey);assert.equal(final.reservedMicroUsd,1030000,'full pool reserved once, attempts do not charge global twice');assert.equal(final.finiteReserve.usedMicroUsd,30000);assert.equal(final.finiteReserve.attempts,2);assert.equal(final.reconciledAt,at);assert.equal(oldQuote.verifiedAt,at);assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,20000);
+ assert.equal(await reserve(300),false);assert.equal((await f.transaction(prefund)).status,'already-reserved');assert.equal(final.finiteReserve.attempts,2,'prefund replay never restores quantity');
+ clock=p.validUntil;assert.equal(await reserve(301),false);
+}
+// Tariff validity is bound by the approval and enforced by funding and per-attempt spending.
+{
+ const f=fixture({balance:50000});let clock=at;const approvedUntil=at+3600000+10;
+ const p={v:1,basis:'explicit-risk-reserve',residualRiskAccepted:true,riskDisclosureVersion:'provisional-provider-cost-v1',approvalId:'synthetic-finite-tariff-validity',evidenceReference:'synthetic-specific-risk-approval',programId,ownerAccountKey:account,grantManifest:'c'.repeat(64),sender:job(1).sender,recipient:job(1).recipient,approvedAt:at,validFrom:at,validUntil:at+86400000,maxAttempts:2,perAttemptMicroUsd:15000,totalMicroUsd:30000,monthlyBudgetMicroUsd:20000000,observedTariff:{evidenceSha256:'d'.repeat(64),observedAt:at,validUntil:approvedUntil,observedUnitMicroUsd:9909},observedBudget:{evidenceSha256:'e'.repeat(64),observedAt:at,knownSpentMicroUsd:0,outsideConsumersReserveMicroUsd:1000000}};
+ for(const validUntil of [undefined,at,String(approvedUntil)])assert.throws(()=>createFiniteReservePrefunder({...p,observedTariff:{...p.observedTariff,validUntil}},{enabled:true}),/FINITE_RESERVE_POLICY/,'approval must bind an integer tariff validity after its observation');
+ f.state.get(key('account',[programId,account])).grantManifest=p.grantManifest;f.state.get(f.globalKey).billingEvidenceSha256=p.observedBudget.evidenceSha256;
+ const authKey=key('finite-reserve-authorization',[p.approvalId]),authorize=policy=>f.state.set(authKey,{v:1,kind:'finite-reserve-authorization',status:'approved',manifest:finiteReserveManifest(policy),approvedAt:at,evidenceReference:p.evidenceReference});
+ const tariffKey=key('tariff',[programId,p.sender,'BR','service-text']),tariff={v:1,kind:'verified-tariff',currency:'USD',country:'BR',sender:p.sender,category:'service-text',evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,unitMicroUsd:9909};
+ const short={...p,observedTariff:{...p.observedTariff,validUntil:at+10}};authorize(short);
+ for(const validUntil of [undefined,String(at+10),at+11]){f.state.set(tariffKey,{...tariff,validUntil});assert.equal((await f.transaction(createFiniteReservePrefunder(short,{enabled:true,now:()=>clock}))).status,'denied','missing, non-integer or rewritten tariff validity cannot fund');assert.equal(f.state.get(f.globalKey).reservedMicroUsd,0);}
+ f.state.set(tariffKey,{...tariff,validUntil:at+10});clock=at+10;assert.equal((await f.transaction(createFiniteReservePrefunder(short,{enabled:true,now:()=>clock}))).status,'denied','expired tariff cannot fund');assert.equal(f.state.get(f.globalKey).reservedMicroUsd,0);
+ clock=at;authorize(p);f.state.set(tariffKey,{...tariff,validUntil:approvedUntil});assert.equal((await f.transaction(createFiniteReservePrefunder(p,{enabled:true,now:()=>clock}))).status,'reserved');
+ const spendAt=(when,validUntil)=>{clock=when;const q={...quote('whatsapp'),evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,sessionUntil:when+3600000,...(validUntil===undefined?{}:{validUntil})};
+  return f.transaction(c=>createSharedCreditCandidate({...f.policy,finiteReserve:p},{now:()=>clock,resolveTrustedContext:async()=>({...f.context,quote:q})}).reserve(c,{...job(400),receivedAt:when}));};
+ for(const validUntil of [undefined,String(approvedUntil),approvedUntil+1])assert.equal(await spendAt(at+3600000,validUntil),false,'missing, non-integer or rewritten tariff validity cannot spend');
+ assert.equal(await spendAt(approvedUntil,approvedUntil),false,'expired tariff cannot spend');
+ assert.equal(f.state.get(f.globalKey).finiteReserve.attempts,0);assert.equal(f.state.get(key('account',[programId,account])).availableMicroUsd,50000);
+}
+{
+ const f=fixture({balance:100000,budget:100000});
+ const p={v:1,basis:'explicit-risk-reserve',residualRiskAccepted:true,riskDisclosureVersion:'provisional-provider-cost-v1',approvalId:'synthetic-outside-provision',evidenceReference:'synthetic-risk-approval',programId,ownerAccountKey:account,grantManifest:'c'.repeat(64),sender:job(1).sender,recipient:job(1).recipient,approvedAt:at,validFrom:at,validUntil:at+86400000,maxAttempts:2,perAttemptMicroUsd:15000,totalMicroUsd:30000,monthlyBudgetMicroUsd:100000,observedTariff:{evidenceSha256:'d'.repeat(64),observedAt:at,validUntil:at+2*86400000,observedUnitMicroUsd:9909},observedBudget:{evidenceSha256:'e'.repeat(64),observedAt:at,knownSpentMicroUsd:0,outsideConsumersReserveMicroUsd:50000}};
+ f.state.get(key('account',[programId,account])).grantManifest=p.grantManifest;f.state.get(f.globalKey).billingEvidenceSha256=p.observedBudget.evidenceSha256;
+ f.state.set(key('finite-reserve-authorization',[p.approvalId]),{v:1,kind:'finite-reserve-authorization',status:'approved',manifest:finiteReserveManifest(p),approvedAt:at,evidenceReference:p.evidenceReference});
+ f.state.set(key('tariff',[programId,p.sender,'BR','service-text']),{v:1,kind:'verified-tariff',currency:'USD',country:'BR',sender:p.sender,category:'service-text',evidenceSha256:p.observedTariff.evidenceSha256,verifiedAt:at,unitMicroUsd:9909,validUntil:at+2*86400000});
+ assert.equal((await f.transaction(createFiniteReservePrefunder(p,{enabled:true,now:()=>at}))).status,'reserved');assert.equal(f.state.get(f.globalKey).reservedMicroUsd,80000);
+ assert.equal(await f.reserve(700),true);assert.equal(await f.reserve(701),false,'ordinary candidate cannot reuse protected outside-consumer provision');assert.equal(f.state.get(f.globalKey).reservedMicroUsd,92000);
+}

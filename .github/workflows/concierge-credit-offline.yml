@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'server/concierge-shared-credit-candidate.mjs'
+      - 'server/concierge-finite-reserve-off.mjs'
+      - 'scripts/concierge-finite-reserve-sql-scenarios.mjs'
       - 'server/concierge-promotional-admission.mjs'
       - 'server/concierge-promotional-credit-sql.mjs'
       - 'scripts/concierge-promotional-grant-sql-scenarios.mjs'
