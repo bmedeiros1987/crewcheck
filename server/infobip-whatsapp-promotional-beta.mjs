@@ -11,7 +11,7 @@ const fail=()=>{throw Error('INFOBIP_PROMOTIONAL_POLICY');};
 function usdMicro(value){if(typeof value!=='string'||!/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(value))fail();const [whole,fraction='']=value.split('.');const n=BigInt(whole)*1000000n+BigInt(fraction.padEnd(6,'0'));if(n<1n||n>20000000n)fail();return Number(n);}
 export function createInfobipPromotionalBetaScope(configuration,admission,{now=Date.now}={}){
  const p=structuredClone(admission);
- if(configuration?.promotionalBeta!==true||configuration.singleMessageTest===true||configuration.operationalPilot===true||configuration.canonicalLinkHandshake===true||configuration.canonicalLinkHandshakeOnly===true||configuration.sender!==p?.sender||p?.enabled!==true||p.programId!==CONCIERGE_GLOBAL_BUDGET_PROGRAM||p.monthlyBudgetMicroUsd!==20000000||!Number.isSafeInteger(p.maxCreditMicroUsd)||p.maxCreditMicroUsd<1||p.maxCreditMicroUsd>20000000)fail();
+ if(configuration?.promotionalBeta!==true||configuration.finiteBeta===true||configuration.singleMessageTest===true||configuration.operationalPilot===true||configuration.canonicalLinkHandshake===true||configuration.canonicalLinkHandshakeOnly===true||configuration.sender!==p?.sender||p?.enabled!==true||p.programId!==CONCIERGE_GLOBAL_BUDGET_PROGRAM||p.monthlyBudgetMicroUsd!==20000000||!Number.isSafeInteger(p.maxCreditMicroUsd)||p.maxCreditMicroUsd<1||p.maxCreditMicroUsd>20000000)fail();
  createPromotionalConciergeAdmission(p,{now,resolveTrustedContext:async()=>null});
  const grant={...p,amountMicroUsd:p.maxCreditMicroUsd};const expectedGrantManifest=promotionalGrantManifest(grant);
  const allowsOwner=id=>typeof id==='string'&&hash(id)===p.ownerAccountKey;
@@ -31,7 +31,11 @@ export function createInfobipPromotionalBetaScope(configuration,admission,{now=D
    }});
   },
   allowsProposal:proposal=>proposal?.sender===p.sender&&proposal.recipient===p.recipient&&typeof proposal.text==='string'&&proposal.text.length<=4000,
-  command:text=>{
+  command:restrictedConciergeCommand,
+ });
+}
+// Shared bounded read-only command selection; no admission or transport.
+export function restrictedConciergeCommand(text){
    if(typeof text!=='string'||text.length>600)return {reply:'Não entendi. Escreva “menu” para ver as consultas disponíveis.'};
    const value=text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
    if(/^(?:\/(?:start|menu|ajuda|help|comandos)|oi|ola|bom dia|boa tarde|boa noite|menu|ajuda|comandos|inicio)[!.?]*$/.test(value))return {reply:WHATSAPP_TEXT_MENU.replace('“METAR SBGR”','“qual minha próxima jornada?”')+'\nNeste beta, as opções 9–14 são consultadas somente no app.'};
@@ -44,8 +48,6 @@ export function createInfobipPromotionalBetaScope(configuration,admission,{now=D
    if(/^\/(?:start|menu|ajuda|help|comandos)$/.test(value))return {text:'menu'};
    const q=operationalQuestion(text);if(q?.kind==='schedule')return {text:q.rewrite||'que horas me apresento?'};if(q?.kind==='logistics-question')return {text};
    return {reply:'Neste beta, consulte sua escala e pernoites ou escreva “menu”. Não faço alterações, buscas externas, ligações ou novos envios.'};
-  },
- });
 }
 export function validateInfobipPromotionalPolicy(policy){
  if(policy?.version!==1||policy.mode!=='promotional-beta-v1'||usdMicro(policy.maxCostUsd)!==policy.admission?.maxCreditMicroUsd)fail();

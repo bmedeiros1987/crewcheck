@@ -17,14 +17,21 @@ on:
       - 'server/whatsapp.mjs'
       - 'server/concierge-read-only-scope.mjs'
       - 'server/concierge-promotional-*.mjs'
+      - 'server/concierge-finite-*.mjs'
       - 'server/concierge-shared-credit-candidate.mjs'
       - 'scripts/regression-infobip-promotional-caller.mjs'
+      - 'scripts/regression-infobip-finite-caller.mjs'
+      - 'docs/concierge-finite-caller-off.md'
       - 'server/concierge/operational-question.mjs'
       - 'server/concierge/stay-menu.mjs'
       - 'scripts/regression-concierge-operational-question.mjs'
       - 'scripts/v14410/apply.mjs'
       - 'docs/infobip-whatsapp-hmac-contract-20261021.md'
       - 'docs/infobip-whatsapp-events-20261023.md'
+      # Preparation imports versioned and non-versioned scripts.
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/infobip-whatsapp-offline.yml'
 permissions:
   contents: read
@@ -51,6 +58,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-promotional-caller.mjs
+          node scripts/regression-infobip-finite-caller.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs
           node scripts/regression-infobip-canonical-link.mjs
@@ -69,6 +77,7 @@ jobs:
           node scripts/regression-infobip-whatsapp-quiescence.mjs
           node scripts/regression-infobip-whatsapp-production.mjs
           node scripts/regression-infobip-promotional-caller.mjs
+          node scripts/regression-infobip-finite-caller.mjs
           node scripts/regression-infobip-whatsapp-host.mjs
           node scripts/regression-infobip-whatsapp-render.mjs --prepared
           node scripts/regression-infobip-canonical-link.mjs --prepared
