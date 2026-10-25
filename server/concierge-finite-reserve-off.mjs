@@ -28,12 +28,15 @@ export function createFiniteReservePrefunder(input,{enabled=false,now=Date.now}=
   const started=now(),atValid=()=>int(now())&&now()>=started&&now()>=p.validFrom&&now()<p.validUntil&&!c.signal?.aborted;
   if(!atValid())return {status:'denied'};
   const read=async k=>{const [r]=await c.query(select,[k]);return r.length===1?parse(r[0].payload):null;};
+  const globalKey=sharedCreditKey('global',[p.programId,period(p.validFrom)]),accountKey=sharedCreditKey('account',[p.programId,p.ownerAccountKey]);
+  // Same order as canonical resolver + reservation: account, tariff, global,
+  // finite authority. Never hold global while waiting on the tariff lock.
+  const a=await read(accountKey);
+  const tariff=await read(sharedCreditKey('tariff',[p.programId,p.sender,'BR','service-text']));
+  const g=await read(globalKey);
   const authority=await read(sharedCreditKey('finite-reserve-authorization',[p.approvalId]));
   if(authority?.v!==1||authority.kind!=='finite-reserve-authorization'||authority.status!=='approved'||authority.manifest!==manifest||authority.evidenceReference!==p.evidenceReference||authority.approvedAt!==p.approvedAt)return {status:'denied'};
-  const globalKey=sharedCreditKey('global',[p.programId,period(p.validFrom)]),accountKey=sharedCreditKey('account',[p.programId,p.ownerAccountKey]);
-  const rows=new Map();for(const k of [globalKey,accountKey].sort())rows.set(k,await read(k));const g=rows.get(globalKey),a=rows.get(accountKey);
   if(!atValid()||a?.v!==1||a.kind!=='account-credit'||a.accountKey!==p.ownerAccountKey||a.grantManifest!==p.grantManifest||g?.v!==1||g.kind!=='global-credit'||g.budgetMicroUsd!==p.monthlyBudgetMicroUsd||g.period!==period(p.validFrom))return {status:'denied'};
-  const tariff=await read(sharedCreditKey('tariff',[p.programId,p.sender,'BR','service-text']));
   if(tariff?.v!==1||tariff.kind!=='verified-tariff'||tariff.currency!=='USD'||tariff.country!=='BR'||tariff.sender!==p.sender||tariff.category!=='service-text'||tariff.evidenceSha256!==p.observedTariff.evidenceSha256||tariff.verifiedAt!==p.observedTariff.observedAt||tariff.unitMicroUsd!==p.observedTariff.observedUnitMicroUsd||g.billingEvidenceSha256!==p.observedBudget.evidenceSha256)return {status:'denied'};
   if(g.finiteReserve)return {status:g.finiteReserve.manifest===manifest?'already-reserved':'denied'};
   // Initial funding requires a genuinely fresh baseline. Later spending uses the
