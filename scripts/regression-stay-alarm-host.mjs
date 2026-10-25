@@ -147,3 +147,87 @@ test('fresh runtime after suspension still revokes unknown durable inventory in 
  assert.equal(message.action,'revoke');assert.equal(message.ownerId,'account-a');assert.equal(message.ownerEpoch,'epoch-1');
  f.reply(message,'rejected',null);assert.equal((await invalidation).state,'revocation-unknown');assert.equal(f.runtime.ready(),false);
 });
+
+function assertUnscopedRevoke(message){
+ assert.equal(message.action,'revoke','unknown inventory must reach the native revocation fence');
+ for(const field of ['ownerId','ownerEpoch','token','payload'])assert.equal(Object.hasOwn(message,field),false,field);
+}
+for(const outcome of ['rejected','timeout'])test(`cold-start ${outcome} authentication still requests native-fenced revocation on edit`,async()=>{
+ const f=fixture(),auth=f.runtime.authenticate(),request=f.messages[0];
+ if(outcome==='timeout')for(const expire of [...f.timers.values()])expire();
+ else f.reply(request,'rejected',null);
+ assert.equal(await auth,false);assert.equal(f.runtime.ready(),false);
+ assert.deepEqual(f.runtime.uncertainJobs(),[]);
+ assert.deepEqual(f.messages.map(message=>message.action),['authenticate'],'startup/hydration alone does not revoke');
+ const invalidation=f.runtime.invalidate(),revocation=f.messages.at(-1);assertUnscopedRevoke(revocation);
+ f.reply(revocation,'revoked',null);
+ assert.deepEqual(await invalidation,{state:'native-revoked',cancelConfirmed:false});
+ f.reply(request,'verified',f.caps());
+ assert.equal(f.runtime.ready(),false);assert.equal(f.runtime.session(),null);
+ assert.equal((await f.runtime.replace({key:'stay-hotel-apz:account-a:old-job'})).state,'not-programmed');
+ assert.deepEqual(f.messages.map(message=>message.action),['authenticate','revoke']);
+});
+for(const lateReply of ['before-revocation-receipt','after-revocation-receipt'])test(`edit fences pending cold authentication reply ${lateReply}`,async()=>{
+ const f=fixture(),auth=f.runtime.authenticate(),request=f.messages[0];
+ const invalidation=f.runtime.invalidate(),revocation=f.messages.at(-1);assertUnscopedRevoke(revocation);
+ if(lateReply==='before-revocation-receipt')f.reply(request,'verified',f.caps());
+ f.reply(revocation,'revoked',null);assert.equal((await invalidation).state,'native-revoked');
+ if(lateReply==='after-revocation-receipt')f.reply(request,'verified',f.caps());
+ assert.equal(await auth,false);assert.equal(f.runtime.ready(),false);assert.equal(f.runtime.permission(),false);
+ assert.equal(f.runtime.session(),null);assert.deepEqual(f.messages.map(message=>message.action),['authenticate','revoke']);
+});
+for(const outcome of ['rejected','timeout'])test(`unknown-scope revocation ${outcome} stays unknown until an explicit confirmed retry`,async()=>{
+ const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'rejected',null);await auth;
+ const invalidation=f.runtime.invalidate(),revocation=f.messages.at(-1);assertUnscopedRevoke(revocation);
+ if(outcome==='timeout')for(const expire of [...f.timers.values()])expire();
+ else f.reply(revocation,'rejected',null); // Includes native tombstone persistence failure.
+ assert.deepEqual(await invalidation,{state:'revocation-unknown',cancelConfirmed:false});
+ assert.equal(f.runtime.ready(),false);assert.equal(f.runtime.permission(),false);
+ const retry=f.runtime.invalidate(),current=f.messages.at(-1);assertUnscopedRevoke(current);
+ f.reply(current,'revoked',null);assert.deepEqual(await retry,{state:'native-revoked',cancelConfirmed:false});
+ assert.deepEqual(f.messages.map(message=>message.action),['authenticate','revoke','revoke']);
+});
+test('retained A with current B never falls back to unscoped revocation when B authentication fails',async()=>{
+ const f=fixture(),authA=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await authA;
+ const suspended=f.runtime.suspend();f.reply(f.messages.at(-1),'suspended',null);await suspended;
+ f.switchAccount();const authB=f.runtime.authenticate();f.reply(f.messages.at(-1),'rejected',null);assert.equal(await authB,false);
+ const count=f.messages.length;
+ assert.deepEqual(await f.runtime.invalidate(),{state:'superseded-session',cancelConfirmed:false});
+ assert.equal(f.messages.length,count);assert.equal(f.runtime.ready(),false);
+});
+test('retained A with current B does not invalidate pending authentication for B',async()=>{
+ const f=fixture(),authA=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await authA;
+ f.switchAccount();const authB=f.runtime.authenticate(),request=f.messages.at(-1),count=f.messages.length;
+ assert.deepEqual(await f.runtime.invalidate(),{state:'superseded-session',cancelConfirmed:false});
+ assert.equal(f.messages.length,count);f.reply(request,'verified',f.caps('account-b','epoch-b'));
+ assert.equal(await authB,true);assert.match(f.runtime.session(),/epoch-b/);
+});
+test('late unknown-scope revocation receipt cannot invalidate a newer authenticated B',async()=>{
+ const f=fixture(),authA=f.runtime.authenticate();f.reply(f.messages[0],'rejected',null);await authA;
+ const invalidation=f.runtime.invalidate(),revocation=f.messages.at(-1);assertUnscopedRevoke(revocation);
+ f.switchAccount();const authB=f.runtime.authenticate();f.reply(f.messages.at(-1),'verified',f.caps('account-b','epoch-b'));
+ assert.equal(await authB,true);const count=f.messages.length;
+ f.reply(revocation,'revoked',null);
+ assert.deepEqual(await invalidation,{state:'revocation-unknown',cancelConfirmed:false});
+ assert.equal(f.runtime.ready(),true);assert.match(f.runtime.session(),/epoch-b/);assert.equal(f.messages.length,count);
+});
+test('native rejection of an unknown-scope edit never escalates to suspend or fabricated scope',async()=>{
+ const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'rejected',null);await auth;
+ const invalidation=f.runtime.invalidate(),request=f.messages.at(-1);assertUnscopedRevoke(request);
+ // A newer online owner may be present natively: rejection is not permission
+ // to suspend it, invent owner/epoch, authenticate offline or claim cancellation.
+ f.reply(request,'rejected',null);assert.deepEqual(await invalidation,{state:'revocation-unknown',cancelConfirmed:false});
+ assert.deepEqual(f.messages.map(message=>message.action),['authenticate','revoke']);
+ assert.equal(f.runtime.ready(),false);
+});
+test('missing native capabilities cannot schedule before or after unknown-scope invalidation',async()=>{
+ for(const field of ['ownerEpoch','atomicReplace','acknowledgedCancel','featureEnabled']){
+  const f=fixture(),auth=f.runtime.authenticate(),caps=JSON.parse(f.caps());delete caps[field];
+  f.reply(f.messages[0],'verified',JSON.stringify(caps));assert.equal(await auth,false,field);
+  const input={key:'stay-hotel-apz:account-a:capability-missing'};
+  assert.equal((await f.runtime.replace(input)).state,'not-programmed');assert.equal(f.messages.length,1);
+  const invalidation=f.runtime.invalidate(),request=f.messages.at(-1);assertUnscopedRevoke(request);
+  f.reply(request,'rejected',null);assert.deepEqual(await invalidation,{state:'revocation-unknown',cancelConfirmed:false});
+  assert.equal((await f.runtime.replace(input)).state,'not-programmed');assert.equal(f.messages.length,2);
+ }
+});

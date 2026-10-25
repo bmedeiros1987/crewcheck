@@ -64,8 +64,17 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
     atomicReplace:true,acknowledgedCancel:true,
     async invalidate(){const current=adapter,scope=activeScope;
       if(!current||!scope){
-        if(inactiveScope&&inactiveScope.account===readAccount())return revokeScope(inactiveScope);
-        return {state:'no-current-session-jobs'};
+        if(inactiveScope){
+          if(inactiveScope.account!==readAccount())return {state:'superseded-session',cancelConfirmed:false};
+          return revokeScope(inactiveScope);
+        }
+        // A cold page with failed/pending authentication knows no native epoch,
+        // not that the durable journal is empty. Revoke without invented scope;
+        // native accepts only without an active online owner and advances its
+        // generation so late verification cannot resurrect the old authority.
+        // reset() also fences pending web receipts. Rejection/timeout stays
+        // unknown; never retry by suspending a possibly newer online owner.
+        return revoke();
       }
       if(scope.account!==readAccount())return {state:'superseded-session',cancelConfirmed:false};
       const programmed=jobs(scope);

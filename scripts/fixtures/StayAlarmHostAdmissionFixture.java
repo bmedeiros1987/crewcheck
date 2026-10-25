@@ -3,7 +3,7 @@ package com.crewcheck.app;
 public final class StayAlarmHostAdmissionFixture {
  static int checks;static void check(boolean value){checks++;if(!value)throw new AssertionError("admission "+checks);}
  static final class LocalFixture {
-  long now=1900000000000L;boolean failJournal,failDurable;int displayed;
+  long now=1900000000000L;boolean failJournal,failDurable;int displayed,replaced,cancelled;
   StayAlarmDurableAuthority.Snapshot snapshot;StayAlarmEngine.Record saved;
   final StayAlarmDurableAuthority.Store durableStore=new StayAlarmDurableAuthority.Store(){
    public StayAlarmDurableAuthority.Snapshot read(){return snapshot;}
@@ -16,7 +16,7 @@ public final class StayAlarmHostAdmissionFixture {
    public void commit(StayAlarmEngine.Record r)throws Exception{if(failJournal)throw new Exception("synthetic disk");saved=r;if("scheduled".equals(r.state)&&!durable.grant(r))throw new Exception("durable commit");}
    public java.util.List<StayAlarmEngine.Record> all(){return saved==null?java.util.Collections.emptyList():java.util.Collections.singletonList(saved);}};
   final StayAlarmEngine.Device device=new StayAlarmEngine.Device(){public long now(){return now;}public boolean permitted(){return true;}
-   public void replace(StayAlarmEngine.Record r){}public void cancel(String key){}public void notify(StayAlarmEngine.Record r){displayed++;}};
+   public void replace(StayAlarmEngine.Record r){replaced++;}public void cancel(String key){cancelled++;}public void notify(StayAlarmEngine.Record r){displayed++;}};
   final StayAlarmEngine engine=new StayAlarmEngine(journal,device,new StayAlarmCompositeOwner(session,durable));
   LocalFixture(){check(durable.revokeCurrent());}
   void schedule(String owner){
@@ -55,6 +55,40 @@ public final class StayAlarmHostAdmissionFixture {
   f=new LocalFixture();f.schedule("B");
   check(!StayAlarmHostAndroid.revokeLocal(f.session,f.durable,"A","old-epoch"));
   check(!StayAlarmHostAndroid.revokeLocal(f.session,f.durable,null,null));check("B".equals(f.session.activeOwner()));
+ }
+ static void coldStartRevocationCounterproofs()throws Exception{
+  // No successful verification in the fresh process: the persisted alarm is
+  // unknown to JS but known to the actual native durable store and engine.
+  LocalFixture f=new LocalFixture();f.schedule("A");
+  StayAlarmSessionHost restarted=f.newSession();long pending=restarted.begin();
+  StayAlarmDurableAuthority reopened=new StayAlarmDurableAuthority(f.durableStore,()->1900000000000L);
+  StayAlarmEngine afterRestart=new StayAlarmEngine(f.journal,f.device,new StayAlarmCompositeOwner(restarted,reopened));
+  check(restarted.activeOwner()==null&&reopened.enabled()&&"scheduled".equals(f.saved.state));
+  check(StayAlarmHostAndroid.revokeLocal(restarted,reopened,null,null));
+  check(restarted.generation()==pending+1&&f.snapshot.revoked);
+  check(!StayAlarmHostAndroid.acceptVerified(restarted,reopened,pending,"A",f.now+300000));
+  afterRestart.recover(false);check("blocked".equals(f.saved.state)&&f.cancelled>0&&f.replaced==1);
+  f.now=f.saved.alarm;check(!afterRestart.receive(f.saved.key,f.saved.revision,f.saved.alarm)&&f.displayed==0);
+  check(!new StayAlarmDurableAuthority(f.durableStore,()->1900000000000L).enabled());
+
+  // Failure to persist is unknown, not a cancellation receipt. The process
+  // fence and generation block delivery/late auth until a confirmed retry.
+  f=new LocalFixture();f.schedule("A");restarted=f.newSession();pending=restarted.begin();f.failDurable=true;
+  check(!StayAlarmHostAndroid.revokeLocal(restarted,f.durable,null,null));
+  check(restarted.generation()==pending+1&&!f.snapshot.revoked&&StayAlarmDurableAuthority.deliveryBlocked());
+  check(!StayAlarmHostAndroid.acceptVerified(restarted,f.durable,pending,"A",f.now+300000));
+  check(!f.receive()&&f.displayed==0);f.failDurable=false;
+  check(StayAlarmHostAndroid.revokeLocal(restarted,f.durable,null,null));
+  check(f.snapshot.revoked&&!StayAlarmDurableAuthority.deliveryBlocked()&&f.replaced==1);
+
+  // If verification already won the race, an unscoped old-page request may
+  // not suspend/revoke the online owner. JS must report unknown, not escalate.
+  f=new LocalFixture();f.schedule("B");long current=f.session.generation();String epoch=f.session.epoch();
+  check(!StayAlarmHostAndroid.revokeLocal(f.session,f.durable,null,null));
+  check(!StayAlarmHostAndroid.revokeLocal(f.session,f.durable,"A","old-epoch"));
+  check(f.session.generation()==current&&"B".equals(f.session.activeOwner())&&epoch.equals(f.session.epoch()));
+  check(!f.snapshot.revoked&&!StayAlarmDurableAuthority.deliveryBlocked()&&f.cancelled==0&&f.replaced==1);
+  check(f.receive()&&f.displayed==1);
  }
  public static void main(String[] args)throws Exception{
   check(StayAlarmHostAndroid.admitted(true,"https://crewcheck.online","https://crewcheck.online?app=1"));
@@ -113,6 +147,7 @@ public final class StayAlarmHostAdmissionFixture {
   for(String denied:new String[]{null,"com.crewcheck.app","com.crewcheck.app.mcctest","com.crewcheck.app.stayaccept","com.crewcheck.app.stayaccept40138577674","com.crewcheck.app.stayaccept40138577674r0x","other.com.crewcheck.app.stayaccept40138577674r1"})
    check(!StayAlarmHostAndroid.acceptancePackage(denied));
   durableHostCounterproofs();
+  coldStartRevocationCounterproofs();
   System.out.println("PASS host production admission: "+checks+" assertions; origin/frame/OFF plus durable logout/restart/reauth/cancel counterproofs; no WebView/device instantiated");
  }
 }
