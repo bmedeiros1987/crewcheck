@@ -1,9 +1,10 @@
+import { conciergeHeaderFixturePlugin } from './lib/escala-contact-fixture.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require = createRequire(process.env.NOTIFICATIONS_JSDOM_PACKAGE || import.meta.url);
 const { JSDOM } = require('jsdom');
-const built = await build({ entryPoints: ['scripts/fixtures/escala-contact-app.tsx'], outdir: '/tmp/escala-contact-dom-bundle', bundle: true, write: false, format: 'iife', jsx: 'automatic' });
+const built = await build({ plugins: [conciergeHeaderFixturePlugin()], entryPoints: ['scripts/fixtures/escala-contact-app.tsx'], outdir: '/tmp/escala-contact-dom-bundle', bundle: true, write: false, format: 'iife', jsx: 'automatic' });
 const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://fixture.example.invalid/', runScripts: 'outside-only', pretendToBeVisual: true });
 const { window: w } = dom;
 w.structuredClone = structuredClone;
@@ -21,6 +22,9 @@ async function fill(value) { const field = input(); Object.getOwnPropertyDescrip
 const save = () => button('Salvar contato');
 try {
   await ready('01141746343'); await waitInput('01141746343');
+  assert.equal(w.document.querySelector('.cc-concierge-heading h1')?.textContent, 'Concierge');
+  assert.equal(w.document.querySelector('.cc-concierge-heading a'), phone());
+  assert.equal(w.document.querySelectorAll('.cc-concierge-heading').length, 1);
   assert.equal(phone().textContent, ''); assert.equal(phone().getAttribute('title'), 'Escala');
   assert.doesNotMatch(w.document.body.textContent, /01141746343/);
   phone().click(); assert.equal(w.fixture.forwarded.join(), 'tel:01141746343'); assert.equal(w.fixture.puts, 0);

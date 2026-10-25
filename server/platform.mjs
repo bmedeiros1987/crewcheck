@@ -1,3 +1,4 @@
+import { PLATFORM_PLAN_IDS as PLAN_IDS, readPlatformEntitlement } from './platform-entitlement.mjs';
 import { asaasEnvelope, receiveAsaasEvent, asaasInboxSummary } from './asaas-webhook-inbox.mjs';
 import {createFinancialFxHandler,FINANCIAL_FX_PATH} from './financial-fx.mjs';
 import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH, FINANCIAL_CAPTURE_PATH} from './financial-ledger-route.mjs';
@@ -40,7 +41,6 @@ export async function loadOwnedPlatformRoster(req, expectedEmail) {
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const SUPPORTED_LOCALES = new Set(['pt-BR', 'en-US', 'es-ES']);
-const PLAN_IDS = new Set(['free', 'premium_monthly', 'premium_annual', 'premium_unlimited']);
 const GOOGLE_PLAY_PRODUCTS = new Map([
   ['crewcheck_premium_monthly', 'premium_monthly'],
   ['crewcheck_premium_annual', 'premium_annual'],
@@ -542,37 +542,14 @@ function planLimit(plan, kind) {
 }
 
 async function subscriptionStatus(db, profile) {
-  const result = await db.query('SELECT * FROM crewcheck_platform_subscriptions WHERE email=$1 LIMIT 1', [profile.email]);
-  const subscription = result.rows[0] || null;
-  const now = Date.now();
-  const subscriptionActive = subscription && ['active', 'trialing', 'grace_period'].includes(subscription.status)
-    && (!subscription.current_period_end || new Date(subscription.current_period_end).getTime() > now);
-  const legacyPremium = env('CREWCHECK_TRUST_LEGACY_PREMIUM_PROFILE', 'false').toLowerCase() === 'true'
-    && !subscription && ['premium_monthly', 'premium_annual'].includes(profile.plan);
-  const plan = profile.plan === 'premium_unlimited'
-    ? profile.plan
-    : subscriptionActive && PLAN_IDS.has(subscription.plan)
-      ? subscription.plan
-      : legacyPremium
-        ? profile.plan
-        : 'free';
+  const billing = await readPlatformEntitlement(db, profile, { trustLegacyPremiumProfile: env('CREWCHECK_TRUST_LEGACY_PREMIUM_PROFILE', 'false').toLowerCase() === 'true' });
+  const { plan } = billing;
   const monthKey = currentMonthKey(profile.timezone);
   const limit = planLimit(plan, 'wakeup_call');
   const usageResult = await db.query('SELECT used FROM crewcheck_platform_usage WHERE email=$1 AND month_key=$2 AND usage_kind=$3', [profile.email, monthKey, 'wakeup_call']);
   const used = Number(usageResult.rows[0]?.used || 0);
   return {
-    plan,
-    status: profile.plan === 'premium_unlimited' ? 'lifetime' : subscription?.status || (legacyPremium ? 'legacy_migration' : 'free'),
-    provider: subscription?.provider || (profile.plan === 'premium_unlimited' ? 'admin' : legacyPremium ? 'legacy' : null),
-    productId: subscription?.product_id || null,
-    currentPeriodEnd: subscription?.current_period_end || null,
-    cancelAtPeriodEnd: Boolean(subscription?.cancel_at_period_end),
-    premiumAccess: plan !== 'free',
-    entitlements: {
-      roster: true, compliance: true, workload: true, finance: true, export: true,
-      radar: plan !== 'free', smartDeparture: plan !== 'free', hotelLearning: plan !== 'free',
-      gyms: plan !== 'free', visitors: plan !== 'free', rosterComparison: plan !== 'free', chat: plan !== 'free',
-    },
+    ...billing,
     usage: { kind: 'wakeup_call', monthKey, used, limit, remaining: Math.max(0, limit - used) },
   };
 }
