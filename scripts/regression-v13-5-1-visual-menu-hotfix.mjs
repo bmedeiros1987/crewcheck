@@ -16,8 +16,8 @@ assert(pkg.includes('"version": "13.5.1"'), 'package.json precisa estar em 13.5.
 assert(home.includes("const DEFAULT_VERSION = '13.5.1'"), 'DEFAULT_VERSION precisa ser 13.5.1');
 assert(app.includes('13.5.1'), 'App precisa registrar/cachear 13.5.1');
 assert(auth.includes('V13.5.1'), 'AuthPage precisa exibir V13.5.1');
-assert(!featureHub.includes('useWeatherLandingMonitor(flightEvent)'), 'FeatureHub nao pode chamar flightEvent fora de escopo');
-assert(home.includes('useWeatherLandingMonitor(flightEvent);'), 'Monitor meteorologico precisa rodar no componente principal');
+assert(!featureHub.includes('useWeatherLandingMonitor(') && !featureHub.includes('useOperationalWeatherPulse('), 'FeatureHub nao pode chamar flightEvent fora de escopo');
+assert(home.includes('useWeatherLandingMonitor();') && home.includes('useOperationalWeatherPulse(bundle, events);'), 'Monitor meteorologico precisa rodar no componente principal');
 assert(css.includes('CrewCheck v13.5.1 - Visual/menu hotfix'), 'CSS precisa conter hotfix v13.5.1');
 assert(css.includes('overflow-y: auto !important'), 'Menu precisa ter rolagem vertical');
 assert(css.includes('-webkit-overflow-scrolling: touch'), 'Menu precisa ter rolagem suave mobile');
