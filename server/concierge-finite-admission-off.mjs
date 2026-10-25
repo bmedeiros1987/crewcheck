@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {createSharedCreditCandidate} from './concierge-shared-credit-candidate.mjs';
-import {finiteReservePolicy,createFiniteReserveSendGate} from './concierge-finite-reserve-off.mjs';
+import {finiteReservePolicy,createFiniteReserveSendGate,finiteCohortPolicy,finiteCohortMemberId,createFiniteCohortSendGate} from './concierge-finite-reserve-off.mjs';
 
 // Unmounted composition boundary only. No resolver, funding, policy mode,
 // transport, environment discovery or authority provisioning is supplied here.
@@ -48,4 +48,32 @@ export function createFiniteReserveAdmission(input,{enabled=false,now=Date.now,r
  // Must only run behind dispatchAttempt's committed no-retry marker. A final
  // gate denial/uncertain provider result never refunds the reserved attempt.
  return Object.freeze({allows,reserve,checkSend:gate.checkSend});
+}
+
+export function createFiniteCohortAdmission(input,{enabled=false,now=Date.now,resolveMemberContext}={}){
+ if(enabled!==true)return Object.freeze({allows:()=>false,reserve:async()=>false,checkSend:async()=>false});
+ if(typeof now!=='function'||typeof resolveMemberContext!=='function')throw Error('FINITE_COHORT_ADMISSION');
+ const p=finiteCohortPolicy(input),members=new Map(p.members.map(m=>[m.recipient,m]));
+ const capabilities=new Map(p.members.map(m=>{
+  const id=finiteCohortMemberId(p,m),dependencies={enabled:true,now,resolveTrustedContext:(c,j)=>resolveMemberContext(c,j,id)};
+  return [id,{credit:createSharedCreditCandidate({enabled:true,budgetApproved:true,programId:p.programId,
+   monthlyBudgetMicroUsd:p.monthlyBudgetMicroUsd,allowedChannels:['whatsapp'],finiteCohort:p,cohortMemberId:id},dependencies),
+   gate:createFiniteCohortSendGate(p,id,dependencies)}];
+ }));
+ function selected(job){
+  const m=members.get(job?.recipient),at=now();
+  return m&&int(at)&&at>=p.validFrom&&at<p.validUntil&&at<m.observedTariff.validUntil&&
+   job?.provider==='infobip'&&job.kind!=='link_confirmation'&&job.sender===p.sender&&
+   owner(job,{...p,recipient:m.recipient})===m.ownerAccountKey&&hex(job.eventKey)&&int(job.receivedAt)&&
+   job.receivedAt>=p.validFrom&&job.receivedAt<=at&&at-job.receivedAt<=900000?m:null;
+ }
+ return Object.freeze({allows:job=>Boolean(selected(job)),async reserve(c,job){
+  const m=selected(job);if(!m||c?.signal?.aborted)return false;
+  const capability=capabilities.get(finiteCohortMemberId(p,m));
+  if(!await capability.credit.reserve(c,{...job,accountKey:m.ownerAccountKey,channel:'whatsapp'}))return false;
+  if(!selected(job)||c.signal?.aborted)throw Error('FINITE_COHORT_EXPIRED');
+  return true;
+ },async checkSend(c,job){
+  const m=selected(job);return Boolean(m)&&capabilities.get(finiteCohortMemberId(p,m)).gate.checkSend(c,job);
+ }});
 }

@@ -46,6 +46,26 @@ export function createPromotionalGrantWriter(options={}, {now=Date.now}={}){
   return {status:'granted'};
  };
 }
+// Shared canonical proof, also used by the bounded cohort prefunder. Batch
+// locks are whole classes: all links, then all profiles/uniqueness proofs.
+// No account, grant, global row, timestamp refresh or identity is created.
+export async function lockCanonicalCreditIdentities(c,targets){
+ if(!Array.isArray(targets)||targets.length<1||targets.length>8)return null;
+ const found=new Map();
+ for(const target of [...targets].sort((a,b)=>a.phoneHash.localeCompare(b.phoneHash))){
+  const [links]=await c.query('SELECT email,consent_concierge,revoked_at,linked_at,updated_at FROM crewcheck_whatsapp_links WHERE phone_hash=? FOR UPDATE',[target.phoneHash]);
+  const link=links[0];if(links.length!==1||!link.email||Number(link.consent_concierge)!==1||link.revoked_at!==null||!link.linked_at||!link.updated_at)return null;
+  found.set(target.ownerAccountKey,{target,link});
+ }
+ for(const {target,link} of [...found.values()].sort((a,b)=>a.target.ownerAccountKey.localeCompare(b.target.ownerAccountKey))){
+  const [profiles]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY email=BINARY ? FOR UPDATE',[link.email]);
+  if(profiles.length!==1||typeof profiles[0].public_id!=='string'||hash(profiles[0].public_id)!==target.ownerAccountKey)return null;
+  const [unique]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY public_id=BINARY ? FOR UPDATE',[profiles[0].public_id]);if(unique.length!==1)return null;
+  found.set(target.ownerAccountKey,{target,link,publicId:profiles[0].public_id,bindingStamp:JSON.stringify([profiles[0].public_id,JSON.stringify([String(link.linked_at),String(link.updated_at)]),'infobip',target.sender,target.recipient])});
+ }
+ return found.size===targets.length?found:null;
+}
+
 // Shared locked identity/grant reader. This is not financial/send authority:
 // callers must still validate their own recorded tariff and budget basis.
 // The caller owns the transaction; the locks survive until its final commit.
@@ -54,12 +74,9 @@ export function createLockedPromotionalGrantReader({programId,approvalId,ownerAc
  const phoneHash=createHmac('sha256',linkHashKey).update(recipient).digest('hex');
  return async(c,j)=>{
   const at=now();if(!int(at)||j?.sender!==sender||j.recipient!==recipient||!int(j.receivedAt)||j.receivedAt>at||at-j.receivedAt>15*60000)return null;
-  const [links]=await c.query('SELECT email,consent_concierge,revoked_at,linked_at,updated_at FROM crewcheck_whatsapp_links WHERE phone_hash=? FOR UPDATE',[phoneHash]);const link=links[0];
-  if(links.length!==1||Number(link.consent_concierge)!==1||link.revoked_at!==null||!link.linked_at||!link.updated_at)return null;
-  const [profiles]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY email=BINARY ? FOR UPDATE',[link.email]);
-  if(profiles.length!==1||typeof profiles[0].public_id!=='string'||hash(profiles[0].public_id)!==ownerAccountKey)return null;
-  const [unique]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE BINARY public_id=BINARY ? FOR UPDATE',[profiles[0].public_id]);if(unique.length!==1)return null;
-  const bindingStamp=JSON.stringify([profiles[0].public_id,JSON.stringify([String(link.linked_at),String(link.updated_at)]),'infobip',sender,recipient]);
+  const identities=await lockCanonicalCreditIdentities(c,[{ownerAccountKey,sender,recipient,phoneHash}]);
+  const identity=identities?.get(ownerAccountKey);if(!identity)return null;
+  const {bindingStamp}=identity;
   if(bindingStamp!==j.bindingStamp)return null;
   const account=await lock(c,sharedCreditKey('account',[programId,ownerAccountKey]));
   if(expectedGrantManifest!==undefined&&(!hex(expectedGrantManifest)||account?.grantManifest!==expectedGrantManifest||account.validFrom!==expectedValidFrom||account.expiresAt!==expectedValidUntil))return null;
@@ -67,7 +84,7 @@ export function createLockedPromotionalGrantReader({programId,approvalId,ownerAc
   const authority=await lock(c,sharedCreditKey('grant-authorization',[approvalId]));
   const receipt=await lock(c,sharedCreditKey('grant-receipt',[approvalId]));
   if(authority?.v!==1||authority.status!=='approved'||authority.kind!=='promotional-grant-authorization'||!hex(authority.manifest)||authority.manifest!==account.grantManifest||typeof authority.evidenceReference!=='string'||!authority.evidenceReference.trim()||!int(authority.approvedAt)||authority.approvedAt>at||receipt?.v!==1||receipt.kind!=='promotional-grant-receipt'||receipt.state!=='granted'||!hex(receipt.manifest)||receipt.manifest!==account.grantManifest)return null;
-  return {at,account,phoneHash,context:{accountKey:ownerAccountKey,linked:true,consent:true,bindingStamp,sender,recipient}};
+  return {at,account,authority,receipt,phoneHash,context:{accountKey:ownerAccountKey,linked:true,consent:true,bindingStamp,sender,recipient}};
  };
 }
 // Real ordinary resolver: the original 15-minute tariff freshness remains here
