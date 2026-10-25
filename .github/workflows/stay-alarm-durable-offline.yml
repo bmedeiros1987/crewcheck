@@ -5,6 +5,15 @@ on:
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarm*.java'
       - 'shared/stay-alarm-host-runtime.mjs'
       - 'client/src/lib/stayAlarmHost.ts'
+      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
+      - 'client/src/components/v1391/StayHotelAlarmPreview.tsx'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'client/src/lib/stayEditorNavigation.ts'
+      - 'shared/stay-editor-store.mjs'
+      - 'scripts/regression-stay-editor-invalidation-browser.mjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'scripts/fixtures/StayAlarmDurableAuthorityFixture.java'
       - 'scripts/regression-stay-alarm-durable-offline.mjs'
       - 'docs/stay-alarm-durable-offline.md'
@@ -27,6 +36,23 @@ jobs:
         run: node --test scripts/regression-stay-alarm-durable-offline.mjs
       - name: Existing StayAlarm native contracts
         run: node scripts/regression-stay-alarm-native.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated browser runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Actual stay editor keeps durable authority on view, revokes on real edits (Chromium)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-editor-invalidation-browser.mjs
       - run: npm run check
       - run: npm run build
       - uses: gradle/actions/setup-gradle@v6
