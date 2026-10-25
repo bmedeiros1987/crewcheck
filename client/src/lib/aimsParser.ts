@@ -153,6 +153,11 @@ function parseAimsHumanBlock(tokens: string[], context: { date: string; dayOfWee
 
   const firstOperational = upper.findIndex((token) => AIMS_HUMAN_ACTIVITY_CODE.test(token));
   if (firstOperational >= 0) {
+    // A column can contain several independent ground duties without any flight.
+    // Keep their own bounds instead of assigning all clocks to the first one.
+    if (upper.slice(firstOperational + 1).some(token => AIMS_HUMAN_ACTIVITY_CODE.test(token))) {
+      return parseAimsVisualColumnDays(tokens, context);
+    }
     const own = tokens.slice(firstOperational);
     return [makeAimsHumanRosterDay(context, parseAimsHumanActivity(own, upper[firstOperational]), context.rawBlock)];
   }
@@ -1460,13 +1465,38 @@ function findAimsVisualFlightBlockEnd(tokens: string[], start: number): number {
   return i;
 }
 
+// A complete leading station/clock pair sequence owns its station tokens even
+// when an airport such as REC/CPT/LIS is also a roster code. Outside these two
+// explicit pairs the same token remains an activity boundary.
+function aimsActivityStationWindow(tokens: string[], start: number): { end: number; report: string; release: string } | null {
+  const station = (index: number) => /^[A-Z]{3}$/i.test(String(tokens[index] || ''))
+    && isAimsHumanAirport(tokens[index], '');
+  if (station(start + 1) && isAimsHumanClockToken(tokens[start + 2])
+    && station(start + 3) && isAimsHumanClockToken(tokens[start + 4])) {
+    return { end: start + 5, report: normalizeSimpleTime(tokens[start + 2]), release: normalizeSimpleTime(tokens[start + 4]) };
+  }
+  // Duplicated published slots: clock/clock, station/station, clock/clock.
+  // Require matching duplicates; never choose a convenient revised clock.
+  if (isAimsHumanClockToken(tokens[start + 1]) && tokens[start + 1] === tokens[start + 2]
+    && station(start + 3) && tokens[start + 3] === tokens[start + 4]
+    && isAimsHumanClockToken(tokens[start + 5]) && tokens[start + 5] === tokens[start + 6]) {
+    return { end: start + 7, report: normalizeSimpleTime(tokens[start + 1]), release: normalizeSimpleTime(tokens[start + 5]) };
+  }
+  return null;
+}
+
+function aimsActivityStationPairsEnd(tokens: string[], start: number): number {
+  return aimsActivityStationWindow(tokens, start)?.end || start + 1;
+}
+
 function findAimsVisualActivityBlockEnd(tokens: string[], start: number): number {
   let i = start + 1;
+  const stationPairsEnd = aimsActivityStationPairsEnd(tokens, start);
   while (i < tokens.length) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
     if (token === 'LA' && /^\d{3,4}$/.test(next)) break;
-    if (i > start && isAimsVisualStandaloneBoundaryToken(token)) break;
+    if (i >= stationPairsEnd && isAimsVisualStandaloneBoundaryToken(token)) break;
     i += 1;
   }
   return i;
@@ -2158,12 +2188,14 @@ function parseAimsRosterLegacy(fullText: string): CrewRoster {
     const dayOfWeekNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const dayOfWeek = dayOfWeekNames[dateObj.getDay()];
     
-    // The legacy single-day shape cannot represent a ground duty plus a flight.
+    // The legacy single-day shape cannot represent several ground duties or
+    // a ground duty plus a flight.
     // Keep its existing behavior for unmixed columns; split explicit mixed ones
     // with the same activity/time ownership as the human and visual readers.
     const tokens = dayContent.split(/\s+/).filter(Boolean).filter(token => !WEEKDAY_TOKENS.has(token.toUpperCase()));
-    if (tokens.some(token => AIMS_HUMAN_ACTIVITY_CODE.test(token.toUpperCase()))
-      && tokens.some((token, index) => token.toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[index + 1] || ''))) {
+    const activityCount = tokens.filter(token => AIMS_HUMAN_ACTIVITY_CODE.test(token.toUpperCase())).length;
+    if (activityCount > 1 || (activityCount > 0
+      && tokens.some((token, index) => token.toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[index + 1] || '')))) {
       days.push(...parseAimsHumanBlock(tokens, { date: dateFormatted, dayOfWeek, dateObj, base, rawBlock: dayContent }));
       continue;
     }
@@ -2463,6 +2495,8 @@ function parseGroundActivity(lines: string[], code: string): ParsedDay {
 }
 
 function collectDutyWindow(lines: string[]): { start: string | null; end: string | null; startSource: AimsDutyClockSource; endSource: AimsDutyClockSource } {
+  const published = aimsActivityStationWindow(lines, 0);
+  if (published) return { start: published.report, end: published.release, startSource: 'published', endSource: 'published' };
   const airports = new Set(['BSB','GRU','CGH','VCP','NAT','MCZ','FOR','CNF','PMW','FLN','MAB','CPV','GYN','JPA','EZE','VIX','SSA','GIG','SDU','REC','AJU','BEL','SLZ','CGB','POA','CUR']);
   const tokens = lines.map(line => String(line || '').trim()).filter(Boolean);
   const stationTimes: string[] = [];
@@ -2543,10 +2577,11 @@ function sliceOwnActivityLines(lines: string[], code: string): string[] {
   const normalizedCode = String(code || '').toUpperCase();
   let startIdx = tokens.findIndex((token) => token.toUpperCase() === normalizedCode || token.toUpperCase().startsWith(normalizedCode));
   if (startIdx < 0) startIdx = 0;
+  const stationPairsEnd = aimsActivityStationPairsEnd(tokens, startIdx);
   const output: string[] = [];
   for (let i = startIdx; i < tokens.length; i++) {
     const token = tokens[i].toUpperCase();
-    if (i > startIdx && isActivityBoundaryToken(token)) break;
+    if (i >= stationPairsEnd && isActivityBoundaryToken(token)) break;
     output.push(tokens[i]);
   }
   return output.length ? output : tokens;
@@ -2601,11 +2636,12 @@ function parseStandby(lines: string[], type: 'HSB' | 'HSBE'): ParsedDay {
   // HSB/HSBE deve usar apenas o bloco do próprio código.
   // Quando HSB e ASB aparecem no mesmo dia, a reserva não pode herdar horário do sobreaviso.
   const ownLines = sliceOwnActivityLines(lines, type);
-  const times = collectAllClockTokens(ownLines);
+  const published = aimsActivityStationWindow(ownLines, 0);
+  const times = published ? [published.report, published.release] : collectAllClockTokens(ownLines);
   const uniqueTimes = Array.from(new Set(times));
 
   const startTime = uniqueTimes[0] || null;
-  let endTime: string | null = uniqueTimes.find((time) => time !== startTime) || null;
+  let endTime: string | null = published && published.release !== startTime ? published.release : uniqueTimes.find((time) => time !== startTime) || null;
   let endSource: AimsDutyClockSource = endTime ? 'published' : 'absent';
 
   // Para sobreaviso, se o PDF não trouxe fim legível e existe uma próxima programação
@@ -2697,14 +2733,17 @@ function parseASB(lines: string[]): ParsedDay {
   // Se o PDF repetir o início como fim ou não trouxer o fim, a regra operacional do
   // CrewCheck é considerar 6h de reserva a partir do início.
   const ownLines = sliceOwnActivityLines(lines, 'ASB');
-  const times = collectAllClockTokens(ownLines);
+  const published = aimsActivityStationWindow(ownLines, 0);
+  const times = published ? [published.report, published.release] : collectAllClockTokens(ownLines);
   const uniqueTimes = Array.from(new Set(times));
 
   const startTime = uniqueTimes[0] || null;
-  let endTime: string | null = null;
-  let endSource: AimsDutyClockSource = 'absent';
+  // Repeated start slots do not prove a release; retain the existing labelled
+  // estimate instead of promoting the repeated clock to a published end.
+  let endTime: string | null = published && published.release !== startTime ? published.release : null;
+  let endSource: AimsDutyClockSource = endTime ? 'published' : 'absent';
 
-  if (startTime) {
+  if (startTime && !endTime) {
     for (const candidate of uniqueTimes.slice(1)) {
       if (candidate === startTime) continue;
       const diff = diffHours(startTime, candidate) * 60;
