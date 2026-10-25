@@ -222,8 +222,13 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: |
-          node scripts/regression-financial-act-applicability-browser.mjs
-          node scripts/regression-financial-act-applicability-app.mjs
+          # Run both independent UI proofs; retain failure from either suite.
+          component_status=0
+          node scripts/regression-financial-act-applicability-browser.mjs || component_status=$?
+          app_status=0
+          node scripts/regression-financial-act-applicability-app.mjs || app_status=$?
+          test "$component_status" -eq 0
+          test "$app_status" -eq 0
       - name: Verify fixed financial mask and account preference (synthetic)
         timeout-minutes: 3
         env:

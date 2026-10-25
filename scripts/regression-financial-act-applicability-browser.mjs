@@ -26,7 +26,13 @@ try{
  await page.waitForFunction(()=>!document.querySelector('[aria-label="Prévia da aplicação financeira"]'));
  assert.equal(await page.getByRole('button',{name:'Confirmar e salvar declaração nesta conta',exact:true}).count(),0);
  await prepare.click();
- await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-act-b',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-token-b');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+ await page.getByRole('button',{name:'Confirmar e salvar declaração nesta conta',exact:true}).waitFor({state:'visible'});
+ const beforeSwitch=await saved();
+ // Attack the stale handler in the same JS turn, before React can repaint.
+ const switched=await page.evaluate(key=>{const stale=document.querySelector('[aria-label="Prévia da aplicação financeira"] button');if(!stale)throw Error('Expected prepared action before switch');window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-act-b',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-token-b');window.dispatchEvent(new Event('crewcheck:auth-changed'));stale.click();return {previous:localStorage.getItem(key),next:localStorage.getItem('crewcheck_financial_act_applicability_v1:synthetic-act-b')};},key);
+ assert.equal(switched.previous,beforeSwitch,'same-turn stale click cannot change the previous account');assert.equal(switched.next,null,'same-turn stale click cannot enroll the new account');
+ await page.waitForFunction(()=>{const panel=document.querySelector('[data-financial-act-context]');return panel&&!panel.querySelector('[aria-label="Prévia da aplicação financeira"]')&&panel.querySelectorAll('select')[1]?.value==='';});
+ assert.equal(await saved(),beforeSwitch,'settled account change preserves previous journal');
  assert.equal(await page.getByRole('button',{name:'Confirmar e salvar declaração nesta conta',exact:true}).count(),0);assert.equal(await control.getByLabel(/^Empregador/).inputValue(),'');
  assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_financial_act_applicability_v1:synthetic-act-b')),null);
  // Explicit hidden preference conceals minimum subtotal and inspection amounts.
