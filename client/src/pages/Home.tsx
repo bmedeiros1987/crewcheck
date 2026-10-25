@@ -3,6 +3,7 @@ import { openStayProgramEditor as editOperationalStay } from '@/lib/stayEditorNa
 import { readStayOperationalProjection, selectCurrentStayOperationalProjection } from '@/lib/stayOperationalProjection';
 import {resolveRegulationProgram,regulationProgramDay} from '@shared/regulationScenarioPrefill.mjs';
 import {cabinSalaryRateReference} from '@/lib/cabinSalaryRateReference';
+import { EscalaContactButton } from '@/components/EscalaContact';
 import ConciergeFinancialPreview from '@/components/finance/ConciergeFinancialPreview';
 import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialEstimate';
 import CurrencyCalculator from '@/components/finance/CurrencyCalculator';
@@ -5021,7 +5022,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     }
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Concierge</h1><p>Encontre os vínculos de canais, o briefing e as consultas disponíveis. Confira o status e a fonte de cada recurso.</p></section>
+  return <><Brand back/><section className="cz-panel-head"><div className="cc-concierge-heading"><h1>Concierge</h1><EscalaContactButton/></div><p>Encontre os vínculos de canais, o briefing e as consultas disponíveis. Confira o status e a fonte de cada recurso.</p></section>
     <ConciergeChannels/>
     <ConciergeFinancialPreview openFinance={(mode) => setView(mode === 'salary' ? 'salary' : 'perdiem')}/>
     <section className="cz-finance-grid">

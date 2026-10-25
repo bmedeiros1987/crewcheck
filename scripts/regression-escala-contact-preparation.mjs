@@ -11,6 +11,10 @@ function verify(read) {
   assert.match(admin, /import \{ EscalaContactAdmin \} from '@\/components\/EscalaContact';/);
   assert.equal((card.match(/<EscalaContactButton\/>/g) || []).length, 1);
   assert.match(card, /import \{ EscalaContactButton \} from '\.\/EscalaContact';/);
+  const home = read('client/src/pages/Home.tsx');
+  assert.match(home, /import \{ EscalaContactButton \} from '@\/components\/EscalaContact';/);
+  assert.equal((home.match(/<EscalaContactButton\/>/g) || []).length, 1);
+  assert.match(home, /<div className="cc-concierge-heading"><h1>Concierge<\/h1><EscalaContactButton\/><\/div>/);
   const implementation = read('server/escala-contact.mjs');
   assert.doesNotMatch(implementation, /CREATE TABLE|ALTER TABLE|ensureTables\(|ensureProfile\(|conciergeDbGet\(|conciergeDbPut\(/);
   assert.match(implementation, /identify = requireExistingIdentity/);

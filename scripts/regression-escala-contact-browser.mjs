@@ -1,3 +1,4 @@
+import { conciergeHeaderFixturePlugin } from './lib/escala-contact-fixture.mjs';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -5,7 +6,7 @@ import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url);
 const { chromium } = require('playwright');
-const built = await build({ entryPoints: ['scripts/fixtures/escala-contact-app.tsx'], outdir: '/tmp/escala-contact-browser-bundle', bundle: true, write: false, format: 'iife', jsx: 'automatic' });
+const built = await build({ plugins: [conciergeHeaderFixturePlugin()], entryPoints: ['scripts/fixtures/escala-contact-app.tsx'], outdir: '/tmp/escala-contact-browser-bundle', bundle: true, write: false, format: 'iife', jsx: 'automatic' });
 const js = built.outputFiles.find(file => file.path.endsWith('.js')).text;
 const css = built.outputFiles.find(file => file.path.endsWith('.css'))?.text || '';
 const server = http.createServer((req, res) => { res.setHeader('content-type', req.url === '/fixture.js' ? 'text/javascript' : 'text/html'); res.end(req.url === '/fixture.js' ? js : '<meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:12px;color:#173047;background:#f6f7fa}body.dark{color:#f6f7fa;background:#122339}*{box-sizing:border-box}' + css + '</style><div id="root"></div><script src="/fixture.js"></script>'); });
@@ -27,6 +28,18 @@ try {
   const ready = async (dial = '01141746343') => { await page.waitForFunction(dial => document.querySelector('a[aria-label="Escala"]')?.getAttribute('href') === 'tel:' + dial, dial); };
   const waitInput = async value => page.waitForFunction(value => document.querySelector('input[type="tel"]')?.value === value, value);
   await ready(); await waitInput('01141746343');
+  assert.equal(await page.locator('.cc-concierge-heading h1').textContent(), 'Concierge');
+  for (const width of [320, 390]) for (const dark of [false, true]) for (const scale of [1, 2]) {
+    await page.setViewportSize({ width, height: 851 });
+    await page.evaluate(({ dark, scale }) => { document.body.classList.toggle('dark', dark); document.body.style.fontSize = `${16 * scale}px`; }, { dark, scale });
+    const bounds = await phone().boundingBox();
+    assert(bounds && bounds.width >= 44 && bounds.height >= 44);
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, 'contact remains inside narrow viewport');
+    await phone().focus();
+    assert(await phone().evaluate(link => document.activeElement === link && getComputedStyle(link).outlineStyle !== 'none'), 'visible keyboard focus');
+    assert(await page.locator('.cc-concierge-heading').evaluate(el => el.scrollWidth <= el.clientWidth), 'heading does not overflow at enlarged text');
+  }
+  await page.evaluate(() => { document.body.classList.remove('dark'); document.body.style.fontSize = '16px'; });
   assert.equal(await phone().textContent(), '');
   assert.equal(await phone().getAttribute('title'), 'Escala');
   assert.doesNotMatch(await page.locator('body').innerText(), /01141746343/);
