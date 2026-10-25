@@ -91,6 +91,17 @@ try {
     assert.equal(await saved(), null);
     const prefix = `${role}-${width}`;
     await control.screenshot({ path: path.join(out, prefix + '-review.png') });
+    // A whole-panel element screenshot may include the fixed dock. Prove the
+    // reviewed actions themselves are reachable and unobscured in the viewport.
+    await control.getByRole('button', { name: 'Cancelar prévia', exact: true }).evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const actionGeometry = await control.locator('[aria-label="Prévia da aplicação financeira"] button').evaluateAll(nodes => {
+      const dock = document.querySelector('.cz-bottom-nav'), dockTop = dock?.getClientRects().length ? dock.getBoundingClientRect().top : innerHeight;
+      return nodes.map(node => { const box = node.getBoundingClientRect(), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2); return { text: node.textContent, left: box.left, right: box.right, top: box.top, bottom: box.bottom, viewport: innerWidth, usableBottom: Math.min(innerHeight, dockTop), hit: !!hit && node.contains(hit) }; });
+    });
+    assert.equal(actionGeometry.length, 2);
+    assert(actionGeometry.every(box => box.hit && box.left >= 0 && box.right <= box.viewport && box.top >= 0 && box.bottom <= box.usableBottom), 'review save/cancel actions fit above the actual fixed dock and pass hit testing');
+    await page.screenshot({ path: path.join(out, prefix + '-review-actions.png'), fullPage: false });
     await control.getByRole('button', { name: 'Cancelar prévia', exact: true }).click();
     assert.deepEqual(await page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith('crewcheck_financial_')).sort().map(key => [key, localStorage.getItem(key)]))), before, 'preview/cancel does not change financial storage');
     await prepare.click();
@@ -128,7 +139,7 @@ try {
     assert(layout.width <= layout.viewport + 1, 'actual app has no horizontal overflow');
     assert(layout.styles.some(url => /\/assets\/.*\.css/.test(url)), 'real compiled stylesheet was loaded');
     assert.equal(parseFloat(layout.minHeight), 2.75 * parseFloat(layout.rootFontSize), 'ACT production CSS rule is active');
-    cases.push({ width, role, layout, revision: journal.revision });
+    cases.push({ width, role, layout, actionGeometry, revision: journal.revision });
     await context.close();
   }
   assert.deepEqual(errors, []);
