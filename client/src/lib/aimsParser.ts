@@ -125,18 +125,26 @@ function parseAimsRosterHumanText(fullText: string): CrewRoster | null {
 function parseAimsHumanBlock(tokens: string[], context: { date: string; dayOfWeek: string; dateObj: Date; base: string; rawBlock: string }): RosterDay[] {
   const upper = tokens.map((token) => token.toUpperCase());
   const firstLa = upper.findIndex((token, index) => token === 'LA' && /^\d{3,4}$/.test(upper[index + 1] || ''));
-  if (firstLa >= 0) return buildAimsHumanFlightDays(tokens, context);
+  if (firstLa >= 0) {
+    // Reserve/standby/ground activities published before the first flight of the
+    // block are their own duties; never let the flights swallow them.
+    const activities: RosterDay[] = [];
+    const removed = new Set<number>();
+    for (let idx = 0; idx < firstLa;) {
+      if (!AIMS_HUMAN_ACTIVITY_CODE.test(upper[idx])) { idx += 1; continue; }
+      const end = trimAimsActivityBeforeFlight(tokens, idx, findAimsVisualActivityBlockEnd(tokens, idx));
+      const own = tokens.slice(idx, end);
+      activities.push(makeAimsHumanRosterDay(context, parseAimsHumanActivity(own, upper[idx]), own.join(' ')));
+      for (let r = idx; r < end; r += 1) removed.add(r);
+      idx = end;
+    }
+    return [...activities, ...buildAimsHumanFlightDays(tokens.filter((_, idx) => !removed.has(idx)), context)];
+  }
 
-  const firstOperational = upper.findIndex((token) => /^(ASB|RES|HSB|HSBE|RCFI|CRM|CRMB|CRMBSB|CBF|EMER|MT|C\d{2,3}F)$/.test(token));
+  const firstOperational = upper.findIndex((token) => AIMS_HUMAN_ACTIVITY_CODE.test(token));
   if (firstOperational >= 0) {
-    const code = upper[firstOperational];
     const own = tokens.slice(firstOperational);
-    const parsed = code === 'ASB' || code === 'RES'
-      ? parseASB(own)
-      : code === 'HSB' || code === 'HSBE'
-        ? parseStandby(own, code === 'HSBE' ? 'HSBE' : 'HSB')
-        : parseGroundActivity(own, code);
-    return [makeAimsHumanRosterDay(context, parsed, context.rawBlock)];
+    return [makeAimsHumanRosterDay(context, parseAimsHumanActivity(own, upper[firstOperational]), context.rawBlock)];
   }
 
   const restIndex = upper.findIndex((token) => isAimsRestCode(token));
@@ -147,6 +155,29 @@ function parseAimsHumanBlock(tokens: string[], context: { date: string; dayOfWee
   }
 
   return [makeAimsHumanRosterDay(context, { type: 'OTHER', pairingCode: '', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: null, flyingHours: null, isNextDay: false, hotel: null }, context.rawBlock)];
+}
+
+const AIMS_HUMAN_ACTIVITY_CODE = /^(ASB|RES|HSB|HSBE|RCFI|CRM|CRMB|CRMBSB|CBF|EMER|MT|C\d{2,3}F)$/;
+
+function parseAimsHumanActivity(own: string[], code: string): ParsedDay {
+  return code === 'ASB' || code === 'RES'
+    ? parseASB(own)
+    : code === 'HSB' || code === 'HSBE'
+      ? parseStandby(own, code === 'HSBE' ? 'HSBE' : 'HSB')
+      : parseGroundActivity(own, code);
+}
+
+// An activity published as station/time pairs ends at its last pair. A bare clock
+// between it and the next flight is that duty's presentation, not the activity's.
+function trimAimsActivityBeforeFlight(tokens: string[], start: number, end: number): number {
+  if (String(tokens[end] || '').toUpperCase() !== 'LA' || !/^\d{3,4}$/.test(String(tokens[end + 1] || ''))) return end;
+  let pairs = 0;
+  let lastPairEnd = -1;
+  for (let k = start + 1; k < end - 1; k += 1) {
+    if (/^[A-Z]{3}$/i.test(String(tokens[k] || '').trim()) && isAimsHumanAirport(tokens[k], '') && isAimsHumanClockToken(tokens[k + 1])) { pairs += 1; lastPairEnd = k + 2; k += 1; }
+  }
+  if (pairs < 2 || lastPairEnd >= end) return end;
+  return tokens.slice(lastPairEnd, end).every(token => isAimsHumanClockToken(token) || isExtraAimsMarker(token)) ? lastPairEnd : end;
 }
 
 function buildAimsHumanFlightDays(tokens: string[], context: { date: string; dayOfWeek: string; dateObj: Date; base: string; rawBlock: string }): RosterDay[] {
@@ -1288,7 +1319,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (token === 'ASB' || token === 'RES') {
-      const end = findAimsVisualActivityBlockEnd(source, i);
+      const end = trimAimsActivityBeforeFlight(source, i, findAimsVisualActivityBlockEnd(source, i));
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseASB(segment), segment.join(' ')));
       i = Math.max(end, i + 1);
@@ -1297,7 +1328,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (token === 'HSB' || token === 'HSBE') {
-      const end = findAimsVisualActivityBlockEnd(source, i);
+      const end = trimAimsActivityBeforeFlight(source, i, findAimsVisualActivityBlockEnd(source, i));
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseStandby(segment, token === 'HSBE' ? 'HSBE' : 'HSB'), segment.join(' ')));
       i = Math.max(end, i + 1);
@@ -1306,7 +1337,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (/^(RCFI|CRMBSB|CRMB|CRM|CBF|EMER|MT|C\d{2,3}F)$/.test(token) || isKnownGroundActivity(token)) {
-      const end = findAimsVisualActivityBlockEnd(source, i);
+      const end = trimAimsActivityBeforeFlight(source, i, findAimsVisualActivityBlockEnd(source, i));
       const segment = source.slice(i, end);
       const parsed = /^C\d{2,3}F$/.test(token) || /^(RCFI|CRMBSB|CRMB|CRM|CBF|EMER|MT)$/.test(token)
         ? parseGroundActivity(segment, token)
@@ -1327,11 +1358,14 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (token === '(...)') {
-      const laIdx = source.slice(i + 1).findIndex((item, localIdx) => String(item || '').toUpperCase() === 'LA' && /^\d{3,4}$/.test(String(source[i + 2 + localIdx] || '')));
-      if (laIdx >= 0) {
-        i = i + 1 + laIdx;
-        continue;
-      }
+      // Skip only the previous duty's stitched arrival. Jumping to the next LA
+      // dropped any ASB/HSB/CRM published between that arrival and the flight.
+      // Its clocks stay available as the next presentation, as before, and an
+      // EXTRA marker right before the flight is left for the flight branch.
+      let end = i + Math.max(1, findAimsContinuationPrefixEnd(source.slice(i)));
+      while (end > i + 1 && isExtraAimsMarker(source[end - 1])) end -= 1;
+      i = end;
+      continue;
     }
 
     i += 1;
