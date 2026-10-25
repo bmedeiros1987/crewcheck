@@ -45,3 +45,20 @@ O teste de preparação também executa o preparador real `v14318/hardening.mjs`
 Na proposta local: 21 grupos backend passaram; React/auth-client real em DOM passou, incluindo GET antigo, conta/token substituídos, PUT pendente, ACK inválido e commit incerto. TypeScript estrito focado passou. Duas falhas de UI encontradas por revisão independente foram corrigidas com contraprovas; oito mutações deliberadas do backend são detectadas. Nenhuma chamada ou rede real foi realizada.
 
 Limites locais: Chromium não iniciou por restrição de socket do sandbox; não foi solicitada ampliação de acesso. Teste MySQL recusou corretamente execução sem o socket descartável; seus 11 grupos SQL ainda dependem do CI. Preparação completa, build agregado, browser real e aceitação no aparelho não foram executados na cópia esparsa. Não tratar esta proposta como pronta para merge antes de revisão e CI do commit exato.
+
+## Acesso pelo Concierge
+
+O cabeçalho da tela Concierge reutiliza `EscalaContactButton`, além do cartão
+operacional já existente. O ícone fica disponível mesmo sem sequência publicada,
+sem depender de vínculo Telegram/WhatsApp. O contato continua vindo da mesma
+leitura autenticada; não há número duplicado, fallback offline novo, comando ao
+bot, alteração de canais ou chamada automática. `011` permanece literal.
+
+A mudança de posição não ativa telefonia no Telegram/WhatsApp. O discador depende
+do suporte do dispositivo ao link `tel:` e da ação explícita do usuário.
+
+As suítes DOM/browser do contato agora compilam o JSX real do cabeçalho extraído
+de Home, usando o componente e cliente de autenticação reais e transporte mock.
+Não montam os efeitos de sincronização/status de toda a tela. O browser inclui
+320/390px, claro/escuro, texto 200%, alvo mínimo44px e foco; a preparação estreita
+confere ambos os locais. Isso não substitui QA do app completo/aparelho.
