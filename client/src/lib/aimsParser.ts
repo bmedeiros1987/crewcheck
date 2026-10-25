@@ -1,3 +1,4 @@
+import { aimsSourceDateIso, aimsFlightSourceIdentity, newAimsFlightSourceCoverage, finalizeAimsFlightSourceCoverage, mergeAimsFlightSourceCoverage, type AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { capturePublishedFreeDayStart, attachPublishedFreeDayTimeZone } from './freeDayStartEvidence';
 /**
  * Parser for "Escala de Tripulante Convertida para padrão AIMS" PDF format.
@@ -204,8 +205,11 @@ function trimAimsActivityBeforeFlight(tokens: string[], start: number, end: numb
 }
 
 function buildAimsHumanFlightDays(tokens: string[], context: { date: string; dayOfWeek: string; dateObj: Date; base: string; rawBlock: string }): RosterDay[] {
-  const humanLegs = parseAimsHumanLegs(tokens, context.base);
-  if (!humanLegs.length) return [makeAimsHumanRosterDay(context, parseFlightDay(tokens, context.base, /\(\.\.\.\)/.test(context.rawBlock)), context.rawBlock)];
+  const humanLegs = parseAimsHumanLegs(tokens, context.base).map(item => ({ ...item, leg: { ...item.leg, aimsSourceDate: aimsSourceDateIso(context.date) } }));
+  if (!humanLegs.length) {
+    const parsed = parseFlightDay(tokens, context.base, /\(\.\.\.\)/.test(context.rawBlock));
+    return [makeAimsHumanRosterDay(context, { ...parsed, legs: parsed.legs.map(leg => ({ ...leg, aimsSourceDate: aimsSourceDateIso(context.date) })) }, context.rawBlock)];
+  }
 
   type Group = { legs: AimsHumanLeg[]; startAbs: number; endAbs: number; rawStartDate: Date };
   const groups: Group[] = [];
@@ -503,7 +507,9 @@ function formatAimsHumanDate(date: Date): string {
 
 
 function reconcileAimsPhysicalTimelineFromText(roster: CrewRoster, fullText: string): CrewRoster {
-  const physicalLegs = extractAimsPhysicalLegs(fullText, roster.base || 'BSB', roster.month, roster.year);
+  const evidence = newAimsFlightSourceCoverage('aims_text');
+  const physicalLegs = extractAimsPhysicalLegs(fullText, roster.base || 'BSB', roster.month, roster.year, evidence);
+  roster = { ...roster, aimsFlightSourceCoverage: evidence };
   if (physicalLegs.length < 8) return roster;
 
   const flightDays = buildAimsPhysicalFlightDays(physicalLegs, roster);
@@ -519,7 +525,7 @@ function reconcileAimsPhysicalTimelineFromText(roster: CrewRoster, fullText: str
   return { ...roster, days: merged, rawText: roster.rawText || fullText };
 }
 
-function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth: number, rosterYear: number): AimsPhysicalLeg[] {
+function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth: number, rosterYear: number, coverage?: AimsFlightSourceCoverage): AimsPhysicalLeg[] {
   const rosterOnly = String(fullText || '').split(/\n\s*Tripula(?:ç|c)[oõ]es\b/i)[0];
   const content = rosterOnly
     .replace(/\r/g, '\n')
@@ -535,12 +541,24 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
   let previousFlightIdx = -1;
   let previousArrival: string | null = null;
   let startsAfterActivity = false;
+  const sourceBlocks = new Set<string>();
+  let recordSourceBlock = true;
 
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
     const markerDate = parseAimsPhysicalDateToken(token, rosterMonth, rosterYear);
+    if (coverage && isInvalidAimsSourceDateToken(token, rosterMonth, rosterYear)) coverage.unresolvedSourceDates = true;
+    if (coverage && !currentDate && token.toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[i + 1] || '')) coverage.unresolvedSourceDates = true;
     if (markerDate) {
       currentDate = markerDate;
+      if (coverage) {
+        const sourceDate = aimsSourceDateIso(formatAimsHumanDate(markerDate));
+        coverage.sourceDates.push(sourceDate);
+        const nextMarker = tokens.findIndex((candidate, index) => index > i && Boolean(parseAimsPhysicalDateToken(candidate, rosterMonth, rosterYear)));
+        const blockKey = JSON.stringify([sourceDate, tokens.slice(i + 1, nextMarker < 0 ? tokens.length : nextMarker)]);
+        recordSourceBlock = !sourceBlocks.has(blockKey);
+        sourceBlocks.add(blockKey);
+      }
       presentationFloor = i + 1;
       previousFlightIdx = -1;
       previousArrival = null;
@@ -581,8 +599,10 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
       if (isAimsExtraFlightStart(tokens, j)) break;
 
       const dateInside = parseAimsPhysicalDateToken(candidate, rosterMonth, rosterYear);
+      if (coverage && isInvalidAimsSourceDateToken(candidate, rosterMonth, rosterYear)) coverage.unresolvedSourceDates = true;
       if (dateInside) {
         if (aimsPhysicalSegmentLooksComplete(legTokens, homeBase)) break;
+        if (coverage) coverage.sourceDates.push(aimsSourceDateIso(formatAimsHumanDate(dateInside)));
         lastDateInside = dateInside;
         legTokens.push(candidate);
         j += 1;
@@ -604,6 +624,10 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
       }
     }
     pendingWorkType = null;
+    if (coverage && recordSourceBlock) {
+      const sourceDate = aimsSourceDateIso(formatAimsHumanDate(startDate));
+      coverage.occurrences.push({ sourceDate, flightNumber, identity: parsed?.leg && isCredibleAimsLeg(parsed.leg) ? aimsFlightSourceIdentity(sourceDate, parsed.leg) : null });
+    }
     if (parsed?.leg) {
       const withAbs = attachAimsPhysicalAbs(parsed, startDate);
       if (withAbs) legs.push({ ...withAbs, startsAfterActivity });
@@ -618,6 +642,13 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
   return legs
     .filter((item) => isCredibleAimsLeg(item.leg))
     .sort((a, b) => a.depAbs - b.depAbs || a.arrAbs - b.arrAbs);
+}
+
+function isInvalidAimsSourceDateToken(token: string, rosterMonth: number, rosterYear: number): boolean {
+  const match = String(token || '').match(/^(\d{2})([A-Za-z]{3})$/);
+  if (!match || !MONTH_MAP[match[2].toLowerCase()]) return false;
+  const parsed = parseAimsPhysicalDateToken(token, rosterMonth, rosterYear);
+  return !parsed || parsed.getDate() !== Number(match[1]) || parsed.getMonth() + 1 !== MONTH_MAP[match[2].toLowerCase()];
 }
 
 function parseAimsPhysicalDateToken(token: string, rosterMonth: number, rosterYear: number): Date | null {
@@ -662,6 +693,7 @@ function attachAimsPhysicalAbs(item: AimsHumanLeg, dateObj: Date): AimsPhysicalL
     sourceDate: formatAimsHumanDate(dateObj),
     leg: {
       ...item.leg,
+      aimsSourceDate: aimsSourceDateIso(formatAimsHumanDate(dateObj)),
       isNextDay: arrAbs >= dayAbs + 1440 || arrAbs < depAbs,
       duration,
     },
@@ -803,15 +835,15 @@ export function parseAimsRoster(fullText: string, visualRows?: AimsVisualRow[]):
   if (aimsVisualRosterLooksReliable(visualParsed)) {
     const secondary = humanTextParsed?.days?.length ? humanTextParsed : legacyParsed;
     const merged = mergeAimsParsedRosters(visualParsed as CrewRoster, secondary);
-    return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed));
+    return finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed)));
   }
 
   if (humanTextParsed && aimsHumanRosterLooksComplete(humanTextParsed)) {
-    return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(humanTextParsed), visualParsed, humanTextParsed));
+    return finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(humanTextParsed), visualParsed, humanTextParsed)));
   }
 
   const merged = visualParsed?.days?.length ? mergeAimsParsedRosters(visualParsed, legacyParsed) : legacyParsed;
-  return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed));
+  return { ...attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed)), aimsFlightSourceCoverage: undefined };
 }
 
 // Enrich rest provenance without changing the selected canonical parser days.
@@ -1037,7 +1069,10 @@ function parseAimsRosterFromVisualRows(fullText: string, visualRows: AimsVisualR
     }
   }
 
-  const rescuedDays = rescueAimsAtomicFlightsFromColumns(rescueAimsColumnContinuationFlights(days, columns, header), columns, header);
+  const evidence = newAimsFlightSourceCoverage('aims_visual');
+  evidence.sourceDates = columns.map(column => aimsSourceDateIso(column.date));
+  evidence.unresolvedSourceDates = allItems.some(item => isInvalidAimsSourceDateToken(item.str, header.month, header.year));
+  const rescuedDays = rescueAimsAtomicFlightsFromColumns(rescueAimsColumnContinuationFlights(days, columns, header), columns, header, evidence);
   const uniqueDays = dedupeAimsOperationalDays(rescuedDays).sort(compareAimsOperationalDays);
   const crewRecords = parseTripulationRecords(fullText, header.crewName, header.year);
   const daysWithCrew = applyTripulationRecords(uniqueDays, crewRecords, header.crewName);
@@ -1052,6 +1087,7 @@ function parseAimsRosterFromVisualRows(fullText: string, visualRows: AimsVisualR
     year: header.year,
     days: daysWithCrew,
     rawText: fullText,
+    aimsFlightSourceCoverage: evidence,
   };
 }
 
@@ -1213,13 +1249,19 @@ function rescueAimsAtomicFlightsFromColumns(
   days: RosterDay[],
   columns: AimsVisualColumn[],
   header: { base: string; month: number; year: number },
+  coverage?: AimsFlightSourceCoverage,
 ): RosterDay[] {
   const output = [...days];
   const existing = new Set(output.flatMap(day => (day.legs || []).map(leg => `${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`)));
+  const sourceBlocks = new Set<string>();
 
   for (let i = 0; i < columns.length; i += 1) {
     const column = columns[i];
     const next = columns[i + 1];
+    const sourceDate = aimsSourceDateIso(column.date);
+    const blockKey = JSON.stringify([sourceDate, column.tokens]);
+    const recordSourceBlock = !sourceBlocks.has(blockKey);
+    sourceBlocks.add(blockKey);
     const starts = findAllAimsFlightStarts(column.tokens || []);
     for (const start of starts) {
       const nextStart = starts.find(idx => idx > start) ?? (column.tokens || []).length;
@@ -1230,8 +1272,9 @@ function rescueAimsAtomicFlightsFromColumns(
         if (prefixEnd > 0) segment = [...segment, ...next.tokens.slice(0, prefixEnd)];
       }
       const parsedLegs = parseAimsHumanLegs(segment, header.base).filter(item => isCredibleAimsLeg(item.leg));
+      if (coverage && recordSourceBlock) coverage.occurrences.push({ sourceDate, flightNumber: `LA${column.tokens[start + 1]}`, identity: parsedLegs.length === 1 ? aimsFlightSourceIdentity(sourceDate, parsedLegs[0].leg) : null });
       for (const item of parsedLegs) {
-        const leg = item.leg;
+        const leg = { ...item.leg, aimsSourceDate: sourceDate };
         const legKey = `${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`;
         if (existing.has(legKey)) continue;
         existing.add(legKey);
@@ -1675,7 +1718,7 @@ function mergeAimsParsedRosters(primary: CrewRoster, secondary: CrewRoster): Cre
   });
 
   const days = dedupeAimsOperationalDays(merged).sort(compareAimsOperationalDays);
-  return { ...primary, days, rawText: primary.rawText || secondary.rawText };
+  return { ...primary, days, rawText: primary.rawText || secondary.rawText, aimsFlightSourceCoverage: mergeAimsFlightSourceCoverage(primary, secondary) };
 }
 
 function aimsDayActivityKey(day: RosterDay): string {
