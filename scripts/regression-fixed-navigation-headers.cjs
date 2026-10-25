@@ -81,13 +81,16 @@ async function activePulseBrandContract(page,{width,size}) {
   const geometry=await mark.evaluate(element=>{
     const box=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
     const svg=element.querySelector('svg'),trigger=document.querySelector('.cc-pulse-compact-trigger'),menu=document.querySelector('.cz-menu-btn');
-    return{mark:box(element),svg:box(svg),trigger:box(trigger),menu:box(menu),stroke:Number(svg.getAttribute('stroke-width'))*svg.getBoundingClientRect().width/24,overflow:document.documentElement.scrollWidth>innerWidth+1};
+    return{mark:box(element),svg:box(svg),trigger:box(trigger),menu:box(menu),menuVisible:getComputedStyle(menu).display!=='none',row:box(document.querySelector('.cz-brand-row')),stroke:Number(svg.getAttribute('stroke-width'))*svg.getBoundingClientRect().width/24,overflow:document.documentElement.scrollWidth>innerWidth+1};
   });
   assert.equal(geometry.mark.width,28);assert.equal(geometry.mark.height,28);
   assert.equal(geometry.svg.width,18);assert.equal(geometry.svg.height,18);assert.ok(Math.abs(geometry.stroke-2)<.01);
   assert.ok(geometry.svg.x>=geometry.mark.x&&geometry.svg.right<=geometry.mark.right&&geometry.svg.y>=geometry.mark.y&&geometry.svg.bottom<=geometry.mark.bottom,'pictogram contained in its brand position');
   assert.ok(geometry.trigger.width>=44&&geometry.trigger.height>=44,'notice is a readable keyboard/touch target');
-  assert.ok(geometry.mark.right<=geometry.trigger.x+1&&geometry.trigger.right<=geometry.menu.x+1,'brand, notice and menu never overlap');
+  assert.ok(geometry.mark.right<=geometry.trigger.x+1,'brand and notice never overlap');
+  assert.equal(geometry.menuVisible,width>639,'only redundant mobile Menu is hidden');
+  if(geometry.menuVisible)assert.ok(geometry.trigger.right<=geometry.menu.x+1,'notice and retained header Menu never overlap');
+  else assert.ok(geometry.trigger.right<=geometry.row.right+1,'notice stays inside full available header width');
   assert.equal(geometry.overflow,false);
   const trigger=page.locator('.cc-pulse-compact-trigger');await trigger.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger')?.getAttribute('aria-expanded')==='true');
@@ -96,7 +99,9 @@ async function activePulseBrandContract(page,{width,size}) {
   await page.keyboard.press('Enter');await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').waitFor();
   assert.equal(await mark.count(),0,'last dismissal restores the official mark');
   assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'normal subtitle returns exactly when due');
-  assert.equal(await page.locator('.cz-menu-btn').evaluate(element=>element===document.activeElement),true,'dismissal restores keyboard focus to the header action');
+  const navigationTarget=page.locator(width<=639?'body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]':'.cz-menu-btn');
+  assert.ok(await navigationTarget.isVisible(),'dismissal target remains visible');
+  assert.equal(await navigationTarget.evaluate(element=>element===document.activeElement),true,'dismissal restores keyboard focus to the reachable navigation action');
   return geometry;
 }
 async function recovered(page) {
@@ -230,7 +235,8 @@ async function visibleTextBounds(page, selector) {
       if(width<=600)assert.ok(header.height<=110,'Mobile identity chrome stays compact with 200% text');
       const mark=await page.locator('.cz-global-header .cz-logo').boundingBox(),markImage=await page.locator('.cz-global-header .cz-logo img').boundingBox();assert.ok(markImage.x>=mark.x-1&&markImage.x+markImage.width<=mark.x+mark.width+1,'Identity image stays fully inside its mark');
       assert.equal(await page.locator('.cc-fixed-header-space').count(),0,'No obsolete header spacer');
-      await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
+      const navigationTarget=page.locator(width<=639?'body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]':'.cz-global-header .cz-menu-btn');
+      assert.ok(await navigationTarget.isVisible(),'existing Menu remains visible');await navigationTarget.focus();assert.equal(await navigationTarget.evaluate(el=>el===document.activeElement),true,'Available navigation action retains keyboard focus');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
       const activeBrand=await activePulseBrandContract(page,{width,size});
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[],'restored normal header remains readable');
