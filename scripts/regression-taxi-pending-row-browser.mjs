@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -13,7 +14,7 @@ try {
  assert.equal(learned.rates.find(x=>x.key==='per_diem.breakfast')?.value,25);
  assert.equal(learned.rates.every(x=>!x.confirmed),true);
  assert.equal(learning.learnPerDiemStatement(document.replace('Total depositado','TAXI R$ 40,00\nTotal depositado'),'synthetic-conflict.txt').rates.some(x=>x.key==='per_diem.taxi'),false);
- const store=new Map();globalThis.localStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)};globalThis.window={dispatchEvent:()=>{}};
+ const store=new Map();globalThis.localStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)};globalThis.window=new EventTarget();
  const rate=learned.rates.find(x=>x.key==='per_diem.taxi');
  assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-05'),null);
  assert.equal(learning.saveConfirmedFinancialRates([{...rate,confirmed:true}]),true);
@@ -27,6 +28,7 @@ try {
  perDiemConfig:()=>({taxiRate,rates:{domestic:{mainMeal:100,currency:'BRL',label:'SYNTHETIC'}},domesticBreakfast:25,domesticMainMealSource:'synthetic',domesticBreakfastSource:'synthetic',breakfastPercent:.25,exchangeRates:{BRL:1},source:'SYNTHETIC',act:{version:'synthetic'}}),
  loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:origin=>({rateKey:'domestic',airport:origin,reason:'synthetic'}),isOperationalEvent:()=>true,financialEventCode:e=>e.day.type,readOptionalNumberSetting:()=>null,dateChip:d=>d.toISOString().slice(0,10),moneyCurrency:(v,c)=>`${c} ${v}`});
  vm.runInContext(ts.transpileModule(fns.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.calculate=calculatePerDiem;',{compilerOptions:{target:99}}).outputText,context);
+ installAllowanceDependencies(context,{stubConfig:true});
  const at=(clock,iso='2032-10-05')=>`${iso}T${clock}:00-03:00`;
  const flight=(report='04:00',origin='BSB',destination='GRU',departure='06:00',arrival='08:00',iso='2032-10-05')=>({id:'SYN-FLIGHT',kind:'flight',origin,destination,day:{type:'VOO',dutyReport:report,dutyReportSource:'published'},canonical:{journeyId:'SYN-JOURNEY',startDateTime:at(departure,iso),endDateTime:at(arrival,iso),leg:{departureTime:departure,arrivalTime:arrival}}});
  const roster={year:2032,month:10,base:'BSB'};
@@ -46,7 +48,7 @@ try {
  const view=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='PerDiemMonthView');assert(view);
  const {build}=await import('esbuild');const http=await import('node:http');const {createRequire}=await import('node:module');
  const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
- const entry=`import PersonalAllowanceReference from './client/src/components/finance/PersonalAllowanceReference';import * as learning from './client/src/lib/financialStatementLearning';window.learning=learning;import FinancialStatementImporter from './client/src/components/finance/FinancialStatementImporter';import React,{useState,useMemo} from 'react';import{createRoot}from'react-dom/client';
+ const entry=`import FinancialActApplicability,{AllowanceMinimumReference} from './client/src/components/finance/FinancialActApplicability';import PersonalAllowanceReference from './client/src/components/finance/PersonalAllowanceReference';import * as learning from './client/src/lib/financialStatementLearning';window.learning=learning;import FinancialStatementImporter from './client/src/components/finance/FinancialStatementImporter';import React,{useState,useMemo} from 'react';import{createRoot}from'react-dom/client';
  const buildLegs=()=>[], calculatePerDiem=()=>window.forecast;
  const useFinancialPrivacy=()=>({hidden:window.hidden,amount:v=>window.hidden?'••••':v,text:v=>window.hidden?'••••':v});
  const isAdmin=()=>window.admin;const Brand=()=>null,BriefcaseBusiness=()=>null,CalendarDays=()=>null,Plane=()=>null,DollarSign=()=>null;

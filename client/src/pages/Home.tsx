@@ -137,12 +137,16 @@ import { nextAllowancePayment } from '@/lib/nextFinancialPayment';
 import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
 import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
 import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceReference';
+import FinancialActApplicability, { AllowanceMinimumReference } from '@/components/finance/FinancialActApplicability';
+import { readFinancialActApplicability, type FinancialActSnapshot } from '@/lib/financialActApplicability';
+import { resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
+import type { AllowanceSlot } from '@/lib/latamAllowanceCatalog';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { confirmedPerDiemReferencesAt, confirmedPayrollDsrContext, financialRateOwner, confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
-import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
+import { perDiemSlotAmount } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
@@ -3619,111 +3623,113 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
   if (!from || !to) return 0;
   return Math.round(routeDistanceKm(from, to));
 }
-function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
+function perDiemConfig(roster: CrewRoster, effectiveDate: string, applicability: FinancialActSnapshot = readFinancialActApplicability()) {
+  // ACT metadata/geography is not evidence of this owner's employment. Only the
+  // separate explicit financial declaration may enable a shared reference.
   const act = resolveActFinancialRules(roster);
   const references = confirmedPerDiemReferencesAt(effectiveDate);
-  const learnedMealRate = references.mainMeal;
-  const learnedMeal = learnedMealRate?.value ?? null;
-  const learnedBreakfast = references.breakfast;
+  const learnedMealRate = references.mainMeal, learnedMeal = learnedMealRate?.value ?? null;
+  const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
   const rateArchiveIssue = references.state === 'invalid'
     ? 'Histórico local de tarifas inválido; valores preservados para revisão.'
     : references.state === 'unavailable' ? 'Referências locais indisponíveis; revise neste dispositivo.' : null;
-  const domesticRule = act.perDiem.find((rule) => rule.key === 'domestic');
-  const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
-  const domestic = resolveDomesticPerDiemRate({
-    effectiveDate,
-    actMainMeal: domesticRule?.mainMeal ?? NaN,
-    manualOverride: domesticOverride,
-    learnedMainMeal: learnedMeal,
-    ownerConfirmedMainMeal: learnedMealRate?.confirmed === true || references.personal?.mainMeal === true,
-    learnedBreakfast,
-    breakfastPercent: act.breakfastPercent,
+  const owned = (value: number, personal: boolean, manual = false): OwnedAllowanceValue => ({
+    value, source: manual ? 'manual' : personal ? 'personal_reference' : 'learned',
+    description: manual ? 'Calibração manual desta conta; previsão não comprova pagamento.' + (references.state === 'missing' ? ' Referência revisada não salva neste dispositivo.' : '')
+      : personal ? 'premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados.'
+      : 'Tarifa revisada nesta conta e dispositivo para o período; previsão não comprova pagamento.',
+    version: manual ? 'account-manual-allowance-v1' : personal ? 'account-personal-allowance-v1' : 'account-reviewed-allowance-v1',
   });
-  const rates = Object.fromEntries(act.perDiem.map((rule) => {
-    if (rule.key === 'domestic') return [rule.key, { ...rule, mainMeal: domestic.mainMeal }];
-    const override = readOptionalNumberSetting('crewcheck_perdiem_rate_' + rule.key);
-    return [rule.key, { ...rule, mainMeal: override ?? rule.mainMeal }];
+  const resolveSlot = (category: PerDiemRateKey, slot: AllowanceSlot) => {
+    let selected: OwnedAllowanceValue | null = null;
+    if (category === 'domestic') {
+      if (slot === 'taxi' && references.taxi !== null) selected = owned(references.taxi, Boolean(references.personal?.taxi));
+      else if (slot === 'breakfast') {
+        if (references.breakfast !== null) selected = owned(references.breakfast, Boolean(references.personal?.breakfast));
+        else if (domesticOverride !== null) selected = owned(perDiemSlotAmount(domesticOverride, 'breakfast', act.breakfastPercent), false, true);
+      } else if (slot === 'mainMeal') {
+        const ownerConfirmed = learnedMealRate?.confirmed === true || references.personal?.mainMeal === true;
+        if (ownerConfirmed && learnedMeal !== null) selected = owned(learnedMeal, Boolean(references.personal?.mainMeal));
+        else if (domesticOverride !== null) selected = owned(domesticOverride, false, true);
+        else if (learnedMeal !== null) selected = owned(learnedMeal, Boolean(references.personal?.mainMeal));
+      }
+    } else {
+      const manual = readOptionalNumberSetting('crewcheck_perdiem_rate_' + category);
+      if (manual !== null) selected = owned(perDiemSlotAmount(manual, slot === 'breakfast' ? 'breakfast' : 'mainMeal', act.breakfastPercent), false, true);
+    }
+    return resolveSharedAllowanceSlot({ category, slot, date: effectiveDate, context: applicability, owned: selected, archiveIssue: rateArchiveIssue });
+  };
+  const domestic = resolveSlot('domestic', 'mainMeal'), breakfast = resolveSlot('domestic', 'breakfast'), taxi = resolveSlot('domestic', 'taxi');
+  const rates = Object.fromEntries(act.perDiem.map(rule => {
+    const selected = rule.key === 'domestic' ? domestic : resolveSlot(rule.key, 'mainMeal');
+    return [rule.key, { ...rule, mainMeal: selected.kind === 'forecast' ? selected.value! : NaN }];
   })) as Record<PerDiemRateKey, { key: PerDiemRateKey; label: string; currency: PerDiemCurrency; mainMeal: number }>;
-  const demonstratedSource = domestic.source === 'demonstrated'
-    ? ' · demonstrativo nacional confirmado no período'
-    : '';
-  return {
-    act,
-    rates,
-    breakfastPercent: act.breakfastPercent,
-    domesticBreakfast: domestic.breakfast,
-    taxiRate: references.taxi,
-    personalReferences: references.personal,
-    rateArchiveIssue,
-    domesticMainMealSource: domestic.source,
-    domesticBreakfastSource: domestic.breakfastSource,
-    airportOverrides: loadAirportPerDiemOverrides(),
-    source: act.profileLabel + ' · ' + act.legalReference
-      + (learnedMeal !== null || learnedBreakfast !== null ? ' · tarifas revisadas nesta conta e dispositivo' : '')
-      + (references.state === 'missing' ? ' · referência própria não salva neste dispositivo' : '')
-      + (domestic.source==='act' && learnedBreakfast===null ? ' · referência ACT; tarifa empresarial da conta não confirmada neste período' : '')
-      + (domestic.breakfastSource==='act' && domestic.source!=='act' ? ' · café: referência ACT; tarifa própria não confirmada neste período' : '')
-      + demonstratedSource,
+  return { act, rates, resolveSlot, breakfastPercent: act.breakfastPercent,
+    domesticBreakfast: breakfast.kind === 'forecast' ? breakfast.value! : NaN,
+    taxiRate: taxi.kind === 'forecast' ? taxi.value : null, personalReferences: references.personal, rateArchiveIssue,
+    domesticMainMealSource: domestic.source, domesticBreakfastSource: breakfast.source,
+    airportOverrides: loadAirportPerDiemOverrides(), source: domestic.reason,
   };
 }
 function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date()) {
   const airportOverrides = loadAirportPerDiemOverrides();
   const rows: PerDiemRow[] = [];
+  const applicability = readFinancialActApplicability();
+  const referenceRows: PerDiemRow[] = [];
+  const referenceInspections: Array<{iso:string;currency:string;publishedFloorMinor:number;reason:string}> = [];
   const seen = new Set<string>();
   const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
   const pendingAirports = new Set<string>();
-  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' | 'source_coverage'; sourceIssueId?: string }> = aimsFlightSourceCoveragePending(roster, events);
+  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' | 'source_coverage' | 'allowance_reference'; sourceIssueId?: string }> = aimsFlightSourceCoveragePending(roster, events);
   const usedRateKeys = new Set<PerDiemRateKey>();
   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date, partial = false) => {
-    const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
+    const classification = resolveAllowanceOccurrenceGeography({ origin: event.origin, destination: event.destination, base: roster.base || '',
+      breakfastAtProvenBase: slot === 'breakfast', overrides: airportOverrides, classify: resolvePerDiemRule });
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
-      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Classificação geográfica da diária pendente.' });
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: classification.reason });
       return;
     }
     const key = iso + '-' + slot;
     if (seen.has(key)) return;
     seen.add(key);
     usedRateKeys.add(classification.rateKey);
-    const cfg = perDiemConfig(roster, iso);
+    const cfg = perDiemConfig(roster, iso, applicability);
     const rate = cfg.rates[classification.rateKey];
-    // An invalid local archive is not evidence that the older ACT fallback applies.
-    // Independent international references and stored manual values are not changed.
-    if (classification.rateKey === 'domestic' && cfg.rateArchiveIssue) {
-      unclassifiedItems.push({ iso, airport: classification.airport, reason: cfg.rateArchiveIssue });
+    const selected = cfg.resolveSlot(classification.rateKey, slot === 'breakfast' ? 'breakfast' : 'mainMeal');
+    if (selected.kind === 'pending' || selected.value === null || !selected.currency) {
+      unclassifiedItems.push({ iso, airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason });
+      if (selected.reference?.state === 'unresolved_scope' && selected.reference.publishedFloorMinor !== null && selected.reference.currency) {
+        referenceInspections.push({ iso, currency: selected.reference.currency, publishedFloorMinor: selected.reference.publishedFloorMinor, reason: selected.reason });
+      }
       return;
     }
-    if (!rate) {
-      pendingAirports.add(classification.airport);
-      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Tarifa da diária ausente para o período.' });
+    const value = selected.value, currency = selected.currency;
+    if (!Number.isFinite(value) || value < 0 || !rate) {
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Valor da referência de diária inválido para o período.' });
       return;
     }
-    const value = slot === 'breakfast' && classification.rateKey === 'domestic'
-      ? cfg.domesticBreakfast
-      : perDiemSlotAmount(rate.mainMeal, slot, cfg.breakfastPercent);
-    if (!Number.isFinite(value) || value < 0) {
-      pendingAirports.add(classification.airport);
-      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Valor da tarifa de diária inválido para o período.' });
-      return;
-    }
-    rows.push({
+    if (selected.kind === 'reference') unclassifiedItems.push({ iso, airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason });
+    const target = selected.kind === 'reference' ? referenceRows : rows;
+    target.push({
       eventId: event.id,
       partial,
-      ...(rate.currency!=='BRL'&&event.kind==='flight'&&!financialPublishedFlightIntervalIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
+      ...(currency!=='BRL'&&event.kind==='flight'&&!financialPublishedFlightIntervalIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
       date: dateChip(new Date(iso + 'T12:00:00')),
       iso,
       label,
       value,
-      currency: rate.currency,
+      currency: currency,
       // FX is projected separately from native entitlements using dated quotes.
-      convertedBRL: rate.currency === 'BRL' ? value : null,
-      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso
+      convertedBRL: currency === 'BRL' ? value : null,
+      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + (selected.reference ? classification.reason : 'Categoria geográfica da ocorrência; sem declaração de aplicabilidade do ACT por esta classificação.') + ' · ' + selected.reason + ' · vigência consultada em ' + iso
+        + ' · versão ' + selected.version + (selected.reference?.sourceUrls.length ? ' · fontes: ' + selected.reference.sourceUrls.join(' ; ') : '')
         + (classification.rateKey==='domestic'&&(slot==='breakfast'?cfg.personalReferences?.breakfast:cfg.personalReferences?.mainMeal)?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':''),
       airport: classification.airport,
       rateKey: classification.rateKey,
-      rateSource: classification.rateKey === 'domestic' ? (slot === 'breakfast' ? cfg.domesticBreakfastSource : cfg.domesticMainMealSource) : (readOptionalNumberSetting('crewcheck_perdiem_rate_' + classification.rateKey) !== null ? 'manual' : 'act'),
-      rateVersion: cfg.act.version,
-      exchangeRate: rate.currency === 'BRL' ? 1 : null,
+      rateSource: selected.source,
+      rateVersion: selected.version,
+      exchangeRate: currency === 'BRL' ? 1 : null,
       calculationStart: calculationStart.toISOString(),
       calculationEnd: calculationEnd.toISOString(),
     });
@@ -3861,21 +3867,29 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     // User-confirmed ceiling: one taxi allowance per operational BRT day.
     if (taxiDays.has(taxi.iso)) continue;
     taxiDays.add(taxi.iso);
-    const cfg = perDiemConfig(roster, taxi.iso);
-    const value = cfg.taxiRate;
+    const cfg = perDiemConfig(roster, taxi.iso, applicability);
+    const selected = cfg.resolveSlot('domestic', 'taxi');
+    const value = selected.kind === 'forecast' ? selected.value : null;
     const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
       + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · ' + (cfg.rateArchiveIssue || 'Tarifa de táxi confirmada para o período ausente.') });
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · Tarifa de táxi para o período pendente. ' + selected.reason });
     } else {
       rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
-        source: source + (cfg.personalReferences?.taxi?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':' · tarifa de táxi revisada nesta conta no período; previsão não comprova pagamento'),
-        airport: taxi.event.origin, rateKey: 'domestic', rateSource: cfg.personalReferences?.taxi?'personal_reference':'learned', rateVersion: 'taxi-user-reported-v1',
+        source: source + ' · ' + selected.reason,
+        airport: taxi.event.origin, rateKey: 'domestic', rateSource: selected.source, rateVersion: selected.version,
         exchangeRate: 1, calculationStart: taxi.start.toISOString(), calculationEnd: taxi.end.toISOString() });
     }
   }
+  if (applicability.session && !applicability.isCurrent()) {
+    rows.length = 0; referenceRows.length = 0; referenceInspections.length = 0;
+    unclassifiedItems.push({ iso: '', airport: '', pendingKind: 'allowance_reference', reason: 'A sessão financeira mudou durante a consulta; atualize a previsão.' });
+  }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
+  const monthlyReferenceRows = rowsForNominalFinancialCompetence(referenceRows, roster);
+  const monthlyReferenceInspections = rowsForNominalFinancialCompetence(referenceInspections, roster);
+  const referenceTotalsByCurrency = summarizeMinimumAllowanceRows(monthlyReferenceRows);
   const monthlyUnclassifiedItems = [...rowsForNominalFinancialCompetence(unclassifiedItems, roster), ...unclassifiedItems.filter(item => !item.iso)];
   const nativeSummary = summarizeNativeForecastRows(monthlyRows, monthlyUnclassifiedItems);
   const totalsByCurrency = nativeSummary.totalsByCurrency as Partial<Record<PerDiemCurrency, number>>;
@@ -3894,6 +3908,9 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     .join(' · ');
   return {
     rows,
+    referenceRows: monthlyReferenceRows,
+    referenceInspections: monthlyReferenceInspections,
+    referenceTotalsByCurrency,
     unclassifiedItems,
     monthlyUnclassifiedItems,
     monthlyRows,
@@ -4149,6 +4166,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <p>Estimativa por moeda · sem confirmação de pagamento.</p>
     </section>
     </FinancialScreen>
+    <FinancialActApplicability/>
     {nextPayment}
     <FinancialScreen names={['statement']}>
     <section className="cz-finance-grid cc-per-diem-summary" aria-label="Resumo da competência">
@@ -4184,6 +4202,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <header><h2>Extrato previsto de diárias</h2><span>{itemLabel}</span></header>
       <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
       <PersonalAllowanceReference/>
+      <AllowanceMinimumReference rows={forecast.referenceRows || []} totals={forecast.referenceTotalsByCurrency || {}} inspections={forecast.referenceInspections || []}/>
       {pendingTaxiRows.map(row => <div className="cz-finance-row" data-financial-iso={row.iso} data-taxi-rate-pending="true" key={'taxi-pending-'+row.iso}>
         <span>{dateChip(new Date(row.iso+'T12:00:00'))}</span><strong>Táxi · tarifa pendente · {row.airport}</strong><b aria-label="Valor não calculável">—</b>
         <details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{privacy.text(row.reason || '')}</small></details>
@@ -4205,6 +4224,9 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
 function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[], quotes?:Record<string,FxQuote>,today=new Date().toISOString().slice(0,10)) {
   const base = snapshots[0]?.perdiem || {};
   const nativeRows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
+  const referenceRows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.referenceRows || []), range);
+  const referenceInspections = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.referenceInspections || []), range);
+  const referenceTotalsByCurrency = summarizeMinimumAllowanceRows(referenceRows);
   const rows = quotes===undefined?nativeRows:projectAllowanceFxRows(nativeRows,quotes,today);
   const pending = snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems);
   const unclassifiedItems = [...financialRowsInRange(pending, range), ...pending.filter(item => !item.iso)];
@@ -4213,7 +4235,7 @@ function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[]
   const nativeSummary = scopeIncomplete ? { ...native, complete:false, totalsByCurrency:{}, state:'unclassified' } : native;
   const monthlySummary = scopeIncomplete ? { ...converted, convertedComplete:false, convertedTotalBRL:null, state:'invalid_amount' } : converted;
   const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
-  return { ...base, rows, monthlyRows:rows, unclassifiedItems, monthlyUnclassifiedItems:unclassifiedItems, nativeSummary, monthlySummary, monthly:monthlySummary.convertedTotalBRL, currencySummary, totalsByCurrency:nativeSummary.totalsByCurrency, currencyCount:Object.keys(nativeSummary.totalsByCurrency).length, pendingCurrencies:monthlySummary.pendingCurrencies, convertedComplete:monthlySummary.convertedComplete, scopeIncomplete } as ReturnType<typeof calculatePerDiem> & { scopeIncomplete:boolean };
+  return { ...base, referenceRows, referenceInspections, referenceTotalsByCurrency, rows, monthlyRows:rows, unclassifiedItems, monthlyUnclassifiedItems:unclassifiedItems, nativeSummary, monthlySummary, monthly:monthlySummary.convertedTotalBRL, currencySummary, totalsByCurrency:nativeSummary.totalsByCurrency, currencyCount:Object.keys(nativeSummary.totalsByCurrency).length, pendingCurrencies:monthlySummary.pendingCurrencies, convertedComplete:monthlySummary.convertedComplete, scopeIncomplete } as ReturnType<typeof calculatePerDiem> & { scopeIncomplete:boolean };
 }
 function FinancialFreeDayDetails({evaluation}:{evaluation:FreeDayPostponementEvaluation}){
  const {session,review,boundCurrent,period}=evaluation;

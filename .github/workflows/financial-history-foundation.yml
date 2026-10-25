@@ -8,6 +8,12 @@ on:
       - 'shared/financialReadModel.mjs'
       - 'shared/financialSalaryDsr.mjs'
       - 'shared/financialVacationTiming.mjs'
+      - 'client/src/lib/latamAllowanceCatalog.ts'
+      - 'client/src/lib/financialActApplicability.ts'
+      - 'client/src/lib/sharedAllowanceResolution.ts'
+      - 'scripts/lib/shared-allowance-fixture.mjs'
+      - 'scripts/regression-latam-allowance-catalog.mjs'
+      - 'scripts/regression-shared-allowance-callers.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
       - 'client/src/lib/salaryDsrConsumer.ts'
       - 'scripts/regression-salary-dsr-*'
@@ -211,6 +217,11 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/financial-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify local ACT applicability and minimum-reference UI (synthetic)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-act-applicability-browser.mjs
       - name: Verify fixed financial mask and account preference (synthetic)
         timeout-minutes: 3
         env:
