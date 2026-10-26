@@ -21,6 +21,8 @@ on:
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/ownerPerDiemReview.ts'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/personalAllowanceReference.ts'
+      - 'scripts/regression-personal-allowance-*.mjs'
       - 'scripts/regression-owner-per-diem-review.mjs'
       - 'scripts/regression-owner-per-diem-browser.mjs'
       - 'scripts/regression-owner-per-diem-caller.mjs'

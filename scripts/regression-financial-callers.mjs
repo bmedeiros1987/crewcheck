@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -61,6 +62,7 @@ try {
   if (home.includes('MoneyText')) {
     const source = fs.readFileSync('client/src/components/MoneyText.tsx', 'utf8').replace(/^import.*$/gm, '').replace('export default function', 'function');
     vm.runInContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText, context);
+  installAllowanceDependencies(context,{manual:{domestic:100,other_international:20}});
   }
   const compiled = ts.transpileModule(functions.map(node => node.getText(ast)).join('\n')
     + `\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView: ${monthlyViewName} };`,
@@ -82,11 +84,11 @@ try {
   assert.ok(dated.rows.every(row => row.source.includes(row.iso)), 'item provenance carries queried effective date');
   const inherited = amounts.DEMONSTRATED_DOMESTIC_EFFECTIVE_FROM;
   const inheritedEnd = amounts.DEMONSTRATED_DOMESTIC_EFFECTIVE_TO;
-  // Existing demonstrated resolver is exercised at its real boundaries without
-  // copying private money figures into a new fixture or creating a tariff.
-  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'act');
+  // Historical demonstrated boundaries cannot implicitly enroll this account.
+  // The explicit synthetic manual reference stays manual on both sides.
+  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'manual');
   const after = new Date(inheritedEnd + 'T12:00:00'); after.setDate(after.getDate() + 1);
-  assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'act');
+  assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'manual');
   const night = { ...event('2032-09-01'), kind: 'flight', presentation: '23:50',
     start: '2032-09-01T23:50:00-03:00', end: '2032-09-02T00:30:00-03:00', day:{type:'VOO',dutyReport:'23:50',dutyReportSource:'published'}, canonical: { journeyId: 'synthetic-night',leg:{departureTime:'23:50',arrivalTime:'00:30'} } };
   const nightResult = calculatePerDiem([night], roster(2032, 9), new Date('2032-09-02T12:00:00'));
@@ -123,7 +125,7 @@ try {
   assert.deepEqual(Object.keys(mixed.totalsByCurrency), []);
   assert.equal(mixed.nativeSummary.complete, false);
   const originalRate = context.readOptionalNumberSetting;
-  context.readOptionalNumberSetting = key => key === 'crewcheck_perdiem_rate_other_international' ? NaN : null;
+  context.readOptionalNumberSetting = key => key === 'crewcheck_perdiem_rate_other_international' ? NaN : originalRate(key);
   const invalidRate = calculatePerDiem([event('2032-02-01'), event('2032-02-02', 'INT')], roster(2032, 2));
   assert.equal(invalidRate.nativeSummary.complete, false);
   assert.match(invalidRate.currencySummary, /Subtotal estimado: R\$\s*100,00/);

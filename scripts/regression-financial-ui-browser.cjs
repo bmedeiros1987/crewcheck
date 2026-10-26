@@ -140,13 +140,13 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     assert.equal((await page.locator('.cc-per-diem-summary strong').textContent()).replace(/\s+/g,' ').trim(),'Subtotal estimado: R$ 4.600,00');
     assert.equal(count,46);assert((await rows.evaluateAll(elements=>elements.map(element=>element.dataset.financialIso))).every(iso=>iso!=='2032-02-02'),'unclassified day contributes no monetary row');
     assert((await rows.locator('b').allTextContents()).every(value=>value.replace(/\s+/g,' ').trim()==='R$ 100,00'));
-    await page.getByText('Classificação geográfica da diária pendente.',{exact:true}).waitFor();
+    await page.getByText('Classificação geográfica desta ocorrência pendente; um aeroporto conhecido não comprova o outro.',{exact:true}).waitFor();
     assert.match(await page.locator('.cc-per-diem-summary').textContent(),/dados financeiros pendentes/);
    }
    if(['all-unknown','missing-clocks'].includes(kind)){
     assert.equal(count,0);assert.equal((await page.locator('.cc-per-diem-summary strong').textContent()).trim(),'Não calculável');
     assert.doesNotMatch(await page.locator('.cc-per-diem-summary').textContent(),/R\$|Subtotal estimado/,'no unknown amount becomes zero or a subtotal');
-    await page.getByText(kind==='all-unknown'?'Classificação geográfica da diária pendente.':/Intervalo operacional incompleto: Início\/fim publicados ausentes ou estimados/,{exact:kind==='all-unknown'}).waitFor();
+    await page.getByText(kind==='all-unknown'?'Classificação geográfica desta ocorrência pendente; um aeroporto conhecido não comprova o outro.':/Intervalo operacional incompleto: Início\/fim publicados ausentes ou estimados/,{exact:kind==='all-unknown'}).waitFor();
    }
    if(kind==='empty'){assert.equal(count,0);assert.doesNotMatch(await page.locator('.cc-per-diem-content').innerText(),/R\$\s*0,00|pagamento confirmado/);}
    let last=null,nav=null;

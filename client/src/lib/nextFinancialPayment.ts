@@ -24,14 +24,15 @@ export function knownPaymentTotals(lines:readonly PaymentLine[]):Record<string,n
 // Preserve the hero's single BRL work week, but retain already-calculated rows
 // for the Concierge's independent future horizon. This only assigns forecast
 // dates; it never recalculates tariffs, FX or confirmed payments.
-function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string}>,covered:string[],coveredDays?:string[]):PaymentLine[] {
+function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string;pendingKind?:string;reason?:string}>,covered:string[],coveredDays?:string[]):PaymentLine[] {
  const cycles=new Map<string,{date:string|null;partial:boolean}>();
  return rows.filter(row=>validFinancialDay(row.iso)).map(row=>{
   if(row.currency!=='BRL'){
    // The producer knows which journey supplied this meal. Never infer that
    // relationship from a shared occurrence/payment date or display text.
    // Legacy rows without structured evidence remain explicitly unconfirmed.
-   return {...row,partial:row.partial!==false,...(row.partial===undefined?{pendingReason:'Completude da origem da diária não comprovada.'}:{})};
+   const sourceIssue=pending.find(item=>item.pendingKind==='source_coverage'&&(!validFinancialDay(item.iso)||item.iso===row.iso));
+   return {...row,partial:Boolean(sourceIssue)||row.partial!==false,...(sourceIssue?{pendingReason:sourceIssue.reason||'Cobertura da fonte da diária não verificada.'}:row.partial===undefined?{pendingReason:'Completude da origem da diária não comprovada.'}:{})};
   }
   const cycle=observedStatementCycle(rosterOperationalDateAt(row.iso,12),'roster_brt'),start=rosterOperationalIso(cycle.start),end=rosterOperationalIso(cycle.end);
   if(!cycles.has(start)){
@@ -42,7 +43,7 @@ function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string}>,cov
   const item=cycles.get(start)!;return {...row,expectedPaymentDate:item.date||undefined,expectedPaymentTimezone:item.date?'America/Sao_Paulo':undefined,partial:item.partial||row.partial===true};
  });
 }
-export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:string;airport:string;reason?:string}>, covered: string[], now = new Date(), coveredDays?: string[]): NextPayment {
+export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:string;airport:string;reason?:string;pendingKind?:string}>, covered: string[], now = new Date(), coveredDays?: string[]): NextPayment {
   const today = rosterOperationalIso(now), periods = observedAllowancePeriods(now, 'roster_brt');
   // The previous closed week is still the next reference on Wednesday/Thursday.
   // Never substitute the accumulating or selected month for that week's rows.

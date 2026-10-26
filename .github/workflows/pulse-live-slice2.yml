@@ -11,6 +11,8 @@ on:
       - 'client/src/components/alerts/**'
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'client/src/components/navigation/InternalHeaderFrame.tsx'
+      - 'client/src/components/navigation/headerMenuAccess.ts'
+      - 'scripts/regression-pulse-mobile-navigation.mjs'
       - 'client/src/lib/alert*.ts'
       - 'client/src/lib/groundAlertDispositions.ts'
       - 'client/src/lib/complianceAlertSemantics.ts'
