@@ -10,13 +10,18 @@ const flyDeckApply = read('scripts/v14353/apply.mjs');
 const webDesktopShell = read('client/src/styles/web-desktop-shell.css');
 const chain = read('scripts/v139/apply.mjs');
 
-assert.match(roster, /function publishedClock\(value\?: string \| null\)/, 'Escala Web deve normalizar horários publicados');
-assert.match(roster, /event\.day\?\.dutyReport \|\| event\.day\?\.startTime \|\| event\.departure/, 'início deve priorizar os campos publicados sem tocar no parser');
-assert.match(roster, /event\.day\?\.dutyDebrief \|\| event\.day\?\.endTime \|\| event\.arrival/, 'fim deve priorizar os campos publicados sem tocar no parser');
+assert.match(roster, /rosterCardPresentation\(event, group.iso\)/, 'Escala deve usar a projeção compartilhada sem alterar a fonte');
 assert.match(roster, /aria-label="Horários publicados da programação"/, 'grade de horários deve ter nome acessível');
-assert.match(roster, /<small>Início<\/small><b>\{programWindow\.start \|\| 'A confirmar'\}<\/b>/, 'início deve aparecer explicitamente ou assumir estado não inventado');
-assert.match(roster, /<small>Fim<\/small><b>\{programWindow\.end \|\| 'A confirmar'\}<\/b>/, 'fim deve aparecer explicitamente ou assumir estado não inventado');
-assert.doesNotMatch(roster, /publishedClock\(event\.canonical/, 'horários inferidos do canônico não devem ser apresentados como publicados');
+assert.match(roster, /<small>Início[\s\S]*?\{card.start\}/, 'início explícito vem da projeção de fonte');
+assert.match(roster, /<small>Fim[\s\S]*?\{card.end\}/, 'fim explícito vem da projeção de fonte');
+const { loadClientModules } = await import('./lib/ts-module-harness.mjs');
+const projectionHarness = loadClientModules({files:['client/src/lib/rosterPresentation.ts']});
+const {rosterCardPresentation} = projectionHarness.load('rosterPresentation');
+const published = {kind:'duty',day:{type:'ASB',dutyReport:'06:30',dutyDebrief:'12:30(+1)'},departure:'00:00',arrival:'23:59',canonical:{kind:'duty',startDateTime:'2032-10-19T09:30:00Z',endDateTime:'2032-10-20T15:30:00Z'}};
+assert.equal(rosterCardPresentation(published).start,'06:30');
+assert.equal(rosterCardPresentation(published).end,'12:30(+1)','published suffix is never stripped');
+assert.equal(rosterCardPresentation({kind:'duty',day:{type:'ASB'},canonical:{kind:'duty',startDateTime:'2032-10-19T09:30:00Z'}}).start,'—','canonical positioning cannot invent a published clock');
+projectionHarness.cleanup();
 
 assert.match(rosterCss, /\.cc-roster-program-time-grid-v1397\s*\{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/, 'horários devem manter leitura lado a lado quando houver espaço');
 assert.match(rosterCss, /var\(--program-accent\)/, 'horários devem herdar a semântica cromática da programação');

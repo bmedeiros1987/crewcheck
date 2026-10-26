@@ -1,0 +1,34 @@
+/* One vocabulary for structured roster cards. Source documents are never styled. */
+.cc-roster-token { --cc-roster-accent:#22d3ee; --cc-roster-rgb:34,211,238; }
+.cc-roster-token[data-roster-mode="operating"] { --cc-roster-accent:#2dd4a2; --cc-roster-rgb:45,212,162; }
+.cc-roster-token[data-roster-mode="extra"] { --cc-roster-accent:#94a3b8; --cc-roster-rgb:148,163,184; }
+.cc-roster-token[data-roster-mode="stay"] { --cc-roster-accent:#a78bfa; --cc-roster-rgb:167,139,250; }
+.cc-roster-token[data-roster-mode="rest"] { --cc-roster-accent:#38bdf8; --cc-roster-rgb:56,189,248; }
+.cc-roster-token[data-roster-mode="journey-rest"] { --cc-roster-accent:#22d3ee; --cc-roster-rgb:34,211,238; }
+.cc-roster-token[data-roster-mode="reserve"] { --cc-roster-accent:#fbbf24; --cc-roster-rgb:251,191,36; }
+.cc-roster-token[data-roster-mode="standby"] { --cc-roster-accent:#fb7185; --cc-roster-rgb:251,113,133; }
+.cc-roster-token[data-roster-mode="training"] { --cc-roster-accent:#818cf8; --cc-roster-rgb:129,140,248; }
+.cc-roster-filter { display:grid; gap:8px; margin:12px 0; color:inherit; min-width:0; }
+.cc-roster-filter-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.cc-roster-filter-heading span { font-size:.85rem; }
+.cc-roster-filter-options { display:flex; gap:8px; flex-wrap:wrap; min-width:0; }
+.cc-roster-filter-options button { display:inline-flex; align-items:center; justify-content:flex-start; gap:6px; min-height:44px; max-width:100%; padding:8px 10px; border:1px solid var(--ccr-line,#64748b); border-radius:12px; background:var(--ccr-panel-soft,#172537); color:var(--ccr-text,#edf4fb); font:inherit; font-size:calc(.82rem * var(--cc-text-scale,1)); cursor:pointer; white-space:normal; }
+.cc-roster-filter-options button svg { width:18px; height:18px; flex-shrink:0; color:var(--cc-roster-accent,currentColor); }
+.cc-roster-filter-options button b { font-variant-numeric:tabular-nums; }
+.cc-roster-filter-options button[aria-pressed="true"] { outline:2px solid currentColor; outline-offset:1px; }
+.cc-roster-filter-options button:focus-visible { outline:3px solid #60a5fa; outline-offset:3px; }
+.cc-roster-filter p { margin:0; line-height:1.5; font-size:calc(.78rem * var(--cc-text-scale,1)); }
+.cc-roster-filter-result { font-weight:650; }
+html[data-crew-theme="light"] .cc-roster-filter-options button { background:#f5f8fb; color:#18334a; border-color:#a8bed0; }
+html body #root .cz-app[data-version] .cc-home-roster .cc-roster-filter-options button[aria-pressed="true"] { outline:2px solid currentColor!important; outline-offset:1px!important; }
+html body #root .cz-app[data-version] .cc-home-roster .cc-roster-filter-options button:focus-visible { outline:3px solid #3b82f6!important; outline-offset:3px!important; }
+.cc-roster-card-heading { display:flex; align-items:center; gap:6px; }
+.cc-roster-card-heading>svg { width:18px; height:18px; flex-shrink:0; color:var(--cc-roster-accent); }
+.cc-roster-clock-bound { display:block; }
+.cc-roster-filter-empty { padding:12px; line-height:1.5; }
+.cz-app[data-version] .cc-roster-token.cc-roster-program-v1397 { --program-accent:var(--cc-roster-accent); --program-rgb:var(--cc-roster-rgb); }
+.cz-app[data-version] .cc-roster-token.cc-doc-token { --legend-accent:var(--cc-roster-accent); }
+.cz-app[data-version] .cc-roster-token.cc-aims-activity { border-inline-start:3px solid var(--cc-roster-accent); }
+
+:is(.cc-calendar-day,.cc-aims-activity,.cc-doc-token) .cc-roster-card-heading { display:flex; align-items:flex-start; gap:6px; }
+.cz-app[data-version] .cc14349-dayline-item.cc-roster-token[data-roster-mode] .cc14349-dayline-marker { color:var(--cc-roster-accent); background:rgba(var(--cc-roster-rgb),.12); }
