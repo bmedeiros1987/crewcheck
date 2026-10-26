@@ -34,6 +34,16 @@ const results = [];
 const testedCommit = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const widths = (process.env.UI_READING_WIDTHS || '320,360,390,412,430,768,1024,1440').split(',').map(Number);
 assert.ok(widths.every(width => [320, 360, 390, 412, 430, 768, 1024, 1440].includes(width)));
+// Polled from Node, so a controlled page clock cannot stall it; never waits for a passing geometry.
+async function scrollSettled(page) {
+  let last = await page.evaluate(() => scrollY), stable = 0;
+  for (let read = 0; read < 100 && stable < 5; read += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const current = await page.evaluate(() => scrollY);
+    if (current === last) stable += 1; else { last = current; stable = 0; }
+  }
+  assert.ok(stable >= 5, 'Page scroll settles before navigation focus is sampled');
+}
 const settle = page => page.evaluate(async () => {
   await document.fonts.ready;
   for (const animation of document.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) try { animation.finish(); } catch {}
@@ -146,6 +156,9 @@ async function activePulseBrandContract(page,{width,size}) {
     await page.screenshot({path:path.join(output,`${width}-${size}-dismiss-target-failure.png`)});
   }
   assert.ok(targetMeetsMinimum,'Dismiss touch target must remain at least 44px in the original sample');
+  // Focusing Dismiss can start a smooth scroll (global scroll-behavior). Snapshot the
+  // navigation targets only once the page holds still, as the app reads them on Enter.
+  await scrollSettled(page);
   const beforeDismissFocus=await capturePulseNavigationFocus(page);
   const expectedNavigation=reachableNavigationSnapshot(beforeDismissFocus,'header')?'header':reachableNavigationSnapshot(beforeDismissFocus,'footer')?'footer':null;
   assert.ok(expectedNavigation,'Dismissal requires a reachable enabled navigation action');

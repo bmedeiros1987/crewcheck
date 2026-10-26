@@ -17,6 +17,15 @@ on:
       - 'scripts/regression-ui-reading-overlays.cjs'
       - 'scripts/regression-quick-roster-cards-browser.mjs'
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
+      - 'client/src/components/v1391/RosterLegend.tsx'
+      - 'client/src/components/v1391/roster-legend.css'
+      - 'client/src/components/v1391/CalendarRosterView.tsx'
+      - 'client/src/components/v1391/AimsDocumentView.tsx'
+      - 'client/src/lib/rosterPresentation.ts'
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'scripts/regression-roster-legend*.mjs'
+      - 'scripts/fixtures/roster-legend-app.tsx'
+      - 'scripts/lib/roster-legend-fixture.mjs'
       - 'client/src/components/v1391/home-roster-preview.css'
       - 'scripts/regression-fixed-navigation-headers.cjs'
       - 'scripts/lib/pulse-touch-target-sample.cjs'
@@ -96,11 +105,23 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Validate roster legend before canonical preparation (synthetic)
+        run: |
+          sha256sum client/src/lib/scheduleActivityClassification.ts > "$RUNNER_TEMP/roster-classifier.sha256"
+          for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$TZ" node scripts/regression-roster-legend.mjs
+          done
       - name: Record canonical hotel stylesheet before preparation
         run: sha256sum client/src/components/v1391/menu-personalization.css > "$RUNNER_TEMP/hotel-controls-css.sha256"
       # This regression prepares the full chain itself. Do not prepare twice.
       - name: Prepare once through the iPad source regression
         run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
+      - name: Validate roster legend after canonical preparation (synthetic)
+        run: |
+          sha256sum -c "$RUNNER_TEMP/roster-classifier.sha256"
+          for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$TZ" node scripts/regression-roster-legend.mjs
+          done
       - name: Verify hotel stylesheet survives canonical preparation
         run: sha256sum -c "$RUNNER_TEMP/hotel-controls-css.sha256"
       - name: Preserve navigation inventory and source contracts
@@ -162,6 +183,11 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-fixed-navigation-headers.cjs
+      - name: Verify shared roster legend and filtering with shipping CSS (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
+        run: node scripts/regression-roster-legend-browser.mjs
       - name: Verify quick roster card presentation with synthetic events
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -204,6 +230,7 @@ jobs:
             artifacts/favorite-editor-app
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
+            artifacts/roster-legend
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
             artifacts/menu-density

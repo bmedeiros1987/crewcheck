@@ -108,6 +108,7 @@ const DAY_OFF_CODES = new Set([
 // interface diziam coisas diferentes sobre o mesmo dia, e o preview contava as
 // folgas pedidas na coluna errada.
 const RECOVERY_REST_CODES = new Set([
+  'DESCANSO_BASE_CONTINUIDADE',
   'REST',
   'REPOUSO',
   'DESCANSO',
@@ -375,11 +376,22 @@ export function classifyScheduleActivity(
 ): ScheduleActivityCategory {
   if (!activity || activity.placeholder) return 'DESCONHECIDA';
 
+  const careState = careStateForScheduleActivity(activity);
+  if (careState === 'LUTO' || careState === 'FERIAS' || careState === 'FOLGA') return 'FOLGA';
+  if (careState === 'REPOUSO') return 'REPOUSO';
+
   // Código formal publicado decide primeiro, e folga vence repouso quando os dois
   // aparecem no mesmo nível formal: DO/DOF/FOLGA/DRC são folga ainda que o rótulo
   // ou o pairingCode digam "Descanso".
   if (hasFormalCode(activity, DAY_OFF_CODES)) return 'FOLGA';
   if (hasFormalCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
+
+  // Formal operational identity cannot be erased by a residual care label.
+  const formalKind = normalize(activity.canonical?.kind || activity.kind);
+  if (formalCodeValues(activity).length > 0
+    && ['FLIGHT', 'DUTY', 'RESERVE', 'STANDBY', 'ACTIVITY', 'GROUND'].includes(formalKind)) {
+    return 'PROGRAMACAO';
+  }
 
   // Sem código formal conclusivo, rótulo e pairingCode entram como fallback.
   if (hasCode(activity, RECOVERY_REST_CODES)) return 'REPOUSO';
