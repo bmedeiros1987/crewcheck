@@ -4,7 +4,7 @@ import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';im
 import {loadClientModules} from './lib/ts-module-harness.mjs';
 
 // Real selectors/store, synthetic accounts and memory only. No account migration.
-const modules=loadClientModules({files:['personalAllowanceReference','financialStatementLearning','ownerPerDiemReview','financialAmounts','financialSettingStore','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialForecastPeriods','rosterDayAllowanceSummary','rosterDisplayDate','financialPrivacyPreference','scheduleActivityClassification'].map(name=>'client/src/lib/'+name+'.ts')});
+const modules=loadClientModules({files:['personalAllowanceReference','financialStatementLearning','ownerPerDiemReview','financialAmounts','financialSettingStore','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialForecastPeriods','rosterDayAllowanceSummary','rosterDisplayDate','financialPrivacyPreference','scheduleActivityClassification','rosterPresentation'].map(name=>'client/src/lib/'+name+'.ts')});
 const previous={localStorage:globalThis.localStorage,window:globalThis.window},navigatorDescriptor=Object.getOwnPropertyDescriptor(globalThis,'navigator');
 const memory=new Map(),queues=new Map();let beforeLock=()=>{},writes=0;
 globalThis.localStorage={getItem:key=>memory.get(key)??null,setItem:(key,value)=>{writes++;memory.set(key,String(value));}};
@@ -107,6 +107,8 @@ try{
   '../alerts/AlertRosterNavigation':{AlertRosterNavigation:decoration},
   '@/components/v139/Shell':{V139Header:decoration},
   './AimsDocumentView':{AimsDocumentView:decoration},'./AimsRosterTable':{AimsRosterTable:decoration},'./CalendarRosterView':{CalendarRosterView:decoration},
+  // The legend/filter is a transient view selection covered by its own suite; keep every card visible here.
+  './RosterLegend':{RosterLegend:decoration,RosterActivityIcon:decoration,useRosterCategoryFilter:()=>({filter:'all',choose(){},reset(){},signature:''})},
  };
  const uiRequire=id=>{
   if(id==='react')return reactFixture;
