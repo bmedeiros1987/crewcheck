@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
 import {loadClientModules} from './lib/ts-module-harness.mjs';
@@ -37,6 +38,7 @@ try{
  const context=vm.createContext({...learning,...settings,localStorage,...Object.assign({},...['financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialForecastPeriods'].map(name=>modules.load(name))),readAccountNotificationSetting:key=>key==='crewcheck_perdiem_rate_domestic'?syntheticManualMeal:undefined,
  resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic',version:'test',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic',currency:'BRL',mainMeal:100}]}),loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:()=>({rateKey:'domestic',airport:'TEST',reason:'synthetic'}),isOperationalEvent:()=>true,financialEventCode:e=>e.day.type,eventStartDateTime:e=>new Date(e.start),eventEndDateTime:e=>new Date(e.end),dateChip:d=>d.toISOString().slice(0,10)});
  vm.runInContext(ts.transpileModule(storageNode.getText(ast)+'\n'+functions.map(node=>node.getText(ast)).join('\n')+'\nglobalThis.calculate=calculatePerDiem;globalThis.config=perDiemConfig;',{compilerOptions:{target:99}}).outputText,context);
+ installAllowanceDependencies(context);
  const event=(clock='04:10',origin='TEST',published=true)=>({id:'synthetic-reserve',kind:'duty',origin,destination:origin,start:'2032-10-05T'+clock+':00-03:00',end:'2032-10-05T12:30:00-03:00',day:{type:'ASB',dutyReport:clock,dutyDebrief:'12:30',dutyReportSource:published?'published':'estimated',dutyDebriefSource:'published'}});
  const roster={year:2032,month:10,base:'TEST'},run=events=>context.calculate(events,roster,new Date('2032-10-05T15:00:00Z')),taxi=result=>result.rows.find(row=>row.label==='Táxi');
  syntheticManualMeal='100';const inObservedPeriod=context.config(roster,'2032-09-05');assert.equal(inObservedPeriod.rates.domestic.mainMeal,180,'confirmed printed owner reference must precede old unversioned manual fallback');assert.equal(inObservedPeriod.domesticMainMealSource,'learned');const beforeObserved=context.config(roster,'2032-08-31');assert.equal(beforeObserved.rates.domestic.mainMeal,100,'outside observed period without recurring confirmation the existing fallback remains');syntheticManualMeal=undefined;

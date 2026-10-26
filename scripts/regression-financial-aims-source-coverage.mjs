@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import fs from 'node:fs';import path from 'node:path';import vm from 'node:vm';import assert from 'node:assert/strict';import crypto from 'node:crypto';import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';
 const root=path.resolve(process.env.FINANCIAL_SOURCE_ROOT || '.');const require=createRequire(path.join(root,'package.json'));const ts=require('typescript'),React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
 const {loadClientModules,TYPE_ONLY_PDF_PARSER_STUB}=await import(pathToFileURL(root+'/scripts/lib/ts-module-harness.mjs'));
@@ -16,6 +17,7 @@ perDiemConfig:()=>rateConfig,loadAirportPerDiemOverrides:()=>({}),resolvePerDiem
 useFinancialPrivacy:()=>({hidden:false,text:v=>v,amount:v=>v}),FinancialPrivacyToggle:()=>null,PersonalAllowanceReference:()=>null,FinancialStatementImporter:()=>null,FinancialScreen:p=>p.children,Brand:()=>null,KpiCard:p=>React.createElement('article',null,p.title,': ',p.value,' — ',p.detail),BriefcaseBusiness:()=>null,CalendarDays:()=>null,Plane:()=>null,DollarSign:()=>null,MoneyText:p=>React.createElement('span',null,p.value),
 });
 vm.runInContext(ts.transpileModule([...vars,...functions].map(n=>n.getText(ast).replace(/^export default /,'').replace(/^export /,'')).join('\n')+'\nglobalThis.subject={buildLegs,calculatePerDiem,financeSnapshot,scopedFinancialForecast,PerDiemMonthView};',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,context);
+  installAllowanceDependencies(context,{stubConfig:true});
 // All dates, routes and amounts below are fictional test fixtures, not tariffs.
 const good='ASB BSB 05:30 BSB 08:40';
 const bad=good+' 09:40 LA 4101 09:39 BSB';
