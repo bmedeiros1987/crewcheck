@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -74,7 +74,9 @@ export function CrewCheckPulse({ compact = false, brandMark = false, fallback = 
   const { message, leaving, queued } = state;
   const messageKey = String(message?.dedupeKey || message?.id || message?.title || '');
 
-  useEffect(() => setExpanded(false), [messageKey]);
+  // Layout effect: a passive one could run after a tap in the new message's first
+  // frame and collapse what the user just opened.
+  useLayoutEffect(() => setExpanded(false), [messageKey]);
 
   const dismiss = useCallback(() => {
     if (compact && compactRef.current?.contains(document.activeElement)) {

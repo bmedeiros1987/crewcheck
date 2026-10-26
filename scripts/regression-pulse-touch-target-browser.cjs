@@ -498,6 +498,28 @@ async function main() {
           await page.locator('.cc-pulse-compact').waitFor({ state: 'detached' });
           assert.equal(await page.evaluate(() => window.pulseFixture.returnedExactly()), true, 'Dismiss returns to the exact reachable control selected before removal');
           assert.equal((await page.evaluate(() => window.pulseFixture.reviews())).length, 1);
+          // A tap in the first frame of a newly mounted message must open it: the
+          // per-message collapse cannot run after (and undo) the user's toggle. A slow
+          // device (WebKit CI) lets the tap in before React's deferred effects; the
+          // clock skew makes React's scheduler yield right after that commit.
+          result.firstFrameTap = await page.evaluate(() => new Promise(resolve => {
+            let skew = 0;
+            performance.now = () => { if (!skew && document.querySelector('.cc-pulse-compact-details-trigger')) skew = 1000; return Performance.prototype.now.call(performance) + skew; };
+            const finish = value => { observer.disconnect(); delete performance.now; resolve(value); };
+            const observer = new MutationObserver(() => {
+              const trigger = document.querySelector('.cc-pulse-compact-details-trigger');
+              if (!trigger) return;
+              observer.disconnect(); trigger.click();
+              setTimeout(() => finish(document.querySelector('.cc-pulse-compact')?.dataset.expanded ?? null), 100);
+            });
+            observer.observe(document.body, { subtree: true, childList: true });
+            setTimeout(() => finish('not-mounted'), 2000);
+            window.pulseFixture.publish();
+          }));
+          assert.equal(result.firstFrameTap, 'true', 'A tap in the first frame of a new message opens its details');
+          // Leave scroll and focus as the native flow below expects them.
+          await page.evaluate(() => document.querySelector('.cc-pulse-popover .cc-pulse-dismiss').click());
+          await page.locator('.cc-pulse-compact').waitFor({ state: 'detached' });
           assert.equal(await page.evaluate(() => window.pulseFixture.publish('nondismissible')), true);
           await page.locator(selectors.trigger).focus(); await page.keyboard.press('Enter');
           result.nonDismissible = await freezeSample(page.locator(selectors.collapse), name, 'original-native-nondismissible/collapse', samples);
