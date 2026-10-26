@@ -22,6 +22,14 @@ O caminho ativo (`scheduleNotification(title, body, epoch)`) só agenda: não ca
 - `client/src/lib/localAlarms.ts`: revalida cada resposta. Só conta como armado o que o aparelho confirmar exatamente: mesmos ids, horários e canais.
 - `InflightRestAlarmView.tsx`: tela para dividir o descanso e programar ou cancelar os alarmes. Renderiza `null` enquanto o recurso estiver OFF.
 
+## Avisos de vencimento (CrewLocker)
+
+- `client/src/lib/crewlockerValidityAlarms.ts` transforma os marcos já configurados em cada documento (`alertDays`, padrão 90/60/30/7/0) em alarmes locais às 09:00 do aparelho, no máximo um por dia civil, no grupo `validity:crewlocker`.
+- As regras de quais validades contam são as mesmas dos avisos dentro do app: registro atual, confirmado, sem fonte ou assinatura inválida e com data. Validade só com mês e ano usa o primeiro dia do mês, como planejamento conservador.
+- O texto é genérico, como em `prepareValidityExternalNotice`: nenhum nome, classe, data ou identificador do documento sai do cofre.
+- O agendador nativo guarda até 16 jobs por grupo, então ficam programados os 16 dias mais próximos. A janela avança a cada atualização com o cofre desbloqueado. Com o cofre bloqueado nada é alterado, porque bloqueado não significa sem validades.
+- Desligado: `VALIDITY_ALARMS_ENABLED = false`. A única chamada fica no `refresh` do CrewLockerView, depois da leitura com o cofre desbloqueado.
+
 ## Limites conhecidos
 
 - **Reinício:** nada é restaurado após reiniciar o aparelho, porque não há dono verificado no boot (mesma regra do `NotificationLedger`). A tela mostra o que ainda está armado e pede para reprogramar.
