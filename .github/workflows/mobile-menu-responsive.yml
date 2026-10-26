@@ -19,6 +19,7 @@ on:
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
       - 'client/src/components/v1391/home-roster-preview.css'
       - 'scripts/regression-fixed-navigation-headers.cjs'
+      - 'scripts/lib/pulse-touch-target-sample.cjs'
       - 'scripts/regression-pulse-content-space.cjs'
       - 'scripts/fixed-navigation-headers.mjs'
       - 'scripts/menu-content-density.mjs'

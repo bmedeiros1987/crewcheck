@@ -112,4 +112,36 @@ assert(css.includes('.cc-pulse-collapse {display:inline-grid!important;place-ite
 assert(css.includes('animation:cc-pulse-soft-beat 2.4s ease-in-out 2 both'));
 assert(css.includes('@media(prefers-reduced-motion:reduce)'));
 checks += 6;
+assert(css.includes('.cc-pulse-popover .cc-pulse-controls {grid-template-columns:48px!important;grid-auto-rows:minmax(48px,auto)!important;gap:8px!important;align-self:start!important}'));
+assert(css.includes('.cc-pulse-controls>:is(.cc-pulse-collapse,.cc-pulse-dismiss) {box-sizing:border-box!important;width:48px!important;min-width:48px!important;height:48px!important;min-height:48px!important}'));
+assert(css.includes('.cc-pulse-controls>.cc-pulse-dismiss::after {content:none!important;display:none!important}'));
+assert(css.includes('from {opacity:0;transform:translateY(2px)}'), 'Touch size does not suppress the entrance animation');
+checks += 4;
+
+// Same browser callback and strict predicate as both actual browser harnesses.
+// Synthetic geometry checks the oracle only, never claims real browser sizing.
+const samplerScope = { module: { exports: {} }, getComputedStyle: element => ({ visibility: element.visibility }) };
+vm.runInNewContext(fs.readFileSync('scripts/lib/pulse-touch-target-sample.cjs', 'utf8'), samplerScope);
+const { samplePulseTouchTarget, meetsPulseTouchMinimum } = samplerScope.module.exports;
+for (const [name, override, expected] of [
+  ['44 boundary', {}, true], ['48 product intent', { width: 48, height: 48 }, true],
+  ['recorded strict undersize', { height: 43.99999237060547 }, false],
+  ['real small', { height: 43 }, false], ['scaled', { width: 24, height: 24 }, false],
+  ['boxless', { boxes: 0 }, false], ['detached', { connected: false }, false],
+  ['CSS hidden', { visibility: 'hidden' }, false], ['CSS collapsed', { visibility: 'collapse' }, false],
+  ['semantic ancestor', { semanticHidden: true }, false], ['invalid width', { width: NaN }, false],
+]) {
+  const value = { x: 3.25, y: -97.33495330810547, width: 44, height: 44, connected: true, boxes: 1, visibility: 'visible', semanticHidden: false, ...override };
+  let reads = 0;
+  const element = { visibility: value.visibility, isConnected: value.connected,
+    getBoundingClientRect: () => { reads++; return value; },
+    getClientRects: () => Array(value.boxes).fill({}),
+    closest: selector => { assert.equal(selector, '[hidden], [inert], [aria-hidden="true"]'); return value.semanticHidden ? {} : null; },
+  };
+  const sample = samplePulseTouchTarget(element), originalPass = meetsPulseTouchMinimum(sample);
+  assert.equal(originalPass, expected, name); assert.equal(reads, 1, 'one atomic rectangle');
+  value.width = value.height = 48;
+  assert.equal(meetsPulseTouchMinimum(sample), expected, 'later geometry cannot replace the original sample');
+  checks += 3;
+}
 console.log(`PASS ${checks} offline Pulse navigation/generator contracts; no real layout, provider or notification executed`);
