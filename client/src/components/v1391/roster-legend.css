@@ -24,6 +24,10 @@ html body #root .cz-app[data-version] .cc-home-roster .cc-roster-filter-options 
 html body #root .cz-app[data-version] .cc-home-roster .cc-roster-filter-options button:focus-visible { outline:3px solid #3b82f6!important; outline-offset:3px!important; }
 .cc-roster-card-heading { display:flex; align-items:center; gap:6px; }
 .cc-roster-card-heading>svg { width:18px; height:18px; flex-shrink:0; color:var(--cc-roster-accent); }
+/* Theme resets such as html[data-crew-theme="dark"] .cz-app * { color:inherit } (0,2,1)
+   otherwise win over the category accent and turn every pictogram into text color. */
+html .cz-app .cc-roster-filter-options button svg { color:var(--cc-roster-accent,currentColor); }
+html .cz-app .cc-roster-card-heading>svg { color:var(--cc-roster-accent); }
 .cc-roster-clock-bound { display:block; }
 .cc-roster-filter-empty { padding:12px; line-height:1.5; }
 .cz-app[data-version] .cc-roster-token.cc-roster-program-v1397 { --program-accent:var(--cc-roster-accent); --program-rgb:var(--cc-roster-rgb); }

@@ -71,7 +71,7 @@ try {
                 await page.locator('select[aria-label="Abrir programação publicada"]').selectOption(String(records.indexOf(r)));
                 await page.waitForFunction(() => document.querySelector('.cc-doc-detail') === document.activeElement);
                 assert.equal(await page.locator(`.cc-doc-detail [data-roster-event-id="${r.event.id}"] button strong`).innerText(), display);
-                const fields=await page.locator(`.cc-doc-detail [data-roster-event-id="${r.event.id}"] .cc-aims-published-fields`).evaluate(el=>Object.fromEntries([...el.children].map(div=>[div.querySelector('dt').textContent,div.querySelector('dd').textContent])));
+                const fields=await page.locator(`.cc-doc-detail [data-roster-event-id="${r.event.id}"] > .cc-aims-published-fields`).evaluate(el=>Object.fromEntries([...el.children].map(div=>[div.querySelector('dt').textContent,div.querySelector('dd').textContent])));
                 assert.equal(fields['Partida / início'],r.event.day.dutyReport==='00:00'?'—':r.event.day.dutyReport);
                 assert.equal(fields['Chegada / fim'],r.event.day.dutyDebrief==='23:59'?'—':r.event.day.dutyDebrief);
                 assert.equal(fields.Local,r.event.origin);assert.equal(fields.Apresentação,undefined);
