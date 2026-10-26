@@ -68,7 +68,9 @@ export type RadarGateSnapshot = {
 
 export type OperationalFieldEvidence = { version: 1; value: string; sourceObservedAt: string; provenance: string; conflict?: boolean };
 export type ManualOperationalField = { value: string; author: string; setAtEpochMs: number };
-type ManualOperationalGate = ManualOperationalField & {terminal?:string;sourceReview?:ManualGateSourceReview};
+export type BoardingType = 'unknown' | 'remote' | 'finger';
+export type ManualBoardingType = ManualOperationalField & { value: Exclude<BoardingType, 'unknown'>; gate: string; gateSetAtEpochMs: number };
+type ManualOperationalGate = ManualOperationalField & {terminal?:string;sourceReview?:ManualGateSourceReview;boardingType?:ManualBoardingType};
 type ManualOperationalEntry = { legacyGateDismissed?:true; gate?:ManualOperationalGate; owner: string; flight: string; date: string; origin: string; destination: string; scheduledDepartureUtc: string; status?: ManualOperationalField; registration?: ManualOperationalField };
 
 export type GateUpdateWatermark = { sourceUpdatedAtEpochMs: number; gate: string; conflicted: boolean };
@@ -108,6 +110,7 @@ export type ManualGateEntry = {
   operationalStatus?: ManualOperationalField;
   operationalRegistration?: ManualOperationalField;
   operationalScheduledDepartureUtc?: string;
+  boardingType?: ManualBoardingType;
 };
 
 export type ManualGateReviewInfo = {
@@ -128,6 +131,9 @@ export type NextFlightGateInfo = {
   departure: string;
   gate: string;
   remote: boolean;
+  /** Phone/web manual declaration only; never changes the legacy Wear remote boolean. */
+  boardingType: BoardingType;
+  manualBoardingType: ManualBoardingType | null;
   gateSource: GateSource | null;
   terminal: string;
   status: string;
@@ -253,7 +259,7 @@ export function readManualGate(storage: StorageLike, account: string, event: Nex
     setAtEpochMs: 0, author: '',
   };
   // Never adopt optional status/registration fields from a legacy v1 record.
-  return { ...base, operationalStatus: fields?.status, operationalRegistration: fields?.registration, operationalScheduledDepartureUtc: fields?.scheduledDepartureUtc };
+  return { ...base, boardingType: fields?.gate?.boardingType, operationalStatus: fields?.status, operationalRegistration: fields?.registration, operationalScheduledDepartureUtc: fields?.scheduledDepartureUtc };
 }
 
 function operationalIdentity(event: NextFlightLike): string {
@@ -273,13 +279,27 @@ function validManualField(field: ManualOperationalField | undefined, normalizer:
     && typeof field.author === 'string' && Boolean(field.author.trim()) && field.author.length <= 60
     && typeof field.setAtEpochMs === 'number' && Number.isFinite(field.setAtEpochMs) && field.setAtEpochMs > 0 ? field : undefined;
 }
+/** Only a declaration saved with this exact gate revision is meaningful. Missing
+ * metadata (including legacy records) is unknown, never an airport inference. */
+function validManualBoardingType(field: ManualBoardingType | undefined, gate: string, gateSetAtEpochMs: number): ManualBoardingType | undefined {
+  if (!field || !['remote', 'finger'].includes(field.value) || field.gate !== gate
+    || field.gateSetAtEpochMs !== gateSetAtEpochMs || field.setAtEpochMs !== gateSetAtEpochMs
+    || !validManualField(field, value => value === 'remote' || value === 'finger' ? value : '')
+    || (field.value === 'finger' && normalizeBoardingGate(gate).remote)) return undefined;
+  return { value: field.value, gate: field.gate, gateSetAtEpochMs: field.gateSetAtEpochMs, author: field.author, setAtEpochMs: field.setAtEpochMs };
+}
+
+export function boardingTypeLabel(value: BoardingType): string {
+  return value === 'remote' ? 'Remota' : value === 'finger' ? 'Finger' : 'Não confirmado';
+}
+
 function readManualOperational(storage: StorageLike, account: string, event: NextFlightLike): ManualOperationalEntry | null {
   if (!account || account === 'local') return null;
   const identity = operationalIdentity(event), entry = operationalMap(storage, account)[identity];
   if (!identity || !entry || entry.owner !== account || ![entry.flight,entry.date,entry.origin,entry.destination,entry.scheduledDepartureUtc].every(value=>typeof value==='string')
     || [entry.flight,entry.date,entry.origin,entry.destination,entry.scheduledDepartureUtc].join('|') !== identity) return null;
   const status = validManualField(entry.status, cleanStatus), registration = validManualField(entry.registration, cleanRegistration);
-  const gate = validManualField(entry.gate,value=>normalizeBoardingGate(value).gate) ? entry.gate : undefined;
+  const gate = validManualField(entry.gate,value=>normalizeBoardingGate(value).gate) ? { ...entry.gate!, boardingType: validManualBoardingType(entry.gate?.boardingType, entry.gate!.value, entry.gate!.setAtEpochMs) } : undefined;
   return gate || status || registration || entry.legacyGateDismissed===true ? { ...entry, gate, status, registration, ...(entry.legacyGateDismissed===true?{legacyGateDismissed:true}:{}) } : null;
 }
 
@@ -313,11 +333,17 @@ export function writeManualGate(
   storage: StorageLike,
   account: string,
   event: NextFlightLike,
-  input: { gate: string; terminal?: string; author: string },
+  input: { gate: string; terminal?: string; author: string; boardingType?: BoardingType; expectedManualRevision?: string },
   now = Date.now(),
 ): ManualGateWriteResult {
   const identity = operationalIdentity(event);
   if (!identity || !account || account === 'local' || event.kind !== 'flight' || event.placeholder || !Number.isFinite(now) || now <= 0) return {ok:false,message:'Conta e ocorrência publicada precisam estar confirmadas.'};
+  const typed = Object.prototype.hasOwnProperty.call(input, 'boardingType');
+  // One local record/write for gate + type. A stale rendered editor must not
+  // overwrite a newer gate or review; no asynchronous work occurs after this check.
+  if ((typed || input.expectedManualRevision !== undefined) && (typeof input.expectedManualRevision !== 'string'
+    || manualGateRevision(readManualGate(storage,account,event),account,event) !== input.expectedManualRevision)) return {ok:false,message:'Os dados mudaram. Reveja o portão antes de salvar.'};
+  if (typed && !['unknown','remote','finger'].includes(input.boardingType!)) return {ok:false,message:'Tipo de embarque inválido.'};
   const map=operationalMap(storage,account),previous=readManualOperational(storage,account,event);
   const [flight,date,origin,destination,scheduledDepartureUtc]=identity.split('|');
   const entry:ManualOperationalEntry={owner:account,flight,date,origin,destination,scheduledDepartureUtc,...(previous?.legacyGateDismissed?{legacyGateDismissed:true}:{}),...(previous?.gate?{gate:previous.gate}:{}),...(previous?.status?{status:previous.status}:{}),...(previous?.registration?{registration:previous.registration}:{})};
@@ -326,10 +352,14 @@ export function writeManualGate(
     const normalized=normalizeBoardingGate(input.gate);
     if (normalized.position) return {ok:false,message:'Informe o portão de embarque, não a posição da aeronave.'};
     if (!normalized.gate) return {ok:false,message:'Portão inválido. Use até 12 caracteres, por exemplo 24 ou 7A.'};
+    if (input.boardingType === 'finger' && normalized.remote) return {ok:false,message:'O portão contém indicação de remota. Corrija o portão antes de selecionar Finger.'};
     delete entry.legacyGateDismissed;
-    entry.gate={value:normalized.gate,terminal:cleanTerminal(input.terminal),author:text(input.author).slice(0,60)||'Você',setAtEpochMs:now};
+    const author=text(input.author).slice(0,60)||'Você';
+    entry.gate={value:normalized.gate,terminal:cleanTerminal(input.terminal),author,setAtEpochMs:now};
+    if (input.boardingType === 'remote' || input.boardingType === 'finger') entry.gate.boardingType={value:input.boardingType,gate:normalized.gate,gateSetAtEpochMs:now,author,setAtEpochMs:now};
   }
   if(entry.gate||entry.status||entry.registration||entry.legacyGateDismissed)map[identity]=entry;else delete map[identity];
+  if ((typed || input.expectedManualRevision !== undefined) && manualGateRevision(readManualGate(storage,account,event),account,event) !== input.expectedManualRevision) return {ok:false,message:'Os dados mudaram. Reveja o portão antes de salvar.'};
   try{storage.setItem(MANUAL_OPERATIONAL_PREFIX+account,JSON.stringify(map));}catch{return {ok:false,message:'Não foi possível salvar neste dispositivo.'};}
   return {ok:true,entry:entry.gate?readManualGate(storage,account,event):null};
 }
@@ -417,8 +447,13 @@ function manualGateReview(event: NextFlightLike, radar: RadarGateSnapshot | null
 }
 
 /** Compare-and-review token, scoped by the caller to its account and occurrence. */
-export function manualGateRevision(entry: ManualGateEntry | null, account: string): string {
-  return entry ? JSON.stringify([account, entry.gate, entry.terminal || '', entry.setAtEpochMs, entry.sourceReview || null, entry.scheduledDepartureUtc || '']) : '';
+export function manualGateRevision(entry: ManualGateEntry | null, account: string, event?: NextFlightLike): string {
+  const parts: unknown[] | null = entry ? [account, entry.gate, entry.terminal || '', entry.setAtEpochMs, entry.sourceReview || null, entry.scheduledDepartureUtc || ''] : null;
+  // Preserve existing untyped notice/review revisions byte-for-byte on upgrade.
+  if (parts && entry?.boardingType) parts.push(entry.boardingType);
+  const revision = parts ? JSON.stringify(parts) : '';
+  // Editor writes additionally bind even an empty record to its exact occurrence.
+  return event ? JSON.stringify(['manual-gate-editor:v1',account,operationalIdentity(event),revision]) : revision;
 }
 
 export type ManualGateReviewWriteResult = { ok: true; entry: ManualGateEntry } | { ok: false; message: string };
@@ -446,7 +481,7 @@ export function writeManualGateReview(storage: StorageLike, account: string, eve
   // validated gate fields; legacy status/registration and v1 bytes stay untouched.
   const priorGate=entry.gate||{value:current.gate,terminal:cleanTerminal(current.terminal),author:current.author,setAtEpochMs:current.setAtEpochMs};
   const gate:ManualOperationalGate={...priorGate,sourceReview:{action:input.action,decidedAtEpochMs:now,fingerprint:candidate.fingerprint,sourceGate:candidate.gate,sourceUpdatedAtEpochMs:candidate.sourceUpdatedAtEpochMs,provider:candidate.provider}};
-  if(input.action==='accept'){gate.value=candidate.gate;gate.author=text(input.author).slice(0,60)||'Você';gate.setAtEpochMs=now;}
+  if(input.action==='accept'){delete gate.boardingType;gate.value=candidate.gate;gate.author=text(input.author).slice(0,60)||'Você';gate.setAtEpochMs=now;}
   map[identity]={owner:account,flight:entry.flight,date:entry.date,origin:entry.origin,destination:entry.destination,scheduledDepartureUtc:entry.scheduledDepartureUtc,gate,
     ...(entry.legacyGateDismissed?{legacyGateDismissed:true}:{}),...(entry.status?{status:entry.status}:{}),...(entry.registration?{registration:entry.registration}:{})};
   try{storage.setItem(MANUAL_OPERATIONAL_PREFIX+account,JSON.stringify(map));}catch{return {ok:false,message:'Não foi possível salvar a escolha neste dispositivo.'};}
@@ -578,6 +613,10 @@ export function resolveNextFlightGate(input: {
   if (manualRegistration && radarRegistration && manualRegistration.value !== radarRegistration) conflicts.registration = true;
   if (divergence) conflicts.gate = true;
 
+  const declaredType = linkedManualGate && manual ? validManualBoardingType(manual.boardingType,manual.gate,manual.setAtEpochMs) : undefined;
+  // Manual declarations retain the existing manual-input lifecycle. This is
+  // provenance, not a fresh provider observation or an airport-wide mapping.
+  const manualBoardingType = declaredType && declaredType.setAtEpochMs <= now ? declaredType : null;
   const updatedAtEpochMs = gateSource === 'manual' ? manual!.setAtEpochMs : radarUpdatedAt;
   const stale = (gateSource === 'radar' || Boolean(radarStatus)) && radarStale;
 
@@ -592,6 +631,8 @@ export function resolveNextFlightGate(input: {
     departure: clockOnly(event.departure),
     gate,
     remote,
+    boardingType: manualBoardingType?.value || 'unknown',
+    manualBoardingType,
     gateSource,
     terminal,
     status: manualStatus?.value || radarStatus,
