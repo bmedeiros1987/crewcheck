@@ -12,6 +12,8 @@ on:
       - 'scripts/regression-operational-finance-clock.mjs'
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/personalAllowanceReference.ts'
+      - 'scripts/regression-personal-allowance-*.mjs'
       - 'client/src/lib/financialRules.ts'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-p1-demonstrated-per-diem-effective-period.mjs'

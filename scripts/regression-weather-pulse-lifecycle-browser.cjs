@@ -10,6 +10,24 @@ const { build } = require('esbuild');
 // Actual prepared Home weather hooks, ownership/controller/notice modules, Pulse,
 // header/footer and shipping CSS. All flight/account/provider data are synthetic.
 // --bundle-only performs no browser launch and is not browser acceptance.
+async function readingScaleProof(page, phase) {
+  return page.evaluate(phase => {
+    const root = document.documentElement, font = element => element ? parseFloat(getComputedStyle(element).fontSize) : null;
+    return { phase, rootFontPx: font(root), textScale: Number(getComputedStyle(root).getPropertyValue('--cc-text-scale')),
+      declaredTextSize: root.dataset.crewTextSize, triggerFontPx: font(document.querySelector('.cc-pulse-compact-details-trigger strong')),
+      detailFontPx: [...document.querySelectorAll('.cc-pulse-popover strong,.cc-pulse-popover small')].map(font) };
+  }, phase);
+}
+function assertReadingScale(proof, expected, requirePulse = false, requireDetails = false) {
+  assert.equal(proof.textScale, expected, 'Use the actual application text-scale custom property');
+  assert.equal(proof.declaredTextSize, String(expected * 100));
+  assert.ok(Number.isFinite(proof.rootFontPx) && proof.rootFontPx > 0);
+  if (requirePulse) assert.equal(proof.triggerFontPx, proof.rootFontPx * expected, 'Rendered Pulse title must have the requested computed size');
+  if (requireDetails) {
+    assert.ok(proof.detailFontPx.length >= 2, 'Require actual title and observation text');
+    for (const size of proof.detailFontPx) assert.equal(size, proof.rootFontPx * expected, 'Rendered weather details must have the requested computed size');
+  }
+}
 const bundleOnly = process.argv.includes('--bundle-only');
 assert.ok(process.argv.slice(2).every(arg => arg === '--bundle-only'));
 const output = path.resolve(process.env.WEATHER_PULSE_ARTIFACTS || 'artifacts/weather-pulse-lifecycle');
@@ -135,7 +153,7 @@ fs.writeFileSync(path.join(output, 'synthetic-entry.tsx'), entry);
       for (const viewport of viewports) for (const scenario of ['recent', 'future', 'overnight', 'source-race', 'account-race', 'source-before-props']) {
         const name = `${engine}-${viewport.width}-${viewport.theme}-${viewport.scale * 100}-${scenario}`;
         const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, colorScheme: viewport.theme, reducedMotion: viewport.motion, timezoneId: 'America/Sao_Paulo', isMobile: viewport.width <= 430, hasTouch: viewport.width <= 768, serviceWorkers: 'block' });
-        const page = await context.newPage(), errors = [], forbidden = [], requests = [], held = [], publicFontRequests = [], declaredFontUrls = new Set();
+        const page = await context.newPage(), errors = [], forbidden = [], requests = [], held = [], publicFontRequests = [], declaredFontUrls = new Set(), readingProofs = [];
         let logicalNow = scenario === 'overnight' ? Date.parse('2032-02-03T03:30:00Z') : NOW;
         await page.addInitScript(({ now, theme, scale }) => {
           window.weatherNow = now; const NativeDate = Date;
@@ -150,7 +168,7 @@ fs.writeFileSync(path.join(output, 'synthetic-entry.tsx'), entry);
           const digest = value => { const text = JSON.stringify(value); let a = 2166136261, b = 3335557771; for (let i = 0; i < text.length; i++) { a = Math.imul(a ^ text.charCodeAt(i), 16777619); b = Math.imul(b ^ text.charCodeAt(i), 2246822519); } return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0'); };
           localStorage.setItem('crewcheck:notification-preferences:v1:synthetic-weather-owner', JSON.stringify({ ownerId: 'synthetic-weather-owner', revision: 1, preferences: { settings: { crewcheck_pulse_enabled: true } } }));
           window.weatherFixtureOwner = digest(['account', 'synthetic-weather-owner']);
-          document.addEventListener('DOMContentLoaded', () => { document.documentElement.style.fontSize = `${16 * scale}px`; document.documentElement.classList.toggle('dark', theme === 'dark'); document.documentElement.dataset.crewTheme = theme; });
+          document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.crewTextSize = String(scale * 100); document.documentElement.style.setProperty('--cc-text-scale', String(scale)); document.documentElement.classList.toggle('dark', theme === 'dark'); document.documentElement.dataset.crewTheme = theme; });
         }, { now: logicalNow, theme: viewport.theme, scale: viewport.scale });
         page.on('pageerror', error => errors.push(String(error)));
         const reply = () => {
@@ -201,6 +219,8 @@ fs.writeFileSync(path.join(output, 'synthetic-entry.tsx'), entry);
             await page.evaluate(() => window.weatherFixture.commitSource());
             await page.waitForFunction(() => window.weatherFixture.state().message?.category === 'weather');
             assert.equal(requests.length, 1); assert.deepEqual(requests[0].airports, ['SBPS']);
+            await page.locator('.cc-pulse-compact-details-trigger').waitFor({ state: 'visible' });
+            const proof = await readingScaleProof(page, 'source-props-committed'); readingProofs.push(proof); assertReadingScale(proof, viewport.scale, true);
           } else if (scenario.endsWith('-race')) {
             await page.waitForFunction(() => window.weatherFixture !== undefined);
             for (let i = 0; i < 100 && held.length === 0; i++) await page.waitForTimeout(10);
@@ -215,6 +235,7 @@ fs.writeFileSync(path.join(output, 'synthetic-entry.tsx'), entry);
             const trigger = page.locator('.cc-pulse-compact-details-trigger'); await trigger.focus(); await page.keyboard.press('Enter');
             await page.locator('.cc-pulse-popover').waitFor({ state: 'visible' });
             await page.evaluate(async () => { await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime) && animation.playState !== 'finished').map(animation => animation.finished.catch(() => {}))); });
+            const proof = await readingScaleProof(page, 'details-open'); readingProofs.push(proof); assertReadingScale(proof, viewport.scale, true, true);
             const message = await page.evaluate(() => window.weatherFixture.state().message);
             assert.equal(message.action.context.programId, 'qa-today'); assert.equal(message.action.context.airportCode, 'BPS');
             assert.match(message.detail, /rajadas 30 kt/);
@@ -241,9 +262,10 @@ fs.writeFileSync(path.join(output, 'synthetic-entry.tsx'), entry);
           await page.screenshot({ path: path.join(output, `${name}-final.png`), fullPage: true });
           const reducedMotion = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
           assert.equal(reducedMotion, viewport.motion === 'reduce');
-          results.push({ name, requests, reducedMotion, publicFontRequests, loadedFonts, passed: true }); console.log('PASS', name);
+          const proof = await readingScaleProof(page, 'final'); readingProofs.push(proof); assertReadingScale(proof, viewport.scale);
+          results.push({ name, requests, reducedMotion, publicFontRequests, loadedFonts, readingProofs, passed: true }); console.log('PASS', name);
         } catch (error) {
-          fs.writeFileSync(path.join(output, `${name}-failure.json`), JSON.stringify({ error: String(error), requests, forbidden, errors, state: await page.evaluate(() => window.weatherFixture?.state()).catch(() => null) }, null, 2));
+          fs.writeFileSync(path.join(output, `${name}-failure.json`), JSON.stringify({ error: String(error), requests, forbidden, errors, readingProofs, state: await page.evaluate(() => window.weatherFixture?.state()).catch(() => null) }, null, 2));
           await page.screenshot({ path: path.join(output, `${name}-failure.png`), fullPage: true }); throw error;
         } finally { await context.close(); }
       }

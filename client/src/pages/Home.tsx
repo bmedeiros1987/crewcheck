@@ -2368,6 +2368,7 @@ function notifyCrewCheck(title: string, body: string, displayDetail = body) {
 }
 function useWeatherLandingMonitor() {
   useEffect(() => {
+    // A localização é solicitada somente por ação explícita do usuário para evitar prompts e ciclos no iPad.
     // No proven cache writer/owner/source contract exists for this legacy feature.
     // Keep its setting, but never activate raw-cache alerts, polling or geolocation.
     const clear = () => reconcileCrewCheckPulse(WEATHER_LANDING_SCOPE, []);

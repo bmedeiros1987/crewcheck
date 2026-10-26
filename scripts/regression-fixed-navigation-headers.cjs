@@ -136,9 +136,14 @@ async function activePulseBrandContract(page,{width,size}) {
   const trigger=page.locator('.cc-pulse-compact-trigger');await trigger.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger')?.getAttribute('aria-expanded')==='true');
   const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});await dismiss.focus();
-  const target=await dismiss.boundingBox(),targetMeetsMinimum=target.width>=44&&target.height>=44;
+  // Read rendered dimensions atomically, without CDP border-quad subtraction.
+  // Keep the exact minimum; do not wait for a passing size or finish animation.
+  const target=await dismiss.evaluate(element=>{
+    const rect=element.getBoundingClientRect();
+    return{x:rect.x,y:rect.y,width:rect.width,height:rect.height,connected:element.isConnected,hasClientRects:element.getClientRects().length>0,visible:getComputedStyle(element).visibility==='visible',semanticHidden:Boolean(element.closest('[hidden], [inert], [aria-hidden="true"]'))};
+  }),targetMeetsMinimum=target.connected&&target.hasClientRects&&target.visible&&!target.semanticHidden&&target.width>=44&&target.height>=44;
   if(!targetMeetsMinimum){
-    const diagnostic={width,size,originalBoundingBox:target,originalMeetsMinimum:targetMeetsMinimum,afterSample:await captureDismissTargetGeometry(dismiss)};
+    const diagnostic={width,size,measurement:'atomic-domrect',originalBoundingBox:target,originalMeetsMinimum:targetMeetsMinimum,afterSample:await captureDismissTargetGeometry(dismiss)};
     fs.writeFileSync(path.join(output,`${width}-${size}-dismiss-target-failure.json`),JSON.stringify(diagnostic,null,2));
     await page.screenshot({path:path.join(output,`${width}-${size}-dismiss-target-failure.png`)});
   }
