@@ -12,6 +12,10 @@ on:
       - 'client/src/lib/localAlarms.ts'
       - 'client/src/lib/inflightRestAlarm.ts'
       - 'client/src/components/inflight-rest/**'
+      - 'client/src/lib/crewlockerValidity.ts'
+      - 'client/src/lib/crewlockerValidityAlarms.ts'
+      - 'client/src/components/v1435/CrewLockerView.tsx'
+      - 'scripts/regression-validity-local-alarms.mjs'
       - 'scripts/fixtures/LocalAlarmLedgerFixture.java'
       - 'scripts/regression-local-alarm-ledger.mjs'
       - 'scripts/regression-local-alarm-client.mjs'
@@ -38,6 +42,8 @@ jobs:
         run: node scripts/regression-local-alarm-ledger.mjs
       - name: Client bridge validation and OFF view
         run: node scripts/regression-local-alarm-client.mjs
+      - name: CrewLocker validity alarms
+        run: node scripts/regression-validity-local-alarms.mjs
       - name: Existing reminder fence and receiver
         run: |
           node scripts/regression-native-reminder-cancellation.mjs

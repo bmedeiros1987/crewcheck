@@ -5,6 +5,7 @@ import {CrewLocalPreview} from './CrewLocalPreview';
 import { requestBlobDownload } from '@/lib/blobDownload';
 import { CrewValidityEditor } from './CrewValidityEditor';
 import { DEFAULT_ALERT_DAYS, assessValidity, civilToday, legacyValidity, validityLabel, TEMPORAL_LABELS, dueValidityNotices } from '@/lib/crewlockerValidity';
+import { VALIDITY_ALARMS_ENABLED, syncValidityAlarms } from '@/lib/crewlockerValidityAlarms';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Eye, FileCheck2, FileLock2, KeyRound, Plane, Plus, RefreshCw, ShieldCheck, Trash2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
@@ -64,6 +65,8 @@ export default function CrewLockerView() {
     const latest = await listCrewDocuments();
     if (session !== crewLockerSession()) return;
     setDocuments(latest); setStorage(estimate); setToday(civilToday());
+    // OFF: alarms follow only a list read with the locker unlocked (locked is not "no validities").
+    if (VALIDITY_ALARMS_ENABLED) syncValidityAlarms(latest);
     if (newNotices) toast.info('Há prazos informados para revisar no CreWallet.');
   }
   useEffect(() => {
