@@ -83,7 +83,9 @@ concurrency:
 jobs:
   menu-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Passing runs already take ~19.5 min (fixed-navigation-headers alone ~6.5 min);
+    # a 20 min limit cancels green runs during the final steps or artifact upload.
+    timeout-minutes: 35
     steps:
       # PR checkout tests the merge result with the current main, not a stale base.
       - uses: actions/checkout@v6
