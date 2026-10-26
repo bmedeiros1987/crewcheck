@@ -22,6 +22,13 @@ O caminho ativo (`scheduleNotification(title, body, epoch)`) só agenda: não ca
 - `client/src/lib/localAlarms.ts`: revalida cada resposta. Só conta como armado o que o aparelho confirmar exatamente: mesmos ids, horários e canais.
 - `InflightRestAlarmView.tsx`: tela para dividir o descanso e programar ou cancelar os alarmes. Renderiza `null` enquanto o recurso estiver OFF.
 
+## Lembrete antes da apresentação
+
+- `shared/reportReminderPlan.mjs` calcula o instante da apresentação com a mesma regra do `eventClockDate` do Home: relógio civil da escala em UTC-03, e a apresentação de um voo marcada depois da partida pertence ao dia anterior. Um teste extrai a função do `Home.tsx` e compara as duas, para pegar qualquer divergência.
+- Vários trechos com a mesma apresentação viram um único conjunto de lembretes. Cada apresentação dos próximos 7 dias pode ter um aviso X minutos antes (30, 45, 60, 90, 120 ou 180) e/ou um na hora, no máximo 16 jobs, no grupo `report:next`.
+- O id do job inclui o instante da apresentação: se a escala mudar o horário, a substituição remove o aviso antigo. Um plano inválido nunca limpa os alarmes que já existem.
+- Desligado: `REPORT_REMINDERS_ENABLED = false` e nada importa `reportReminders.ts`. Ligar ao Home fica para a PR de ativação.
+
 ## Limites conhecidos
 
 - **Reinício:** nada é restaurado após reiniciar o aparelho, porque não há dono verificado no boot (mesma regra do `NotificationLedger`). A tela mostra o que ainda está armado e pede para reprogramar.
