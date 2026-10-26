@@ -196,16 +196,32 @@ async function layoutProof(page, oneRow = false) {
   return proof;
 }
 
+// The app sets a global smooth scroll-behavior, so returning focus to the trigger
+// can leave a smooth scroll running when the popover reopens. Position and measure
+// only while the page is not scrolling; this never waits for a passing geometry.
+// Polled from Node so a scenario with a controlled page clock cannot stall it.
+async function scrollSettled(page) {
+  let last = await page.evaluate(() => scrollY), stable = 0;
+  for (let read = 0; read < 100 && stable < 5; read += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const current = await page.evaluate(() => scrollY);
+    if (current === last) stable += 1; else { last = current; stable = 0; }
+  }
+  assert.ok(stable >= 5, 'Page scroll settles before reachability is measured');
+}
+
 async function reachableControl(page, selector, focus = true) {
   const locator = page.locator(selector);
   // This is a separate, explicit reachability operation AFTER size-only samples.
   // Deliberately offscreen originals are never rejected for viewport hit tests.
+  await scrollSettled(page);
   await locator.evaluate(element => {
     element.scrollIntoView({ block: 'center', behavior: 'instant' });
     const r = element.getBoundingClientRect(), footer = document.querySelector('body > nav.cz-bottom-nav').getBoundingClientRect();
     window.scrollBy({ top: (r.top + r.bottom) / 2 - footer.top / 2, behavior: 'instant' });
   });
   if (focus) await locator.focus();
+  await scrollSettled(page);
   const proof = await locator.evaluate(element => {
     const r = element.getBoundingClientRect(), footer = document.querySelector('body > nav.cz-bottom-nav').getBoundingClientRect(), style = getComputedStyle(element);
     const points = [[r.left + r.width / 2, r.top + r.height / 2], [r.left + 1, r.top + r.height / 2], [r.right - 1, r.top + r.height / 2], [r.left + r.width / 2, r.top + 1], [r.left + r.width / 2, r.bottom - 1]];
