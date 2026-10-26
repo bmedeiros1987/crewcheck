@@ -61,6 +61,12 @@ html body #root .cz-app[data-version]>.cz-global-header[data-header-navigation-s
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-collapse {display:inline-grid!important;place-items:center!important;padding:0!important;line-height:1!important}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-collapse>svg {display:block;flex:none;margin:0;transform:rotate(180deg)}
 
+/* Real, roomy touch targets in the expanded notice; never invisible extensions.
+   Keep the small pictograms centered and preserve the normal-flow text column. */
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover .cc-pulse-controls {grid-template-columns:48px!important;grid-auto-rows:minmax(48px,auto)!important;gap:8px!important;align-self:start!important}
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover .cc-pulse-controls>:is(.cc-pulse-collapse,.cc-pulse-dismiss) {box-sizing:border-box!important;width:48px!important;min-width:48px!important;height:48px!important;min-height:48px!important}
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover .cc-pulse-controls>.cc-pulse-dismiss::after {content:none!important;display:none!important}
+
 /* Two soft breaths per new notice, never a flashing or auto-rotating message. */
 .cc-pulse-brand-mark>i {animation:cc-pulse-soft-beat 2.4s ease-in-out 2 both}
 .cc-pulse-compact .cc-pulse-popover {animation:cc-pulse-detail-enter 160ms ease-out both}

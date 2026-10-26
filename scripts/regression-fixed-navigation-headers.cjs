@@ -1,5 +1,6 @@
 const { artifactEvidence } = require('./ui-artifact-evidence.cjs');
 const exactArtifact = artifactEvidence();
+const { samplePulseTouchTarget, meetsPulseTouchMinimum } = require('./lib/pulse-touch-target-sample.cjs');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http'), vm = require('node:vm');
 const { createRequire } = require('node:module');
 const ts = require('typescript');
@@ -136,9 +137,11 @@ async function activePulseBrandContract(page,{width,size}) {
   const trigger=page.locator('.cc-pulse-compact-trigger');await trigger.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger')?.getAttribute('aria-expanded')==='true');
   const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});await dismiss.focus();
-  const target=await dismiss.boundingBox(),targetMeetsMinimum=target.width>=44&&target.height>=44;
+  // Read rendered dimensions atomically, without CDP border-quad subtraction.
+  // Keep the exact minimum; do not wait for a passing size or finish animation.
+  const target=await dismiss.evaluate(samplePulseTouchTarget),targetMeetsMinimum=meetsPulseTouchMinimum(target);
   if(!targetMeetsMinimum){
-    const diagnostic={width,size,originalBoundingBox:target,originalMeetsMinimum:targetMeetsMinimum,afterSample:await captureDismissTargetGeometry(dismiss)};
+    const diagnostic={width,size,measurement:'atomic-domrect',originalBoundingBox:target,originalMeetsMinimum:targetMeetsMinimum,afterSample:await captureDismissTargetGeometry(dismiss)};
     fs.writeFileSync(path.join(output,`${width}-${size}-dismiss-target-failure.json`),JSON.stringify(diagnostic,null,2));
     await page.screenshot({path:path.join(output,`${width}-${size}-dismiss-target-failure.png`)});
   }
@@ -166,7 +169,7 @@ async function activePulseBrandContract(page,{width,size}) {
   assert.equal(dismissalReachable,true,'Exact navigation return target remains enabled, visible and uncovered');
   assert.equal(dismissalStillFocused,true,'Exact navigation return target is focused in the same current geometry snapshot');
   assert.ok(atAssertionFocus.expected.rect.width>=44&&atAssertionFocus.expected.rect.height>=44,'Focused navigation return target remains at least44px');
-  return geometry;
+  return { ...geometry, dismissTarget: target, dismissMeetsMinimum: targetMeetsMinimum };
 }
 async function recovered(page) {
   await page.waitForFunction(() => !document.body.classList.contains('crewcheck-menu-open') && !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden');
