@@ -33,7 +33,9 @@ try {
     return route.continue();
   });
   const page = await context.newPage();
-  await page.clock.install();
+  // The demo roster starts tomorrow and spans five days in the month of its first
+  // day; near month end its last day leaves the AIMS view. Pin a mid-month instant.
+  await page.clock.install({ time: new Date('2026-10-14T12:00:00-03:00') });
   await page.addInitScript(() => {
     localStorage.setItem('crewcheck_demo_mode_seen', '1');
     localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1');
