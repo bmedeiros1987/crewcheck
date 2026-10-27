@@ -284,7 +284,8 @@ async function providerAeroDataBox(ctx, timeoutMs) {
   }
   const row = selectAeroDataBoxOccurrence(payload, ctx.gateQueryEvidence);
   if (!row) {
-    markProvider('aerodatabox', false);
+    // A valid response without this exact occurrence is not a provider failure:
+    // backing off here would skip AeroDataBox for every other flight.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('aerodatabox', true);

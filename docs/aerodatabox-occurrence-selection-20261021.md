@@ -4,6 +4,10 @@ Base da análise: main daed8971d0161767937c8bbd76f97a415d81b0e5. O adapter escol
 
 Isso corrige seleção, não comprova portão de LA3622 nem corrige sozinho a ausência do campo na tela. Portão de resposta sem observação válida continua não confirmado. O portão manual vinculado permanece identificado e prioritário.
 
+## Saúde do provedor
+
+Resposta HTTP válida sem ocorrência única (outro voo, outro dia, duplicidade) devolve "Voo não localizado" para essa consulta, mas não marca falha do AeroDataBox. Antes, essa marcação abria a pausa global de 30 s e o provedor deixava de ser consultado para outros voos. Falha HTTP continua marcando falha e abrindo a pausa. A regressão usa `providerAvailable` e `markProvider` reais extraídos do `server.mjs`.
+
 ## Bloqueio de evidência preservado
 
 A documentação oficial [AirLabs](https://airlabs.co/docs/flight) define `updated` como último sinal da aeronave. O [OpenAPI AeroDataBox](https://doc.aerodatabox.com/docs/openapi-rapidapi-v1.json) define `lastUpdatedUtc` como atualização de informação do voo, excluindo localização; não garante quando cada campo foi observado. Status pode mudar enquanto portão antigo é retido. `Live` não resolve essa lacuna. Nenhum desses tempos é promovido a `gate.sourceObservedAt`; recibo HTTP/cache também não é observação. A tentativa local dessa promoção foi rejeitada em revisão e removida antes de commit/envio.

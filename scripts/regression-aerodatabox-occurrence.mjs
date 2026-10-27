@@ -32,3 +32,26 @@ payload=[{...row,number:'QA999'}];assert.equal((await read()).ok,false);
 const manual={flight:occurrence.flight,origin:occurrence.origin,destination:occurrence.destination,date:'2032-10-21',scheduledDepartureUtc:occurrence.scheduledDepartureUtc,gate:'7A',author:'synthetic',setAtEpochMs:now};
 const manualResult=mod.exports.resolveNextFlightGate({event,radar:{...accepted,sourceOrigin:accepted.origin,sourceDestination:accepted.destination,updatedAt:now},manual,now});assert.equal(manualResult.gate,'7A');assert.equal(manualResult.gateSource,'manual');
 assert.equal(calls,5);console.log('PASS actual AeroDataBox adapter → public projection → card resolver: record update never promoted, matching row selection, missing/stale, ambiguity/other occurrence, change and manual preserved; zero external network.');
+
+// Provider health with the real server functions: a valid response for another
+// occurrence is not a provider failure, so other flights keep querying it; an HTTP
+// failure still opens the 30 s back-off.
+{
+  const names=['providerAvailable','markProvider','providerAeroDataBox'];
+  const health=names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,name);return fn.getText(ast)}).join('\n');
+  let body=[{...row,number:'QA999'}],ok=true,fetches=0;
+  const fresh=()=>vm.createContext({selectAeroDataBoxOccurrence,radarHealth:new Map(),process:{env:{AERODATABOX_API_KEY:'synthetic-only'}},Date:class extends Date{static now(){return now;}},
+    envAny:keys=>keys.includes('AERODATABOX_API_KEY')?'synthetic-only':'',jsonFetch:async()=>{fetches++;return{response:{ok},payload:body};},firstKnown:(...values)=>values.find(value=>value!==undefined&&value!==null&&value!=='')});
+  const query=(ctx,flight)=>ctx.providerAeroDataBox({iata:flight,gateQueryEvidence:{...occurrence,flight}},1000);
+  const valid=fresh();vm.runInContext(health,valid);
+  assert.equal((await query(valid,'QA123')).ok,false,'no unique occurrence in a valid response');
+  assert.equal(valid.providerAvailable('aerodatabox',['AERODATABOX_API_KEY']),true,'valid response without the occurrence keeps the provider available');
+  body=[{...row,number:'QA999'}];
+  assert.equal((await query(valid,'QA999')).ok,true,'another flight is still queried and accepted');
+  const failing=fresh();vm.runInContext(health,failing);ok=false;
+  assert.equal((await query(failing,'QA123')).ok,false);
+  assert.equal(failing.providerAvailable('aerodatabox',['AERODATABOX_API_KEY']),false,'HTTP failure still backs off');
+  assert.equal(await query(failing,'QA999'),null,'back-off skips the provider for other flights');
+  assert.equal(fetches,3);
+  console.log('PASS AeroDataBox provider health (real providerAvailable/markProvider): valid response without the occurrence keeps the provider for other flights; HTTP failure still backs off.');
+}
