@@ -47,7 +47,7 @@ try {
  const base=m.buildCrewCheckWatchSnapshot([event],event,null,now,false);
  const options={primaryEventId:event.id,nextFlightScheduleId:event.canonical.id};
  const watch=m.applyNextFlightToWatchSnapshot(base,reported,options);
- assert.equal(watch.gate,'12');assert.match(watch.detail,/Portão informado por FlightAware · a confirmar/);
+ assert.equal(watch.gate,'12');assert.match(watch.detail,/^Portão a confirmar/);assert(watch.detail.length<=96);
  assert(watch.validUntilEpochMs<=received+m.RADAR_GATE_STALE_MS,'reported gate cannot outlive its receipt window on the watch');
  const nextWatch=m.applyNextFlightToWatchSnapshot({...base,currentFlight:''},reported,{primaryEventId:'other',nextFlightScheduleId:event.canonical.id});
  assert.match(nextWatch.nextDetail,/P12 a confirmar/);

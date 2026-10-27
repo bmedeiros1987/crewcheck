@@ -8,7 +8,7 @@ O portão do próximo voo vem de duas consultas: a **manual**, informada pelo tr
 |---|---|---|---|---|---|
 | 1 | `manual` | Portão manual vinculado a esta partida (voo, trecho e horário UTC iguais) | "Portão manual · informado por você" | Revisão de nova fonte comprovada, como hoje | Mostra o portão |
 | 2 | `radar` (comprovado) | Fonte informa a hora em que o portão foi observado, ou envia atualização de portão com prova, há no máximo 30 min | "Portão · fonte operacional" | Sim, dentro da janela operacional do voo | Mostra o portão; validade limitada pela observação |
-| 3 | `reported` (informado) | Fonte respondeu para esta partida exata, com recebimento há no máximo 30 min, mas sem hora de observação do portão | "Portão informado por FlightAware · a confirmar" e, nos detalhes, a hora de recebimento | **Nunca** | Mostra o número (ex.: "P12 a confirmar"), com o aviso "a confirmar" no detalhe; validade de 30 min após o recebimento |
+| 3 | `reported` (informado) | Fonte respondeu para esta partida exata, com recebimento há no máximo 30 min, mas sem hora de observação do portão | "Portão informado por FlightAware · a confirmar" e, nos detalhes, a hora de recebimento | **Nunca** | Mostra o número (ex.: "P12 a confirmar" no próximo voo); no voo atual, o detalhe começa com "Portão a confirmar"; validade de 30 min após o recebimento |
 | — | nenhum | Nada acima | "Não confirmado" | — | "Portão não informado" |
 
 O portão publicado na escala aparece só como referência ("não confirma portão atual") e nunca preenche o portão do dia.

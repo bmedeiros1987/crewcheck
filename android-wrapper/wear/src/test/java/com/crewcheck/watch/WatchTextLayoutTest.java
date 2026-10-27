@@ -84,6 +84,53 @@ public class WatchTextLayoutTest {
         }
     }
 
+    // Phone projection of a provider-reported gate (client/src/lib/nextFlightWatch.ts):
+    // gate number, "Portão a confirmar" leading the 96-character detail, "P… a confirmar" next.
+    private static final String REPORTED_DETAIL =
+            ("Portão a confirmar · Embarcando · " + LONG_TEXT).substring(0, 96);
+
+    @Test public void reportedGateFitsLiveAndAmbientOnSmallAndLargeRoundScreens() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.3f, 1.5f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, size);
+                    for (String state : new String[]{"BOARDING", "REPORTING", "CONNECTION", "CHANGED"}) {
+                        JSONObject json = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson();
+                        json.put("state", state).put("gate", "B123").put("remoteStand", false)
+                                .put("detail", REPORTED_DETAIL).put("nextDetail", "GRU → SSA • PB123 a confirmar • 09:30");
+                        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(json.toString());
+                        content.removeAllViews();
+                        call(activity, "renderHeader", new Class[]{WatchContextSnapshot.class}, snapshot);
+                        call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class},
+                                snapshot, System.currentTimeMillis());
+                        call(activity, "addNavigation", new Class[]{WatchContextSnapshot.class}, snapshot);
+                        measure(scroll, size);
+                        assertFits(content);
+                        content.removeAllViews();
+                        call(activity, "renderAmbient", new Class[]{WatchContextSnapshot.class, long.class},
+                                snapshot, System.currentTimeMillis());
+                        measure(scroll, size);
+                        assertFits(content);
+                        int available = scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom();
+                        View last = content.getChildAt(content.getChildCount() - 1);
+                        assertTrue("reported gate ambient fits without scrolling at " + size + "/" + scale + "/" + state,
+                                last.getBottom() <= available);
+                    }
+                }
+            }
+        }
+        ComplicationRendering gate = ComplicationText.gate(
+                WatchContextSnapshot.fromJson(WatchContextSnapshot.demo(System.currentTimeMillis()).toJson()
+                        .put("gate", "B123").put("remoteStand", false).toString()), System.currentTimeMillis());
+        assertTrue("gate complication short text fits", gate.shortText.length() <= 7);
+    }
+
     @Test @Config(qualifiers = "w227dp-h227dp-round-mdpi")
     public void scheduleRowsAndNavigationFitLargerWatchAtEnlargedFont() throws Exception {
         RuntimeEnvironment.setFontScale(1.5f);

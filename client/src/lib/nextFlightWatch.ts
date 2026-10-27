@@ -27,7 +27,8 @@ export function applyNextFlightToWatchSnapshot(
 
   const notes: string[] = [];
   if (info.divergence) notes.push(`Fonte indica portão ${info.divergence.sourceGate}`);
-  if (info.gateSource === 'reported') notes.push(`Portão informado por ${info.reportedProvider} · a confirmar`);
+  // Short on purpose: the note shares the 96-character detail with status and roster text.
+  if (info.gateSource === 'reported') notes.push('Portão a confirmar');
   if (info.status) notes.push(info.status + (info.statusSource === 'manual' ? ' · manual' : ''));
   if (info.stale) notes.push('Radar desatualizado');
 
