@@ -38,6 +38,8 @@ on:
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-next-flight-gate.mjs'
+      - 'scripts/regression-gate-behavior-rule.mjs'
+      - 'docs/gate-behavior-rule.md'
       - 'scripts/regression-next-flight-gate-pulse.mjs'
       - 'scripts/regression-next-flight-gate-pulse-browser.mjs'
       - 'scripts/regression-next-flight-gate-prepared.mjs'
@@ -63,6 +65,7 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-gate-behavior-rule.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
@@ -92,6 +95,7 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-gate-behavior-rule.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs

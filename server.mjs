@@ -70,6 +70,8 @@ function publicRadarPayload(item = {}, now = Date.now()) {
     gate: firstKnown(item.gate),
     terminal: firstKnown(item.terminal),
     departure: firstKnown(item.departure),
+    // Public key of the answering source, so the app can name a reported gate.
+    ...(['flightaware', 'custom', 'aviationstack', 'airlabs', 'aerodatabox', 'cirium-sky'].includes(item.provider) ? { provider: item.provider } : {}),
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
     ...(item.gateEvidenceReceivedAt !== undefined ? { gateEvidenceReceivedAt: item.gateEvidenceReceivedAt } : {}),
@@ -128,10 +130,17 @@ function providerAvailable(name, keys) {
   if (state.lastFail && now - state.lastFail < 30_000) return false;
   return true;
 }
-function markProvider(name, ok) {
+function markProvider(name, ok, httpStatus) {
   const state = radarHealth.get(name) || {};
   if (ok) state.lastOk = Date.now();
   else state.lastFail = Date.now();
+  if (Number.isInteger(httpStatus)) state.lastHttpStatus = httpStatus;
+  radarHealth.set(name, state);
+}
+// Admin diagnostics only: whether each source was actually called and how it answered.
+function noteProviderError(name) {
+  const state = radarHealth.get(name) || {};
+  state.lastError = Date.now();
   radarHealth.set(name, state);
 }
 function normalizeFlightAwareFlight(row = {}, ctx) {
@@ -160,7 +169,7 @@ async function providerFlightAware(ctx, timeoutMs) {
   const url = `https://aeroapi.flightaware.com/aeroapi/flights/${encodeURIComponent(ctx.flightAware)}?max_pages=1`;
   const { response, payload } = await jsonFetch(url, { headers: { accept: 'application/json', 'x-apikey': key } }, timeoutMs);
   if (!response.ok) {
-    markProvider('flightaware', false);
+    markProvider('flightaware', false, response.status);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' };
   }
   const sourceFlights = Array.isArray(payload?.flights) ? payload.flights : [];
@@ -212,7 +221,7 @@ async function providerAviationstack(ctx, timeoutMs) {
   const url = `https://api.aviationstack.com/v1/flights?access_key=${encodeURIComponent(key)}&flight_iata=${encodeURIComponent(ctx.iata)}`;
   const { response, payload } = await jsonFetch(url, { headers: { accept: 'application/json' } }, timeoutMs);
   if (!response.ok) {
-    markProvider('aviationstack', false);
+    markProvider('aviationstack', false, response.status);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
   }
   const row = Array.isArray(payload?.data) ? payload.data[0] : null;
@@ -246,7 +255,7 @@ async function providerAirLabs(ctx, timeoutMs) {
   const url = `https://airlabs.co/api/v9/flight?flight_iata=${encodeURIComponent(ctx.iata)}&api_key=${encodeURIComponent(key)}`;
   const { response, payload } = await jsonFetch(url, { headers: { accept: 'application/json' } }, timeoutMs);
   if (!response.ok || payload?.error) {
-    markProvider('airlabs', false);
+    markProvider('airlabs', false, response.status);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
   }
   const row = payload?.response || payload;
@@ -278,7 +287,7 @@ async function providerAeroDataBox(ctx, timeoutMs) {
   const apiUrl = template.replaceAll('{flight}', encodeURIComponent(ctx.iata)).replaceAll('{flight_icao}', encodeURIComponent(ctx.icao));
   const { response, payload } = await jsonFetch(apiUrl, { headers: { accept: 'application/json', 'x-rapidapi-key': key, 'x-rapidapi-host': host } }, timeoutMs);
   if (!response.ok) {
-    markProvider('aerodatabox', false);
+    markProvider('aerodatabox', false, response.status);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
   }
   const row = Array.isArray(payload) ? payload[0] : Array.isArray(payload?.items) ? payload.items[0] : payload;
@@ -330,11 +339,11 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
   const providers = [
-    () => providerFlightAware(ctx, timeoutMs),
-    () => providerCustom(ctx, timeoutMs, origin, destination),
-    () => providerAviationstack(ctx, timeoutMs),
-    () => providerAirLabs(ctx, timeoutMs),
-    () => providerAeroDataBox(ctx, timeoutMs),
+    ['flightaware', () => providerFlightAware(ctx, timeoutMs)],
+    ['custom', () => providerCustom(ctx, timeoutMs, origin, destination)],
+    ['aviationstack', () => providerAviationstack(ctx, timeoutMs)],
+    ['airlabs', () => providerAirLabs(ctx, timeoutMs)],
+    ['aerodatabox', () => providerAeroDataBox(ctx, timeoutMs)],
   ];
   const results = [];
   let settled = false;
@@ -356,9 +365,10 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;
-    providers.forEach((run) => {
+    providers.forEach(([provider, run]) => {
       run().then((raw) => {
         if (raw) {
+          raw = { ...raw, provider: raw.provider || provider };
           const sourceDecision = radarResultDecision(raw,evidence,Date.now());
           if (raw.ok && !sourceDecision.allowed) { results.push(gateQuerySuppressed(sourceDecision)); return; }
           raw = {...raw,sourceReceivedAt:raw.sourceReceivedAt ?? Date.now(),gate:raw.ok ? raw.gate : ''};
@@ -372,6 +382,7 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
           }
         }
       }).catch(() => {
+        if (typeof noteProviderError === 'function') noteProviderError(provider);
         results.push({ ok: false, configured: true, latencyMs: Date.now() - started, quality: 0, message: 'Fonte operacional sem resposta agora.' });
       }).finally(() => {
         pending -= 1;
@@ -439,13 +450,23 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
   return sendJson(res, 200, { ...payload, exportedToConcierge });
 }
+function radarHealthAdmin(req) {
+  try { const payload = cc1371Verify(cc1371RequestToken(req)); return Boolean(payload?.admin || cc1371IsAdmin(payload?.email)); }
+  catch { return false; }
+}
 function handleRadarHealth(req, res) {
   const configured = configuredProviders();
+  const iso = at => Number.isFinite(at) ? new Date(at).toISOString() : null;
   return sendJson(res, 200, {
     ok: configured.some((item) => item.available),
     configured: configured.filter((item) => item.available).length,
     message: configured.some((item) => item.available) ? 'Fontes configuradas para teste automático.' : 'Nenhuma fonte de radar configurada.',
     timeoutMs: Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400),
+    // Admin only, since the last restart: configured flag and call outcomes, never keys or flights.
+    ...(radarHealthAdmin(req) ? { providers: configured.map(({ key, available }) => {
+      const state = radarHealth.get(key) || {};
+      return { key, configured: Boolean(available), lastOkAt: iso(state.lastOk), lastFailAt: iso(state.lastFail), lastHttpStatus: state.lastHttpStatus ?? null, lastErrorAt: iso(state.lastError) };
+    }) } : {}),
   });
 }
 

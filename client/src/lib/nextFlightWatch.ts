@@ -27,6 +27,7 @@ export function applyNextFlightToWatchSnapshot(
 
   const notes: string[] = [];
   if (info.divergence) notes.push(`Fonte indica portão ${info.divergence.sourceGate}`);
+  if (info.gateSource === 'reported') notes.push(`Portão informado por ${info.reportedProvider} · a confirmar`);
   if (info.status) notes.push(info.status + (info.statusSource === 'manual' ? ' · manual' : ''));
   if (info.stale) notes.push('Radar desatualizado');
 
@@ -41,7 +42,7 @@ export function applyNextFlightToWatchSnapshot(
     out.nextDetail = fit([
       temporalDetail,
       info.origin && info.destination ? `${info.origin} → ${info.destination}` : '',
-      info.gate ? `P${gateLabel}` : 'Portão não informado',
+      info.gate ? `P${gateLabel}${info.gateSource === 'reported' ? ' a confirmar' : ''}` : 'Portão não informado',
       departureKnown ? info.departure : '',
       info.stale ? 'desatualizado' : '',
     ].filter(Boolean).join(' • '), 64);
@@ -51,10 +52,10 @@ export function applyNextFlightToWatchSnapshot(
   // deadline of every automatic field actually projected, including a status
   // alongside a manual gate and the automatic gate shown in a divergence note.
   const automaticFields: Array<'gate' | 'status'> = [];
-  if (info.gate && info.gateSource === 'radar') automaticFields.push('gate');
+  if (info.gate && (info.gateSource === 'radar' || info.gateSource === 'reported')) automaticFields.push('gate');
   if (options.primaryEventId === info.eventId && out.currentFlight) {
     if (info.status && info.statusSource === 'radar') automaticFields.push('status');
-    if (info.divergence?.source === 'radar') automaticFields.push('gate');
+    if (info.divergence?.source === 'radar' || info.divergence?.source === 'reported') automaticFields.push('gate');
   }
   for (const field of automaticFields) {
     const expiry = info.automaticFieldValidUntilEpochMs?.[field];
