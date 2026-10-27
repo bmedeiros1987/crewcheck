@@ -41,7 +41,7 @@ const fake=async()=>{calls++;return {ok:true,gate:'46',flight:'LA100',origin:'GR
 const records=[{day:r.days[0],legs:r.days[0].legs}];
 const scope=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,ciriumRadarProjection:()=>({}),scoreRadar:()=>95,configuredProviders:()=>[],
- providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
+ providerFlightAware:fake,providerCustom:fake,providerCiriumFlex:async()=>null,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),telegramRequestUser:()=>({email:account,authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,
  conciergeLoadSnapshot:async()=>{reads++;if(reads===2&&expireOnSecondRead)now=Date.parse('2032-10-15T03:00:00Z');if(reads===2&&changeAccountOnSecondRead)account='fictional-b';return snapshot;},
  conciergeAccessMatches:()=>true,conciergeFindFlight:()=>({record:records[0],leg:r.days[0].legs[0]}),conciergeApplyRadar:()=>{},conciergeSaveSnapshotAsync:async()=>{writes++;},sendJson:(_r,_s,data)=>data,

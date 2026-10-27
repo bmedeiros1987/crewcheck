@@ -686,7 +686,7 @@ export function statusSourceLabel(info: Pick<NextFlightGateInfo, 'statusSource'>
   return 'Status operacional não confirmado';
 }
 
-const PROVIDER_LABELS: Record<string, string> = { flightaware: 'FlightAware', aerodatabox: 'AeroDataBox', airlabs: 'AirLabs', aviationstack: 'Aviationstack', custom: 'Fonte própria', 'cirium-sky': 'Cirium' };
+const PROVIDER_LABELS: Record<string, string> = { flightaware: 'FlightAware', aerodatabox: 'AeroDataBox', airlabs: 'AirLabs', aviationstack: 'Aviationstack', custom: 'Fonte própria', 'cirium-sky': 'Cirium', 'cirium-flex': 'Cirium' };
 /** Nome público da fonte; desconhecida vira um rótulo genérico, nunca texto livre da resposta. */
 export function providerLabel(provider: unknown): string {
   return PROVIDER_LABELS[String(provider || '')] || 'Fonte operacional';

@@ -25,6 +25,7 @@ const scope=vm.createContext({...policy,...radarEvidence,Date:FixedDate,buildCan
  conciergeLoadSnapshot:async()=>snapshot,conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{writes++},conciergeSaveSnapshotAsync:async()=>{writes++},
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,configuredProviders:()=>[],scoreRadar:()=>95,publicRadarPayload:x=>x,sendJson:(_r,status,payload)=>({...payload,httpStatus:status})});
 for(const name of ['providerFlightAware','providerCustom','providerAviationstack','providerAirLabs','providerAeroDataBox'])scope[name]=async()=>{providerCalls++;return {ok:true,gate:'46',...identity,departure:identity.scheduledDepartureUtc};};
+scope.providerCiriumFlex=async()=>null; // opted-out source, as in production without CIRIUM_FLEX_RADAR_ENABLED
 vm.runInContext(extract('server.mjs',['normalizeFlightRaw','buildFlightContext']),scope);
 vm.runInContext(extract('server/platform.mjs',['loadOwnedPlatformRoster'])+extract(process.env.RADAR_HELD_SERVER||'server.mjs',['runRadarRace','handleRadar']),scope);
 function reset(){rows=[{id:'published-A',owner_email:'a@example.invalid',updated_at:'2032-10-14T10:00:00Z',roster:structuredClone(roster)}];queries=[];providerCalls=0;writes=0;claims={email:'a@example.invalid'};poolAvailable=true;lateChange=null;snapshot=null;now=Date.parse('2032-10-14T12:00:00Z');}

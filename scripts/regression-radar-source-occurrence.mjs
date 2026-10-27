@@ -19,7 +19,7 @@ let sourceDate='2032-10-15T12:00:00Z',saveCalls=0,providerCalls=0,estimated='',s
 const scope=vm.createContext({...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??selectedNow),Date:class extends Date{static now(){return selectedNow;}},URL,setTimeout,clearTimeout,
  process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},envAny:keys=>keys.includes('FLIGHTAWARE_AEROAPI_KEY')?'OFFLINE_ONLY':'',providerAvailable:()=>true,markProvider:()=>{},
  jsonFetch:async()=>{providerCalls++;return{response:{ok:true},payload:{flights:[{ident:'LAN100',gate_origin:'99',scheduled_out:sourceDate,estimated_out:estimated,origin:{code_iata:'GRU'},destination:{code_iata:'REC'}}]}};},
- providerCustom:async()=>null,providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,
+ providerCustom:async()=>null,providerCiriumFlex:async()=>null,providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,
  telegramRequestUser:()=>({email:'fixture@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,
  conciergeLoadSnapshot:async()=>({email:'fixture@example.invalid',roster}),conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{},conciergeSaveSnapshotAsync:async()=>{saveCalls++;},sendJson:(_r,_s,p)=>p});
 vm.runInContext(extract('server.mjs',['radarAirportCode','flightAwareAirport','flightAwareScheduledDeparture','flightAwareOccurrenceRank','selectFlightAwareOccurrence'],true)+extract('server.mjs',['firstKnown','normalizeFlightRaw','buildFlightContext','normalizeFlightAwareFlight','providerFlightAware','runRadarRace','handleRadar','scoreRadar','publicRadarPayload']),scope);

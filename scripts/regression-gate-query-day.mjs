@@ -34,7 +34,7 @@ let serverCalls=0, exports=0, credentialFactories=0;
 const fake=async()=>{serverCalls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z'};};
 const server=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FakeDate,process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
  ciriumRadarInjectionEnabled:o=>o?.enabled===true,runCiriumRadarInjection:fake,publicRadarPayload:x=>x,scoreRadar:()=>95,configuredProviders:()=>[],
- providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
+ providerFlightAware:fake,providerCustom:fake,providerCiriumFlex:async()=>null,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),defaultCiriumRadarOptions:()=>{credentialFactories++;return undefined;},ciriumRadarIdentity:()=>({}),
  telegramRequestUser:()=>({email:'fictional@test.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,
  conciergeLoadSnapshot:async()=>({email:'fictional@test.invalid',roster}),conciergeAccessMatches:()=>true,conciergeFindFlight:()=>({leg:roster.days[0].legs[0]}),

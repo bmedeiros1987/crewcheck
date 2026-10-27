@@ -71,7 +71,7 @@ function publicRadarPayload(item = {}, now = Date.now()) {
     terminal: firstKnown(item.terminal),
     departure: firstKnown(item.departure),
     // Public key of the answering source, so the app can name a reported gate.
-    ...(['flightaware', 'custom', 'aviationstack', 'airlabs', 'aerodatabox', 'cirium-sky'].includes(item.provider) ? { provider: item.provider } : {}),
+    ...(['flightaware', 'custom', 'aviationstack', 'airlabs', 'aerodatabox', 'cirium-sky', 'cirium-flex'].includes(item.provider) ? { provider: item.provider } : {}),
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
     ...(item.gateEvidenceReceivedAt !== undefined ? { gateEvidenceReceivedAt: item.gateEvidenceReceivedAt } : {}),
@@ -278,6 +278,67 @@ async function providerAirLabs(ctx, timeoutMs) {
     message: 'Radar atualizado.',
   };
 }
+// Cirium FlightStats Flex Flight Status (Commercial Plan), not Sky. Opt-in by
+// CIRIUM_FLEX_RADAR_ENABLED=true with the backend-only CIRIUM_APP_ID/CIRIUM_APP_KEY,
+// capped per UTC day by CIRIUM_FLEX_DAILY_LIMIT (default 100) in this process.
+const ciriumFlexBudget = { day: '', calls: 0 };
+function ciriumFlexEnabled() {
+  return process.env.CIRIUM_FLEX_RADAR_ENABLED === 'true' && Boolean(envAny(['CIRIUM_APP_ID'])) && Boolean(envAny(['CIRIUM_APP_KEY']));
+}
+function ciriumFlexUtc(value) {
+  const raw = String(value?.dateUtc || '').trim();
+  // The named dateUtc field is UTC even when the zone suffix is omitted.
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw) ? raw + 'Z' : raw;
+}
+function normalizeCiriumFlexFlight(row = {}) {
+  const times = row.operationalTimes || {}, resources = row.airportResources || {}, equipment = row.flightEquipment || {};
+  const statusLabel = { S: 'Programado', A: 'Em voo', L: 'Pousou', C: 'Cancelado', D: 'Alternado', R: 'Redirecionado' }[row.status];
+  return {
+    ok: true,
+    configured: true,
+    flight: firstKnown(`${row.carrierFsCode || ''}${row.flightNumber || ''}`),
+    status: firstKnown(statusLabel, 'Monitorando'),
+    gate: firstKnown(resources.departureGate),
+    terminal: firstKnown(resources.departureTerminal),
+    scheduledDepartureUtc: firstKnown(ciriumFlexUtc(times.scheduledGateDeparture), ciriumFlexUtc(times.publishedDeparture), ciriumFlexUtc(row.departureDate)),
+    departure: firstKnown(times.actualGateDeparture?.dateLocal, times.estimatedGateDeparture?.dateLocal, times.scheduledGateDeparture?.dateLocal),
+    arrival: firstKnown(times.actualGateArrival?.dateLocal, times.estimatedGateArrival?.dateLocal, times.scheduledGateArrival?.dateLocal),
+    origin: firstKnown(row.departureAirportFsCode),
+    destination: firstKnown(row.arrivalAirportFsCode),
+    aircraft: firstKnown(equipment.actualEquipmentIataCode, equipment.scheduledEquipmentIataCode),
+    registration: firstKnown(equipment.tailNumber),
+    cancelled: row.status === 'C',
+    message: 'Radar atualizado.',
+  };
+}
+async function providerCiriumFlex(ctx, timeoutMs) {
+  if (!ciriumFlexEnabled() || !providerAvailable('cirium-flex', ['CIRIUM_APP_KEY'])) return null;
+  const evidence = ctx.gateQueryEvidence, flight = String(ctx.iata || '').match(/^([A-Z0-9]{2})(\d{1,4})$/);
+  const date = String(evidence?.departureDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!flight || !date || !/^[A-Z]{3}$/.test(String(evidence?.origin || ''))) return null;
+  const day = new Date().toISOString().slice(0, 10), limit = Number(process.env.CIRIUM_FLEX_DAILY_LIMIT || 100);
+  if (ciriumFlexBudget.day !== day) Object.assign(ciriumFlexBudget, { day, calls: 0 });
+  if (!Number.isInteger(limit) || limit < 1 || ciriumFlexBudget.calls >= limit) return null;
+  ciriumFlexBudget.calls += 1;
+  const started = Date.now();
+  const url = new URL(`https://api.flightstats.com/flex/flightstatus/rest/v2/json/flight/status/${flight[1]}/${flight[2]}/dep/${date[1]}/${date[2]}/${date[3]}`);
+  url.searchParams.set('airport', evidence.origin);
+  url.searchParams.set('appId', envAny(['CIRIUM_APP_ID']));
+  url.searchParams.set('appKey', envAny(['CIRIUM_APP_KEY']));
+  const { response, payload } = await jsonFetch(url, { headers: { accept: 'application/json' }, redirect: 'error' }, timeoutMs);
+  if (!response.ok) {
+    markProvider('cirium-flex', false, response.status);
+    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
+  }
+  const rows = Array.isArray(payload?.flightStatuses) ? payload.flightStatuses : [];
+  const exact = rows.filter(row => radarResultDecision(normalizeCiriumFlexFlight(row), evidence, Date.now()).allowed);
+  if (exact.length !== 1) {
+    // Successful no-data/ambiguity is not a provider outage.
+    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
+  }
+  markProvider('cirium-flex', true);
+  return { ...normalizeCiriumFlexFlight(exact[0]), latencyMs: Date.now() - started };
+}
 async function providerAeroDataBox(ctx, timeoutMs) {
   const key = envAny(['AERODATABOX_API_KEY']);
   if (!key || !providerAvailable('aerodatabox', ['AERODATABOX_API_KEY'])) return null;
@@ -322,6 +383,7 @@ function configuredProviders() {
     { key: 'aviationstack', available: Boolean(envAny(['AVIATIONSTACK_API_KEY'])) },
     { key: 'airlabs', available: Boolean(envAny(['AIRLABS_API_KEY'])) },
     { key: 'aerodatabox', available: Boolean(envAny(['AERODATABOX_API_KEY'])) },
+    { key: 'cirium-flex', available: ciriumFlexEnabled() },
   ];
 }
 async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
@@ -344,6 +406,7 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
     ['aviationstack', () => providerAviationstack(ctx, timeoutMs)],
     ['airlabs', () => providerAirLabs(ctx, timeoutMs)],
     ['aerodatabox', () => providerAeroDataBox(ctx, timeoutMs)],
+    ['cirium-flex', () => providerCiriumFlex(ctx, timeoutMs)],
   ];
   const results = [];
   let settled = false;

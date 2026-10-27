@@ -36,4 +36,16 @@ O Radar consulta as fontes configuradas só no dia do voo, para uma partida publ
 
 `GET /api/radar-health` continua público com o resumo de sempre. Para o administrador autenticado, a resposta inclui também `providers`: para cada fonte, se está configurada, a hora do último sucesso, da última falha, do último erro de rede e o último código HTTP de falha, desde o último reinício. Com isso dá para saber se uma fonte, como o FlightAware, falha (por exemplo, 401 com chave inválida) ou nem chega a ser chamada. O diagnóstico não expõe chaves, URLs nem dados de voo.
 
-O Cirium Sky continua desligado (`CIRIUM_SKY_PRODUCTION_ENABLED = false`): o trial terminou em 23/10/2026, e ligar exige plano vigente e uma mudança revisada separada.
+## Cirium
+
+A Cirium entra no Radar pela API **FlightStats Flex Flight Status**, a mesma do Commercial Plan. Ela é tratada como mais uma fonte da corrida (`cirium-flex`), com as mesmas regras de ocorrência exata. O portão dela aparece como "informado por Cirium" até existir prova de observação do campo.
+
+Para ligar, no serviço do backend:
+
+- `CIRIUM_APP_ID` e `CIRIUM_APP_KEY`: credenciais do portal FlightStats. Nunca com prefixo `VITE_`.
+- `CIRIUM_FLEX_RADAR_ENABLED=true`. Sem essa variável a fonte não chama nada, mesmo com credenciais (o diagnóstico de admin usa as mesmas credenciais).
+- `CIRIUM_FLEX_DAILY_LIMIT` (opcional, padrão 100): máximo de chamadas por dia UTC neste processo. Valor inválido desliga a fonte.
+
+As chamadas só acontecem no dia do voo, para uma partida publicada na escala da conta, e contam no plano. Resposta válida sem a ocorrência não pausa a fonte; erro HTTP pausa por 30 s e aparece no diagnóstico de admin.
+
+A Cirium **Sky** continua desligada (`CIRIUM_SKY_PRODUCTION_ENABLED = false`): as APIs Premium/Sky exigem o Contract Plan, e o trial terminou em 23/10/2026.
