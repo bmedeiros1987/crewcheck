@@ -13,20 +13,30 @@ export const RADAR_PAID_MAX_MONTHLY_USD = 10;
 export const RADAR_PAID_WINDOW_DAYS = 33;
 const DAY_MS = 86_400_000;
 const COST_ENV = Object.freeze({ 'cirium-flex': 'CIRIUM_FLEX_COST_PER_CALL_USD', flightaware: 'FLIGHTAWARE_COST_PER_CALL_USD' });
-const usd = value => { const raw = String(value ?? '').trim(); return /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN; };
+// Exact decimal USD -> micro-USD (BigInt), no binary floating point: { floor, exact }
+// where exact means nothing was cut past the sixth decimal. Plain decimals only.
+const microUsd = value => {
+  const match = /^(\d{1,12})(?:\.(\d{1,64}))?$/.exec(String(value ?? '').trim());
+  if (!match) return null;
+  const fraction = match[2] || '';
+  return { floor: BigInt(match[1]) * 1_000_000n + BigInt(fraction.slice(0, 6).padEnd(6, '0')), exact: !/[1-9]/.test(fraction.slice(6)) };
+};
 const parse = value => { try { return typeof value === 'string' ? JSON.parse(value) : value; } catch { return null; } };
 const utcDay = at => new Date(at).toISOString().slice(0, 10);
 
 /**
- * { unitMicroUsd, capMicroUsd } or null. Cost rounds up and the cap rounds down to the
- * micro-dollar; a cap above US$ 10, an unknown cost or a cost above the cap disables it.
+ * { unitMicroUsd, capMicroUsd } or null. Converted exactly from the decimal text: cost
+ * rounds up and the cap rounds down to the micro-dollar; a cap above US$ 10, an
+ * unknown or non-decimal value or a cost above the cap disables it.
  */
 export function radarPaidPolicy(provider, env = process.env) {
   if (!RADAR_PAID_PROVIDERS.includes(provider)) return null;
-  const cost = usd(env[COST_ENV[provider]]), cap = usd(env.RADAR_PAID_MONTHLY_BUDGET_USD ?? RADAR_PAID_MAX_MONTHLY_USD);
-  if (!(cost > 0) || !(cap > 0) || cap > RADAR_PAID_MAX_MONTHLY_USD) return null;
-  const unitMicroUsd = Math.ceil(cost * 1e6 - 1e-6), capMicroUsd = Math.floor(cap * 1e6 + 1e-6);
-  return Number.isSafeInteger(unitMicroUsd) && unitMicroUsd > 0 && unitMicroUsd <= capMicroUsd ? { unitMicroUsd, capMicroUsd } : null;
+  const cost = microUsd(env[COST_ENV[provider]]), cap = microUsd(env.RADAR_PAID_MONTHLY_BUDGET_USD ?? String(RADAR_PAID_MAX_MONTHLY_USD));
+  if (!cost || !cap) return null;
+  const maxMicroUsd = BigInt(RADAR_PAID_MAX_MONTHLY_USD) * 1_000_000n;
+  if (cap.floor > maxMicroUsd || (cap.floor === maxMicroUsd && !cap.exact)) return null;
+  const unit = cost.floor + (cost.exact ? 0n : 1n), capMicro = cap.floor;
+  return unit > 0n && unit <= capMicro ? { unitMicroUsd: Number(unit), capMicroUsd: Number(capMicro) } : null;
 }
 
 export function radarSpendKey(provider) { return `radar-paid-spend:v2:${provider}`; }

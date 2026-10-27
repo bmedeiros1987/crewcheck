@@ -74,8 +74,19 @@ assert.deepEqual(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD:
 assert.deepEqual(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '0.33333333' }).unitMicroUsd, 333_334);
 assert.deepEqual(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '0.0000001' }).unitMicroUsd, 1);
 assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '9.9999999' }).capMicroUsd, 9_999_999);
+// Exact decimal conversion (dot review): no float tolerance may round a cost down or a cap up.
+assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '0.0050000000005' }).unitMicroUsd, 5001);
+assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '0.005000' }).unitMicroUsd, 5000, 'trailing zeros are exact');
+assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '0.000001000000000000000000001' }).unitMicroUsd, 2);
+assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '9.9999999999995' }).capMicroUsd, 9_999_999);
+assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '9.9999999999999999999' }).capMicroUsd, 9_999_999);
+assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '10.000000' }).capMicroUsd, 10_000_000);
+assert.equal(radarPaidPolicy('flightaware', { FLIGHTAWARE_COST_PER_CALL_USD: '10' }).unitMicroUsd, 10_000_000, 'one call may use the whole cap');
 for (const env of [{}, { FLIGHTAWARE_COST_PER_CALL_USD: '0' }, { FLIGHTAWARE_COST_PER_CALL_USD: '-1' }, { FLIGHTAWARE_COST_PER_CALL_USD: '1e-3' }, { FLIGHTAWARE_COST_PER_CALL_USD: '11' },
-  { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '10.01' }, { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '0' }])
+  { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '10.01' }, { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '0' },
+  { FLIGHTAWARE_COST_PER_CALL_USD: '1', RADAR_PAID_MONTHLY_BUDGET_USD: '10.0000000000001' }, { FLIGHTAWARE_COST_PER_CALL_USD: '10.0000001' },
+  { FLIGHTAWARE_COST_PER_CALL_USD: '0.0000000' }, { FLIGHTAWARE_COST_PER_CALL_USD: '.5' }, { FLIGHTAWARE_COST_PER_CALL_USD: '0.5.' }, { FLIGHTAWARE_COST_PER_CALL_USD: '0x1' },
+  { FLIGHTAWARE_COST_PER_CALL_USD: '0,5' }, { FLIGHTAWARE_COST_PER_CALL_USD: '1'.repeat(13) }, { FLIGHTAWARE_COST_PER_CALL_USD: '0.' + '1'.repeat(65) }])
   assert.equal(radarPaidPolicy('flightaware', env), null, JSON.stringify(env));
 assert.equal(radarPaidPolicy('aerodatabox', { FLIGHTAWARE_COST_PER_CALL_USD: '1' }), null);
 
