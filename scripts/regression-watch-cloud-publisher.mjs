@@ -103,8 +103,11 @@ try {
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
   assert.match(home, /window\.dispatchEvent\(new CustomEvent\('crewcheck:watch-snapshot', \{ detail: snapshot \}\)\);\n\s+\/\/ [^\n]+\n\s+void watchCloudPublisher\(\)\.publish\(snapshot, watchSession\);/);
   const auth = fs.readFileSync('client/src/lib/authClient.ts', 'utf8');
-  assert.match(auth, /if \(previousKey && nextKey && previousKey !== nextKey\) \{\n\s+forgetWatchCloud\(\);/);
-  assert.match(auth, /export function clearSession\(\) \{\n\s+forgetWatchCloud\(\);/);
-  assert.doesNotMatch(auth.match(/export function expireSession\(\) \{[\s\S]*?\n\}/)[0], /forgetWatchCloud/, 'expiry of the same account keeps the watch paired');
+  // authClient functions run alone (other regressions extract them), so the revocation is inline.
+  const fn = name => auth.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
+  assert.match(fn('persistSession'), /if \(previousKey && nextKey && previousKey !== nextKey\) \{\n[^\n]*\n\s+window\.dispatchEvent\(new CustomEvent\('crewcheck:watch-cloud-forget'/);
+  assert.match(fn('clearSession'), /crewcheck:watch-cloud-forget[\s\S]*crewcheck:auth-will-change[\s\S]*removeItem\(TOKEN_KEY\)/, 'revoked before the token is removed');
+  assert.doesNotMatch(fn('expireSession'), /watch-cloud-forget/, 'expiry of the same account keeps the watch paired');
+  assert.equal((fn('persistSession').match(/watch-cloud-forget/g) || []).length, 1, 'same-account refresh does not revoke');
   console.log('PASS watch cloud publisher: native-only, pair once, stale session never hands off, dedupe + 30 min refresh, 404 back-off, 409 re-pair, logout/account-change revoke only');
 } finally { fs.rmSync(dir, { recursive: true, force: true }); }

@@ -97,7 +97,8 @@ function persistSession(session: AuthSession) {
     const previousKey = String(previous?.id || previous?.email || '').toLowerCase();
     const nextKey = String(session.user?.id || session.user?.email || '').toLowerCase();
     if (previousKey && nextKey && previousKey !== nextKey) {
-      forgetWatchCloud();
+      // Account change: revoke the watch's cloud credential while the old token still works.
+      window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token: localStorage.getItem(TOKEN_KEY), owner: previousKey.trim() } }));
       window.dispatchEvent(new Event('crewcheck:auth-will-change'));
       sessionStorage.removeItem('crewcheck_roster');
       sessionStorage.removeItem('crewcheck_compliance');
@@ -123,18 +124,14 @@ export function expireSession() {
   try { window.dispatchEvent(new CustomEvent('crewcheck:auth-expired')); } catch {}
 }
 
-// Logout or account change revokes the watch's cloud credential while the old token still
-// authenticates (lib/watchCloud listens). A refresh or expiry of the same account keeps the
-// watch paired.
-function forgetWatchCloud() {
-  try {
-    const { token, owner } = captureAuthSession();
-    if (owner) window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token, owner } }));
-  } catch {}
-}
-
 export function clearSession() {
-  forgetWatchCloud();
+  // Logout revokes the watch's cloud credential while the token still authenticates
+  // (lib/watchCloud listens). A refresh or expiry of the same account keeps the watch paired.
+  try {
+    const user = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+    const owner = String(user?.id || user?.email || '').trim().toLowerCase();
+    if (owner) window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token: localStorage.getItem(TOKEN_KEY), owner } }));
+  } catch {}
   window.dispatchEvent(new Event('crewcheck:auth-will-change'));
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
