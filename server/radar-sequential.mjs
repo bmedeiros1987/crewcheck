@@ -14,6 +14,10 @@ function eligible(result, identity, now) {
   return radarResultDecision(result, identity, now).allowed;
 }
 function primarySufficient(result, identity, now) {
+  // Flex has no per-gate observation instant: a valid gate for the exact occurrence in a
+  // fresh response is enough to skip FlightAware; it is still never a gate update.
+  if (result?.provider === 'cirium-flex') return eligible(result, identity, now) && Boolean(gateValue(result.gate))
+    && result.gateUpdate == null && fresh(result.sourceReceivedAt, now, 30 * 60_000);
   if (!eligible(result, identity, now) || result.provider !== 'cirium-sky' || !gateValue(result.gate)) return false;
   const field = result.provenance?.fields?.departureGate;
   // Observation freshness does not assert a gate-change timestamp. In particular

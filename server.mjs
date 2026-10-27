@@ -1,4 +1,5 @@
 import { runCiriumFlightAwareSequence, sequentialRadarProjection } from './server/radar-sequential.mjs';
+import { configureRadarPaidSources } from './server/radar-paid-sources.mjs';
 import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
@@ -327,17 +328,23 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
   if (ciriumRadarInjectionEnabled(ctx.ciriumRadarOptions)) {
     let result;
     if (ctx.ciriumRadarOptions.flightAwareFallback === true) {
+      const options = ctx.ciriumRadarOptions;
       result = await runCiriumFlightAwareSequence({ identity: evidence, admit: ctx.radarReadAdmission,
-        primary: () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw),
+        // Paid routing (Cirium Flex) supplies its own budgeted primary and fallback guard.
+        primary: options.primary ? () => options.primary(evidence) : () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, options, ctx.raw),
         fallback: async () => {
-          const response = await providerFlightAware(ctx, Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400))));
-          return response ? { ...response, sourceReceivedAt: Date.now() } : null;
+          const call = async () => {
+            const response = await providerFlightAware(ctx, Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400))));
+            return response ? { ...response, sourceReceivedAt: Date.now() } : null;
+          };
+          return options.guardFallback ? options.guardFallback(evidence, call) : call();
         } });
     } else {
       result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
     }
     if (result?.ok && !radarResultDecision(result,evidence,Date.now()).allowed) return gateQuerySuppressed(radarResultDecision(result,evidence,Date.now()));
-    return publicRadarPayload({...result,sourceReceivedAt:Date.now()});
+    // Keep the original receipt: a cached answer must not look newer than it is.
+    return publicRadarPayload({...result,sourceReceivedAt:result?.sourceReceivedAt ?? Date.now()});
   }
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
@@ -4169,6 +4176,7 @@ function serveStatic(req, res, url) {
     res.end(data);
   });
 }
+configureRadarPaidSources({ pool: conciergeDbPool });
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const incomingHost = String(req.headers.host || '').split(':')[0].toLowerCase();

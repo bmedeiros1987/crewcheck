@@ -5,6 +5,9 @@ on:
       - 'server/cirium-radar-provider.mjs'
       - 'server/radar-sequential.mjs'
       - 'scripts/regression-radar-sequential.mjs'
+      - 'server/cirium-flex-radar.mjs'
+      - 'server/radar-paid-sources.mjs'
+      - 'scripts/regression-radar-paid-sequence.mjs'
       - 'docs/radar-cirium-flightaware-sequential.md'
       - 'shared/radar-field-evidence.mjs'
       - 'server/cirium-flight-adapter.mjs'
@@ -39,10 +42,13 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-cirium-radar-provider-off.mjs
       - run: npm ci
       - name: Sequential primary/fallback and authenticated handler offline
-        run: node scripts/regression-radar-sequential.mjs
+        run: |
+          node scripts/regression-radar-sequential.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-radar-paid-sequence.mjs; done
       - name: Raw and prepared wiring, cache lifecycle and canonical regression gates
         run: node scripts/check-cirium-radar-wiring-off.mjs
       - name: Sequential routing after canonical materialization
         run: |
           node scripts/v139/apply.mjs
           node scripts/regression-radar-sequential.mjs
+          node scripts/regression-radar-paid-sequence.mjs
