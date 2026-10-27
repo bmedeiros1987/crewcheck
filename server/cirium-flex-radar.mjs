@@ -3,8 +3,9 @@ import { radarFlightId, radarResultDecision } from '../shared/gate-query-day.mjs
 // Cirium FlightStats Flex Flight Status (Commercial Plan) as the Radar primary.
 // Sky/Premium APIs need the Contract Plan and stay OFF. One origin-scoped call for
 // the published occurrence; the row is accepted only when it is that exact
-// occurrence. Flex has no per-gate observation instant: receipt is recorded as
-// receipt, never as a gate update.
+// occurrence. Flex reports field-change deltas (flightStatusUpdates, e.g. DGT for the
+// departure gate) with the time Cirium recorded the change; that is neither a physical
+// observation of the gate nor a gate update here. Receipt is recorded as receipt only.
 const FLEX_STATUS_URL = 'https://api.flightstats.com/flex/flightstatus/rest/v2/json/flight/status';
 const STATUS = { S: 'Programado', A: 'Em voo', L: 'Pousou', C: 'Cancelado', D: 'Alternado', R: 'Redirecionado' };
 const text = value => typeof value === 'string' ? value.trim() : '';
@@ -24,14 +25,27 @@ export function ciriumFlexStatusUrl(identity, credentials) {
   return url;
 }
 
+// FS codes are Cirium's own namespace: bind each to IATA only through a single,
+// non-contradictory appendix entry of the same response. No appendix, no binding.
+function iataBinding(entries, fs) {
+  if (!Array.isArray(entries) || !text(fs)) return '';
+  const codes = new Set(entries.filter(item => item?.fs === fs).map(item => text(item?.iata).toUpperCase()));
+  const [code] = codes;
+  return codes.size === 1 && /^[A-Z0-9]{2,3}$/.test(code) ? code : '';
+}
+
+/** Radar candidate for one Flex row, or null when the appendix cannot bind its codes. */
 export function normalizeCiriumFlexRow(row = {}, appendix = {}) {
-  const airline = (Array.isArray(appendix.airlines) ? appendix.airlines : []).find(item => item?.fs === row.carrierFsCode);
+  const carrier = iataBinding(appendix?.airlines, row.carrierFsCode);
+  const origin = iataBinding(appendix?.airports, row.departureAirportFsCode), destination = iataBinding(appendix?.airports, row.arrivalAirportFsCode);
+  const number = text(String(row.flightNumber ?? ''));
+  if (!carrier || !origin || !destination || !/^\d{1,4}$/.test(number)) return null;
   const times = row.operationalTimes || {}, resources = row.airportResources || {}, equipment = row.flightEquipment || {};
   return {
     ok: true, configured: true, provider: 'cirium-flex',
-    flight: `${text(airline?.iata) || text(row.carrierFsCode)}${text(String(row.flightNumber ?? ''))}`,
-    origin: text(row.departureAirportFsCode), destination: text(row.arrivalAirportFsCode),
-    scheduledDepartureUtc: utc(times.scheduledGateDeparture) || utc(times.publishedDeparture) || utc(row.departureDate),
+    flight: `${carrier}${number}`, origin, destination,
+    // Planned gate/published departure only; departureDate is operational, not the schedule.
+    scheduledDepartureUtc: utc(times.scheduledGateDeparture) || utc(times.publishedDeparture),
     status: STATUS[row.status] || 'Monitorando',
     gate: text(resources.departureGate), terminal: text(resources.departureTerminal),
     departure: text(times.actualGateDeparture?.dateLocal) || text(times.estimatedGateDeparture?.dateLocal) || text(times.scheduledGateDeparture?.dateLocal),
@@ -44,7 +58,7 @@ export function normalizeCiriumFlexRow(row = {}, appendix = {}) {
 /** Exactly one row of the published occurrence, or null (no data, other day/route, ambiguity). */
 export function selectCiriumFlexOccurrence(payload, identity, now) {
   const rows = Array.isArray(payload?.flightStatuses) ? payload.flightStatuses : [];
-  const matches = rows.map(row => normalizeCiriumFlexRow(row, payload?.appendix)).filter(item => radarResultDecision(item, identity, now).allowed);
+  const matches = rows.map(row => normalizeCiriumFlexRow(row, payload?.appendix)).filter(item => item && radarResultDecision(item, identity, now).allowed);
   return matches.length === 1 ? matches[0] : null;
 }
 

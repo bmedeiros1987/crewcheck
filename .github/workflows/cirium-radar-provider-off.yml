@@ -8,6 +8,7 @@ on:
       - 'server/cirium-flex-radar.mjs'
       - 'server/radar-paid-sources.mjs'
       - 'scripts/regression-radar-paid-sequence.mjs'
+      - 'scripts/regression-radar-paid-ledger-mysql.mjs'
       - 'docs/radar-cirium-flightaware-sequential.md'
       - 'shared/radar-field-evidence.mjs'
       - 'server/cirium-flight-adapter.mjs'
@@ -52,3 +53,30 @@ jobs:
           node scripts/v139/apply.mjs
           node scripts/regression-radar-sequential.mjs
           node scripts/regression-radar-paid-sequence.mjs
+  isolated-sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - run: npm ci
+      - name: Start disposable MySQL without a network
+        run: |
+          mkdir -p /tmp/crewcheck-radar-sql-qa-ci
+          docker run --detach --rm --name crewcheck-radar-sql-qa --network none --mount type=bind,source=/tmp/crewcheck-radar-sql-qa-ci,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_radar_qa mysql:8.4 --datadir=/var/run/mysqld/data
+          for attempt in $(seq 1 90); do
+            if docker logs crewcheck-radar-sql-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-radar-sql-qa mysql --socket=/var/run/mysqld/mysqld.sock -u root crewcheck_radar_qa -e 'SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-radar-sql-qa mysql --socket=/var/run/mysqld/mysqld.sock -u root crewcheck_radar_qa -e 'SELECT 1'
+          docker exec crewcheck-radar-sql-qa chmod 755 /var/run/mysqld
+      - name: Paid Radar ledger on real InnoDB (concurrency, billing window, restart)
+        env:
+          RADAR_LEDGER_QA: isolated-mysql
+          RADAR_LEDGER_QA_SOCKET: /tmp/crewcheck-radar-sql-qa-ci/mysqld.sock
+        run: node scripts/regression-radar-paid-ledger-mysql.mjs
+      - name: Remove disposable SQL
+        if: always()
+        run: docker rm --force crewcheck-radar-sql-qa || true

@@ -331,13 +331,13 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
       const options = ctx.ciriumRadarOptions;
       result = await runCiriumFlightAwareSequence({ identity: evidence, admit: ctx.radarReadAdmission,
         // Paid routing (Cirium Flex) supplies its own budgeted primary and fallback guard.
-        primary: options.primary ? () => options.primary(evidence) : () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, options, ctx.raw),
+        primary: options.primary ? () => options.primary(evidence, ctx.radarReadAdmission) : () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, options, ctx.raw),
         fallback: async () => {
           const call = async () => {
             const response = await providerFlightAware(ctx, Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400))));
             return response ? { ...response, sourceReceivedAt: Date.now() } : null;
           };
-          return options.guardFallback ? options.guardFallback(evidence, call) : call();
+          return options.guardFallback ? options.guardFallback(evidence, call, ctx.radarReadAdmission) : call();
         } });
     } else {
       result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
