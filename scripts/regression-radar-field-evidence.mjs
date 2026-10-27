@@ -118,7 +118,7 @@ const scope = vm.createContext({ ...policy, ...radarEvidence, Date: FixedDate, b
   envAny: keys => keys.find(key => envs.has(key)) ? (keys.includes('CREWCHECK_FLIGHT_STATUS_URL') ? 'https://fixture.invalid/{flight}' : 'OFFLINE_ONLY') : '',
   providerAvailable: keys => true, markProvider: () => {}, customGateSourceUpdate: payload => customGateSourceUpdate(payload, now),
   jsonFetch: async url => { const host = new URL(url).hostname; const key = host.includes('aerodatabox') ? 'aerodatabox' : host.includes('airlabs') ? 'airlabs' : 'custom'; return { response: { ok: key in bodies }, payload: structuredClone(bodies[key] ?? null) }; },
-  providerFlightAware: async () => null, providerCiriumFlex: async () => null, providerAviationstack: async () => null,
+  providerFlightAware: async () => null, providerAviationstack: async () => null,
   ciriumRadarInjectionEnabled: () => false, ciriumRadarProjection: () => ({}), configuredProviders: () => [],
   conciergeExtractFlight: () => 'LA100', conciergeAccessMatches: () => true, conciergeLoadSnapshot: async () => snapshot, conciergeSaveSnapshotAsync: async () => { writes++; },
   conciergeNextProgram: () => ({ day: roster.days[0], legs: roster.days[0].legs }), conciergeFindFlight: () => ({ record: { day: roster.days[0], legs: roster.days[0].legs }, leg: roster.days[0].legs[0] }) });

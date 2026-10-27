@@ -17,7 +17,7 @@ const now=Date.parse('2032-10-14T12:00:00Z'),roster={year:2032,month:10,base:'GR
 let body,channel='airlabs',writes=0;
 const scope=vm.createContext({...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,Date:class extends Date{static now(){return now;}},gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??now),URL,setTimeout,clearTimeout,process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},
  envAny:keys=>channel==='airlabs'&&keys.includes('AIRLABS_API_KEY')?'OFFLINE_ONLY':channel==='custom'&&keys.includes('CREWCHECK_FLIGHT_STATUS_URL')?'https://fixture.invalid/{flight}':'',providerAvailable:()=>true,markProvider:()=>{},jsonFetch:async()=>({response:{ok:true},payload:body}),
- providerFlightAware:async()=>null,providerCiriumFlex:async()=>null,providerAviationstack:async()=>null,providerAeroDataBox:async()=>null,
+ providerFlightAware:async()=>null,providerAviationstack:async()=>null,providerAeroDataBox:async()=>null,
  telegramRequestUser:()=>({email:'fixture@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,conciergeLoadSnapshot:async()=>({email:'fixture@example.invalid',roster}),conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{},conciergeSaveSnapshotAsync:async()=>{writes++;},sendJson:(_r,_s,p)=>p});
 vm.runInContext(functions('server.mjs',['firstKnown','normalizeFlightRaw','buildFlightContext','providerAirLabs','providerCustom','runRadarRace','handleRadar','scoreRadar','publicRadarPayload']),scope);
 const url=new URL('https://fixture.invalid/api/radar-flight?flight=LA100&origin=GRU&destination=REC&departureDate=2032-10-14&scheduledDepartureUtc=2032-10-14T12:00:00Z&scheduledDeparture=2032-10-14T12:00:00Z&force=1');

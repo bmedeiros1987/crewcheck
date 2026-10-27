@@ -39,7 +39,6 @@ on:
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-next-flight-gate.mjs'
       - 'scripts/regression-gate-behavior-rule.mjs'
-      - 'scripts/regression-cirium-flex-radar.mjs'
       - 'docs/gate-behavior-rule.md'
       - 'scripts/regression-next-flight-gate-pulse.mjs'
       - 'scripts/regression-next-flight-gate-pulse-browser.mjs'
@@ -67,7 +66,6 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-gate-behavior-rule.mjs
-          node scripts/regression-cirium-flex-radar.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
@@ -98,7 +96,6 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-gate-behavior-rule.mjs
-          node scripts/regression-cirium-flex-radar.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
