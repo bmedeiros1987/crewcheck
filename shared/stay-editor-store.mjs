@@ -1,5 +1,10 @@
 import { stayInstant } from './stay-edit-plan.mjs';
 import { stayTimeZonePreference } from './stay-time-presentation.mjs';
+import { sanitizeStayScreenshotImport, sanitizeStayScreenshotValues } from './stay-screenshot-candidates.mjs';
+const screenshotFields = value => ({
+  ...(Object.prototype.hasOwnProperty.call(value, 'screenshotImport') ? { screenshotImport: sanitizeStayScreenshotImport(value.screenshotImport) } : {}),
+  ...(Object.prototype.hasOwnProperty.call(value, 'transport') ? { transport: Object.fromEntries(Object.entries(sanitizeStayScreenshotValues(value.transport)).filter(([key]) => key.startsWith('transport') || key.startsWith('pickup'))) } : {}),
+});
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const lead = value => Number.isInteger(value) && value >= 0 && value <= 720;
 export function stayEditorKey(accountId) {
@@ -26,7 +31,7 @@ export function readStayEditor(storage, accountId) {
       const choice = sanitizeStayChoice(value.choice);
       // Unknown/invalid choices never silently become Auto.
       if (choice === null) continue;
-      stays[id] = { ...value, choice, breakfastPlan: ['with', 'without'].includes(value.breakfastPlan) ? value.breakfastPlan : 'unknown', apzConfirmed: value.apzConfirmed === true && value.apzSource === 'manual', alarmState: value.alarmState === 'cancelled' ? 'cancelled' : 'not-programmed' };
+      stays[id] = { ...value, ...screenshotFields(value), choice, breakfastPlan: ['with', 'without'].includes(value.breakfastPlan) ? value.breakfastPlan : 'unknown', apzConfirmed: value.apzConfirmed === true && value.apzSource === 'manual', alarmState: value.alarmState === 'cancelled' ? 'cancelled' : 'not-programmed' };
     }
     return { ...empty, timeZonePreference: stayTimeZonePreference(raw.timeZonePreference), defaultLeadMinutes: lead(raw.defaultLeadMinutes) ? raw.defaultLeadMinutes : 90,
       defaultWithoutBreakfastMinutes: lead(raw.defaultWithoutBreakfastMinutes) ? raw.defaultWithoutBreakfastMinutes : 60, stays };
@@ -35,7 +40,8 @@ export function readStayEditor(storage, accountId) {
 export function writeStayEditor(storage, accountId, state) {
   const key = stayEditorKey(accountId);
   if (!key || state.accountId !== accountId || state.version !== 2) throw new Error('Conta não confirmada para salvar este pernoite.');
-  storage.setItem(key, JSON.stringify(state)); // Quota/privacy failures must reach the caller.
+  const stays = Object.fromEntries(Object.entries(state.stays || {}).map(([id, value]) => [id, object(value) ? { ...value, ...screenshotFields(value) } : value]));
+  storage.setItem(key, JSON.stringify({ ...state, stays })); // Quota/privacy failures must reach the caller.
 }
 /** Only authenticated server data with an unambiguous event binding may migrate.
  * A legacy clock has unknown provenance, so it requires explicit APZ confirmation.

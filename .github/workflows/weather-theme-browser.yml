@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/v1430/trust-and-conversion.css'
       - 'client/src/styles/**'
       - 'client/src/theme-v14-3-17.css'
@@ -18,6 +19,13 @@ on:
       - 'scripts/v14344/**'
       - 'scripts/finalize-theme-runtime.mjs'
       - 'scripts/regression-weather-theme-browser.mjs'
+      - 'client/src/components/pulse/**'
+      - 'scripts/pulse-alert-experience/**'
+      - 'scripts/lib/pulse-touch-target-sample.cjs'
+      - 'scripts/regression-pulse-mobile-navigation.mjs'
+      - 'scripts/regression-pulse-touch-target-browser.cjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - '.github/workflows/weather-theme-browser.yml'
   workflow_dispatch:
 
@@ -54,6 +62,16 @@ jobs:
           npx tsc --noEmit
           node scripts/p1-concierge-journey/compile.mjs
           npx vite build
+      # Azure can trickle APT archives for the entire job timeout. Keep the
+      # runner's existing signed HTTPS Ubuntu fallbacks; no test/gate changes.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/weather-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -62,11 +80,19 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
         run: node scripts/regression-weather-theme-browser.mjs
+      - name: Verify real Pulse touch targets in Chromium and WebKit
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
+        run: |
+          node scripts/regression-pulse-mobile-navigation.mjs
+          node scripts/regression-pulse-touch-target-browser.cjs
       - name: Save synthetic weather viewport evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: CrewCheck-weather-theme-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/weather-theme
+          path: |
+            artifacts/weather-theme
+            artifacts/pulse-touch-targets
           if-no-files-found: warn
           retention-days: 7

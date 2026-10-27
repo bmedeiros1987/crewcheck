@@ -4,11 +4,20 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/pages/Home.tsx'
       - 'server.mjs'
       - 'client/src/lib/departureRouteState.ts'
       - 'client/src/components/v1391/useRosterLayout.ts'
       - 'scripts/v139/apply.mjs'
+      - 'scripts/follow-flight/**'
+      - 'shared/followedFlights.*'
+      - 'scripts/regression-followed-flights*.mjs'
+      - 'scripts/departure-roster-projection/**'
+      - 'scripts/regression-departure-roster-projection*.mjs'
+      - 'shared/departureRosterProjection.*'
       - 'scripts/p1-departure-route-state/**'
       - 'scripts/regression-departure-route-*.mjs'
       - 'scripts/regression-departure-positioning-terminal.mjs'
@@ -55,11 +64,24 @@ jobs:
           node scripts/regression-departure-route-state.mjs
           node scripts/regression-departure-route-effects.mjs
           node scripts/regression-departure-positioning-terminal.mjs
+          node scripts/regression-followed-flights.mjs
+          node scripts/regression-followed-flights-ui.mjs
+          node scripts/regression-departure-roster-projection.mjs
+          node scripts/regression-departure-roster-projection-ui.mjs
           node scripts/regression-v14-3-34-positioning-radar-cache.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Vite production build
         run: npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated Chromium test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/route-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -81,3 +103,4 @@ jobs:
           done
           node scripts/regression-departure-route-state-browser.mjs
           node scripts/regression-positioning-terminal-error-browser.mjs
+          node scripts/regression-followed-flights-browser.mjs

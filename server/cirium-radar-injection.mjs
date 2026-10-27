@@ -38,5 +38,6 @@ export async function runCiriumRadarInjection(identity, options, requestedFlight
 export function ciriumRadarProjection(item) {
   if (item.provider !== 'cirium-sky') return {};
   return { provider: item.provider, providerState: item.providerState, canonicalReadOnly: true,
+    arrivalMilestones:item.arrivalMilestones||null, statusCode:typeof item.statusCode==='string'?item.statusCode:'', departureDate:item.departureDate||'',
     occurrenceKey: item.occurrenceKey || '', provenance: item.provenance || null, updatedAt: item.updatedAt || null };
 }

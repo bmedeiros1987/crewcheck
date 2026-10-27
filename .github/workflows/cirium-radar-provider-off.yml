@@ -6,6 +6,7 @@ on:
       - 'server/radar-sequential.mjs'
       - 'scripts/regression-radar-sequential.mjs'
       - 'docs/radar-cirium-flightaware-sequential.md'
+      - 'shared/radar-field-evidence.mjs'
       - 'server/cirium-flight-adapter.mjs'
       - 'server/radar-occurrence-identity.mjs'
       - 'server/radar-field-provenance.mjs'

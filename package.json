@@ -6,8 +6,8 @@
   "description": "CrewCheck v13.9.9 - monthly roster, contractual-base allowances, premium responsive UI and Admin health",
   "scripts": {
     "prepare:v139": "node scripts/v139/apply.mjs",
-    "dev": "node scripts/v139/apply.mjs && vite --host 0.0.0.0",
-    "build": "node scripts/v139/apply.mjs && node scripts/p1-concierge-journey/compile.mjs && vite build",
+    "dev": "node scripts/v139/apply.mjs && node scripts/stay-screenshot-assets.mjs && vite --host 0.0.0.0",
+    "build": "node scripts/v139/apply.mjs && node scripts/p1-concierge-journey/compile.mjs && node scripts/stay-screenshot-assets.mjs && vite build",
     "preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}",
     "check": "node scripts/v139/apply.mjs && tsc --noEmit",
     "start": "node scripts/v139/apply.mjs && node scripts/p1-concierge-journey/compile.mjs && node --import ./server/telegram-fast-ack.mjs server.mjs",
@@ -143,9 +143,11 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.14",
-    "vite": "^7.1.7",
+    "vite": "7.3.7",
     "web-push": "3.6.7",
-    "wouter": "^3.3.5"
+    "wouter": "^3.3.5",
+    "tesseract.js": "7.0.0",
+    "tesseract.js-core": "7.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.3",
@@ -158,7 +160,7 @@
   },
   "overrides": {
     "browserslist": "4.28.7",
-    "dompurify": "3.4.16"
+    "dompurify": "3.4.17"
   },
   "engines": {
     "node": ">=22.13.0"

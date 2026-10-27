@@ -1,6 +1,13 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import os from 'node:os';import path from 'node:path';import {createRequire} from 'node:module';import {build} from 'esbuild';
+const depDir=fs.mkdtempSync(path.join(os.tmpdir(),'salary-history-deps-')),depFile=path.join(depDir,'deps.cjs');
+await build({stdin:{contents:`export * from './client/src/lib/salaryDsrConsumer';export {salaryDisplaySummary} from './client/src/lib/salaryDisplayBasis';export {captureAuthSession} from './client/src/lib/authClient';export {financialRateOwner,confirmedPayrollDsrContext,confirmedRateAt} from './client/src/lib/financialStatementLearning';export {readMonthlyFinancialSettings} from './client/src/lib/financialMonthlySettings';export {rosterFingerprint} from './client/src/lib/rosterComparison';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:depFile});
+const syntheticStorage=new Map([['crewcheck_auth_token','synthetic-history-token'],['crewcheck_auth_user',JSON.stringify({id:'synthetic-history-owner'})]]);globalThis.localStorage={getItem:key=>syntheticStorage.get(key)??null,setItem:(key,value)=>syntheticStorage.set(key,value),removeItem:key=>syntheticStorage.delete(key)};
+const dependencies=createRequire(import.meta.url)(depFile);
+
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
@@ -20,16 +27,17 @@ try {
   assert.equal(financialMonths(financialRange('year','2032-11','','','')).length,12);
   const home=process.env.FINANCIAL_BASELINE_SHA?execFileSync('git',['show',process.env.FINANCIAL_BASELINE_SHA+':client/src/pages/Home.tsx'],{encoding:'utf8'}):fs.readFileSync('client/src/pages/Home.tsx','utf8');
   const ast=ts.createSourceFile('Home.tsx',home,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-  const names=['calculateSalary','nightHoursInsideWindow','scopedFinancialForecast','moneyCurrency','moneyBRL'];
+  const names=['calculateSalary','nightHoursInsideWindow','scopedFinancialForecast','moneyCurrency','moneyBRL','rosterFinancialDate'];
   const functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));
   const cfg={configured:true,baseConfigured:true,basePay:900,fixedAdditions:0,dayKmMetric:1,nightKmMetric:2,chiefPerSector:0,instructorPerSector:0,reserveHourMetric:10,standbyHourMetric:5,inssDeduction:0,irrfDeduction:0,otherDeductions:0,fgtsRate:0,source:'SYNTHETIC — not a real tariff'};
-  const context=vm.createContext({...modules.load('salaryActivityEvidence'),...history,...periods,...scope,...modules.load('rosterDisplayDate'),...modules.load('financialJourneyGrouping'),...(fs.existsSync('client/src/lib/financialReserveCredits.ts')?modules.load('financialReserveCredits'):{}),loadActCompensationConfig:()=>cfg,storage:{get:()=> '0'},dedupeProjectedLegs:events=>events,
+  const context=vm.createContext({...dependencies,readOptionalNumberSetting:()=>null,...modules.load('salaryActivityEvidence'),...history,...periods,...scope,...modules.load('rosterDisplayDate'),...modules.load('financialJourneyGrouping'),...(fs.existsSync('client/src/lib/financialReserveCredits.ts')?modules.load('financialReserveCredits'):{}),loadActCompensationConfig:()=>cfg,storage:{get:()=> '0'},dedupeProjectedLegs:events=>events,
     flightDistanceKmFromEvent:()=>100,durationHours:()=>2,financialFlightRule:()=>({extra:false,reason:'synthetic'}),isSundayOrConfiguredHoliday:()=>false,userIsFirstCcm:()=>false,flightWorkType:()=> 'OP',safe:(value,fallback)=>value||fallback,dateChip:date=>date.toISOString().slice(0,10),isOperationalEvent:()=>true,financialEventCode:event=>event.kind==='reserve'?'ASB':'CRM',
     eventStartDateTime:event=>new Date(event.iso+(event.kind==='reserve'?'T07:00:00':'T11:00:00')),eventEndDateTime:event=>new Date(event.iso+(event.kind==='reserve'?'T09:00:00':'T13:00:00'))});
   vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.subject={calculateSalary'+(functions.some(n=>n.name.text==='scopedFinancialForecast')?',scopedFinancialForecast':'')+'};',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+ installAllowanceDependencies(context);
   const event=(iso,kind='flight')=>({id:'synthetic-'+iso+'-'+kind,iso,date:new Date(iso+'T12:00:00'),kind,day:{date:iso.slice(8)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4),...(kind==='reserve'?{type:'ASB',dutyReport:'07:00',dutyDebrief:'09:00',dutyReportSource:'published',dutyDebriefSource:'published'}:{})},origin:'AAA',destination:'BBB',flightNumber:'SYN'});
   const salary=context.subject.calculateSalary([event('2032-01-31'),event('2032-02-02'),event('2032-03-01'),event('2032-01-31','reserve'),event('2032-02-02','reserve')],{year:2032,month:2});
-  assert.equal(salary.rows.length,1,'monthly salary excludes adjacent-month flights');assert.equal(salary.reserveHours,2,'monthly salary excludes adjacent-month reserve');assert.equal(salary.gross,1020);
+  assert.equal(salary.rows.length,1,'monthly salary excludes adjacent-month flights');assert.equal(salary.reserveHours,2,'monthly salary excludes adjacent-month reserve');assert.ok(Number.isNaN(salary.gross),'observed monthly rows do not prove complete variable inventory');assert.equal(salary.production,100);assert.equal(salary.reserve,20);
   assert.equal(salary.rows[0].iso,'2032-02-02');
   if(context.subject.scopedFinancialForecast){
     const row=(iso,currency,value,convertedBRL)=>({iso,currency,value,convertedBRL,label:'SYN',source:'synthetic'});
@@ -62,4 +70,4 @@ try {
   local=[];expectedPreserve=false;online=[revision('old','2032-02-01T00:00:00Z'),revision('new','2032-02-02T00:00:00Z')];assert.equal((await readerContext.readers.listSavedRosters(72)).length,1,'legacy consumers retain original composition behavior');
   const syntheticRoster={crewId:'SYN01',year:2032,month:2,days:[{date:'02/02/2032'}]};local=[{id:'local-old',createdAt:'2032-02-01T00:00:00Z',roster:syntheticRoster},{id:'local-new',createdAt:'2032-02-02T00:00:00Z',roster:syntheticRoster},{id:'missing-stamp',roster:syntheticRoster}];assert.equal(readerContext.readers.readLocalHistory(true,true).length,2,'finance local revisions survive fabricated period checksums; missing revision timestamps are not invented');assert.equal(readerContext.readers.readLocalHistory().length,1,'other local consumers retain their original dedup');
   console.log('PASS financial history: civil periods, leap days, scope completeness, native currencies, canonical salary competence, owner identity, revision dedup/conflicts — TZ='+process.env.TZ);
-}finally{modules.cleanup();}
+}finally{modules.cleanup();fs.rmSync(depDir,{recursive:true,force:true});}

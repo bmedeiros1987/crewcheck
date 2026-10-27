@@ -1,3 +1,4 @@
+import {restrictConciergeSnapshotWrite} from '../../server/concierge-read-only-scope.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
@@ -31,7 +32,7 @@ let now=Date.parse('2026-10-19T13:02:00Z');
 class Clock extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
 let cache={snapshots:{}};const database=new Map();
 const clone=value=>JSON.parse(JSON.stringify(value));
-const context=vm.createContext({Date:Clock,Intl,...language,
+const context=vm.createContext({restrictConciergeSnapshotWrite,Date:Clock,Intl,...language,
   conciergeInactiveCodes:new Set(['DO','DOF','DOP','DOPR','DR','OFF','VC']),
   telegramRostersRead:()=>clone(cache),telegramRostersWrite:value=>{cache=clone(value);return true;},
   conciergeDbPut:async(key,value)=>{database.set(key,clone(value));return true;},conciergeDbGet:async key=>clone(database.get(key)||null),

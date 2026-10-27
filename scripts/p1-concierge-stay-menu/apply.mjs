@@ -14,7 +14,9 @@ function replace(source, before, after, label) {
 update('server.mjs', source => {
   if (!source.includes("from './server/concierge/stay-menu.mjs'")) source = "import { stayMenuReply } from './server/concierge/stay-menu.mjs';\n" + source;
   const replyStart = "async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {";
-  source = replace(source, replyStart, `${replyStart}\n  const stayMenu = await stayMenuReply(text, profile);\n  if (stayMenu.handled) return stayMenu.reply;`, 'final Concierge wrapper');
+  const stayEntry = `${replyStart}\n  const stayMenu = await stayMenuReply(text, profile);\n  if (stayMenu.handled) return stayMenu.reply;`;
+  const textMenuEntry = `${stayEntry}\n  if (stayMenu.text) text = stayMenu.text;`;
+  if (!source.includes(textMenuEntry)) source = replace(source, source.includes(stayEntry) ? stayEntry : replyStart, textMenuEntry, 'channel-scoped text menu before shared Concierge');
   if (!source.includes('const conciergeKeyboard = menuTemplate();')) {
     source = replace(source, "[{ text: '🏨 Hotéis' }, { text: '🏥 Hospitais' }]", "[{ text: '🏨 Meu pernoite' }, { text: '🏥 Hospitais' }]", 'Telegram menu');
   }

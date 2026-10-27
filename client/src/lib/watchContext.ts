@@ -1,3 +1,4 @@
+import { stayLocalInstant } from '../../../shared/stay-edit-plan.mjs';
 import { airportTimeZone } from '../../../shared/airport-timezones.mjs';
 
 export type CrewCheckWatchState =
@@ -89,6 +90,24 @@ export type WatchEventLike = {
   };
 };
 
+// Optional already account-scoped record from savedStayEditorEvent. No airport
+// presentation, pickup or departure clock can substitute for this evidence.
+export type WatchHotelReport = {
+  eventId: string; signature: string; apzConfirmed: boolean; apzSource: string;
+  apzDate: string; timeZone: string; draft: { presentationTime?: string };
+};
+function hotelReport(event: WatchEventLike, record: WatchHotelReport | null, now: number): { at: number; label: string } | null {
+  const signature = [event.id,event.canonical?.startDateTime,event.canonical?.endDateTime,event.origin,event.destination].join('|');
+  if (event.kind !== 'stay' || !record || record.eventId !== event.id || record.signature !== signature
+    || record.apzConfirmed !== true || record.apzSource !== 'manual') return null;
+  const at = stayLocalInstant(record.apzDate, record.draft?.presentationTime || '', record.timeZone);
+  const start = instant(event.canonical?.startDateTime), end = instant(event.canonical?.endDateTime);
+  if (at === null || !Number.isFinite(start) || !Number.isFinite(end) || at < start || at > end || at <= now) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: record.timeZone, day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23' }).formatToParts(new Date(at));
+  const value = (type: string) => parts.find(p => p.type === type)?.value || '';
+  return { at, label: `APZ hotel ${value('day')}/${value('month')} ${value('hour')}:${value('minute')} ${record.timeZone}` };
+}
+
 export type WatchRouteContext = {
   eventId: string;
   updatedAtEpochMs: number;
@@ -126,6 +145,7 @@ function publishedDeparture(event: WatchEventLike): string {
   return sourceClock(event.canonical?.leg?.departureTime);
 }
 function publishedPresentation(event: WatchEventLike): string {
+  if (event.kind === 'stay') return ''; // Airport/duty APZ is not hotel APZ.
   const value = sourceClock(event.presentation);
   if (!value || event.canonical?.showPresentation === false) return '';
   // A per-event manual entry is explicit evidence, unlike learned/default clocks.
@@ -203,7 +223,14 @@ export function buildCrewCheckWatchSnapshot(
   event: WatchEventLike,
   route: WatchRouteContext | null = null,
   now = Date.now(),
+  hotelReportRecord: WatchHotelReport | null = null,
 ): CrewCheckWatchSnapshot {
+  const activeWindow = (candidate: WatchEventLike) => !candidate.placeholder
+    && instant(candidate.canonical?.startDateTime) <= now && now < instant(candidate.canonical?.endDateTime);
+  const currentStays = events.filter(candidate => candidate.kind === 'stay' && activeWindow(candidate));
+  // Home may select tomorrow's leg while the current occurrence is a stay.
+  // Never override an active leg/rest or choose an arbitrary overlapping stay.
+  if ((!event || !activeWindow(event)) && currentStays.length === 1) event = currentStays[0];
   const currentRest = events.find(candidate => (candidate.canonical?.kind || candidate.kind) === 'rest'
     && instant(candidate.canonical?.startDateTime) <= now && instant(candidate.canonical?.endDateTime) >= now);
   // Home intentionally selects operational events, so a rest-only day arrives
@@ -254,9 +281,9 @@ export function buildCrewCheckWatchSnapshot(
   const focusStartMs = (Number.isFinite(presentationMs) ? presentationMs : startMs) - 3 * HOUR_MS;
   const restToday = Boolean(currentRest);
   const future = Number.isFinite(startMs)
-    ? now < focusStartMs || (restToday && now < startMs)
+    ? (event.kind === 'stay' && now < startMs) || now < focusStartMs || (restToday && now < startMs)
     : event.kind === 'duty' && Number.isFinite(sourceDayMs) && now < sourceDayMs;
-  const expired = Number.isFinite(endMs) && now > endMs;
+  const expired = Number.isFinite(endMs) && now >= endMs;
   const boardingMs = event.kind === 'flight' && departure && provenDomestic(event) ? startMs - 40 * 60_000 : NaN;
 
   // Published schedule gates are planning, not current operational confirmation.
@@ -324,8 +351,9 @@ export function buildCrewCheckWatchSnapshot(
       ? 'CONEXÃO'
       : state === 'OVERNIGHT'
             ? 'PERNOITE'
-            : state === 'OFF_DUTY' ? 'FOLGA' : state === 'UNKNOWN' ? 'PROGRAMAÇÃO' : 'APRESENTAÇÃO';
+            : state === 'OFF_DUTY' ? 'FOLGA' : state === 'UNKNOWN' ? (future ? 'PRÓXIMA ESCALA' : expired ? 'ESCALA ENCERRADA' : 'CONFIRA A ESCALA') : 'APRESENTAÇÃO';
 
+  const hotelApz = state === 'OVERNIGHT' ? hotelReport(event, hotelReportRecord, now) : null;
   const currentFlight = event.kind === 'flight' ? clean(event.flightNumber) : '';
   const currentRoute = event.kind === 'flight'
     ? [clean(event.origin), clean(event.destination)].filter(Boolean).join(' → ')
@@ -378,7 +406,7 @@ export function buildCrewCheckWatchSnapshot(
   const futureClock = event.kind === 'duty' ? presentation || 'horário a confirmar' : clockLabel(startMs);
   const futureDate = dayLabel(dateMs);
   const inactive = future || expired || state === 'OFF_DUTY' || !Number.isFinite(startMs) || !Number.isFinite(endMs);
-  const transitions = [focusStartMs, startMs, endMs, sourceDayMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
+  const transitions = [hotelApz?.at ?? NaN, focusStartMs, startMs, endMs, sourceDayMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
   return {
     schemaVersion: 1,
     contextId: clean(canonical?.id) || event.id,
@@ -387,7 +415,7 @@ export function buildCrewCheckWatchSnapshot(
     state,
     headline,
     primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : event.kind === 'flight' ? clockLabel(startMs) : '',
-    detail: event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(dateMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
+    detail: state === 'OVERNIGHT' ? (hotelApz?.label || 'APZ no hotel não informada; confira no celular.') : event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(dateMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
     presentationTime: inactive ? '' : presentation,
     presentationPlace: [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
     leaveTime: inactive ? '' : leaveTime,
@@ -415,7 +443,7 @@ export function buildCrewCheckWatchSnapshot(
       : nextStay
         ? clean(nextStay.hotel) || clean(nextStay.destination) || clean(nextStay.origin)
         : '',
-    hotelPickup: '',
+    hotelPickup: state === 'OVERNIGHT' ? (hotelApz?.label || 'APZ hotel não informada') : '',
     changed: false,
     source: 'canonical-roster',
     schedule,

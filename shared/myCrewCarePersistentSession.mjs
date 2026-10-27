@@ -146,6 +146,7 @@ function parseStored(value, context, expectedStayFingerprint, stays, now) {
 
 function normalizeProviderEnvelope(payload, requestId, context, now) {
   if (payload?.schemaVersion !== MYCREWCARE_PROTOCOL
+    || payload?.operationalImportAllowed === false
     || payload?.requestId !== requestId
     || !same(normalizeMyCrewCareContext(payload?.context), context)
     || payload?.authenticated !== true

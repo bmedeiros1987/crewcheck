@@ -1,3 +1,29 @@
+import {regulationOperationalInstant} from '../shared/regulationOperationalArrival.mjs';
+
+const ARRIVAL_FIELDS={scheduledGateArrival:['SGA','scheduled','gate_in'],estimatedGateArrival:['EGA','estimated','gate_in'],actualGateArrival:['AGA','actual','gate_in'],scheduledRunwayArrival:['SRA','scheduled','landing'],estimatedRunwayArrival:['ERA','estimated','landing'],actualRunwayArrival:['ARA','actual','landing']};
+// FlightStatusUpdate.updatedAt proves only the date fields named in that delta.
+// A later removal/different value must invalidate an older matching observation.
+export function normalizeCiriumArrivalMilestones(row={}){
+ const updates=row.flightStatusUpdates;
+ return Object.fromEntries(Object.entries(ARRIVAL_FIELDS).map(([name,[code,kind,milestone]])=>{
+  const value=regulationOperationalInstant(row.operationalTimes?.[name]?.dateUtc);
+  let latest=null,conflict=false,invalid=false;
+  if(Array.isArray(updates)&&updates.length<=500)for(const update of updates){
+   if(update?.updatedDateFields===undefined)continue;
+   if(!Array.isArray(update?.updatedDateFields)||update.updatedDateFields.length>100){invalid=true;continue;}
+   for(const change of update.updatedDateFields){
+    if(change?.field!==code)continue;
+    const stamp=regulationOperationalInstant(update.updatedAt?.dateUtc),changed=regulationOperationalInstant(change.newDateUtc);
+    if(stamp===null){invalid=true;continue;}
+    if(!latest||stamp>latest.stamp){latest={stamp,changed};conflict=false;}
+    else if(stamp===latest.stamp&&changed!==latest.changed)conflict=true;
+   }
+  }
+  const observedAt=value!==null&&!invalid&&!conflict&&latest?.changed===value?new Date(latest.stamp).toISOString():null;
+  return [name,{at:value===null?null:new Date(value).toISOString(),kind,milestone,sourceField:code,observedAt}];
+ }));
+}
+
 function firstKnown(...values) {
   return values.find((value) => value !== undefined && value !== null && String(value).trim()) || '';
 }
@@ -61,6 +87,7 @@ export function normalizeCiriumFlightStatus(row = {}, context = {}) {
     ok: Boolean(flight && origin && destination),
     configured: true,
     provider: 'cirium-sky',
+    statusCode: typeof row.status==='string'?row.status:'',
     flight,
     status: firstKnown(STATUS_LABELS[row.status], row.status, 'Monitorando'),
     statusProvided: Boolean(row.status),
@@ -79,6 +106,7 @@ export function normalizeCiriumFlightStatus(row = {}, context = {}) {
       timeValue(times.estimatedGateArrival), timeValue(times.estimatedRunwayArrival),
       timeValue(times.scheduledGateArrival), timeValue(times.publishedArrival),
     ),
+    arrivalMilestones: normalizeCiriumArrivalMilestones(row),
     scheduledDeparture: firstKnown(timeValue(times.scheduledGateDeparture), timeValue(times.publishedDeparture)),
     estimatedDeparture: firstKnown(timeValue(times.estimatedGateDeparture), timeValue(times.estimatedRunwayDeparture)),
     actualDeparture: firstKnown(timeValue(times.actualGateDeparture), timeValue(times.actualRunwayDeparture)),

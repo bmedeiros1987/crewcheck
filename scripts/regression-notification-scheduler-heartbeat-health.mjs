@@ -128,7 +128,11 @@ const cycleTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-scheduler-
 const cycleTempFile = path.join(cycleTempDir, 'run-scheduler-cycle.mjs');
 try {
   const harness = `
+import { runTelegramBriefingCycle as actualTelegramBriefingCycle } from ${JSON.stringify(pathToFileURL(path.resolve('server/concierge/telegram-briefing.mjs')).href)};
 import { runCrewCheckPushQueue as actualCrewCheckPushQueue } from ${JSON.stringify(pathToFileURL(path.resolve('server/web-push/bidsProducer.mjs')).href)};
+let briefingThrows = false;
+export function setBriefingThrows(value) { briefingThrows = value; }
+async function runTelegramBriefingCycle(db) { if (briefingThrows) throw Error('Synthetic briefing failure'); return actualTelegramBriefingCycle(db); }
 async function runCrewCheckPushQueue(db) { return actualCrewCheckPushQueue(db, { configuration: () => ({ enabled: false, configured: false }) }); }
 export let schedulerRunning = false;
 export let lastCycle = null;
@@ -179,10 +183,17 @@ export { runSchedulerCycle };
   await mod.runSchedulerCycle();
   assert.equal(mod.dbPoolCalls, 3, 'terceiro ciclo também não pode ficar bloqueado pelos dois anteriores');
   assert.equal(mod.schedulerRunning, false, 'ciclo bem-sucedido deve terminar com schedulerRunning=false');
+  assert.equal(mod.lastCycle.operationalBriefing.status, 'disabled', 'Briefing OFF uses the real producer without touching its DB path');
   assert.equal(mod.lastCycle.crewCheckPush.enabled, false, 'Web Push desativado permanece inerte no ciclo real');
   assert.equal(mod.lastCycle.crewCheckPush.selected, 0);
   assert.equal(mod.lastCycle?.error, undefined, 'ciclo bem-sucedido não deve registrar summary.error');
   assert.equal(mod.heartbeatCalls.length, 2, 'ciclo bem-sucedido deve gravar heartbeat de início e de fim (db existe)');
+  mod.setBriefingThrows(true);
+  await mod.runSchedulerCycle();
+  assert.equal(mod.lastCycle.operationalBriefing.status, 'unavailable');
+  assert.equal(mod.lastCycle.crewCheckPush.enabled, false, 'Briefing outage must not stop the existing queue');
+  assert.equal(mod.lastCycle.error, undefined);
+  mod.setBriefingThrows(false);
   assert.equal(mod.heartbeatCalls[0].lastFinishedAt, null, 'heartbeat de início deve marcar lastFinishedAt=null');
   assert.equal(mod.heartbeatCalls[1].lastStatus, 'ok', 'heartbeat de fim de ciclo bem-sucedido deve ter lastStatus=ok');
 
@@ -236,9 +247,12 @@ try {
 const listStart=source.indexOf('async function listJobs('),listEnd=source.indexOf('\nasync function cancelJob',listStart);
 const listFile=path.join(os.tmpdir(),`crewcheck-readiness-api-${process.pid}.mjs`);
 try{
- fs.writeFileSync(listFile,`export let user={email:'a@example.test',id:'A'};export let owner='A',link={email:'a@example.test',chatId:'fictional'};export function state(u,o,l){user=u;owner=o;link=l;}function identity(){return user;}async function dbPool(){return{query:async sql=>[sql.includes('SELECT public_id')?[{public_id:owner}]:[{id:1,status:'sent',scheduledEpoch:1791527085799,sentEpoch:1791527086824}]]};}async function ensureNotificationTable(){}async function linkedTelegramRecord(){return link;}function safeEmail(x){return String(x||'').trim().toLowerCase();}function sendJson(res,status,body){Object.assign(res,{status,body});}${source.slice(listStart,listEnd)};export{listJobs};`);
+ fs.writeFileSync(listFile,`import { phoneScheduleCapability } from ${JSON.stringify(pathToFileURL(path.resolve('server/notification-job-safety.mjs')).href)};export let user={email:'a@example.test',id:'A'};export let owner='A',link={email:'a@example.test',chatId:'fictional'};export function state(u,o,l){user=u;owner=o;link=l;}function identity(){return user;}async function dbPool(){return{query:async sql=>[sql.includes('SELECT public_id')?[{public_id:owner}]:[{id:1,status:'sent',scheduledEpoch:1791527085799,sentEpoch:1791527086824}]]};}async function ensureNotificationTable(){}async function linkedTelegramRecord(){return link;}function safeEmail(x){return String(x||'').trim().toLowerCase();}function sendJson(res,status,body){Object.assign(res,{status,body});}${source.slice(listStart,listEnd)};export{listJobs};`);
  const mod=await import(pathToFileURL(listFile).href);const ask=async()=>{const res={};await mod.listJobs({},res);return res;};
  assert.equal((await ask()).body.readiness.telegramLinked,true);
+ const phoneCapability=(await ask()).body.readiness.phoneCall;
+ assert.equal(phoneCapability.available,false);
+ assert.equal(phoneCapability.reason,'phone_binding_unavailable');
  const job=(await ask()).body.jobs[0];assert.equal(job.scheduledAt,new Date(1791527085799).toISOString());assert.equal(job.sentAt,new Date(1791527086824).toISOString());assert(!('scheduledEpoch' in job));
  mod.state({email:'a@example.test',id:'A'},'A',{email:'b@example.test',chatId:'fictional'});assert.equal((await ask()).body.readiness.telegramLinked,false);
  mod.state({email:'a@example.test',id:'old'},'A',{});assert.equal((await ask()).status,401);

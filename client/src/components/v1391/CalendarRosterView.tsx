@@ -1,3 +1,5 @@
+import { rosterCardPresentation } from '@/lib/rosterPresentation';
+import { RosterActivityIcon } from './RosterLegend';
 import { rosterDisplayIso, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { AimsRosterTable } from './AimsRosterTable';
 import type { RosterZoom } from '@/lib/rosterLayoutPreference';
@@ -30,29 +32,6 @@ function isoOf(event: CalendarRosterEvent) {
   return rosterDisplayIso(event) || '';
 }
 
-function publishedClock(value?: string | null) {
-  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
-  return match ? `${String(Number(match[1])).padStart(2, '0')}:${match[2]}` : '';
-}
-
-function activityCode(event: CalendarRosterEvent) {
-  return String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação');
-}
-
-function activityContext(event: CalendarRosterEvent) {
-  if (event.origin || event.destination) return `${event.origin || '—'} → ${event.destination || '—'}`;
-  return String(event.title || event.kind || 'Programação publicada');
-}
-
-function activityTimes(event: CalendarRosterEvent) {
-  const values = [
-    event.presentation && event.presentation !== 'Conexão/Solo' ? `APZ ${publishedClock(event.presentation)}` : '',
-    publishedClock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure),
-    publishedClock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival),
-  ].filter(Boolean);
-  return Array.from(new Set(values)).join(' · ');
-}
-
 export function buildCalendarDates(month: string) {
   const [year, monthNumber] = month.split('-').map(Number);
   const first = new Date(year, monthNumber - 1, 1);
@@ -62,9 +41,9 @@ export function buildCalendarDates(month: string) {
   return Array.from({ length: total }, (_, index) => new Date(year, monthNumber - 1, index - leading + 1));
 }
 
-export function CalendarRosterView({ events, month, zoom = 'month', selectedDay, onSelectDay }: { events: CalendarRosterEvent[]; month: string; zoom?: RosterZoom; selectedDay?: string; onSelectDay?: (iso: string) => void }) {
+export function CalendarRosterView({ events, periodEvents = events, filtered = false, operationalEvents = events, month, zoom = 'month', selectedDay, onSelectDay }: { events: CalendarRosterEvent[]; periodEvents?: CalendarRosterEvent[]; filtered?: boolean; operationalEvents?: CalendarRosterEvent[]; month: string; zoom?: RosterZoom; selectedDay?: string; onSelectDay?: (iso: string) => void }) {
   const unconfirmed = events.filter(event => !isoOf(event));
-  const unconfirmedView = unconfirmed.length ? <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada"><h2>Data não confirmada</h2><p>Estas programações não puderam ser posicionadas no calendário; seus detalhes permanecem disponíveis.</p><AimsRosterTable events={unconfirmed} dayView title="Programações com data não confirmada"/></section> : null;
+  const unconfirmedView = unconfirmed.length ? <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada"><h2>Data não confirmada</h2><p>Estas programações não puderam ser posicionadas no calendário; seus detalhes permanecem disponíveis.</p><AimsRosterTable operationalEvents={operationalEvents} events={unconfirmed} showHistory={false} dayView title="Programações com data não confirmada"/></section> : null;
   const byDate = new Map<string, CalendarRosterEvent[]>();
   for (const event of events) {
     const iso = isoOf(event);
@@ -78,8 +57,8 @@ export function CalendarRosterView({ events, month, zoom = 'month', selectedDay,
   if (zoom === 'day') {
     const dayEvents = byDate.get(selectedDay || '') || [];
     return <>{dayEvents.length
-      ? <AimsRosterTable events={dayEvents} dayView title={`Programações de ${(selectedDay || '').split('-').reverse().join('/')}`}/>
-      : <section className="cc-roster-empty-v1397" role="status"><h2>Nenhuma programação neste dia</h2><p>Escolha outro dia ou volte ao mês completo.</p></section>}{unconfirmedView}</>;
+      ? <AimsRosterTable operationalEvents={operationalEvents} events={dayEvents} showHistory={false} dayView title={`Programações de ${(selectedDay || '').split('-').reverse().join('/')}`}/>
+      : <section className="cc-roster-empty-v1397" role="status"><h2>{filtered ? 'Nenhum item deste filtro neste dia' : 'Nenhuma programação neste dia'}</h2><p>Escolha outro dia ou volte ao mês completo.</p></section>}{unconfirmedView}</>;
   }
 
   return <><section className="cc-calendar-roster" aria-labelledby="cc-calendar-roster-title">
@@ -87,9 +66,9 @@ export function CalendarRosterView({ events, month, zoom = 'month', selectedDay,
       <div>
         <small>FORMATO CALENDÁRIO</small>
         <h2 id="cc-calendar-roster-title">Mês operacional</h2>
-        <p>Todas as programações do dia.</p>
+        <p>{filtered ? 'Cartões da categoria selecionada; datas preservadas.' : 'Todas as programações do dia.'}</p>
       </div>
-      <span>{events.length} {events.length === 1 ? 'programação' : 'programações'}</span>
+      <span>{periodEvents.length} {periodEvents.length === 1 ? 'programação' : 'programações'}</span>
     </header>
     <div className="cc-calendar-roster-scroll" tabIndex={0} aria-label="Calendário da escala; deslize horizontalmente para ver a semana completa">
       <table>
@@ -100,16 +79,22 @@ export function CalendarRosterView({ events, month, zoom = 'month', selectedDay,
             {week.map((date) => {
               const iso = isoFromDate(date);
               const dayEvents = byDate.get(iso) || [];
+              const fullDayCount = periodEvents.filter(event => isoOf(event) === iso).length;
               const inside = iso.startsWith(`${month}-`);
               return <td key={iso} data-roster-iso={iso} data-outside-month={inside ? 'false' : 'true'} data-today={iso === todayIso ? 'true' : 'false'}>
                 <div className="cc-calendar-day">
-                  <header><button type="button" disabled={!inside} aria-label={`Abrir dia ${iso.split('-').reverse().join('/')}, ${dayEvents.length} programações`} onClick={() => onSelectDay?.(iso)}><time dateTime={iso}>{date.getDate()}</time></button>{dayEvents.length > 0 && <span>{dayEvents.length}</span>}</header>
+                  <header><button type="button" disabled={!inside} aria-label={`Abrir dia ${iso.split('-').reverse().join('/')}, ${fullDayCount} programações`} onClick={() => onSelectDay?.(iso)}><time dateTime={iso}>{date.getDate()}</time></button>{fullDayCount > 0 && <span>{fullDayCount}</span>}</header>
                   <div>
-                    {dayEvents.map((event) => <article key={event.id} data-roster-event-id={event.id}>
-                      <button type="button" aria-label={`Abrir ${activityCode(event)} em ${iso}`} onClick={() => onSelectDay?.(iso)}><strong>{activityCode(event)}</strong></button>
-                      <span>{activityContext(event)}</span>
-                      {activityTimes(event) && <small>{activityTimes(event)}</small>}
-                    </article>)}
+                    {dayEvents.map((event, index) => { const card = rosterCardPresentation(event, iso); return <article key={`${event.id}:${periodEvents.indexOf(event)}:${index}`} className="cc-roster-token" data-roster-mode={card.mode} data-roster-event-id={event.id}>
+                      <button type="button" aria-label={`Abrir ${card.title} em ${iso}`} onClick={() => onSelectDay?.(iso)}><strong className="cc-roster-card-heading"><RosterActivityIcon mode={card.mode}/>{card.title}</strong></button>
+                      {card.context && <span>{card.context}</span>}
+                      {card.presentation && <small>Apresentação {card.presentation}</small>}
+                      <small className="cc-roster-clock-bound">Início{card.startDate && ` · ${card.startDate}`}: {card.start}</small>
+                      <small className="cc-roster-clock-bound">Fim{card.endDate && ` · ${card.endDate}`}: {card.end}</small>
+                      {card.datesUnconfirmed && <small>Virada de dia indicada; datas a confirmar</small>}
+                      {card.hotel && <small>Hotel · {card.hotel}</small>}
+                    </article>; })}
+                    {!dayEvents.length && fullDayCount > 0 && filtered && <p className="cc-roster-filter-empty">Nenhum item deste filtro</p>}
                   </div>
                 </div>
               </td>;

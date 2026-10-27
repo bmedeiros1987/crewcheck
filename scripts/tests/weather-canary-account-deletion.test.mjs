@@ -14,15 +14,23 @@ assert(start >= 0 && end > start);
 test('existing account-deletion transaction removes new weather consent only for that account', async () => {
   const email = 'synthetic@example.test';
   const other = 'other@example.test';
-  const records = new Set([`link-email:${email}`, `snapshot:${email}`, `profile:${email}`, `weather-consent:${email}`, `weather-consent:${other}`, `financial-revisions:${email}`, `financial-heads:${email}`, `financial-revisions:${other}`, `financial-heads:${other}`]);
+  const financialTables = ['crewcheck_financial_channel_consents', 'crewcheck_financial_source_observations', 'crewcheck_financial_revisions', 'crewcheck_financial_heads'];
+  const financialKey = (table, owner) => `${table}:${owner}`;
+  const otherFinancial = financialTables.map(table => financialKey(table, other));
+  const records = new Set([`link-email:${email}`, `snapshot:${email}`, `profile:${email}`, `weather-consent:${email}`, `weather-consent:${other}`, ...financialTables.map(table => financialKey(table, email)), ...otherFinancial]);
   const queries = [];
   let reply, lifecycleCalls = 0;
   const client = {
     async query(sql, values = []) {
       queries.push({ sql, values });
       if (sql.startsWith('DELETE FROM crewcheck_telegram_state')) for (const key of values) records.delete(key);
-      if (sql.startsWith('DELETE FROM crewcheck_financial_revisions')) records.delete(`financial-revisions:${values[0]}`);
-      if (sql.startsWith('DELETE FROM crewcheck_financial_heads')) records.delete(`financial-heads:${values[0]}`);
+      if (sql.startsWith('DELETE FROM crewcheck_financial_')) {
+        const match = /^DELETE FROM (crewcheck_financial_[a-z_]+) WHERE owner_id=\$1$/.exec(sql);
+        assert(match, 'financial erasure must use an exact owner-scoped predicate');
+        assert(financialTables.includes(match[1]), 'unexpected financial table');
+        assert.deepEqual(values, [email], 'cannot erase another owner');
+        records.delete(financialKey(match[1], values[0]));
+      }
       return { rows: [] };
     }, release() {},
   };
@@ -48,9 +56,13 @@ test('existing account-deletion transaction removes new weather consent only for
   await handler({ method: 'POST' }, { setHeader() {} });
   assert.equal(reply.status, 200); assert.equal(reply.data.deleted, true);
   assert.equal(lifecycleCalls, 1);
-  assert.deepEqual([...records], [`weather-consent:${other}`, `financial-revisions:${other}`, `financial-heads:${other}`]);
+  assert.deepEqual([...records], [`weather-consent:${other}`, ...otherFinancial]);
   const financialDeletes = queries.filter(query => /^DELETE FROM crewcheck_financial_/.test(query.sql));
-  assert.equal(financialDeletes.length, 2);
+  assert.deepEqual(financialDeletes.map(query => query.sql), financialTables.map(table => `DELETE FROM ${table} WHERE owner_id=$1`), 'all four prepared financial tables must be erased exactly once');
+  for (const table of financialTables) {
+    assert.equal(records.has(financialKey(table, email)), false, `${table}: target erased`);
+    assert.equal(records.has(financialKey(table, other)), true, `${table}: other account preserved`);
+  }
   for (const query of financialDeletes) assert.deepEqual(query.values, [email], 'financial erasure must remain owner-scoped inside account transaction');
   const deletion = queries.find(query => query.sql.startsWith('DELETE FROM crewcheck_telegram_state') && query.sql.includes('state_key IN'));
   assert.match(deletion.sql, /IN \(\$1,\$2,\$3,\$4\)/);

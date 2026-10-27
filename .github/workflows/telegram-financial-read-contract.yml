@@ -1,0 +1,66 @@
+name: CrewCierge financial read contract
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/concierge-financial-read-contract.md'
+      - 'scripts/tests/telegram-financial-read-contract.test.mjs'
+      - 'server/financial-ledger-route.mjs'
+      - 'server/financial-ledger.mjs'
+      - 'server/financial-ledger-sql.mjs'
+      - 'shared/financialUpcoming.mjs'
+      - 'shared/financialReadModel.mjs'
+      - 'shared/financialMoney.mjs'
+      - 'shared/financialPreviewMetadata.mjs'
+      - 'server/financial-channel-read.mjs'
+      - 'server/financial-channel-sql.mjs'
+      - 'server/financial-ledger-erasure.mjs'
+      - 'scripts/regression-financial-channel-mysql.mjs'
+      - 'migrations/20261020_021_financial_channel_preparation_mysql.sql'
+      - 'scripts/tests/financial-channel-read.test.mjs'
+      - 'scripts/tests/financial-preview-metadata.test.mjs'
+      - 'docs/financial-channel-preparation.md'
+      - '.github/workflows/telegram-financial-read-contract.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.3'
+      - run: npm ci
+      - name: Characterize existing reads raw
+        run: |
+          set -euo pipefail
+          node --test scripts/tests/telegram-financial-read-contract.test.mjs scripts/tests/financial-channel-read.test.mjs scripts/tests/financial-preview-metadata.test.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-raw.log"
+          node scripts/regression-financial-upcoming.mjs
+          node scripts/regression-financial-concierge-timing.mjs
+          node scripts/regression-financial-channel-mysql.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-mysql-raw-${{ github.run_attempt }}.log"
+      - name: Prepare and repeat synthetic route reads
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs > "$RUNNER_TEMP/financial-contract-preparation.log" 2>&1
+          node --test scripts/tests/telegram-financial-read-contract.test.mjs scripts/tests/financial-channel-read.test.mjs scripts/tests/financial-preview-metadata.test.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-prepared.log"
+          node scripts/regression-financial-upcoming.mjs
+          node scripts/regression-financial-concierge-timing.mjs
+          node scripts/regression-financial-channel-mysql.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-mysql-prepared-${{ github.run_attempt }}.log"
+      - name: Preserve read contract evidence
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/financial-contract-proof"
+          git rev-parse HEAD > "$RUNNER_TEMP/financial-contract-proof/HEAD.txt"
+          cp "$RUNNER_TEMP"/financial-contract-*.log "$RUNNER_TEMP/financial-contract-proof/"
+          cp docs/financial-channel-preparation.md server/financial-channel-read.mjs server/financial-channel-sql.mjs server/financial-ledger-erasure.mjs migrations/20261020_021_financial_channel_preparation_mysql.sql scripts/regression-financial-channel-mysql.mjs docs/concierge-financial-read-contract.md scripts/tests/telegram-financial-read-contract.test.mjs server/financial-ledger-route.mjs server/financial-ledger.mjs shared/financialUpcoming.mjs shared/financialReadModel.mjs shared/financialMoney.mjs "$RUNNER_TEMP/financial-contract-proof/"
+          sha256sum server/financial-channel-read.mjs server/financial-channel-sql.mjs server/financial-ledger-erasure.mjs migrations/20261020_021_financial_channel_preparation_mysql.sql scripts/regression-financial-channel-mysql.mjs server/financial-ledger-route.mjs server/financial-ledger.mjs shared/financialUpcoming.mjs shared/financialReadModel.mjs shared/financialMoney.mjs > "$RUNNER_TEMP/financial-contract-proof/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crewcierge-financial-read-contract
+          path: ${{ runner.temp }}/financial-contract-proof/

@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import { inferStayApzDate, stayApzBounds } from '../shared/stay-apz-date.mjs';
+import { calculateStayWakeup, stayLocalInstant } from '../shared/stay-edit-plan.mjs';
+const now=Date.parse('2032-10-21T19:00:00Z'), zone='America/Sao_Paulo';
+const event={id:'stay-A',kind:'stay',origin:'CWB',destination:'CWB',canonical:{startDateTime:'2032-10-21T03:00:00Z',endDateTime:'2032-10-22T02:59:00Z',publishedDay:{}}};
+const next={id:'flight-A',kind:'flight',origin:'CWB',destination:'FOR',canonical:{startDateTime:'2032-10-22T08:00:00Z',endDateTime:'2032-10-22T11:00:00Z'}};
+const infer=(patch={})=>inferStayApzDate({event,events:[event,next],clock:'04:20',timeZone:zone,now,...patch});
+assert.equal(infer(),'2032-10-22');
+assert.equal(infer({clock:'20:00'}),'2032-10-21');
+assert.equal(infer({events:[event]}),null,'No invented next day without a linked departure');
+assert.equal(infer({events:[event,{...next,origin:'SSA'}]}),null);
+assert.equal(infer({events:[event,next,{...next,id:'duplicate'}]}),null);
+assert.equal(infer({events:[event,{...next,kind:'duty'}]}),null);
+assert.equal(infer({event:{...event,canonical:{...event.canonical,publishedDay:{dutyDebrief:'23:59'}}}}),null,'Published end cannot be extended');
+assert.equal(infer({now:Date.parse('2032-10-23T00:00:00Z')}),null,'Historical occurrence never rolls forward');
+assert.equal(infer({clock:'06:00'}),null,'After the linked departure is not valid');
+assert.equal(infer({timeZone:'invalid'}),null);
+assert.equal(infer({clock:'24:20'}),null);
+assert.equal(infer({timeZone:'Asia/Tokyo',clock:'13:20'}),'2032-10-22','Hotel zone controls date, not device zone');
+const dst={...event,canonical:{startDateTime:'2032-11-07T04:00:00Z',endDateTime:'2032-11-07T12:00:00Z'}};
+assert.equal(infer({event:dst,events:[dst],clock:'01:30',timeZone:'America/New_York',now:Date.parse('2032-11-07T04:00:00Z')}),null,'Repeated local time needs explicit review');
+const early={...event,canonical:{startDateTime:'2032-10-21T18:00:00Z',endDateTime:'2032-10-22T04:00:00Z'}};
+assert.equal(infer({event:early,events:[early],clock:'00:20'}),'2032-10-22','APZ before an after-midnight flight stays on correct hotel day');
+const date=infer(), at=stayLocalInstant(date,'04:20',zone), scope={accountId:'synthetic',rosterId:'synthetic',rosterRevision:'1'};
+const calc=calculateStayWakeup({scope,stay:{...scope,id:event.id,eventId:event.id,timeZone:zone},hotelApz:{...scope,source:'manual',stayId:event.id,rosterEventId:event.id,confirmed:true,hotelReportAt:new Date(at).toISOString(),timeZone:zone},now,choice:{mode:'relative',leadMinutes:90}});
+assert.equal(calc.scheduledAt,'2032-10-22T05:50:00.000Z');assert.equal(calc.eligible,true);
+assert.equal(calculateStayWakeup({scope,stay:{...scope,id:event.id,eventId:event.id,timeZone:zone},hotelApz:{...scope,source:'manual',stayId:event.id,rosterEventId:event.id,confirmed:true,hotelReportAt:'2032-10-21T07:20:00Z',timeZone:zone},now,choice:{mode:'relative',leadMinutes:90}}).eligible,false);
+assert.equal(stayApzBounds(event,[event,next]).end,Date.parse(next.canonical.startDateTime));
+console.log('PASS APZ date: bounded next occurrence, canonical calendar day vs next flight, historical/midnight/timezone/DST/conflict, shared wakeup date and past rejection; synthetic only');
+assert.equal(infer({event:{...event,canonical:{...event.canonical,endDateTime:'2032-10-21T18:00:00Z'}}}),null,'Non-calendar end must not be extended');
+assert.equal(infer({events:[event,next,{...next,id:'other',canonical:{...next.canonical,startDateTime:'2032-10-22T05:00:00-03:00'}}]}),null,'Same epoch with different offset is ambiguous');
+
+assert.equal(infer({events:[event,{...event},next]}),null,'Duplicate stay identity is not admitted');
+assert.equal(infer({events:[event,{id:'rest',kind:'rest',canonical:{startDateTime:'2032-10-22T03:00:00Z'}},next]}),null,'An intervening rest prevents attachment to another occurrence');
+
+assert.equal(infer({event:{...dst,canonical:{...dst.canonical,endDateTime:'2032-11-09T12:00:00Z'}},events:[],clock:'01:30',timeZone:'America/New_York',now:Date.parse('2032-11-07T04:00:00Z')}),null,'Repeated local time cannot silently become the next unambiguous day');

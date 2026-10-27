@@ -2,8 +2,13 @@ name: Next flight gate (phone + CrewWatch)
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server.mjs'
       - 'server/gate-source-update.mjs'
+      - 'shared/radar-field-evidence.mjs'
+      - 'scripts/regression-radar-field-evidence.mjs'
       - 'client/src/lib/manualGateNotices.ts'
       - 'scripts/regression-manual-gate-review*.mjs'
       - 'scripts/regression-manual-gate-legacy-review.mjs'
@@ -58,6 +63,9 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-radar-field-evidence.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
@@ -84,6 +92,9 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-radar-field-evidence.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
@@ -103,6 +114,15 @@ jobs:
           TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate-prepared.mjs
           TZ=Pacific/Auckland node scripts/regression-next-flight-gate-prepared.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser for actual RadarView responses
         run: |
           npm install --prefix "$RUNNER_TEMP/radar-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

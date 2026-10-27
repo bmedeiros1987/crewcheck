@@ -1,0 +1,74 @@
+[
+  {
+    "name": "leptonica",
+    "url": "https://raw.githubusercontent.com/DanBloomberg/leptonica/4af068b56a9674da915debea4ed7e1b9885b17e8/leptonica-license.txt",
+    "file": "docs/stay-screenshot/LICENSE-leptonica.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "libjpeg",
+    "url": "https://raw.githubusercontent.com/LuaDist/libjpeg/6c0fcb8ddee365e7abc4d332662b06900612e923/README",
+    "file": "docs/stay-screenshot/LICENSE-libjpeg.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "giflib",
+    "url": "https://raw.githubusercontent.com/mirrorer/giflib/fa37672085ce4b3d62c51627ab3c8cf2dda8009a/COPYING",
+    "file": "docs/stay-screenshot/LICENSE-giflib.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "libpng",
+    "url": "https://raw.githubusercontent.com/glennrp/libpng/a37d4836519517bdce6cb9d956092321eca3e73b/LICENSE",
+    "file": "docs/stay-screenshot/LICENSE-libpng.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "libwebp",
+    "url": "https://raw.githubusercontent.com/webmproject/libwebp/20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c/COPYING",
+    "file": "docs/stay-screenshot/LICENSE-libwebp.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "libwebp-patents",
+    "url": "https://raw.githubusercontent.com/webmproject/libwebp/20ef03ee351d4ff03fc5ff3ec4804a879d1b9d5c/PATENTS",
+    "file": "docs/stay-screenshot/LICENSE-libwebp-patents.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "zlib",
+    "url": "https://raw.githubusercontent.com/madler/zlib/21767c654d31d2dccdde4330529775c6c5fd5389/README",
+    "file": "docs/stay-screenshot/LICENSE-zlib.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "openlibm",
+    "url": "https://raw.githubusercontent.com/JuliaMath/openlibm/ae2d91698508701c83cab83714d42a1146dccf85/LICENSE.md",
+    "file": "docs/stay-screenshot/LICENSE-openlibm.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "tesseract-native",
+    "url": "https://raw.githubusercontent.com/Balearica/tesseract/2a9c1c49c360462733c386d2a44fcd22c4e21411/LICENSE",
+    "file": "docs/stay-screenshot/LICENSE-tesseract-native.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "libtiff",
+    "url": "https://gitlab.com/libtiff/libtiff/-/raw/b51bb157123264e26d34c09cc673d213aea61fc7/COPYRIGHT",
+    "file": "docs/stay-screenshot/LICENSE-libtiff.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "buffer",
+    "url": "https://raw.githubusercontent.com/feross/buffer/v6.0.3/LICENSE",
+    "file": "docs/stay-screenshot/LICENSE-buffer.txt",
+    "exitCode": 0
+  },
+  {
+    "name": "ieee754",
+    "url": "https://raw.githubusercontent.com/feross/ieee754/v1.2.1/LICENSE",
+    "file": "docs/stay-screenshot/LICENSE-ieee754.txt",
+    "exitCode": 0
+  }
+]

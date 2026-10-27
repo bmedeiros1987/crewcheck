@@ -3,6 +3,7 @@ import { useFinancialPrivacy } from './FinancialPrivacy';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/authClient';
+import { financialRateOwner } from '@/lib/financialStatementLearning';
 import { listSavedRosters, openSavedRoster, financialRosterCrewIdentity, type SavedRosterSummary } from '@/lib/databaseClient';
 import type { CrewRoster } from '@/lib/pdfParser';
 import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
@@ -19,7 +20,8 @@ function session() {
   return user && token && (user.id || user.email) && !['visitor','guest'].includes(user.role || '') ? `${user.id || user.email}:${token}` : '';
 }
 
-export default function FinancialHistoryExplorer<S>({ roster, calculate, metric, rangeMetric, mode, weeks, periodMetric, render }: {
+export default function FinancialHistoryExplorer<S>({ roster, calculate, metric, rangeMetric, mode, weeks, periodMetric, changesDetails, render }: {
+  changesDetails?:ReactNode;
   roster: CrewRoster; calculate: (roster: CrewRoster) => S; metric: (snapshot: S) => Record<string, number>;
   rangeMetric?: (snapshot: S, range: FinancialRange) => Record<string, number>;
   mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode; coverageReady: boolean; requestRange: (range:FinancialRange)=>void }) => ReactNode;
@@ -50,11 +52,21 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const snapshots = useMemo(()=>[...(!conflicts.includes(initialMonth)&&!inventory.some(item=>`${item.year}-${String(item.month).padStart(2,'0')}`===initialMonth)?[current]:[]),...loaded.filter(item=>!conflicts.includes(monthOf(item.roster))).map(item=>({...item,snapshot:calculate(item.roster)}))],[current,loaded,initialMonth,calculate,authRevision,calculationRevision,inventory,conflicts]);
   const months = [...new Set([initialMonth,...inventory.map(item=>`${item.year}-${String(item.month).padStart(2,'0')}`)])].filter(value=>validFinancialDay(value+'-01')).sort();
   const missing = financialMonths(range).filter(period=>!snapshots.some(item=>monthOf(item.roster)===period));
-  useEffect(()=>{const refresh=()=>setCalculationRevision(value=>value+1);window.addEventListener('crewcheck:financial-config-changed',refresh);return()=>window.removeEventListener('crewcheck:financial-config-changed',refresh);},[]);
+  useEffect(()=>{
+    const refresh=()=>setCalculationRevision(value=>value+1);
+    const storage=(event:StorageEvent)=>{
+      if(event.storageArea!==localStorage)return;
+      const owner=financialRateOwner();if(!owner)return;
+      const scope=encodeURIComponent(owner);
+      if(event.key===`crewcheck_financial_learned_rates_v2:${scope}`||event.key===`crewcheck_personal_allowance_reference_v1:${scope}`||event.key?.startsWith(`crewcheck_financial_settings_v1:${scope}:`))refresh();
+    };
+    window.addEventListener('crewcheck:financial-config-changed',refresh);window.addEventListener('storage',storage);
+    return()=>{window.removeEventListener('crewcheck:financial-config-changed',refresh);window.removeEventListener('storage',storage);};
+  },[]);
   useEffect(()=>{
     const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
     window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);
-    const storage=(event:StorageEvent)=>{if(['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key || ''))changed();};window.addEventListener('storage',storage);
+    const storage=(event:StorageEvent)=>{if((event.key===null&&event.storageArea===localStorage)||['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key || ''))changed();};window.addEventListener('storage',storage);
     return ()=>{epoch.current++;window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
@@ -135,5 +147,5 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Toque no mês para consultar o período.'}</p>
     {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Datas de trabalho · não são datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
   </section>;
-  return <FinancialScreenContext.Provider value={{screen,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
+  return <FinancialScreenContext.Provider value={{screen,range,changesDetails,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
 }

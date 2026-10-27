@@ -26,11 +26,12 @@ export function createFinancialLedgerHandler({ enabled = () => false, identityPr
       const identity = await identityProvider(req); ledgerOwner(identity);
       if (!enabled()) { send(res, 503, { ok: false, state: 'unavailable', code: 'FINANCIAL_LEDGER_NOT_ENABLED' }); return true; }
       if (upcoming) {
-        if ([...url.searchParams].length) throw new FinancialLedgerError('FINANCIAL_INVALID_QUERY');
+        const query = [...url.searchParams];
+        if (query.length > 1 || query.some(([key, value]) => key !== 'category' || !['allowance', 'advance', 'payroll', 'vacation'].includes(value))) throw new FinancialLedgerError('FINANCIAL_INVALID_QUERY');
         const db = await poolProvider();
         if (!db) throw new FinancialLedgerError('FINANCIAL_HISTORY_UNAVAILABLE', 503);
         const records = await storeFactory(db).list(ledgerOwner(identity));
-        send(res, 200, { ok: true, ...queryUpcomingFinancialForecast({ identity, records, now: now() }) });
+        send(res, 200, { ok: true, ...queryUpcomingFinancialForecast({ identity, records, now: now(), category: url.searchParams.get('category') ?? undefined }) });
         return true;
       }
       const keys = [...url.searchParams.keys()];

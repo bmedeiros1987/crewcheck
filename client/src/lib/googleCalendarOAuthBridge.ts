@@ -1,9 +1,10 @@
-import { crewcheckAuthHeader } from './authClient';
+import { captureAuthSession, crewcheckAuthHeader } from './authClient';
 
 const SERVER_MARKER_KEY = 'crewcheck_google_calendar_server_bridge_v1';
 const SERVER_CONNECTION_TIMEOUT_MS = 150_000;
 
 export type GoogleCalendarBridgeErrorCode =
+  | 'GOOGLE_SESSION_CHANGED'
   | 'GOOGLE_OAUTH_SERVER_NOT_CONFIGURED'
   | 'GOOGLE_OAUTH_START_FAILED'
   | 'GOOGLE_OAUTH_POPUP_BLOCKED'
@@ -25,6 +26,22 @@ export class GoogleCalendarBridgeError extends Error {
     this.status = status;
     this.payload = payload;
   }
+}
+
+let connectionGeneration = 0;
+type BridgeSession = ReturnType<typeof captureAuthSession> & { connectionGeneration: number };
+function captureBridgeSession(): BridgeSession {
+  return { ...captureAuthSession(), connectionGeneration };
+}
+
+// Continuity fence only. Server authentication still authorizes every request.
+function requireCurrentSession(session: BridgeSession, popup: Window | null = null): void {
+  if (session.token && session.owner && session.isCurrent() && session.connectionGeneration === connectionGeneration) return;
+  try { popup?.close(); } catch {}
+  throw new GoogleCalendarBridgeError(
+    'Sua sessão mudou. Volte ao Google Calendar e conecte novamente.',
+    'GOOGLE_SESSION_CHANGED',
+  );
 }
 
 function nativeBridge(): { openExternal?: (url: string) => boolean } | null {
@@ -101,13 +118,15 @@ function openAuthorizationUrl(url: string, preparedPopup: Window | null): boolea
   }
 }
 
-async function bridgeStatus(state = ''): Promise<any> {
+async function bridgeStatus(state = '', session = captureBridgeSession()): Promise<any> {
+  requireCurrentSession(session);
   const response = await fetch(`/api/google-calendar/oauth/status${state ? `?state=${encodeURIComponent(state)}` : ''}`, {
     method: 'GET',
     headers: crewcheckAuthHeader(),
     cache: 'no-store',
   });
   const payload = await readPayload(response);
+  requireCurrentSession(session);
   if (!response.ok || payload?.ok === false) {
     throw new GoogleCalendarBridgeError(
       String(payload?.message || 'Não foi possível consultar a conexão do Google Calendar.'),
@@ -135,6 +154,8 @@ export async function serverGoogleCalendarHealth(): Promise<{ configured: boolea
 }
 
 export async function connectGoogleCalendarViaServer(): Promise<void> {
+  const session = captureBridgeSession();
+  requireCurrentSession(session);
   const preparedPopup = prepareBrowserPopup();
   let response: Response;
   try {
@@ -152,6 +173,7 @@ export async function connectGoogleCalendarViaServer(): Promise<void> {
     );
   }
   const payload = await readPayload(response);
+  requireCurrentSession(session, preparedPopup);
   if (!response.ok || payload?.ok === false || !payload?.authUrl || !payload?.state) {
     try { preparedPopup?.close(); } catch {}
     throw new GoogleCalendarBridgeError(
@@ -171,7 +193,11 @@ export async function connectGoogleCalendarViaServer(): Promise<void> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < SERVER_CONNECTION_TIMEOUT_MS) {
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
-    const status = await bridgeStatus(String(payload.state));
+    const status = await bridgeStatus(String(payload.state), session).catch((error) => {
+      try { preparedPopup?.close(); } catch {}
+      throw error;
+    });
+    requireCurrentSession(session, preparedPopup);
     if (status?.connected || status?.state === 'connected') {
       setServerGoogleCalendarMarker(true);
       try { if (preparedPopup && !preparedPopup.closed) preparedPopup.close(); } catch {}
@@ -195,9 +221,11 @@ export async function connectGoogleCalendarViaServer(): Promise<void> {
 }
 
 export async function shouldUseServerGoogleCalendarBridge(): Promise<boolean> {
+  const session = captureBridgeSession();
   if (isEmbeddedCrewCheckWebView() || hasServerGoogleCalendarMarker()) return true;
   try {
-    const status = await bridgeStatus();
+    const status = await bridgeStatus('', session);
+    requireCurrentSession(session);
     if (status?.connected) {
       setServerGoogleCalendarMarker(true);
       return true;
@@ -207,6 +235,8 @@ export async function shouldUseServerGoogleCalendarBridge(): Promise<boolean> {
 }
 
 export async function serverGoogleCalendarFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const session = captureBridgeSession();
+  requireCurrentSession(session);
   const method = String(init.method || 'GET').toUpperCase();
   const response = await fetch('/api/google-calendar/oauth/proxy', {
     method: 'POST',
@@ -219,6 +249,7 @@ export async function serverGoogleCalendarFetch<T>(path: string, init: RequestIn
     cache: 'no-store',
   });
   const payload = await readPayload(response);
+  requireCurrentSession(session);
   if (!response.ok || payload?.ok === false) {
     if (payload?.code === 'GOOGLE_RECONNECT_REQUIRED' || response.status === 401) setServerGoogleCalendarMarker(false);
     throw new GoogleCalendarBridgeError(
@@ -232,6 +263,7 @@ export async function serverGoogleCalendarFetch<T>(path: string, init: RequestIn
 }
 
 export function disconnectGoogleCalendarServerBridge(): void {
+  connectionGeneration += 1;
   setServerGoogleCalendarMarker(false);
   fetch('/api/google-calendar/oauth/disconnect', {
     method: 'POST',
@@ -245,4 +277,13 @@ export function serverGoogleCalendarDiagnosticLabel(): string {
   if (isEmbeddedCrewCheckWebView()) return 'Navegador seguro externo';
   if (hasServerGoogleCalendarMarker()) return 'Ponte segura no servidor';
   return 'Google Identity Services no navegador';
+}
+
+if (typeof window !== 'undefined') {
+  for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'])
+    window.addEventListener(name, () => { connectionGeneration += 1; setServerGoogleCalendarMarker(false); });
+  window.addEventListener('storage', (event: StorageEvent) => {
+    if (event.key === null || event.key === 'crewcheck_auth_token' || event.key === 'crewcheck_auth_user')
+      { connectionGeneration += 1; setServerGoogleCalendarMarker(false); }
+  });
 }
