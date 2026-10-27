@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { loadClientModules } from './lib/ts-module-harness.mjs';
 import { reconcileActiveRosterIdentity } from '../shared/activeRosterIdentity.mjs';
 
 const home = await readFile('client/src/pages/Home.tsx', 'utf8');
@@ -108,11 +109,16 @@ assert.match(
   /carePresentationForScheduleActivity/,
   'Roster must consume the shared Care Mode authority already used by FlightDeck/Concierge',
 );
-assert.match(
-  roster,
-  /presentation\?\.state === 'FERIAS'/,
-  'Roster must expose an explicit vacation presentation path',
-);
+assert.match(roster, /rosterCardPresentation\(event, group\.iso\)/, 'Roster must render the shared Care-aware title');
+const presentationHarness = loadClientModules({ files: ['client/src/lib/rosterPresentation.ts'] });
+try {
+  const { rosterCardPresentation } = presentationHarness.load('rosterPresentation');
+  for (const [type, expected] of [['VC', 'Férias'], ['DMO', 'Luto'], ['DO', 'Folga']]) {
+    const card = rosterCardPresentation({ kind: 'rest', day: { type }, canonical: { kind: 'rest', publishedDay: { type } } });
+    assert.equal(card.title, expected, `Published ${type} must preserve its distinct Care title`);
+    assert.equal(card.mode, 'rest', 'Published Care days remain Folga, not inferred rest');
+  }
+} finally { presentationHarness.cleanup(); }
 assert.match(
   roster,
   /carePresentation\?\.label \|\| meta\.label/,

@@ -1,3 +1,4 @@
+import { aimsSourceDateIso, aimsFlightSourceIdentity, newAimsFlightSourceCoverage, finalizeAimsFlightSourceCoverage, mergeAimsFlightSourceCoverage, type AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { capturePublishedFreeDayStart, attachPublishedFreeDayTimeZone } from './freeDayStartEvidence';
 /**
  * Parser for "Escala de Tripulante Convertida para padrão AIMS" PDF format.
@@ -60,6 +61,7 @@ type AimsPhysicalLeg = AimsHumanLeg & {
   arrAbs: number;
   debriefAbs: number;
   sourceDate: string;
+  startsAfterActivity?: boolean;
 };
 
 function aimsHumanRosterLooksComplete(roster: CrewRoster): boolean {
@@ -125,18 +127,40 @@ function parseAimsRosterHumanText(fullText: string): CrewRoster | null {
 function parseAimsHumanBlock(tokens: string[], context: { date: string; dayOfWeek: string; dateObj: Date; base: string; rawBlock: string }): RosterDay[] {
   const upper = tokens.map((token) => token.toUpperCase());
   const firstLa = upper.findIndex((token, index) => token === 'LA' && /^\d{3,4}$/.test(upper[index + 1] || ''));
-  if (firstLa >= 0) return buildAimsHumanFlightDays(tokens, context);
+  if (firstLa >= 0) {
+    // Explicit activities between/after flights split duties even when their
+    // gap is shorter than the overnight heuristic. Use the same token bounds
+    // as the visual reader rather than feeding those clocks into a flight.
+    if (upper.slice(firstLa + 2).some(token => AIMS_HUMAN_ACTIVITY_CODE.test(token))) {
+      return parseAimsVisualColumnDays(tokens, context);
+    }
+    // Reserve/standby/ground activities published before the first flight of the
+    // block are their own duties; never let the flights swallow them.
+    const activities: RosterDay[] = [];
+    let flightStart = 0;
+    for (let idx = 0; idx < firstLa;) {
+      if (!AIMS_HUMAN_ACTIVITY_CODE.test(upper[idx])) { idx += 1; continue; }
+      const end = trimAimsActivityBeforeFlight(tokens, idx, findAimsVisualActivityBlockEnd(tokens, idx));
+      const own = tokens.slice(idx, end);
+      activities.push(makeAimsHumanRosterDay(context, parseAimsHumanActivity(own, upper[idx]), own.join(' ')));
+      // Keep the activity boundary: earlier continuation clocks cannot become
+      // the following flight's published presentation after removing the duty.
+      flightStart = end;
+      idx = end;
+    }
+    const flightTokens = tokens.slice(flightStart);
+    return [...activities, ...buildAimsHumanFlightDays(flightTokens, { ...context, rawBlock: flightTokens.join(' ') })];
+  }
 
-  const firstOperational = upper.findIndex((token) => /^(ASB|RES|HSB|HSBE|RCFI|CRM|CRMB|CRMBSB|CBF|EMER|MT|C\d{2,3}F)$/.test(token));
+  const firstOperational = upper.findIndex((token) => AIMS_HUMAN_ACTIVITY_CODE.test(token));
   if (firstOperational >= 0) {
-    const code = upper[firstOperational];
+    // A column can contain several independent ground duties without any flight.
+    // Keep their own bounds instead of assigning all clocks to the first one.
+    if (upper.slice(firstOperational + 1).some(token => AIMS_HUMAN_ACTIVITY_CODE.test(token))) {
+      return parseAimsVisualColumnDays(tokens, context);
+    }
     const own = tokens.slice(firstOperational);
-    const parsed = code === 'ASB' || code === 'RES'
-      ? parseASB(own)
-      : code === 'HSB' || code === 'HSBE'
-        ? parseStandby(own, code === 'HSBE' ? 'HSBE' : 'HSB')
-        : parseGroundActivity(own, code);
-    return [makeAimsHumanRosterDay(context, parsed, context.rawBlock)];
+    return [makeAimsHumanRosterDay(context, parseAimsHumanActivity(own, upper[firstOperational]), context.rawBlock)];
   }
 
   const restIndex = upper.findIndex((token) => isAimsRestCode(token));
@@ -149,9 +173,43 @@ function parseAimsHumanBlock(tokens: string[], context: { date: string; dayOfWee
   return [makeAimsHumanRosterDay(context, { type: 'OTHER', pairingCode: '', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: null, flyingHours: null, isNextDay: false, hotel: null }, context.rawBlock)];
 }
 
+const AIMS_HUMAN_ACTIVITY_CODE = /^(ASB|RES|HSB|HSBE|RCFI|CRM|CRMB|CRMBSB|CBF|EMER|MT|C\d{2,3}F)$/;
+
+function parseAimsHumanActivity(own: string[], code: string): ParsedDay {
+  return code === 'ASB' || code === 'RES'
+    ? parseASB(own)
+    : code === 'HSB' || code === 'HSBE'
+      ? parseStandby(own, code === 'HSBE' ? 'HSBE' : 'HSB')
+      : parseGroundActivity(own, code);
+}
+
+// An activity published as station/time pairs ends at its last pair. A bare clock
+// between it and the next flight is that duty's presentation, not the activity's.
+function trimAimsActivityBeforeFlight(tokens: string[], start: number, end: number): number {
+  if (String(tokens[end] || '').toUpperCase() !== 'LA' || !/^\d{3,4}$/.test(String(tokens[end + 1] || ''))) return end;
+  // Positioning markers belong to the following flight even when the activity
+  // has bare clocks. A marker may also precede that flight's own APZ clock.
+  let flightPrefixStart = end;
+  while (flightPrefixStart > start && isExtraAimsMarker(tokens[flightPrefixStart - 1])) flightPrefixStart -= 1;
+  if (isAimsHumanClockToken(tokens[flightPrefixStart - 1]) && isExtraAimsMarker(tokens[flightPrefixStart - 2])) {
+    flightPrefixStart -= 1;
+    while (flightPrefixStart > start && isExtraAimsMarker(tokens[flightPrefixStart - 1])) flightPrefixStart -= 1;
+  }
+  let pairs = 0;
+  let lastPairEnd = -1;
+  for (let k = start + 1; k < end - 1; k += 1) {
+    if (/^[A-Z]{3}$/i.test(String(tokens[k] || '').trim()) && isAimsHumanAirport(tokens[k], '') && isAimsHumanClockToken(tokens[k + 1])) { pairs += 1; lastPairEnd = k + 2; k += 1; }
+  }
+  if (pairs < 2 || lastPairEnd >= end) return flightPrefixStart;
+  return tokens.slice(lastPairEnd, end).every(token => isAimsHumanClockToken(token) || isExtraAimsMarker(token)) ? lastPairEnd : flightPrefixStart;
+}
+
 function buildAimsHumanFlightDays(tokens: string[], context: { date: string; dayOfWeek: string; dateObj: Date; base: string; rawBlock: string }): RosterDay[] {
-  const humanLegs = parseAimsHumanLegs(tokens, context.base);
-  if (!humanLegs.length) return [makeAimsHumanRosterDay(context, parseFlightDay(tokens, context.base, /\(\.\.\.\)/.test(context.rawBlock)), context.rawBlock)];
+  const humanLegs = parseAimsHumanLegs(tokens, context.base).map(item => ({ ...item, leg: { ...item.leg, aimsSourceDate: aimsSourceDateIso(context.date) } }));
+  if (!humanLegs.length) {
+    const parsed = parseFlightDay(tokens, context.base, /\(\.\.\.\)/.test(context.rawBlock));
+    return [makeAimsHumanRosterDay(context, { ...parsed, legs: parsed.legs.map(leg => ({ ...leg, aimsSourceDate: aimsSourceDateIso(context.date) })) }, context.rawBlock)];
+  }
 
   type Group = { legs: AimsHumanLeg[]; startAbs: number; endAbs: number; rawStartDate: Date };
   const groups: Group[] = [];
@@ -289,7 +347,7 @@ function parseAimsHumanLegs(tokens: string[], homeBase: string): AimsHumanLeg[] 
     const legTokens: string[] = [];
     while (i < source.length) {
       if (source[i].toUpperCase() === 'LA' && /^\d{3,4}$/.test(source[i + 1] || '')) { i -= 1; break; }
-      if (isExtraAimsMarker(source[i]) && source[i + 1]?.toUpperCase() === 'LA') { i -= 1; break; }
+      if (isAimsExtraFlightStart(source, i)) { i -= 1; break; }
       legTokens.push(source[i]);
       i += 1;
     }
@@ -449,7 +507,9 @@ function formatAimsHumanDate(date: Date): string {
 
 
 function reconcileAimsPhysicalTimelineFromText(roster: CrewRoster, fullText: string): CrewRoster {
-  const physicalLegs = extractAimsPhysicalLegs(fullText, roster.base || 'BSB', roster.month, roster.year);
+  const evidence = newAimsFlightSourceCoverage('aims_text');
+  const physicalLegs = extractAimsPhysicalLegs(fullText, roster.base || 'BSB', roster.month, roster.year, evidence);
+  roster = { ...roster, aimsFlightSourceCoverage: evidence };
   if (physicalLegs.length < 8) return roster;
 
   const flightDays = buildAimsPhysicalFlightDays(physicalLegs, roster);
@@ -465,7 +525,7 @@ function reconcileAimsPhysicalTimelineFromText(roster: CrewRoster, fullText: str
   return { ...roster, days: merged, rawText: roster.rawText || fullText };
 }
 
-function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth: number, rosterYear: number): AimsPhysicalLeg[] {
+function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth: number, rosterYear: number, coverage?: AimsFlightSourceCoverage): AimsPhysicalLeg[] {
   const rosterOnly = String(fullText || '').split(/\n\s*Tripula(?:ç|c)[oõ]es\b/i)[0];
   const content = rosterOnly
     .replace(/\r/g, '\n')
@@ -477,15 +537,48 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
   const legs: AimsPhysicalLeg[] = [];
   let currentDate: Date | null = null;
   let pendingWorkType: string | null = null;
+  let presentationFloor = 0;
+  let previousFlightIdx = -1;
+  let previousArrival: string | null = null;
+  let startsAfterActivity = false;
+  const sourceBlocks = new Set<string>();
+  let recordSourceBlock = true;
 
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
     const markerDate = parseAimsPhysicalDateToken(token, rosterMonth, rosterYear);
+    if (coverage && isInvalidAimsSourceDateToken(token, rosterMonth, rosterYear)) coverage.unresolvedSourceDates = true;
+    if (coverage && !currentDate && token.toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[i + 1] || '')) coverage.unresolvedSourceDates = true;
     if (markerDate) {
       currentDate = markerDate;
+      if (coverage) {
+        const sourceDate = aimsSourceDateIso(formatAimsHumanDate(markerDate));
+        coverage.sourceDates.push(sourceDate);
+        const nextMarker = tokens.findIndex((candidate, index) => index > i && Boolean(parseAimsPhysicalDateToken(candidate, rosterMonth, rosterYear)));
+        const blockKey = JSON.stringify([sourceDate, tokens.slice(i + 1, nextMarker < 0 ? tokens.length : nextMarker)]);
+        recordSourceBlock = !sourceBlocks.has(blockKey);
+        sourceBlocks.add(blockKey);
+      }
+      presentationFloor = i + 1;
+      previousFlightIdx = -1;
+      previousArrival = null;
+      pendingWorkType = null;
       continue;
     }
     if (WEEKDAY_TOKENS.has(token.toUpperCase())) continue;
+    if (AIMS_HUMAN_ACTIVITY_CODE.test(token.toUpperCase())) {
+      let end = findAimsVisualActivityBlockEnd(tokens, i);
+      const nextDate = tokens.findIndex((value, index) => index > i && Boolean(parseAimsPhysicalDateToken(value, rosterMonth, rosterYear)));
+      if (nextDate >= 0) end = Math.min(end, nextDate);
+      end = trimAimsActivityBeforeFlight(tokens, i, end);
+      presentationFloor = end;
+      previousFlightIdx = -1;
+      previousArrival = null;
+      pendingWorkType = null;
+      startsAfterActivity = true;
+      i = Math.max(i, end - 1);
+      continue;
+    }
     if (isExtraAimsMarker(token)) {
       pendingWorkType = 'PS';
       continue;
@@ -503,12 +596,13 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
       if (nextIsFlight) break;
       // Extra belongs to the following flight. Keep its marker outside the
       // previous segment so physical reconstruction cannot transfer PS to OP.
-      if (isExtraAimsMarker(candidate) && tokens[j + 1]?.toUpperCase() === 'LA'
-        && /^\d{3,4}$/.test(tokens[j + 2] || '')) break;
+      if (isAimsExtraFlightStart(tokens, j)) break;
 
       const dateInside = parseAimsPhysicalDateToken(candidate, rosterMonth, rosterYear);
+      if (coverage && isInvalidAimsSourceDateToken(candidate, rosterMonth, rosterYear)) coverage.unresolvedSourceDates = true;
       if (dateInside) {
         if (aimsPhysicalSegmentLooksComplete(legTokens, homeBase)) break;
+        if (coverage) coverage.sourceDates.push(aimsSourceDateIso(formatAimsHumanDate(dateInside)));
         lastDateInside = dateInside;
         legTokens.push(candidate);
         j += 1;
@@ -522,11 +616,24 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
     }
 
     const sanitized = sanitizeAimsPhysicalLegTokens(legTokens);
-    const parsed = parseOneAimsHumanLeg(flightNumber, sanitized, pendingWorkType, homeBase);
+    let parsed = parseOneAimsHumanLeg(flightNumber, sanitized, pendingWorkType, homeBase);
+    if (parsed) {
+      const leadingIdx = safeAimsLeadingPresentationIndex(tokens, i, presentationFloor, previousFlightIdx, previousArrival, parsed.leg.departureTime);
+      if (leadingIdx >= 0) {
+        parsed = parseOneAimsHumanLeg(flightNumber, [tokens[leadingIdx], ...sanitized], pendingWorkType, homeBase) || parsed;
+      }
+    }
     pendingWorkType = null;
+    if (coverage && recordSourceBlock) {
+      const sourceDate = aimsSourceDateIso(formatAimsHumanDate(startDate));
+      coverage.occurrences.push({ sourceDate, flightNumber, identity: parsed?.leg && isCredibleAimsLeg(parsed.leg) ? aimsFlightSourceIdentity(sourceDate, parsed.leg) : null });
+    }
     if (parsed?.leg) {
       const withAbs = attachAimsPhysicalAbs(parsed, startDate);
-      if (withAbs) legs.push(withAbs);
+      if (withAbs) legs.push({ ...withAbs, startsAfterActivity });
+      startsAfterActivity = false;
+      previousFlightIdx = i;
+      previousArrival = parsed.leg.arrivalTime;
     }
     if (lastDateInside) currentDate = lastDateInside;
     i = Math.max(i + 1, j - 1);
@@ -535,6 +642,13 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
   return legs
     .filter((item) => isCredibleAimsLeg(item.leg))
     .sort((a, b) => a.depAbs - b.depAbs || a.arrAbs - b.arrAbs);
+}
+
+function isInvalidAimsSourceDateToken(token: string, rosterMonth: number, rosterYear: number): boolean {
+  const match = String(token || '').match(/^(\d{2})([A-Za-z]{3})$/);
+  if (!match || !MONTH_MAP[match[2].toLowerCase()]) return false;
+  const parsed = parseAimsPhysicalDateToken(token, rosterMonth, rosterYear);
+  return !parsed || parsed.getDate() !== Number(match[1]) || parsed.getMonth() + 1 !== MONTH_MAP[match[2].toLowerCase()];
 }
 
 function parseAimsPhysicalDateToken(token: string, rosterMonth: number, rosterYear: number): Date | null {
@@ -579,6 +693,7 @@ function attachAimsPhysicalAbs(item: AimsHumanLeg, dateObj: Date): AimsPhysicalL
     sourceDate: formatAimsHumanDate(dateObj),
     leg: {
       ...item.leg,
+      aimsSourceDate: aimsSourceDateIso(formatAimsHumanDate(dateObj)),
       isNextDay: arrAbs >= dayAbs + 1440 || arrAbs < depAbs,
       duration,
     },
@@ -600,6 +715,13 @@ function buildAimsPhysicalFlightDays(legs: AimsPhysicalLeg[], roster: CrewRoster
     const nextOrigin = item.leg.origin;
     const sameStation = Boolean(prevDest && nextOrigin && prevDest === nextOrigin);
     const gap = item.reportAbs - current.endAbs;
+
+    // A published ground duty is an explicit boundary, not a flight connection.
+    if (item.startsAfterActivity) {
+      groups.push(current);
+      current = { legs: [item], startAbs: item.reportAbs, endAbs: item.debriefAbs, continuityNotes: [] };
+      continue;
+    }
 
     if (sameStation && gap >= 12 * 60) {
       current.continuityNotes.push(`Pernoite/pernoite diurno em ${prevDest}: ${formatAimsDurationMinutes(gap)} entre programações.`);
@@ -713,15 +835,15 @@ export function parseAimsRoster(fullText: string, visualRows?: AimsVisualRow[]):
   if (aimsVisualRosterLooksReliable(visualParsed)) {
     const secondary = humanTextParsed?.days?.length ? humanTextParsed : legacyParsed;
     const merged = mergeAimsParsedRosters(visualParsed as CrewRoster, secondary);
-    return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed));
+    return finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed)));
   }
 
   if (humanTextParsed && aimsHumanRosterLooksComplete(humanTextParsed)) {
-    return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(humanTextParsed), visualParsed, humanTextParsed));
+    return finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(humanTextParsed), visualParsed, humanTextParsed)));
   }
 
   const merged = visualParsed?.days?.length ? mergeAimsParsedRosters(visualParsed, legacyParsed) : legacyParsed;
-  return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed));
+  return { ...attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed)), aimsFlightSourceCoverage: undefined };
 }
 
 // Enrich rest provenance without changing the selected canonical parser days.
@@ -947,7 +1069,10 @@ function parseAimsRosterFromVisualRows(fullText: string, visualRows: AimsVisualR
     }
   }
 
-  const rescuedDays = rescueAimsAtomicFlightsFromColumns(rescueAimsColumnContinuationFlights(days, columns, header), columns, header);
+  const evidence = newAimsFlightSourceCoverage('aims_visual');
+  evidence.sourceDates = columns.map(column => aimsSourceDateIso(column.date));
+  evidence.unresolvedSourceDates = allItems.some(item => isInvalidAimsSourceDateToken(item.str, header.month, header.year));
+  const rescuedDays = rescueAimsAtomicFlightsFromColumns(rescueAimsColumnContinuationFlights(days, columns, header), columns, header, evidence);
   const uniqueDays = dedupeAimsOperationalDays(rescuedDays).sort(compareAimsOperationalDays);
   const crewRecords = parseTripulationRecords(fullText, header.crewName, header.year);
   const daysWithCrew = applyTripulationRecords(uniqueDays, crewRecords, header.crewName);
@@ -962,6 +1087,7 @@ function parseAimsRosterFromVisualRows(fullText: string, visualRows: AimsVisualR
     year: header.year,
     days: daysWithCrew,
     rawText: fullText,
+    aimsFlightSourceCoverage: evidence,
   };
 }
 
@@ -1123,13 +1249,19 @@ function rescueAimsAtomicFlightsFromColumns(
   days: RosterDay[],
   columns: AimsVisualColumn[],
   header: { base: string; month: number; year: number },
+  coverage?: AimsFlightSourceCoverage,
 ): RosterDay[] {
   const output = [...days];
   const existing = new Set(output.flatMap(day => (day.legs || []).map(leg => `${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`)));
+  const sourceBlocks = new Set<string>();
 
   for (let i = 0; i < columns.length; i += 1) {
     const column = columns[i];
     const next = columns[i + 1];
+    const sourceDate = aimsSourceDateIso(column.date);
+    const blockKey = JSON.stringify([sourceDate, column.tokens]);
+    const recordSourceBlock = !sourceBlocks.has(blockKey);
+    sourceBlocks.add(blockKey);
     const starts = findAllAimsFlightStarts(column.tokens || []);
     for (const start of starts) {
       const nextStart = starts.find(idx => idx > start) ?? (column.tokens || []).length;
@@ -1140,8 +1272,9 @@ function rescueAimsAtomicFlightsFromColumns(
         if (prefixEnd > 0) segment = [...segment, ...next.tokens.slice(0, prefixEnd)];
       }
       const parsedLegs = parseAimsHumanLegs(segment, header.base).filter(item => isCredibleAimsLeg(item.leg));
+      if (coverage && recordSourceBlock) coverage.occurrences.push({ sourceDate, flightNumber: `LA${column.tokens[start + 1]}`, identity: parsedLegs.length === 1 ? aimsFlightSourceIdentity(sourceDate, parsedLegs[0].leg) : null });
       for (const item of parsedLegs) {
-        const leg = item.leg;
+        const leg = { ...item.leg, aimsSourceDate: sourceDate };
         const legKey = `${leg.flightNumber}|${leg.origin}|${leg.destination}|${leg.departureTime}|${leg.arrivalTime}`;
         if (existing.has(legKey)) continue;
         existing.add(legKey);
@@ -1265,7 +1398,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       // um único ParsedDay e perdia a segunda perna quando a chegada estava costurada
       // no dia seguinte por "(...)". O motor canônico por pernas preserva todas as
       // pernas e divide em cards/jornadas somente após calcular a continuidade física.
-      const parsedDays = buildAimsHumanFlightDays(segment, context);
+      const parsedDays = buildAimsHumanFlightDays(segment, { ...context, rawBlock: segment.join(' ') });
       for (const parsedDay of parsedDays) {
         if (parsedDay.legs?.length) output.push(parsedDay);
       }
@@ -1274,11 +1407,11 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       continue;
     }
 
-    if (isExtraAimsMarker(token) && source[i + 1]?.toUpperCase() === 'LA') {
+    if (isAimsExtraFlightStart(source, i)) {
       const end = findAimsVisualFlightBlockEnd(source, i);
       const leadingIdx = previousUnconsumedAimsClockIndex(source, i, consumedEnd);
       const segment = source.slice(leadingIdx >= 0 ? leadingIdx : i, end);
-      const parsedDays = buildAimsHumanFlightDays(segment, context);
+      const parsedDays = buildAimsHumanFlightDays(segment, { ...context, rawBlock: segment.join(' ') });
       for (const parsedDay of parsedDays) {
         if (parsedDay.legs?.length) output.push(parsedDay);
       }
@@ -1288,7 +1421,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (token === 'ASB' || token === 'RES') {
-      const end = findAimsVisualActivityBlockEnd(source, i);
+      const end = trimAimsActivityBeforeFlight(source, i, findAimsVisualActivityBlockEnd(source, i));
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseASB(segment), segment.join(' ')));
       i = Math.max(end, i + 1);
@@ -1297,7 +1430,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (token === 'HSB' || token === 'HSBE') {
-      const end = findAimsVisualActivityBlockEnd(source, i);
+      const end = trimAimsActivityBeforeFlight(source, i, findAimsVisualActivityBlockEnd(source, i));
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseStandby(segment, token === 'HSBE' ? 'HSBE' : 'HSB'), segment.join(' ')));
       i = Math.max(end, i + 1);
@@ -1306,7 +1439,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (/^(RCFI|CRMBSB|CRMB|CRM|CBF|EMER|MT|C\d{2,3}F)$/.test(token) || isKnownGroundActivity(token)) {
-      const end = findAimsVisualActivityBlockEnd(source, i);
+      const end = trimAimsActivityBeforeFlight(source, i, findAimsVisualActivityBlockEnd(source, i));
       const segment = source.slice(i, end);
       const parsed = /^C\d{2,3}F$/.test(token) || /^(RCFI|CRMBSB|CRMB|CRM|CBF|EMER|MT)$/.test(token)
         ? parseGroundActivity(segment, token)
@@ -1327,11 +1460,14 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     }
 
     if (token === '(...)') {
-      const laIdx = source.slice(i + 1).findIndex((item, localIdx) => String(item || '').toUpperCase() === 'LA' && /^\d{3,4}$/.test(String(source[i + 2 + localIdx] || '')));
-      if (laIdx >= 0) {
-        i = i + 1 + laIdx;
-        continue;
-      }
+      // Skip only the previous duty's stitched arrival. Jumping to the next LA
+      // dropped any ASB/HSB/CRM published between that arrival and the flight.
+      // Its clocks stay available as the next presentation, as before, and an
+      // EXTRA marker right before the flight is left for the flight branch.
+      let end = i + Math.max(1, findAimsContinuationPrefixEnd(source.slice(i)));
+      while (end > i + 1 && isExtraAimsMarker(source[end - 1])) end -= 1;
+      i = end;
+      continue;
     }
 
     i += 1;
@@ -1372,13 +1508,38 @@ function findAimsVisualFlightBlockEnd(tokens: string[], start: number): number {
   return i;
 }
 
+// A complete leading station/clock pair sequence owns its station tokens even
+// when an airport such as REC/CPT/LIS is also a roster code. Outside these two
+// explicit pairs the same token remains an activity boundary.
+function aimsActivityStationWindow(tokens: string[], start: number): { end: number; report: string; release: string } | null {
+  const station = (index: number) => /^[A-Z]{3}$/i.test(String(tokens[index] || ''))
+    && isAimsHumanAirport(tokens[index], '');
+  if (station(start + 1) && isAimsHumanClockToken(tokens[start + 2])
+    && station(start + 3) && isAimsHumanClockToken(tokens[start + 4])) {
+    return { end: start + 5, report: normalizeSimpleTime(tokens[start + 2]), release: normalizeSimpleTime(tokens[start + 4]) };
+  }
+  // Duplicated published slots: clock/clock, station/station, clock/clock.
+  // Require matching duplicates; never choose a convenient revised clock.
+  if (isAimsHumanClockToken(tokens[start + 1]) && tokens[start + 1] === tokens[start + 2]
+    && station(start + 3) && tokens[start + 3] === tokens[start + 4]
+    && isAimsHumanClockToken(tokens[start + 5]) && tokens[start + 5] === tokens[start + 6]) {
+    return { end: start + 7, report: normalizeSimpleTime(tokens[start + 1]), release: normalizeSimpleTime(tokens[start + 5]) };
+  }
+  return null;
+}
+
+function aimsActivityStationPairsEnd(tokens: string[], start: number): number {
+  return aimsActivityStationWindow(tokens, start)?.end || start + 1;
+}
+
 function findAimsVisualActivityBlockEnd(tokens: string[], start: number): number {
   let i = start + 1;
+  const stationPairsEnd = aimsActivityStationPairsEnd(tokens, start);
   while (i < tokens.length) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
     if (token === 'LA' && /^\d{3,4}$/.test(next)) break;
-    if (i > start && isAimsVisualStandaloneBoundaryToken(token)) break;
+    if (i >= stationPairsEnd && isAimsVisualStandaloneBoundaryToken(token)) break;
     i += 1;
   }
   return i;
@@ -1548,12 +1709,16 @@ function mergeAimsParsedRosters(primary: CrewRoster, secondary: CrewRoster): Cre
       return;
     }
 
+    // All flight identities are already represented by the primary parser.
+    // Different fallback duty clocks are not evidence of a second journey.
+    if (day.legs?.length) return;
+
     const sameKind = sameDate.some(item => item.type === day.type && (item.dutyReport || '') === (day.dutyReport || '') && (item.dutyDebrief || '') === (day.dutyDebrief || ''));
     if (!sameKind && canUseAimsSecondaryDay(day)) addActivity(day);
   });
 
   const days = dedupeAimsOperationalDays(merged).sort(compareAimsOperationalDays);
-  return { ...primary, days, rawText: primary.rawText || secondary.rawText };
+  return { ...primary, days, rawText: primary.rawText || secondary.rawText, aimsFlightSourceCoverage: mergeAimsFlightSourceCoverage(primary, secondary) };
 }
 
 function aimsDayActivityKey(day: RosterDay): string {
@@ -2066,6 +2231,18 @@ function parseAimsRosterLegacy(fullText: string): CrewRoster {
     const dayOfWeekNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const dayOfWeek = dayOfWeekNames[dateObj.getDay()];
     
+    // The legacy single-day shape cannot represent several ground duties or
+    // a ground duty plus a flight.
+    // Keep its existing behavior for unmixed columns; split explicit mixed ones
+    // with the same activity/time ownership as the human and visual readers.
+    const tokens = dayContent.split(/\s+/).filter(Boolean).filter(token => !WEEKDAY_TOKENS.has(token.toUpperCase()));
+    const activityCount = tokens.filter(token => AIMS_HUMAN_ACTIVITY_CODE.test(token.toUpperCase())).length;
+    if (activityCount > 1 || (activityCount > 0
+      && tokens.some((token, index) => token.toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[index + 1] || '')))) {
+      days.push(...parseAimsHumanBlock(tokens, { date: dateFormatted, dayOfWeek, dateObj, base, rawBlock: dayContent }));
+      continue;
+    }
+
     // Parse the day content
     const parsed = parseDayContent(dayContent, base);
     
@@ -2307,6 +2484,15 @@ function isExtraAimsMarker(token: string): boolean {
   return value === '[EXTRA]' || value === 'EXTRA' || value === 'PS' || value === 'PAX' || value === 'PASSAGEIRO';
 }
 
+function isAimsExtraFlightStart(tokens: string[], index: number): boolean {
+  if (!isExtraAimsMarker(tokens[index])) return false;
+  let next = index + 1;
+  while (isExtraAimsMarker(tokens[next])) next += 1;
+  if (isAimsHumanClockToken(tokens[next])) next += 1;
+  while (isExtraAimsMarker(tokens[next])) next += 1;
+  return String(tokens[next] || '').toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[next + 1] || '');
+}
+
 
 function isKnownGroundActivity(token: string): boolean {
   return isKnownRosterCode(token);
@@ -2352,6 +2538,8 @@ function parseGroundActivity(lines: string[], code: string): ParsedDay {
 }
 
 function collectDutyWindow(lines: string[]): { start: string | null; end: string | null; startSource: AimsDutyClockSource; endSource: AimsDutyClockSource } {
+  const published = aimsActivityStationWindow(lines, 0);
+  if (published) return { start: published.report, end: published.release, startSource: 'published', endSource: 'published' };
   const airports = new Set(['BSB','GRU','CGH','VCP','NAT','MCZ','FOR','CNF','PMW','FLN','MAB','CPV','GYN','JPA','EZE','VIX','SSA','GIG','SDU','REC','AJU','BEL','SLZ','CGB','POA','CUR']);
   const tokens = lines.map(line => String(line || '').trim()).filter(Boolean);
   const stationTimes: string[] = [];
@@ -2432,10 +2620,11 @@ function sliceOwnActivityLines(lines: string[], code: string): string[] {
   const normalizedCode = String(code || '').toUpperCase();
   let startIdx = tokens.findIndex((token) => token.toUpperCase() === normalizedCode || token.toUpperCase().startsWith(normalizedCode));
   if (startIdx < 0) startIdx = 0;
+  const stationPairsEnd = aimsActivityStationPairsEnd(tokens, startIdx);
   const output: string[] = [];
   for (let i = startIdx; i < tokens.length; i++) {
     const token = tokens[i].toUpperCase();
-    if (i > startIdx && isActivityBoundaryToken(token)) break;
+    if (i >= stationPairsEnd && isActivityBoundaryToken(token)) break;
     output.push(tokens[i]);
   }
   return output.length ? output : tokens;
@@ -2490,11 +2679,12 @@ function parseStandby(lines: string[], type: 'HSB' | 'HSBE'): ParsedDay {
   // HSB/HSBE deve usar apenas o bloco do próprio código.
   // Quando HSB e ASB aparecem no mesmo dia, a reserva não pode herdar horário do sobreaviso.
   const ownLines = sliceOwnActivityLines(lines, type);
-  const times = collectAllClockTokens(ownLines);
+  const published = aimsActivityStationWindow(ownLines, 0);
+  const times = published ? [published.report, published.release] : collectAllClockTokens(ownLines);
   const uniqueTimes = Array.from(new Set(times));
 
   const startTime = uniqueTimes[0] || null;
-  let endTime: string | null = uniqueTimes.find((time) => time !== startTime) || null;
+  let endTime: string | null = published && published.release !== startTime ? published.release : uniqueTimes.find((time) => time !== startTime) || null;
   let endSource: AimsDutyClockSource = endTime ? 'published' : 'absent';
 
   // Para sobreaviso, se o PDF não trouxe fim legível e existe uma próxima programação
@@ -2586,14 +2776,17 @@ function parseASB(lines: string[]): ParsedDay {
   // Se o PDF repetir o início como fim ou não trouxer o fim, a regra operacional do
   // CrewCheck é considerar 6h de reserva a partir do início.
   const ownLines = sliceOwnActivityLines(lines, 'ASB');
-  const times = collectAllClockTokens(ownLines);
+  const published = aimsActivityStationWindow(ownLines, 0);
+  const times = published ? [published.report, published.release] : collectAllClockTokens(ownLines);
   const uniqueTimes = Array.from(new Set(times));
 
   const startTime = uniqueTimes[0] || null;
-  let endTime: string | null = null;
-  let endSource: AimsDutyClockSource = 'absent';
+  // Repeated start slots do not prove a release; retain the existing labelled
+  // estimate instead of promoting the repeated clock to a published end.
+  let endTime: string | null = published && published.release !== startTime ? published.release : null;
+  let endSource: AimsDutyClockSource = endTime ? 'published' : 'absent';
 
-  if (startTime) {
+  if (startTime && !endTime) {
     for (const candidate of uniqueTimes.slice(1)) {
       if (candidate === startTime) continue;
       const diff = diffHours(startTime, candidate) * 60;

@@ -112,9 +112,11 @@ for (const marker of [
   'data-concierge-semantic="v14.3.41"',
   'Converse de verdade',
   'O contexto expira em até 6 horas',
-  'title="Compreensão" value="Natural"',
   '<h2>Teste a conversa</h2>',
 ]) assert.ok(homeBefore.includes(marker), `interface preparada sem marcador: ${marker}`);
+assert.ok(homeBefore.includes('title="Compreensão" value="Natural"')
+  || homeBefore.includes('title="Comandos" value="Prévia" detail="Disponibilidade conforme o canal"'),
+  'interface preparada deve preservar o card de consultas com descrição explícita de capacidade');
 assert.ok(releaseBefore.includes('14.4.11'), 'release Web/PWA final deve ser 14.4.08');
 assert.ok(!engineSource.includes('fetch('), 'interpretador semântico deve ser determinístico e sem chamada externa');
 assert.ok(!/OPENAI|GEMINI|ANTHROPIC|LLM_API/i.test(engineSource), 'interpretador não pode depender de modelo generativo externo');

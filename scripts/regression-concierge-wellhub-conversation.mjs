@@ -1,3 +1,4 @@
+import {restrictConciergeSnapshotWrite,isConciergeConversationWritesOnly} from '../server/concierge-read-only-scope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,6 +15,7 @@ import {
   isConciergeContextFreshV14341 as isConciergeContextFreshV14338,
 } from '../server/v14341/concierge-semantic.mjs';
 import { stayMenuReply } from '../server/concierge/stay-menu.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import * as wellhub from '../server/v14407/wellhub.mjs';
 import * as preferences from '../server/v14410/wellhub-concierge.mjs';
 import * as personality from '../server/v14336/concierge-personality.mjs';
@@ -82,6 +84,8 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   const partner = { id: 'synthetic', name: 'Synthetic gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'basic', activities: ['Pilates'], openingHours: [], sourceUrl: 'https://example.invalid/synthetic' };
   let appResponse;
   const context = vm.createContext({
+    restrictConciergeSnapshotWrite,isConciergeConversationWritesOnly,
+    ...radarEvidence,
     crewcheckMenu: createTelegramMenu({}),
     requestedWeatherAirport,
     normalizeConciergeNaturalTextV14338, interpretConciergeNaturalTextV14338, buildConciergeContextV14338, isConciergeContextFreshV14338,
@@ -175,7 +179,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   }
   const actualSave = context.conciergeSaveSnapshotAsync;
   context.conciergeSaveSnapshotAsync = (...args) => { trace.saves.push(clone(args[2] || {})); return actualSave(...args); };
-  const binding = source.match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);/);
+  const binding = source.match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)?(?:, signal)? \}\) => \{[\s\S]*?\n\}\);/);
   assert.ok(binding, 'real WhatsApp binding is present');
   vm.runInContext(binding[0], context);
   vm.runInContext(extract(whatsapp, 'handleInboundMessage'), context);

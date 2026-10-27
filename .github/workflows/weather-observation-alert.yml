@@ -6,6 +6,11 @@ on:
     paths:
       - 'server.mjs'
       - 'server/weather/**'
+      - 'shared/weatherNoticeDetails.*'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/pulse/**'
+      - 'client/src/lib/alertReviewStore.ts'
+      - 'scripts/tests/weather-notice-*.test.mjs'
       - 'scripts/tests/critical-weather-observation.test.mjs'
       - '.github/workflows/weather-observation-alert.yml'
 
@@ -28,15 +33,20 @@ jobs:
           cache: npm
       - name: Test tracked monitor and pure policy without network
         run: |
+          node --check shared/weatherNoticeDetails.mjs
+          node --test scripts/tests/weather-notice-details.test.mjs
           node --check server/weather/critical-observation.mjs
           node --check server.mjs
           node --test scripts/tests/critical-weather-observation.test.mjs
           node scripts/regression-weather-monitor-heartbeat-health.mjs
       - run: npm ci
+      - name: Test tracked Home and real Pulse with synthetic device sinks
+        run: node --test scripts/tests/weather-notice-producers.test.mjs
       - name: Prepare production sources
         run: node scripts/v139/apply.mjs
       - name: Verify prepared monitor retains policy and authorization
         run: |
+          node --test scripts/tests/weather-notice-details.test.mjs scripts/tests/weather-notice-producers.test.mjs
           node --check server.mjs
           node --test scripts/tests/critical-weather-observation.test.mjs
           node scripts/regression-weather-monitor-heartbeat-health.mjs

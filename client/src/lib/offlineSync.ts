@@ -1,7 +1,7 @@
 import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
 import { saveRosterAnalysis, type SavedRosterSummary } from './databaseClient';
-import { getStoredUser } from './authClient';
+import { getStoredUser, getToken } from './authClient';
 
 const LEGACY_OFFLINE_QUEUE_KEY = 'crewcheck_offline_queue_v1';
 const LEGACY_SAVED_CHECKSUMS_KEY = 'crewcheck_saved_checksums_v1';
@@ -15,6 +15,29 @@ function storageScope(): string {
   } catch {
     return 'anon';
   }
+}
+
+let offlineScopeEpoch = 0;
+if (typeof window !== 'undefined') {
+  const invalidate = () => { offlineScopeEpoch += 1; };
+  window.addEventListener('crewcheck:auth-will-change', invalidate);
+  window.addEventListener('crewcheck:auth-expired', invalidate);
+  window.addEventListener('storage', event => {
+    if (event.key === null || ['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key)) invalidate();
+  });
+}
+
+// Capture raw identity AND session before any await. A stale A completion must
+// never resolve its storage keys or start another request using B's session.
+function captureOfflineScope(): () => void {
+  const identity = () => {
+    const user = getStoredUser();
+    return JSON.stringify([user?.id ?? null, user?.email ?? null, getToken()]);
+  };
+  const captured = identity(), epoch = offlineScopeEpoch;
+  return () => {
+    if (offlineScopeEpoch !== epoch || identity() !== captured) throw Object.assign(new Error('A conta mudou. A sincronização anterior foi interrompida.'), { code: 'OFFLINE_SCOPE_CHANGED' });
+  };
 }
 
 function offlineQueueKey(): string { return `crewcheck_offline_queue_v11_${storageScope()}`; }
@@ -171,7 +194,9 @@ export function getPendingOfflineCount(): number {
 }
 
 export async function queueRosterOffline(payload: Omit<OfflineRosterPayload, 'id' | 'createdAt' | 'attempts' | 'checksum'> & { checksum?: string }): Promise<OfflineRosterPayload> {
+  const assertScope = captureOfflineScope();
   const checksum = payload.checksum || await checksumRoster({ roster: payload.roster, compliance: payload.compliance, gym: payload.gym, sourceFileName: payload.sourceFileName || null });
+  assertScope();
   const queue = readQueue();
   const existing = queue.find((item) => item.checksum === checksum);
   if (existing) return existing;
@@ -197,7 +222,9 @@ export async function saveRosterOfflineFirst(payload: {
   sourceMimeType?: string | null;
   sourceFileSize?: number | null;
 }, options: { forceOnline?: boolean } = {}): Promise<OfflineSaveResult> {
+  const assertScope = captureOfflineScope();
   const checksum = await checksumRoster(payload);
+  assertScope();
   const alreadySavedLocal = readSavedChecksums().includes(checksum);
   const queuedDuplicate = readQueue().some((item) => item.checksum === checksum);
   const { sourceFileDataBase64, sourceMimeType, sourceFileSize, ...localPayload } = payload;
@@ -209,27 +236,33 @@ export async function saveRosterOfflineFirst(payload: {
 
   try {
     const summary = await saveRosterAnalysis({ ...payload, checksum });
+    assertScope();
     rememberChecksum(checksum);
     return { savedOnline: true, queued: false, deduplicatedLocal: Boolean((summary as any)?.deduplicated), summary, checksum, pendingCount: getPendingOfflineCount() };
   } catch (error) {
+    assertScope();
     const message = error instanceof Error ? error.message : String(error || '');
     if (/payload.*grande|too large|413/i.test(message) && payload.sourceFileDataBase64) {
       try {
         const summary = await saveRosterAnalysis({ ...payload, sourceFileDataBase64: null, checksum });
+        assertScope();
         rememberChecksum(checksum);
         return { savedOnline: true, queued: false, deduplicatedLocal: Boolean((summary as any)?.deduplicated), summary, checksum, pendingCount: getPendingOfflineCount() };
       } catch {
+        assertScope();
         // Continua para a fila offline abaixo.
       }
     }
     if (!queuedDuplicate) {
       await queueRosterOffline({ ...localPayload, checksum });
+      assertScope();
     }
     return { savedOnline: false, queued: true, deduplicatedLocal: queuedDuplicate, checksum, pendingCount: getPendingOfflineCount() };
   }
 }
 
 export async function syncPendingRosters(): Promise<{ synced: number; remaining: number; errors: string[] }> {
+  const assertScope = captureOfflineScope();
   const historyChecksums = new Set(readLocalHistory().map((item) => item.checksum));
   const queueChecksums = new Set(readQueue().map((item) => item.checksum));
   const savedChecksums = new Set(readSavedChecksums());
@@ -241,6 +274,7 @@ export async function syncPendingRosters(): Promise<{ synced: number; remaining:
   const processed = new Set<string>();
 
   for (const item of queue) {
+    assertScope();
     if (processed.has(item.checksum)) continue;
     processed.add(item.checksum);
     try {
@@ -251,10 +285,12 @@ export async function syncPendingRosters(): Promise<{ synced: number; remaining:
         sourceFileName: item.sourceFileName,
         checksum: item.checksum,
       });
+      assertScope();
       rememberChecksum(item.checksum);
       rememberLocalHistory({ roster: item.roster, compliance: item.compliance, gym: item.gym, sourceFileName: item.sourceFileName, checksum: item.checksum });
       synced += 1;
     } catch (error) {
+      assertScope();
       if (historyChecksums.has(item.checksum) || queueChecksums.has(item.checksum)) {
         remaining.push({ ...item, attempts: item.attempts + 1, lastError: error instanceof Error ? error.message : 'Erro ao sincronizar' });
       }
@@ -262,6 +298,7 @@ export async function syncPendingRosters(): Promise<{ synced: number; remaining:
     }
   }
 
+  assertScope();
   writeQueue(remaining);
   return { synced, remaining: remaining.length, errors };
 }

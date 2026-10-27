@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import ts from 'typescript';
 import { build } from 'esbuild';
 import { selectAeroDataBoxOccurrence } from '../server/aerodatabox-occurrence.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 const now=Date.parse('2032-10-21T08:00:00Z');
 const occurrence={flight:'QA123',origin:'CGH',destination:'SSA',scheduledDepartureUtc:'2032-10-21T09:35:00Z'};
 const row={number:'QA123',departure:{airport:{iata:'CGH'},scheduledTime:{utc:occurrence.scheduledDepartureUtc},gate:'12',quality:['Basic','Live']},arrival:{airport:{iata:'SSA'}},lastUpdatedUtc:'2032-10-21T07:58:00Z',status:'Scheduled'};
@@ -15,7 +16,7 @@ const ast=ts.createSourceFile('server.mjs',fs.readFileSync('server.mjs','utf8'),
 const names=['firstKnown','providerAeroDataBox','publicRadarPayload'];
 const functions=names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,name);return fn.getText(ast)}).join('\n');
 let payload=[row],calls=0;
-const scope=vm.createContext({selectAeroDataBoxOccurrence,Date:class extends Date{static now(){return now;}},envAny:keys=>keys.includes('AERODATABOX_API_KEY')?'synthetic-only':'',providerAvailable:()=>true,markProvider:()=>{},jsonFetch:async()=>{calls++;return{response:{ok:true},payload};},ciriumRadarProjection:()=>({}),gateQuerySuppressed:()=>({ok:false})});
+const scope=vm.createContext({...radarEvidence,selectAeroDataBoxOccurrence,Date:class extends Date{static now(){return now;}},envAny:keys=>keys.includes('AERODATABOX_API_KEY')?'synthetic-only':'',providerAvailable:()=>true,markProvider:()=>{},jsonFetch:async()=>{calls++;return{response:{ok:true},payload};},ciriumRadarProjection:()=>({}),gateQuerySuppressed:()=>({ok:false})});
 vm.runInContext(functions,scope);
 const compiled=await build({stdin:{contents:"export {resolveNextFlightGate} from './client/src/lib/nextFlightGate';",resolveDir:process.cwd()},bundle:true,platform:'node',format:'cjs',write:false});
 const mod={exports:{}};Function('module','exports','require',compiled.outputFiles[0].text)(mod,mod.exports,createRequire(import.meta.url));

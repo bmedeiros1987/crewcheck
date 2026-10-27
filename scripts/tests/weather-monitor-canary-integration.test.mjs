@@ -1,3 +1,4 @@
+import { formatWeatherNoticeDetails } from '../../shared/weatherNoticeDetails.mjs';
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -73,7 +74,7 @@ function fixture() {
       return { raw: 'SBGR 041650Z 08015KT 2000 TSRA BKN008 18/17 Q1013', station: 'SBGR', observedAt: '2026-10-04T16:50:00Z', ok: true, official: true, provider: 'redemet', source: 'Synthetic fixture', stale: false };
     },
     criticalWeatherChange: () => ({ critical: false, severity: 2, reasons: ['synthetic severe weather'], fingerprint: 'synthetic-unique-report' }),
-    evaluateCriticalWeatherDelivery,
+    evaluateCriticalWeatherDelivery, formatWeatherNoticeDetails,
     criticalWeatherMonitorMemory: new Map(),
     sendTelegramMessage: async (chatId, text) => { sent.push({ chatId, text }); return { ok: true }; },
     setTimeout: (callback, delay) => { timers.push({ callback, delay, type: 'timeout' }); return { unref() {} }; },
@@ -86,9 +87,9 @@ function fixture() {
     get reports() { return reports; }, get reads() { return reads; }, get localReads() { return localReads; },
     get genericStateReads() { return genericStateReads; }, get genericStateWrites() { return genericStateWrites; } };
 }
-function cycle(f, lease = f.lease) {
+function cycle(f, lease = f.lease, observationNow = () => NOW) {
   vm.runInContext(section('async function runCriticalWeatherMonitorCycle(', 'async function handleCriticalWeatherMonitor('), f.context);
-  return f.context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, lease);
+  return f.context.runCriticalWeatherMonitorCycle(new Date(NOW), observationNow, lease);
 }
 
 test('actual cycle sends only the allowlisted canary, using current server weather evaluator', async () => {
@@ -463,4 +464,63 @@ test('lease loss during final write preserves successor intent without a generic
   const summary = await cycle(f);
   assert.equal(summary.alerts, 1); assert.equal(summary.failures, 1); assert.equal(f.sent.length, 1);
   assert.deepEqual(f.records.get(STATE_KEY), successor); assert.equal(f.genericStateWrites, 0);
+});
+
+test('canary source expiring during durable intent write never reaches transport', async () => {
+  const f = fixture(); let clock = NOW;
+  const write = f.lease.writeState;
+  f.lease.writeState = async (key, value) => {
+    const result = await write(key, value);
+    if (value.canaryDispatchState === 'submitted') clock = NOW + 51 * 60_000;
+    return result;
+  };
+  const summary = await cycle(f, f.lease, () => clock);
+  assert.equal(summary.skipped, 1); assert.equal(f.sent.length, 0);
+  assert.equal([...f.records.values()].filter(value => value.canaryDispatchState === 'submitted').length, 1);
+  // The reserved attempt remains terminal even after restart; no implicit retry.
+  f.context.criticalWeatherMonitorMemory.clear();
+  await cycle(f); assert.equal(f.sent.length, 0);
+});
+test('canary operational window closing during consent check blocks transport', async () => {
+  const f = fixture(); let clock = NOW;
+  const read = f.context.conciergeDbGet;
+  f.context.conciergeDbGet = async key => {
+    const value = await read(key);
+    if ([...f.records.values()].some(record => record.canaryDispatchState === 'submitted')) clock = NOW + 1;
+    return value;
+  };
+  f.context.conciergeWeatherCandidates = (_snapshot, at) => at.getTime() <= NOW
+    ? [{ key: 'synthetic-flight', role: 'origem', station: 'SBGR', flight: 'TEST123', route: 'GRU → BSB' }] : [];
+  assert.equal((await cycle(f, f.lease, () => clock)).skipped, 1);
+  assert.equal(f.sent.length, 0);
+});
+
+test('existing candidate selector expires origin after its real 30-minute post-departure window', async () => {
+  const f = fixture(); let clock = NOW;
+  Object.assign(f.context, {
+    conciergeProgramRecords: () => [{ day: '2026-10-04', start: new Date(NOW - 30 * 60_000), legs: [{ origin: 'SBGR', destination: 'SBBR', flightNumber: 'TEST123', departureTime: '16:30', arrivalTime: '20:00' }] }],
+    conciergeProgramDate: (_day, time) => new Date(`2026-10-04T${time}:00Z`),
+    conciergeRecordDateKey: () => '2026-10-04', airportIcao: value => value,
+  });
+  vm.runInContext(section('function conciergeWeatherCandidates(', 'function weatherAlertStateKey('), f.context);
+  const write = f.lease.writeState;
+  f.lease.writeState = async (key, value) => {
+    const result = await write(key, value);
+    if (value.canaryDispatchState === 'submitted') clock = NOW + 1;
+    return result;
+  };
+  const summary = await cycle(f, f.lease, () => clock);
+  assert.equal(f.reports, 1); assert.equal(summary.skipped, 1); assert.equal(f.sent.length, 0);
+});
+test('slow second airport collection cannot submit an expired first report', async () => {
+  const f = fixture(); let clock = NOW, calls = 0;
+  const candidates = f.context.conciergeWeatherCandidates();
+  f.context.conciergeWeatherCandidates = () => [...candidates, { ...candidates[0], key: 'synthetic-second' }];
+  const fetch = f.context.fetchAviationWeatherReport;
+  f.context.fetchAviationWeatherReport = async () => {
+    if (++calls === 2) clock = NOW + 51 * 60_000;
+    return fetch();
+  };
+  assert.equal((await cycle(f, f.lease, () => clock)).skipped, 1);
+  assert.equal(f.sent.length, 0);
 });

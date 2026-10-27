@@ -12,9 +12,23 @@ on:
       - 'scripts/regression-operational-finance-clock.mjs'
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/personalAllowanceReference.ts'
+      - 'scripts/regression-personal-allowance-*.mjs'
+      - 'client/src/lib/latamAllowanceCatalog.ts'
+      - 'client/src/lib/financialActApplicability.ts'
+      - 'client/src/lib/sharedAllowanceResolution.ts'
+      - 'client/src/components/finance/FinancialActApplicability.tsx'
+      - 'client/src/components/finance/financial-act-applicability.css'
+      - 'scripts/lib/shared-allowance-fixture.mjs'
+      - 'scripts/regression-latam-allowance-catalog.mjs'
+      - 'scripts/regression-financial-act-applicability*.mjs'
+      - 'scripts/regression-shared-allowance-callers.mjs'
       - 'client/src/lib/financialRules.ts'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-p1-demonstrated-per-diem-effective-period.mjs'
+      - 'scripts/regression-financial-rate-precedence.mjs'
+      - 'scripts/regression-financial-rate-archive.mjs'
+      - 'client/src/components/finance/FinancialHistoryExplorer.tsx'
       - '.github/workflows/per-diem-effective-period.yml'
   workflow_dispatch:
 
@@ -40,10 +54,19 @@ jobs:
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
             TZ="$zone" node scripts/regression-taxi-base-apz.mjs
+            TZ="$zone" node scripts/regression-financial-rate-precedence.mjs
+            TZ="$zone" node scripts/regression-financial-rate-archive.mjs
           done
           node scripts/regression-operational-finance-clock.mjs
           node scripts/regression-taxi-import-confirmation.mjs
           node scripts/regression-financial-statement-totals.mjs
+      - name: Shared LATAM references (raw, synthetic)
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/regression-latam-allowance-catalog.mjs
+            TZ="$zone" node scripts/regression-financial-act-applicability.mjs
+            TZ="$zone" node scripts/regression-shared-allowance-callers.mjs
+          done
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Revalidate after preparation
@@ -52,10 +75,19 @@ jobs:
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
             TZ="$zone" node scripts/regression-taxi-base-apz.mjs
+            TZ="$zone" node scripts/regression-financial-rate-precedence.mjs
+            TZ="$zone" node scripts/regression-financial-rate-archive.mjs
           done
           node scripts/regression-operational-finance-clock.mjs
           node scripts/regression-taxi-import-confirmation.mjs
           node scripts/regression-financial-statement-totals.mjs
+      - name: Shared LATAM references (prepared, synthetic)
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/regression-latam-allowance-catalog.mjs
+            TZ="$zone" node scripts/regression-financial-act-applicability.mjs
+            TZ="$zone" node scripts/regression-shared-allowance-callers.mjs
+          done
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Web build

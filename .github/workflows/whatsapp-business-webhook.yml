@@ -10,6 +10,7 @@ on:
       - 'scripts/regression-whatsapp-business-webhook.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
+      - 'scripts/regression-whatsapp-status-diagnostics.mjs'
       - 'render.yaml'
       - '.env.example'
       - '.github/workflows/whatsapp-business-webhook.yml'
@@ -23,6 +24,7 @@ on:
       - 'scripts/regression-whatsapp-business-webhook.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
+      - 'scripts/regression-whatsapp-status-diagnostics.mjs'
       - 'render.yaml'
       - '.env.example'
       - '.github/workflows/whatsapp-business-webhook.yml'
@@ -60,3 +62,4 @@ jobs:
         run: |
           node --check server/whatsapp.mjs
           node scripts/regression-whatsapp-sender.mjs
+          node scripts/regression-whatsapp-status-diagnostics.mjs

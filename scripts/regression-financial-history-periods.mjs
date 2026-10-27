@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -33,6 +34,7 @@ try {
     flightDistanceKmFromEvent:()=>100,durationHours:()=>2,financialFlightRule:()=>({extra:false,reason:'synthetic'}),isSundayOrConfiguredHoliday:()=>false,userIsFirstCcm:()=>false,flightWorkType:()=> 'OP',safe:(value,fallback)=>value||fallback,dateChip:date=>date.toISOString().slice(0,10),isOperationalEvent:()=>true,financialEventCode:event=>event.kind==='reserve'?'ASB':'CRM',
     eventStartDateTime:event=>new Date(event.iso+(event.kind==='reserve'?'T07:00:00':'T11:00:00')),eventEndDateTime:event=>new Date(event.iso+(event.kind==='reserve'?'T09:00:00':'T13:00:00'))});
   vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.subject={calculateSalary'+(functions.some(n=>n.name.text==='scopedFinancialForecast')?',scopedFinancialForecast':'')+'};',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+ installAllowanceDependencies(context);
   const event=(iso,kind='flight')=>({id:'synthetic-'+iso+'-'+kind,iso,date:new Date(iso+'T12:00:00'),kind,day:{date:iso.slice(8)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4),...(kind==='reserve'?{type:'ASB',dutyReport:'07:00',dutyDebrief:'09:00',dutyReportSource:'published',dutyDebriefSource:'published'}:{})},origin:'AAA',destination:'BBB',flightNumber:'SYN'});
   const salary=context.subject.calculateSalary([event('2032-01-31'),event('2032-02-02'),event('2032-03-01'),event('2032-01-31','reserve'),event('2032-02-02','reserve')],{year:2032,month:2});
   assert.equal(salary.rows.length,1,'monthly salary excludes adjacent-month flights');assert.equal(salary.reserveHours,2,'monthly salary excludes adjacent-month reserve');assert.ok(Number.isNaN(salary.gross),'observed monthly rows do not prove complete variable inventory');assert.equal(salary.production,100);assert.equal(salary.reserve,20);

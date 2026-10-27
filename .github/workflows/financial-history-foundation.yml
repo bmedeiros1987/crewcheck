@@ -2,9 +2,18 @@ name: Financial history foundation
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'shared/financialReadModel.mjs'
       - 'shared/financialSalaryDsr.mjs'
       - 'shared/financialVacationTiming.mjs'
+      - 'client/src/lib/latamAllowanceCatalog.ts'
+      - 'client/src/lib/financialActApplicability.ts'
+      - 'client/src/lib/sharedAllowanceResolution.ts'
+      - 'scripts/lib/shared-allowance-fixture.mjs'
+      - 'scripts/regression-latam-allowance-catalog.mjs'
+      - 'scripts/regression-shared-allowance-callers.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
       - 'client/src/lib/salaryDsrConsumer.ts'
       - 'scripts/regression-salary-dsr-*'
@@ -48,6 +57,8 @@ on:
       - 'scripts/regression-planned-roster-owner-browser.cjs'
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialForecastPeriods.ts'
+      - 'client/src/lib/financialIntervalEvidence.ts'
+      - 'client/src/lib/aimsFlightSourceCoverage.ts'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
@@ -100,12 +111,24 @@ jobs:
           node scripts/regression-financial-salary-dsr.mjs
           node scripts/regression-financial-vacation-timing.mjs
       - run: npm ci
+      - name: Verify AIMS source coverage and capture races before preparation (synthetic)
+        run: |
+          for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$TZ" FINANCIAL_COVERAGE_PHASE=raw node scripts/regression-financial-aims-source-coverage.mjs
+          done
+          node scripts/regression-financial-capture-source-race.mjs
       - run: node scripts/regression-financial-payroll-dsr-source.mjs
       - name: Private payroll counterproofs before preparation
         run: |
           node scripts/regression-private-payroll-extraction.mjs
           node scripts/regression-private-payroll-review.mjs
       - run: node scripts/v139/apply.mjs
+      - name: Verify AIMS source coverage and capture races after preparation (synthetic)
+        run: |
+          for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$TZ" FINANCIAL_COVERAGE_PHASE=prepared node scripts/regression-financial-aims-source-coverage.mjs
+          done
+          node scripts/regression-financial-capture-source-race.mjs
       - name: Private payroll counterproofs after preparation
         run: |
           node scripts/regression-private-payroll-extraction.mjs
@@ -181,10 +204,31 @@ jobs:
         run: |
           node scripts/regression-free-day-postponement.mjs
           node scripts/regression-free-day-telegram-preparation.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated UI browser dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/financial-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify local ACT applicability and minimum-reference UI (synthetic)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          # Run both independent UI proofs; retain failure from either suite.
+          component_status=0
+          node scripts/regression-financial-act-applicability-browser.mjs || component_status=$?
+          app_status=0
+          node scripts/regression-financial-act-applicability-app.mjs || app_status=$?
+          test "$component_status" -eq 0
+          test "$app_status" -eq 0
       - name: Verify fixed financial mask and account preference (synthetic)
         timeout-minutes: 3
         env:
@@ -250,6 +294,7 @@ jobs:
           node scripts/regression-financial-changes-browser.mjs
           node scripts/regression-financial-changes-home-compiled.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
+        timeout-minutes: 10
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-financial-ui-browser.cjs
@@ -339,6 +384,7 @@ jobs:
           name: financial-ui-synthetic
           path: |
             artifacts/financial-ui/
+            artifacts/financial-aims-source-coverage/
             artifacts/canonical-duty-measurement/
             artifacts/canonical-duty-card/
             artifacts/canonical-duty-home/

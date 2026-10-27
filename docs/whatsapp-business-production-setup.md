@@ -1,4 +1,6 @@
-# WhatsApp Business Platform — configuração de produção do CrewCheck
+# Meta WhatsApp Cloud API — configuração do CrewCheck
+
+> Este procedimento é exclusivo do caminho Meta Cloud API. Não comprova configuração ou envio de um número operado pela Infobip. O candidato Infobip usa outro endpoint e permanece OFF; consulte [a análise do caminho CrewCierge](whatsapp-concierge-path-audit-20261021.md). Não ampliar permissões nem mudar conta, número ou autenticação com base neste roteiro.
 
 ## Endpoint oficial
 

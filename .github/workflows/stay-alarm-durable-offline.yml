@@ -1,0 +1,142 @@
+name: Android durable offline stay alarm
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarm*.java'
+      - 'shared/stay-alarm-host-runtime.mjs'
+      - 'client/src/lib/stayAlarmHost.ts'
+      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
+      - 'client/src/components/v1391/StayHotelAlarmPreview.tsx'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'client/src/lib/stayEditorNavigation.ts'
+      - 'shared/stay-editor-store.mjs'
+      - 'scripts/regression-stay-editor-invalidation-browser.mjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'scripts/fixtures/StayAlarmDurableAuthorityFixture.java'
+      - 'scripts/regression-stay-alarm-durable-offline.mjs'
+      - 'docs/stay-alarm-durable-offline.md'
+      - '.github/workflows/stay-alarm-durable-offline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22', cache: npm}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Durable authority and lifecycle counterproofs
+        run: node --test scripts/regression-stay-alarm-durable-offline.mjs
+      - name: Existing StayAlarm native contracts
+        run: node scripts/regression-stay-alarm-native.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated browser runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Actual stay editor keeps durable authority on view, revokes on real edits (Chromium)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-editor-invalidation-browser.mjs
+      - run: npm run check
+      - run: npm run build
+      - uses: gradle/actions/setup-gradle@v6
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Build isolated debug test APK only
+        run: |
+          export STAY_FIXTURE_PACKAGE="com.crewcheck.app.stayaccept${GITHUB_RUN_ID}r${GITHUB_RUN_ATTEMPT}"
+          echo "STAY_FIXTURE_PACKAGE=$STAY_FIXTURE_PACKAGE" >> "$GITHUB_ENV"
+          mkdir -p android-wrapper/app/src/main/assets
+          printf '%s' 'crewcheck-stay-synthetic-v1' > android-wrapper/app/src/main/assets/crewcheck-stay-synthetic.txt
+          export STAY_FIXTURE_MANIFEST="$RUNNER_TEMP/stay-physical-manifest.xml"
+          cat > "$STAY_FIXTURE_MANIFEST" <<'XML'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+            <application android:label="CrewCheck Teste Offline Isolado" tools:replace="android:label">
+              <activity android:name="com.crewcheck.app.MainActivity" tools:node="remove" />
+              <activity android:name="com.crewcheck.app.StayAlarmPhysicalFixtureActivity" android:label="CrewCheck Teste Offline Isolado" android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN" />
+                  <category android:name="android.intent.category.LAUNCHER" />
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          XML
+          cat > "$RUNNER_TEMP/stay-physical.init.gradle" <<'GROOVY'
+          gradle.beforeProject { p ->
+            p.afterEvaluate {
+              if (p.path == ':app') {
+                def pkg = System.getenv('STAY_FIXTURE_PACKAGE')
+                if (!(pkg ==~ /com\.crewcheck\.app\.stayaccept[0-9]{8,20}r[0-9]{1,5}/)) throw new GradleException('invalid isolated fixture package')
+                p.extensions.getByName('android').buildTypes.getByName('debug').applicationIdSuffix = pkg.substring('com.crewcheck.app'.length())
+                p.extensions.getByName('android').sourceSets.getByName('debug').manifest.srcFile(System.getenv('STAY_FIXTURE_MANIFEST'))
+              }
+            }
+          }
+          GROOVY
+          gradle -p android-wrapper --init-script "$RUNNER_TEMP/stay-physical.init.gradle" --no-daemon --console=plain :app:assembleDebug
+      - name: Verify physical-test APK identity and fingerprint
+        env:
+          STAY_TEST_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p artifacts/stay-alarm-test
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging android-wrapper/app/build/outputs/apk/debug/app-debug.apk > "$RUNNER_TEMP/stay-test-badging.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree android-wrapper/app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml > "$RUNNER_TEMP/stay-test-manifest.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android-wrapper/app/build/outputs/apk/debug/app-debug.apk > artifacts/stay-alarm-test/signature.txt
+          python3 - <<'PY'
+          import hashlib,json,os,re,zipfile
+          from pathlib import Path
+          apk=Path('android-wrapper/app/build/outputs/apk/debug/app-debug.apk')
+          badging=(Path(os.environ['RUNNER_TEMP'])/'stay-test-badging.txt').read_text()
+          package=re.search(r"^package: name='([^']+)' versionCode='([^']+)'",badging,re.M)
+          assert "application-label:'CrewCheck Teste Offline Isolado'" in badging,'installer label must identify test app'
+          expected=os.environ['STAY_FIXTURE_PACKAGE']
+          assert re.fullmatch(r'com\.crewcheck\.app\.stayaccept[0-9]{8,20}r[0-9]{1,5}',expected)
+          assert package and package[1]==expected,'unexpected physical-test package'
+          assert package[1] not in ('com.crewcheck.app','com.crewcheck.app.mcctest')
+          manifest=(Path(os.environ['RUNNER_TEMP'])/'stay-test-manifest.txt').read_text()
+          for authorities in re.findall(r'android:authorities[^\n]*="([^"]+)"',manifest):
+            assert all(value.startswith(expected+'.') for value in authorities.split(';')),'foreign provider authority'
+          signature=Path('artifacts/stay-alarm-test/signature.txt').read_text()
+          certificate=re.search(r'^Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]{64})$',signature,re.M)
+          assert certificate,'verified signer fingerprint missing'
+          assert re.search(r'^application-debuggable(?:\s|$)',badging,re.M),'test APK must be debuggable'
+          launcher=re.search(r"^launchable-activity: name='([^']+)'",badging,re.M)
+          assert launcher and launcher[1]=='com.crewcheck.app.StayAlarmPhysicalFixtureActivity','fixture must not launch MainActivity/authentication'
+          with zipfile.ZipFile(apk) as archive:
+            assert archive.read('assets/crewcheck-stay-synthetic.txt')==b'crewcheck-stay-synthetic-v1','missing synthetic native fixture'
+          report={'checkoutSha':os.environ['GITHUB_SHA'],'pullRequestHead':os.environ['STAY_TEST_PR_HEAD'],'package':package[1],'versionCode':package[2],
+            'apkFilename':'CrewCheck-Teste-Offline-Isolado.apk','applicationLabel':'CrewCheck Teste Offline Isolado',
+            'debuggable':True,'apkSha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
+            'signatureVerified':True,'signerCertificateSha256':certificate[1].lower(),
+            'syntheticNativeFixture':True,'requiresRealAccount':False,'launcher':launcher[1],
+            'physicalAccepted':False,'storeRelease':False,'nativeRemotePushImplemented':False}
+          Path('artifacts/stay-alarm-test/receipt.json').write_text(json.dumps(report,indent=2)+'\n')
+          print(json.dumps(report))
+          PY
+          cp android-wrapper/app/build/outputs/apk/debug/app-debug.apk artifacts/stay-alarm-test/CrewCheck-Teste-Offline-Isolado.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-StayAlarm-Offline-Test
+          path: |
+            artifacts/stay-alarm-test/CrewCheck-Teste-Offline-Isolado.apk
+            artifacts/stay-alarm-test/receipt.json
+            artifacts/stay-alarm-test/signature.txt

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createRequire} from 'node:module';import {buildSync} from 'esbuild';
-const dir=fs.mkdtempSync(path.join(os.tmpdir(),'manual-operational-')),file=path.join(dir,'gate.cjs');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'manual-operational-')),file=path.join(dir,'gate.cjs'),watchFile=path.join(dir,'watch.cjs');
 buildSync({entryPoints:['client/src/lib/nextFlightGate.ts'],bundle:true,platform:'node',format:'cjs',outfile:file,alias:{'@':path.resolve('client/src')},logLevel:'silent'});
+buildSync({entryPoints:['client/src/lib/nextFlightWatch.ts'],bundle:true,platform:'node',format:'cjs',outfile:watchFile,alias:{'@':path.resolve('client/src')},logLevel:'silent'});
 const modules={load:()=>createRequire(import.meta.url)(file),cleanup:()=>fs.rmSync(dir,{recursive:true,force:true})};
 try {
  const m=modules.load('nextFlightGate'),now=Date.parse('2032-10-20T09:01:00Z'),received=now-60000,observed='2032-10-20T08:59:00Z';
@@ -61,5 +62,97 @@ try {
  assert.equal(m.readManualGate(tombstones,account,a).gate,'25');assert(m.writeManualGate(tombstones,account,a,{gate:'',author:'Synthetic'},now).ok);assert.equal(m.readManualGate(tombstones,account,a),null);assert.equal(m.readManualGate(tombstones,account,b).gate,'25');
  assert(m.patchManualOperationalFields(tombstones,account,a,{status:'Embarcando',registration:'PR-ABC'},'Synthetic',now).ok);assert.equal(m.readManualGate(tombstones,account,a).gate,'');assert(m.patchManualOperationalFields(tombstones,account,a,{status:null,registration:null},'Synthetic',now).ok);assert.equal(m.readManualGate(tombstones,account,a),null,'clearing sibling fields retains gate tombstone');
  assert(m.writeManualGate(tombstones,account,a,{gate:'11',author:'Synthetic'},now).ok);assert.equal(m.readManualGate(tombstones,account,a).gate,'11');assert(m.writeManualGate(tombstones,account,a,{gate:'',author:'Synthetic'},now).ok);assert.equal(m.readManualGate(tombstones,account,a),null,'removing a replacement gate does not resurrect legacy');assert.equal(m.readManualGate(tombstones,account,b).gate,'25');assert.equal(tombstones.getItem(v1),legacyBytes,'legacy bytes remain intact');
- console.log('PASS same-domain manual operational fields: exact occurrence/account, v1 preservation/confirmation, per-field patch/clear, manual priority/conflict, strict source observation+receipt, placeholders, quota, no Radar/network writes.');
+ // Boarding type is a separately labeled manual assertion, atomically bound to a gate revision.
+ const typed={map:new Map(),getItem(key){return this.map.get(key)||null;},setItem(key,value){this.map.set(key,value);}};
+ const typedRead=(e=event,owner=account)=>m.readManualGate(typed,owner,e);
+ const typedInfo=(at=now,e=event,owner=account)=>m.resolveNextFlightGate({event:e,manual:typedRead(e,owner),now:at});
+ const typedRevision=()=>m.manualGateRevision(typedRead(),account,event);
+ const typedWrite=(gate,boardingType,at=now,expectedManualRevision=typedRevision())=>m.writeManualGate(typed,account,event,{gate,boardingType,author:'Synthetic type author',expectedManualRevision},at);
+ assert.equal(typedInfo().boardingType,'unknown');assert.equal(typedInfo().manualBoardingType,null);
+ assert(m.writeManualGate(typed,account,event,{gate:'47',author:'Existing v2 author'},now-600000).ok);
+ assert.equal(typedInfo().boardingType,'unknown','old v2 gates do not establish an airport catalogue type');
+ const untyped=typedRead();assert.equal(m.manualGateRevision(untyped,account),JSON.stringify([account,untyped.gate,untyped.terminal||'',untyped.setAtEpochMs,untyped.sourceReview||null,untyped.scheduledDepartureUtc||'']),'untyped two-argument revision stays byte-identical for persisted notice dedup');assert.equal(m.manualGateRevision(null,account),'');
+ const oldV2=typed.getItem(v2),noTypeRevision=typedRevision();
+ assert.equal(m.writeManualGate(typed,account,event,{gate:'47',boardingType:'remote',author:'Synthetic'},now).ok,false,'typed write requires a captured revision');
+ assert.equal(typed.getItem(v2),oldV2);
+ assert(typedWrite('47','remote').ok);let typedResolved=typedInfo();
+ assert.equal(typedResolved.gate,'47');assert.equal(typedResolved.boardingType,'remote');assert.equal(typedResolved.remote,false,'numeric remote assertion does not change legacy remote flag');
+ assert.deepEqual(typedResolved.manualBoardingType,{value:'remote',gate:'47',gateSetAtEpochMs:now,author:'Synthetic type author',setAtEpochMs:now});
+ assert.notEqual(typedRevision(),noTypeRevision);
+ const persisted=JSON.parse(typed.getItem(v2)),identity=Object.keys(persisted)[0];
+ assert.deepEqual(persisted[identity].gate.boardingType,typedResolved.manualBoardingType);
+ // Deterministic storage seam: a newer write lands after the first comparison but before persistence.
+ // This proves the last re-read guard, not an atomic cross-tab localStorage transaction.
+ for(const newerGate of ['47','50']) {
+  const oldBytes=typed.getItem(v2),newerMap=JSON.parse(oldBytes),nextGate=newerMap[identity].gate;
+  nextGate.value=newerGate;nextGate.boardingType={...nextGate.boardingType,value:'finger',gate:newerGate};
+  const newerBytes=JSON.stringify(newerMap),raceData=new Map(typed.map),expected=typedRevision();let v2Reads=0,writeAttempts=0;
+  const interleaved={getItem(key){const captured=raceData.get(key)||null;if(key===v2&&++v2Reads===2)raceData.set(v2,newerBytes);return captured;},setItem(key,value){writeAttempts++;raceData.set(key,value);}};
+  const outcome=m.writeManualGate(interleaved,account,event,{gate:'47',boardingType:'remote',author:'Stale synthetic tab',expectedManualRevision:expected},now);
+  assert.equal(outcome.ok,false,'prewrite revision recheck refuses a newer gate/type after initial comparison');assert(v2Reads>=3,'counterexample changed storage after the initial comparison');assert.equal(writeAttempts,0);assert.equal(raceData.get(v2),newerBytes,'latest gate/type record is not overwritten');
+ }
+
+ assert.equal(typedInfo(now+24*3600000).boardingType,'remote','no unapproved expiry policy is imposed on a manual assertion');
+ assert.equal(typedInfo(now+24*3600000).manualBoardingType.setAtEpochMs,now,'reading never refreshes the manual timestamp');
+ const firstTypedRevision=typedRevision();assert(typedWrite('47','finger').ok);
+ assert.notEqual(typedRevision(),firstTypedRevision,'same-millisecond type-only edit changes the review/CAS token');
+ const changedTypeBytes=typed.getItem(v2);assert.equal(typedWrite('47','remote',now,firstTypedRevision).ok,false);assert.equal(typed.getItem(v2),changedTypeBytes,'a stale tab cannot overwrite the newer type');
+ assert.equal(typedInfo().boardingType,'finger');assert.equal(typedInfo().remote,false);
+ assert(m.patchManualOperationalFields(typed,account,event,{status:'Embarcando',registration:'PR-TYP'},'Synthetic sibling',now+1).ok);
+ assert.equal(typedInfo(now+1).boardingType,'finger');assert.equal(typedInfo(now+1).manualBoardingType.setAtEpochMs,now,'sibling edits do not reconfirm boarding type');
+ assert(typedWrite('48','unknown',now+2).ok);assert.equal(typedInfo(now+2).boardingType,'unknown');assert.equal(typedInfo(now+2).manualBoardingType,null);assert.equal(typedInfo(now+2).status,'Embarcando');assert.equal(typedInfo(now+2).registration,'PR-TYP');
+ assert(typedWrite('48','remote',now+3).ok);assert(m.writeManualGate(typed,account,event,{gate:'49',author:'Existing gate writer'},now+4).ok);assert.equal(typedInfo(now+4).boardingType,'unknown','changing gate through an existing writer drops its old type');
+ assert(typedWrite('49','remote',now+5).ok);assert(typedWrite('','unknown',now+6).ok);assert.equal(typedInfo(now+6).boardingType,'unknown');assert.equal(typedInfo(now+6).gate,'');assert.equal(typedInfo(now+6).status,'Embarcando');
+ assert(typedWrite('49','unknown',now+7).ok);assert.equal(typedInfo(now+7).boardingType,'unknown','returning to a former gate does not revive its old type');
+ assert(typedWrite('47','remote').ok);
+ for(const changed of [{...event,flightNumber:'QA9999'},{...event,origin:'REC'},{...event,destination:'CNF'},{...event,canonical:{startDateTime:'2032-10-20T15:30:00Z'}},{...event,canonical:{startDateTime:'2032-10-21T12:30:00Z'}}])assert.equal(typedInfo(now,changed).boardingType,'unknown','type belongs only to the exact occurrence');
+ // An editor token also binds the exact occurrence, even when legacy gate/review bytes match.
+ const otherTypedEvent={...event,flightNumber:'QA4999'};
+ assert(m.writeManualGate(typed,account,otherTypedEvent,{gate:'47',author:'Synthetic type author'},now).ok);
+ const otherUntyped=m.readManualGate(typed,account,otherTypedEvent);
+ const sameUntypedEvent={...event,flightNumber:'QA4888'};
+ assert(m.writeManualGate(typed,account,sameUntypedEvent,{gate:'47',author:'Synthetic type author'},now).ok);
+ const sameUntyped=m.readManualGate(typed,account,sameUntypedEvent);
+ assert.equal(m.manualGateRevision(otherUntyped,account),m.manualGateRevision(sameUntyped,account),'old notice token intentionally omits flight/route because caller supplies scope');
+ assert.notEqual(m.manualGateRevision(otherUntyped,account,otherTypedEvent),m.manualGateRevision(sameUntyped,account,sameUntypedEvent),'editor token includes occurrence independent of gate bytes');
+ const beforeCrossScope=typed.getItem(v2);
+ assert.equal(m.writeManualGate(typed,account,otherTypedEvent,{gate:'47',boardingType:'remote',author:'Synthetic',expectedManualRevision:m.manualGateRevision(sameUntyped,account,sameUntypedEvent)},now).ok,false);assert.equal(typed.getItem(v2),beforeCrossScope);
+ const emptyEventA={...event,flightNumber:'QA4777'},emptyEventB={...event,flightNumber:'QA4666'};
+ assert.notEqual(m.manualGateRevision(null,account,emptyEventA),m.manualGateRevision(null,account,emptyEventB));
+ assert.equal(m.writeManualGate(typed,account,emptyEventB,{gate:'47',boardingType:'remote',author:'Synthetic',expectedManualRevision:m.manualGateRevision(null,account,emptyEventA)},now).ok,false);assert.equal(typed.getItem(v2),beforeCrossScope,'empty-entry revision cannot cross occurrence either');
+ assert.equal(typedInfo(now,event,'other-owner').boardingType,'unknown');
+ typed.setItem('crewcheck:manual-gate:v2:other-owner',typed.getItem(v2));assert.equal(typedInfo(now,event,'other-owner').boardingType,'unknown','copying bytes does not transfer account ownership');
+ const validTypeMap=typed.getItem(v2);
+ for(const patch of [{value:'bus'},{value:'unknown'},{gate:'48'},{gateSetAtEpochMs:now-1},{gateSetAtEpochMs:String(now)},{setAtEpochMs:0},{setAtEpochMs:NaN},{setAtEpochMs:String(now)},{setAtEpochMs:now+1},{author:''},{author:' '},{author:'x'.repeat(61)}]) {
+  const map=JSON.parse(validTypeMap);map[identity].gate.boardingType={...map[identity].gate.boardingType,...patch};typed.setItem(v2,JSON.stringify(map));
+  const bad=typedInfo();assert.equal(bad.gate,'47');assert.equal(bad.boardingType,'unknown',JSON.stringify(patch));assert.equal(bad.manualBoardingType,null);
+ }
+ typed.setItem(v2,validTypeMap);
+ const futureManual={...typedRead(),setAtEpochMs:now+1,boardingType:{...typedRead().boardingType,gateSetAtEpochMs:now+1,setAtEpochMs:now+1}};const futureType=m.resolveNextFlightGate({event,manual:futureManual,now});assert.equal(futureType.boardingType,'unknown');assert.equal(futureType.manualBoardingType,null,'otherwise coherent future-dated confirmation still fails closed');
+ const beforeBadWrites=JSON.stringify([...typed.map]);
+ for(const type of ['',null,'bus',{},['remote']])assert.equal(typedWrite('47',type).ok,false,'invalid selections are not silently treated as confirmation');
+ assert.equal(JSON.stringify([...typed.map]),beforeBadWrites);
+ const failTyped={getItem:key=>typed.getItem(key),setItem(){throw Error('quota');}};
+ assert.equal(m.writeManualGate(failTyped,account,event,{gate:'47',boardingType:'finger',author:'Synthetic',expectedManualRevision:typedRevision()},now).ok,false);assert.equal(JSON.stringify([...typed.map]),beforeBadWrites,'quota failure preserves gate and type atomically');
+ // Legacy v1 properties must never masquerade as v2 type confirmation, even with a UTC-bound gate.
+ const legacyTyped={...legacy,gate:'47',scheduledDepartureUtc:event.canonical.startDateTime,boardingType:typedInfo().manualBoardingType};
+ const legacyTypeStore={getItem:key=>key===v1?JSON.stringify({[m.manualGateIdentity(event)]:legacyTyped}):null,setItem(){throw Error('read-only legacy fixture');}};
+ const legacyTypeInfo=m.resolveNextFlightGate({event,manual:m.readManualGate(legacyTypeStore,account,event),now});assert.equal(legacyTypeInfo.gate,'47');assert.equal(legacyTypeInfo.boardingType,'unknown');assert.equal(legacyTypeInfo.manualBoardingType,null);
+ // Explicit source review keeps a timestamp unchanged, but accepting another gate cannot inherit its type.
+ assert(typedWrite('47','remote',now-5*60000).ok);typed.setItem(m.radarSnapshotStorageKey(event),JSON.stringify(custom));
+ const typedReview=at=>m.resolveNextFlightGate({event,manual:typedRead(),radar:JSON.parse(typed.getItem(m.radarSnapshotStorageKey(event))),now:at});
+ const reviewChoice=(action,at)=>m.writeManualGateReview(typed,account,event,{action,expectedManualRevision:m.manualGateRevision(typedRead(),account),expectedSourceFingerprint:typedReview(at).manualReview.candidate.fingerprint,author:'Synthetic reviewer'},at);
+ const typeBeforeKeep=typedInfo().manualBoardingType;assert.equal(typedReview(now).manualReview.state,'newer');assert(reviewChoice('keep',now).ok);assert.deepEqual(typedInfo().manualBoardingType,typeBeforeKeep);
+ const newer={...custom,updatedAt:now+60000,gate:'18',gateUpdate:{...custom.gateUpdate,gate:'18',sourceUpdatedAt:new Date(now+30000).toISOString()}};typed.setItem(m.radarSnapshotStorageKey(event),JSON.stringify(newer));
+ assert.equal(typedReview(now+60000).manualReview.state,'newer');assert(reviewChoice('accept',now+60000).ok);assert.equal(typedInfo(now+60000).gate,'18');assert.equal(typedInfo(now+60000).boardingType,'unknown');assert.equal(typedInfo(now+60000).manualBoardingType,null);
+ // Phone/web tri-state must not silently broaden the existing native v1 contract.
+ const {applyNextFlightToWatchSnapshot}=createRequire(import.meta.url)(watchFile);
+ const snapshot={schedule:[{id:'type-occurrence'}],currentFlight:event.flightNumber,generatedAtEpochMs:now,validUntilEpochMs:now+3600000,gate:'',remoteStand:false};
+ const watch=info=>applyNextFlightToWatchSnapshot(snapshot,info,{primaryEventId:event.id,nextFlightScheduleId:'type-occurrence'});
+ assert(typedWrite('47','unknown').ok);const watchUnknown=watch(typedInfo());
+ assert(typedWrite('47','remote').ok);assert.deepEqual(watch(typedInfo()),watchUnknown,'Remota with numeric gate remains app-only metadata');
+ assert(typedWrite('47','finger').ok);assert.deepEqual(watch(typedInfo()),watchUnknown,'Finger does not mutate the native boolean or payload');
+ const beforeContradiction=typed.getItem(v2);assert.equal(typedWrite('REMOTA','finger').ok,false,'explicit Finger cannot contradict the legacy remote gate text');assert.equal(typed.getItem(v2),beforeContradiction);
+ assert(typedWrite('REMOTA','unknown').ok);assert.equal(typedInfo().boardingType,'unknown','legacy text inference is not an explicit manual-type confirmation');assert.equal(typedInfo().remote,true);assert.equal(watch(typedInfo()).remoteStand,true,'legacy textual remote projection remains unchanged');
+ console.log('PASS same-domain manual operational fields: exact occurrence/account, v1 preservation/confirmation, per-field patch/clear, manual priority/conflict, strict source observation+receipt, placeholders, quota, typed gate CAS/legacy/account/UTC/review/timestamp safety, native contract unchanged, no Radar/network writes.');
 } finally {modules.cleanup();}

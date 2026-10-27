@@ -14,7 +14,7 @@ export function preparedStayAlarmAdapter() {
   window.addEventListener('crewcheck:auth-changed', reauthenticate);
   window.addEventListener('crewcheck:auth-expired', () => { void runtime.revoke(); });
   window.addEventListener('storage', event => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) reauthenticate(); });
-  window.addEventListener('pagehide', () => { void runtime.revoke(); });
+  window.addEventListener('pagehide', () => { void runtime.suspend(); });
   attachStayAlarmLifecycle(window, runtime);
   reauthenticate();
   return runtime;

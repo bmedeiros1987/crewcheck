@@ -6,7 +6,10 @@ const stampPath = '.crewcheck-source-preparation.json';
 // Walk the entire project, not a whitelist of historical patch inputs. Never read
 // dependencies, Vite output, compiler output, Git internals or local private files.
 const ignoredNames = new Set(['node_modules', '.git', '.aws', '.codex', '.agents', stampPath, `${stampPath}.tmp`]);
-const ignoredPaths = new Set(['dist', 'server/concierge/generated']);
+// OCR output is materialized after preparation from pinned packages/models.
+// Its builder, manifest and runtime sources remain fingerprinted; the builder
+// independently checks every output hash and the deployment budget on each build.
+const ignoredPaths = new Set(['dist', 'server/concierge/generated', 'client/public/ocr']);
 
 export function preparationFingerprint(root = '.') {
   const hash = crypto.createHash('sha256');

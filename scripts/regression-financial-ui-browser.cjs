@@ -40,13 +40,15 @@ function seed({theme,kind,amount,history,salaryBase}) {
   localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
 }
 async function settle(page) {
- await page.evaluate(async()=>{
-  await document.fonts.ready;
-  const finite=document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime));
-  await Promise.allSettled(finite.map(animation=>animation.finished));
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
- });
+ // Observe current animation state instead of awaiting captured `finished`
+ // promises: replaced/replayed UI animations can leave those promises pending.
+ await page.waitForFunction(()=>document.fonts.status==='loaded'&&
+  document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime))
+   .every(animation=>animation.playState==='finished'||animation.playState==='idle'),
+  null,{timeout:10000});
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 }
+
 async function measureMoney(page) {
  return page.evaluate(()=>{
   const violations=[],amounts=[],intersections=[],splitAmounts=[],splitCurrencyTokens=[];
@@ -138,13 +140,13 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     assert.equal((await page.locator('.cc-per-diem-summary strong').textContent()).replace(/\s+/g,' ').trim(),'Subtotal estimado: R$ 4.600,00');
     assert.equal(count,46);assert((await rows.evaluateAll(elements=>elements.map(element=>element.dataset.financialIso))).every(iso=>iso!=='2032-02-02'),'unclassified day contributes no monetary row');
     assert((await rows.locator('b').allTextContents()).every(value=>value.replace(/\s+/g,' ').trim()==='R$ 100,00'));
-    await page.getByText('Classificação geográfica da diária pendente.',{exact:true}).waitFor();
+    await page.getByText('Classificação geográfica desta ocorrência pendente; um aeroporto conhecido não comprova o outro.',{exact:true}).waitFor();
     assert.match(await page.locator('.cc-per-diem-summary').textContent(),/dados financeiros pendentes/);
    }
    if(['all-unknown','missing-clocks'].includes(kind)){
     assert.equal(count,0);assert.equal((await page.locator('.cc-per-diem-summary strong').textContent()).trim(),'Não calculável');
     assert.doesNotMatch(await page.locator('.cc-per-diem-summary').textContent(),/R\$|Subtotal estimado/,'no unknown amount becomes zero or a subtotal');
-    await page.getByText(kind==='all-unknown'?'Classificação geográfica da diária pendente.':/Intervalo operacional incompleto: Início\/fim publicados ausentes ou estimados/,{exact:kind==='all-unknown'}).waitFor();
+    await page.getByText(kind==='all-unknown'?'Classificação geográfica desta ocorrência pendente; um aeroporto conhecido não comprova o outro.':/Intervalo operacional incompleto: Início\/fim publicados ausentes ou estimados/,{exact:kind==='all-unknown'}).waitFor();
    }
    if(kind==='empty'){assert.equal(count,0);assert.doesNotMatch(await page.locator('.cc-per-diem-content').innerText(),/R\$\s*0,00|pagamento confirmado/);}
    let last=null,nav=null;

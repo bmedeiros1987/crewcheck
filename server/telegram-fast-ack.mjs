@@ -1,3 +1,6 @@
+import { prepareScheduledWakeup, wakeupPrivateModelSupportsLocale } from './wakeup-spoken-program.mjs';
+import { sendInfobipWakeupCall } from './wakeup-call-delivery.mjs';
+import { runTelegramBriefingCycle, handleTelegramBriefingConsent } from './concierge/telegram-briefing.mjs';
 import { handleNotificationDiagnostic } from './notification-diagnostic.mjs';
 import { runCrewCheckPushQueue } from './web-push/bidsProducer.mjs';
 import { handleSimulatedWorker } from './free-day-simulated-worker.mjs';
@@ -169,30 +172,23 @@ async function recordSchedulerHeartbeat(db, patch) {
   }
 }
 
-async function sendInfobipPhone(phone, message) {
-  const request = buildInfobipTtsRequest({ phone, text: message });
-  if (!request.ok) return request;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(request.url, {
-      method: 'POST', headers: request.headers, body: JSON.stringify(request.body), signal: controller.signal,
-    });
-    const raw = await response.text().catch(() => '');
-    return { ok: response.ok, configured: true, provider: 'infobip', status: response.status, raw: raw.slice(0, 500) };
-  } catch (error) {
-    return { ok: false, configured: true, provider: 'infobip', raw: error?.name === 'AbortError' ? 'Tempo limite na ligação.' : String(error?.message || 'Falha Infobip.') };
-  } finally { clearTimeout(timer); }
+async function sendInfobipPhone(phone, message, { locale } = {}) {
+  return sendInfobipWakeupCall({ phone, text: message, locale });
 }
 
 async function deliverJob(job) {
+  const spoken = await prepareScheduledWakeup(job, { getPool: dbPool });
+  if (!spoken.ok) return spoken;
+  job = { ...job, message: spoken.text };
+  const callOptions = spoken.locale ? { locale: spoken.locale } : {};
+
   const channel = String(job.channel || 'telegram').toLowerCase();
   if (channel === 'telegram') return sendTelegram(job.chat_id, job.message);
-  if (channel === 'telegram-call') return callTelegram(job.telegram_username, job.message);
-  if (channel === 'phone' || channel === 'phone-call' || channel === 'infobip') return sendInfobipPhone(job.phone, job.message);
+  if (channel === 'telegram-call') return callTelegram(job.telegram_username, job.message, callOptions);
+  if (channel === 'phone' || channel === 'phone-call' || channel === 'infobip') return sendInfobipPhone(job.phone, job.message, callOptions);
   if (channel === 'both') {
     const telegram = await sendTelegram(job.chat_id, job.message);
-    const phone = await sendInfobipPhone(job.phone, job.message);
+    const phone = await sendInfobipPhone(job.phone, job.message, callOptions);
     return { ok: Boolean(telegram.ok || phone.ok), configured: Boolean(telegram.configured || phone.configured), provider: 'both', results: [telegram, phone] };
   }
   return { ok: false, configured: false, provider: channel, raw: 'Canal de notificação inválido.' };
@@ -366,6 +362,8 @@ async function runSchedulerCycle() {
     if (!db) throw new Error('Banco indisponível para notificações.');
     await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
     await ensureNotificationTable(db);
+    try { summary.operationalBriefing = await runTelegramBriefingCycle(db); }
+    catch { summary.operationalBriefing = { status: 'unavailable', planned: 0 }; }
     await db.query("UPDATE crewcheck_notification_jobs SET status='uncertain',locked_at=NULL WHERE status IN ('processing','dispatching') AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
     await db.query("UPDATE crewcheck_notification_jobs SET status='expired' WHERE status='pending' AND scheduled_at < DATE_SUB(NOW(3), INTERVAL 120 SECOND)");
     const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 120 SECOND) ORDER BY scheduled_at ASC LIMIT 50");
@@ -543,6 +541,7 @@ http.createServer = function patchedCreateServer(...args) {
     const path = pathname(req);
     try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);
+      if (await handleTelegramBriefingConsent(req, res, new URL(req.url, 'http://localhost'))) return;
       if (path === '/api/notifications/diagnostic') return await handleNotificationDiagnostic(req, res, { schedulerHealthState });
       if (path === '/api/notifications/free-day-simulated-worker') return handleSimulatedWorker(req, res, { identity, readJson, dbPool, sendJson });
       if (path === '/api/notifications/free-day-personal-consent') return handlePersonalConsent(req, res, { identity, readJson, dbPool, sendJson });

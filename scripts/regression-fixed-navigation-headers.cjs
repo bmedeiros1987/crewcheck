@@ -1,5 +1,6 @@
 const { artifactEvidence } = require('./ui-artifact-evidence.cjs');
 const exactArtifact = artifactEvidence();
+const { samplePulseTouchTarget, meetsPulseTouchMinimum } = require('./lib/pulse-touch-target-sample.cjs');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http'), vm = require('node:vm');
 const { createRequire } = require('node:module');
 const ts = require('typescript');
@@ -33,6 +34,16 @@ const results = [];
 const testedCommit = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const widths = (process.env.UI_READING_WIDTHS || '320,360,390,412,430,768,1024,1440').split(',').map(Number);
 assert.ok(widths.every(width => [320, 360, 390, 412, 430, 768, 1024, 1440].includes(width)));
+// Polled from Node, so a controlled page clock cannot stall it; never waits for a passing geometry.
+async function scrollSettled(page) {
+  let last = await page.evaluate(() => scrollY), stable = 0;
+  for (let read = 0; read < 100 && stable < 5; read += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const current = await page.evaluate(() => scrollY);
+    if (current === last) stable += 1; else { last = current; stable = 0; }
+  }
+  assert.ok(stable >= 5, 'Page scroll settles before navigation focus is sampled');
+}
 const settle = page => page.evaluate(async () => {
   await document.fonts.ready;
   for (const animation of document.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) try { animation.finish(); } catch {}
@@ -71,6 +82,47 @@ async function emptyPulseQueue(page) {
   }
   assert.equal(await page.locator('.cc-pulse-compact-trigger').count(),0,'synthetic queue must be explicitly dismissible');
 }
+async function capturePulseNavigationFocus(page,expectedNode=null) {
+  return page.evaluate(expectedNode=>{
+    const identity=element=>element?{tag:element.tagName,id:element.id,className:typeof element.className==='string'?element.className:null,role:element.getAttribute('role'),label:element.getAttribute('aria-label'),headerNavigation:element.getAttribute('data-header-navigation'),menuTrigger:element.getAttribute('data-crewcheck-menu-trigger')}:null;
+    const inspect=element=>{
+      if(!element)return null;
+      const rect=element.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y),ancestors=[];
+      for(let node=element;node;node=node.parentElement){const style=getComputedStyle(node);ancestors.push({identity:identity(node),hidden:node.hasAttribute('hidden'),inert:node.hasAttribute('inert'),ariaHidden:node.getAttribute('aria-hidden'),display:style.display,visibility:style.visibility,opacity:style.opacity,pointerEvents:style.pointerEvents,overflowX:style.overflowX,overflowY:style.overflowY});}
+      return {identity:identity(element),connected:element.isConnected,focused:element===document.activeElement,disabled:element.matches(':disabled'),ariaDisabled:element.getAttribute('aria-disabled'),rect:{x:rect.x,y:rect.y,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},center:{x,y,inViewport:x>=0&&y>=0&&x<innerWidth&&y<innerHeight},hit:identity(hit),containsHit:Boolean(hit&&element.contains(hit)),ancestors};
+    };
+    const modals=[...document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"], dialog[aria-modal="true"]')];
+    try{for(const modal of document.querySelectorAll('dialog:modal'))if(!modals.includes(modal))modals.push(modal);}catch{}
+    const frame=document.querySelector('.cz-global-header'),viewport=visualViewport;
+    return {active:identity(document.activeElement),expected:inspect(expectedNode),header:inspect(frame?.querySelector('.cz-menu-btn')),footer:inspect(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]')),dismiss:inspect(document.querySelector('.cc-pulse-dismiss')),modals:modals.map(modal=>({...inspect(modal),containsExpected:modal.contains(expectedNode),containsHeader:modal.contains(frame?.querySelector('.cz-menu-btn')),containsFooter:modal.contains(document.querySelector('body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]'))})),frame:frame?{identity:identity(frame),dataset:{...frame.dataset}}:null,scroll:{x:scrollX,y:scrollY},viewport:{width:innerWidth,height:innerHeight,visual:viewport?{width:viewport.width,height:viewport.height,offsetLeft:viewport.offsetLeft,offsetTop:viewport.offsetTop,pageLeft:viewport.pageLeft,pageTop:viewport.pageTop,scale:viewport.scale}:null}};
+  },expectedNode);
+}
+async function captureDismissTargetGeometry(dismiss) {
+  return dismiss.evaluate(element=>{
+    const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+    const identity=node=>node?{tag:node.tagName,id:node.id,className:typeof node.className==='string'?node.className:null,role:node.getAttribute('role')}:null;
+    const finite=value=>typeof value==='number'&&!Number.isFinite(value)?String(value):value;
+    const ancestors=[];
+    for(let node=element;node;node=node.parentElement){
+      const style=getComputedStyle(node),animations=node.getAnimations().map(animation=>{
+        const effect=animation.effect,timing=effect?.getComputedTiming();
+        return {playState:animation.playState,pending:animation.pending,currentTime:finite(animation.currentTime),startTime:finite(animation.startTime),playbackRate:animation.playbackRate,timing:timing?Object.fromEntries(['delay','endDelay','duration','iterations','iterationStart','activeDuration','endTime','localTime','progress','currentIteration'].map(key=>[key,finite(timing[key])])):null,keyframes:effect?.getKeyframes().map(frame=>Object.fromEntries(['offset','computedOffset','easing','transform','translate','scale','rotate','opacity','width','height','minWidth','minHeight','zoom'].filter(key=>key in frame).map(key=>[key,frame[key]])))};
+      });
+      ancestors.push({identity:identity(node),rect:rect(node),offset:{width:node.offsetWidth,height:node.offsetHeight},client:{width:node.clientWidth,height:node.clientHeight},style:Object.fromEntries(['display','position','boxSizing','width','height','minWidth','minHeight','maxWidth','maxHeight','padding','borderWidth','transform','transformOrigin','translate','scale','rotate','zoom','animationName','animationDuration','animationDelay','animationFillMode','transitionProperty','transitionDuration','transitionDelay'].map(key=>[key,style[key]])),animations});
+    }
+    const box=element.getBoundingClientRect(),hit=document.elementFromPoint(box.left+box.width/2,box.top+box.height/2),viewport=visualViewport;
+    return {sampleTime:performance.now(),rect:rect(element),offset:{width:element.offsetWidth,height:element.offsetHeight},client:{width:element.clientWidth,height:element.clientHeight},focused:element===document.activeElement,hit:identity(hit),containsHit:Boolean(hit&&element.contains(hit)),ancestors,scroll:{x:scrollX,y:scrollY},fonts:document.fonts.status,devicePixelRatio,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,viewport:{width:innerWidth,height:innerHeight,visual:viewport?{width:viewport.width,height:viewport.height,offsetLeft:viewport.offsetLeft,offsetTop:viewport.offsetTop,scale:viewport.scale}:null}};
+  });
+}
+// Independent geometry oracle: freeze the expected existing node before the
+// dismissal can change document height; never accept an arbitrary focused Menu.
+function reachableNavigationSnapshot(snapshot,kind) {
+  const control=snapshot[kind];
+  const hidden=ancestor=>ancestor.hidden||ancestor.inert||ancestor.ariaHidden==='true'||ancestor.display==='none'||['hidden','collapse'].includes(ancestor.visibility);
+  if(!control?.connected||control.disabled||control.ariaDisabled==='true'||control.rect.width<=0||control.rect.height<=0||!control.center.inViewport||!control.containsHit||control.ancestors.some(ancestor=>hidden(ancestor)||ancestor.opacity==='0'))return false;
+  const containment=kind==='header'?'containsHeader':kind==='footer'?'containsFooter':'containsExpected';
+  return !snapshot.modals.some(modal=>!modal[containment]&&modal.rect.width>0&&modal.rect.height>0&&!modal.ancestors.some(hidden));
+}
 async function activePulseBrandContract(page,{width,size}) {
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{id:'synthetic-header-brand',title:'SYNTHETIC header brand review',compactTitle:'Revisar',category:'compliance',tone:'atencao',priority:'alta',autoDismissMs:0,systemNotification:'never',review:{occurrence:'synthetic-header-brand',version:'v1'}}})));
   const mark=page.getByRole('img',{name:'Notificações CrewCheck',exact:true});
@@ -81,23 +133,56 @@ async function activePulseBrandContract(page,{width,size}) {
   const geometry=await mark.evaluate(element=>{
     const box=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
     const svg=element.querySelector('svg'),trigger=document.querySelector('.cc-pulse-compact-trigger'),menu=document.querySelector('.cz-menu-btn');
-    return{mark:box(element),svg:box(svg),trigger:box(trigger),menu:box(menu),stroke:Number(svg.getAttribute('stroke-width'))*svg.getBoundingClientRect().width/24,overflow:document.documentElement.scrollWidth>innerWidth+1};
+    return{mark:box(element),svg:box(svg),trigger:box(trigger),menu:box(menu),menuVisible:getComputedStyle(menu).display!=='none',row:box(document.querySelector('.cz-brand-row')),stroke:Number(svg.getAttribute('stroke-width'))*svg.getBoundingClientRect().width/24,overflow:document.documentElement.scrollWidth>innerWidth+1};
   });
   assert.equal(geometry.mark.width,28);assert.equal(geometry.mark.height,28);
   assert.equal(geometry.svg.width,18);assert.equal(geometry.svg.height,18);assert.ok(Math.abs(geometry.stroke-2)<.01);
   assert.ok(geometry.svg.x>=geometry.mark.x&&geometry.svg.right<=geometry.mark.right&&geometry.svg.y>=geometry.mark.y&&geometry.svg.bottom<=geometry.mark.bottom,'pictogram contained in its brand position');
   assert.ok(geometry.trigger.width>=44&&geometry.trigger.height>=44,'notice is a readable keyboard/touch target');
-  assert.ok(geometry.mark.right<=geometry.trigger.x+1&&geometry.trigger.right<=geometry.menu.x+1,'brand, notice and menu never overlap');
+  assert.ok(geometry.mark.right<=geometry.trigger.x+1,'brand and notice never overlap');
+  assert.equal(geometry.menuVisible,width>639,'only redundant mobile Menu is hidden');
+  if(geometry.menuVisible)assert.ok(geometry.trigger.right<=geometry.menu.x+1,'notice and retained header Menu never overlap');
+  else assert.ok(geometry.trigger.right<=geometry.row.right+1,'notice stays inside full available header width');
   assert.equal(geometry.overflow,false);
   const trigger=page.locator('.cc-pulse-compact-trigger');await trigger.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger')?.getAttribute('aria-expanded')==='true');
   const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});await dismiss.focus();
-  const target=await dismiss.boundingBox();assert.ok(target.width>=44&&target.height>=44);
-  await page.keyboard.press('Enter');await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').waitFor();
+  // Read rendered dimensions atomically, without CDP border-quad subtraction.
+  // Keep the exact minimum; do not wait for a passing size or finish animation.
+  const target=await dismiss.evaluate(samplePulseTouchTarget),targetMeetsMinimum=meetsPulseTouchMinimum(target);
+  if(!targetMeetsMinimum){
+    const diagnostic={width,size,measurement:'atomic-domrect',originalBoundingBox:target,originalMeetsMinimum:targetMeetsMinimum,afterSample:await captureDismissTargetGeometry(dismiss)};
+    fs.writeFileSync(path.join(output,`${width}-${size}-dismiss-target-failure.json`),JSON.stringify(diagnostic,null,2));
+    await page.screenshot({path:path.join(output,`${width}-${size}-dismiss-target-failure.png`)});
+  }
+  assert.ok(targetMeetsMinimum,'Dismiss touch target must remain at least 44px in the original sample');
+  // Focusing Dismiss can start a smooth scroll (global scroll-behavior). Snapshot the
+  // navigation targets only once the page holds still, as the app reads them on Enter.
+  await scrollSettled(page);
+  const beforeDismissFocus=await capturePulseNavigationFocus(page);
+  const expectedNavigation=reachableNavigationSnapshot(beforeDismissFocus,'header')?'header':reachableNavigationSnapshot(beforeDismissFocus,'footer')?'footer':null;
+  assert.ok(expectedNavigation,'Dismissal requires a reachable enabled navigation action');
+  const navigationTarget=await page.$(expectedNavigation==='header'?'.cz-global-header .cz-menu-btn':'body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]',{strict:true});
+  assert.ok(navigationTarget,'Freeze the exact existing navigation node before dismissal');
+  assert.ok(beforeDismissFocus[expectedNavigation].rect.width>=44&&beforeDismissFocus[expectedNavigation].rect.height>=44,'Navigation return target remains at least44px');
+  await page.keyboard.press('Enter');
+  const immediateAfterDismissFocus=await capturePulseNavigationFocus(page,navigationTarget);
+  await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').waitFor();
   assert.equal(await mark.count(),0,'last dismissal restores the official mark');
   assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'normal subtitle returns exactly when due');
-  assert.equal(await page.locator('.cz-menu-btn').evaluate(element=>element===document.activeElement),true,'dismissal restores keyboard focus to the header action');
-  return geometry;
+  assert.ok(await navigationTarget.isVisible(),'dismissal target remains visible');
+  const dismissalFocused=await navigationTarget.evaluate(element=>element===document.activeElement);
+  const atAssertionFocus=await capturePulseNavigationFocus(page,navigationTarget),dismissalReachable=reachableNavigationSnapshot(atAssertionFocus,'expected'),dismissalStillFocused=atAssertionFocus.expected?.focused===true;
+  if(!dismissalFocused||!dismissalReachable||!dismissalStillFocused){
+    const diagnostic={width,size,expected:expectedNavigation,dismissalFocused,dismissalReachable,dismissalStillFocused,before:beforeDismissFocus,immediatelyAfter:immediateAfterDismissFocus,atAssertion:atAssertionFocus};
+    fs.writeFileSync(path.join(output,`${width}-${size}-dismissal-focus-failure.json`),JSON.stringify(diagnostic,null,2));
+    await page.screenshot({path:path.join(output,`${width}-${size}-dismissal-focus-failure.png`)});
+  }
+  assert.equal(dismissalFocused,true,'dismissal restores keyboard focus to the reachable navigation action');
+  assert.equal(dismissalReachable,true,'Exact navigation return target remains enabled, visible and uncovered');
+  assert.equal(dismissalStillFocused,true,'Exact navigation return target is focused in the same current geometry snapshot');
+  assert.ok(atAssertionFocus.expected.rect.width>=44&&atAssertionFocus.expected.rect.height>=44,'Focused navigation return target remains at least44px');
+  return { ...geometry, dismissTarget: target, dismissMeetsMinimum: targetMeetsMinimum };
 }
 async function recovered(page) {
   await page.waitForFunction(() => !document.body.classList.contains('crewcheck-menu-open') && !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden');
@@ -230,13 +315,26 @@ async function visibleTextBounds(page, selector) {
       if(width<=600)assert.ok(header.height<=110,'Mobile identity chrome stays compact with 200% text');
       const mark=await page.locator('.cz-global-header .cz-logo').boundingBox(),markImage=await page.locator('.cz-global-header .cz-logo img').boundingBox();assert.ok(markImage.x>=mark.x-1&&markImage.x+markImage.width<=mark.x+mark.width+1,'Identity image stays fully inside its mark');
       assert.equal(await page.locator('.cc-fixed-header-space').count(),0,'No obsolete header spacer');
-      await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
+      const navigationTarget=page.locator(width<=639?'body > nav.cz-bottom-nav button[data-crewcheck-menu-trigger="true"]':'.cz-global-header .cz-menu-btn');
+      assert.ok(await navigationTarget.isVisible(),'existing Menu remains visible');await navigationTarget.focus();assert.equal(await navigationTarget.evaluate(el=>el===document.activeElement),true,'Available navigation action retains keyboard focus');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
       const activeBrand=await activePulseBrandContract(page,{width,size});
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[],'restored normal header remains readable');
       await settle(page);
-      const headerDocY=header.y+await page.evaluate(()=>scrollY);
-      for(const top of [900,0,160]) {await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);const current=await box('.cz-global-header');const actualScroll=await page.evaluate(()=>scrollY);assert.ok(Math.abs(current.y+actualScroll-headerDocY)<=1,'Header follows document scroll');}
+      // Focus during the Pulse contract can scroll the page. Do not combine a
+      // pre-interaction viewport rectangle with a post-interaction scrollY.
+      const readHeaderDocumentPosition=()=>page.evaluate(()=>{const rect=document.querySelector('.cz-global-header').getBoundingClientRect(),actualScroll=scrollY;return {y:rect.y,height:rect.height,actualScroll,documentY:rect.y+actualScroll};});
+      const headerDocumentBaseline=await readHeaderDocumentPosition();
+      for(const top of [900,0,160]) {
+        await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);
+        const current=await readHeaderDocumentPosition(),delta=Math.abs(current.documentY-headerDocumentBaseline.documentY);
+        if(delta>1){
+          const failure={width,theme,size,requestedScroll:top,baseline:headerDocumentBaseline,current,delta};
+          fs.writeFileSync(path.join(output,`${width}-${theme}-${size}-scroll-${top}-failure.json`),JSON.stringify(failure,null,2));
+          await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-scroll-${top}-failure.png`)});
+        }
+        assert.ok(delta<=1,'Header follows document scroll: '+JSON.stringify({baseline:headerDocumentBaseline,current,requestedScroll:top,delta}));
+      }
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[]);
       const before=await page.evaluate(()=>window.scrollY);
       await page.locator('body > nav.cz-bottom-nav > button').last().click();await page.locator('.cz-menu-overlay').waitFor();await settle(page);
