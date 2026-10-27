@@ -424,8 +424,10 @@ public final class MainActivity extends FragmentActivity
             LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20),
                     LinearLayout.LayoutParams.WRAP_CONTENT);
             bp.setMargins(dp(6), 0, 0, 0);
+            // Só indicador: com 20dp seria um alvo de toque abaixo de 48dp. O botão
+            // "Alertas · N" da lista abre a mesma tela.
+            badge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             row.addView(badge, bp);
-            badge.setOnClickListener(view -> showScreen(MODE_NOTIFICATIONS));
         }
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
