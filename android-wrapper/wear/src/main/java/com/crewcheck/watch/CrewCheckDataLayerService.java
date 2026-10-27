@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
  *   /crewcheck/watch/context/v1   -> escala (SecureSnapshotStore)
  *   /crewcheck/watch/crewlife/v1  -> bem-estar agregado (WellbeingStore)
  *   /crewcheck/watch/routine/v1   -> sugestão de rotina (WellbeingStore)
+ *   /crewcheck/watch/cloud/v1     -> credencial da nuvem (WatchCloudCredentialStore)
  *
  * O canal de saúde é separado para poder ser revogado sem derrubar a escala, e um payload
  * inválido em um canal nunca invalida os outros.
@@ -34,6 +35,10 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                     new WellbeingStore(this).clearCrewLife();
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     new WellbeingStore(this).clearRoutine();
+                } else if (WatchContract.CLOUD_PATH.equals(path)) {
+                    // Logout no celular: parar de buscar na nuvem.
+                    new WatchCloudCredentialStore(this).clear();
+                    WatchCloudSyncJob.cancel(this);
                 }
                 continue;
             }
@@ -53,11 +58,18 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_ROUTINE_JSON);
                     if (json != null) new WellbeingStore(this).saveRoutine(json);
+                } else if (WatchContract.CLOUD_PATH.equals(path)) {
+                    acceptCloudCredential(this, dataMap.getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL));
                 }
             } catch (Exception ignored) {
                 // Fail closed: keep the last valid snapshot.
             }
         }
+    }
+
+    /** Credencial nova (pareamento ou troca de conta): guarda e agenda a busca periódica. */
+    static void acceptCloudCredential(android.content.Context context, String credential) {
+        if (new WatchCloudCredentialStore(context).save(credential)) WatchCloudSyncJob.schedulePeriodic(context);
     }
 
     @Override

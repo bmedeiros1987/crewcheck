@@ -159,6 +159,7 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import { watchCloudPublisher } from '@/lib/watchCloud';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import {stayEditorKey} from '@shared/stay-editor-store.mjs';
 import {setOperationalRadarContext,beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission} from '@/lib/operationalRadarAdmission';
@@ -5503,6 +5504,8 @@ export default function Home() {
         });
         if (!watchSession.isCurrent()) { invalidateWatchSnapshot(); return; }
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
+        // Same projection to the cloud, for the watch when the phone is away (deduplicated).
+        void watchCloudPublisher().publish(snapshot, watchSession);
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
       }

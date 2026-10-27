@@ -18,6 +18,7 @@ import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
 import { loadOwnedPlatformRoster } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
+import { createWatchCloudHandler } from './server/watch-cloud-sync.mjs';
 import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2173,6 +2174,19 @@ async function conciergeDbDelete(key) {
     return false;
   }
 }
+// Strict read for watch cloud sync: throws when storage is unavailable, null only when absent.
+async function watchCloudDbGet(key) {
+  const pool = await conciergeDbPool();
+  if (!pool) throw new Error('storage-unavailable');
+  const [rows] = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [String(key)]);
+  const payload = rows?.[0]?.payload;
+  return typeof payload === 'string' ? JSON.parse(payload) : payload || null;
+}
+const handleWatchCloud = createWatchCloudHandler({
+  identity: req => cc1371Verify(cc1371RequestToken(req)),
+  db: { get: watchCloudDbGet, put: conciergeDbPut, delete: conciergeDbDelete },
+  sendJson, readJsonBody,
+});
 async function conciergeDbListSnapshots(limit = 200) {
   try {
     const pool = await conciergeDbPool();
@@ -4208,6 +4222,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version:'14.1.7', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
+  if (url.pathname === '/api/watch/cloud' || url.pathname.startsWith('/api/watch/cloud/')) return handleWatchCloud(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
   return serveStatic(req, res, url);
 }).listen(port, () => {

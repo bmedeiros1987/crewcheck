@@ -39,6 +39,14 @@ public final class WatchSyncClient {
                 .addOnSuccessListener(buffer -> {
                     try {
                         for (DataItem item : buffer) {
+                            if (WatchContract.CLOUD_PATH.equals(item.getUri().getPath())) {
+                                try {
+                                    CrewCheckDataLayerService.acceptCloudCredential(appContext, DataMapItem.fromDataItem(item)
+                                            .getDataMap().getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL));
+                                } catch (Exception ignored) {
+                                }
+                                continue;
+                            }
                             if (!WatchContract.SNAPSHOT_PATH.equals(item.getUri().getPath())) continue;
                             try {
                                 DataMap map = DataMapItem.fromDataItem(item).getDataMap();

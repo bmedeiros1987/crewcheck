@@ -2,6 +2,7 @@ package com.crewcheck.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.net.Uri;
 
 import com.google.android.gms.wearable.DataMap;
 import com.google.android.gms.wearable.PutDataMapRequest;
@@ -13,6 +14,7 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Sends only an allow-listed, presentation-ready roster projection to the paired watch.
@@ -22,6 +24,14 @@ public final class CrewCheckWatchPublisher {
     public static final String SNAPSHOT_PATH = "/crewcheck/watch/context/v1";
     public static final String REQUEST_SYNC_PATH = "/crewcheck/watch/request-sync/v1";
     public static final String DATA_KEY_SNAPSHOT_JSON = "snapshotJson";
+    /**
+     * Credencial do relógio para buscar a projeção direto na nuvem (celular longe). Só a
+     * credencial viaja: o endereço do servidor é fixo no relógio, então uma página não
+     * consegue apontar o relógio para outro host.
+     */
+    public static final String CLOUD_PATH = "/crewcheck/watch/cloud/v1";
+    public static final String DATA_KEY_CLOUD_CREDENTIAL = "credential";
+    private static final Pattern CLOUD_CREDENTIAL = Pattern.compile("^cw1\\.[0-9a-f]{32}\\.[A-Za-z0-9_-]{43}$");
 
     private static final int SCHEMA_VERSION = 1;
     private static final int MAX_SNAPSHOT_BYTES = 16 * 1024;
@@ -73,6 +83,23 @@ public final class CrewCheckWatchPublisher {
                         "data_layer_error",
                         safeMessage(error)
                 ));
+    }
+
+    /** Entrega a credencial ao relógio pareado; formato inválido é recusado. */
+    public static boolean publishCloudCredential(Context context, String credential) {
+        if (credential == null || !CLOUD_CREDENTIAL.matcher(credential).matches()) return false;
+        PutDataMapRequest mapRequest = PutDataMapRequest.create(CLOUD_PATH);
+        mapRequest.getDataMap().putString(DATA_KEY_CLOUD_CREDENTIAL, credential);
+        mapRequest.getDataMap().putLong("sentAtEpochMs", System.currentTimeMillis());
+        Wearable.getDataClient(context.getApplicationContext())
+                .putDataItem(mapRequest.asPutDataRequest().setUrgent());
+        return true;
+    }
+
+    /** Logout ou troca de conta: o relógio esquece a credencial e para de buscar na nuvem. */
+    public static void clearCloudCredential(Context context) {
+        Wearable.getDataClient(context.getApplicationContext()).deleteDataItems(
+                new Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(CLOUD_PATH).build());
     }
 
     public static void republishLast(Context context) {

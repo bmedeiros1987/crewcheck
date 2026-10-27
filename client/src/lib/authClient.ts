@@ -97,6 +97,7 @@ function persistSession(session: AuthSession) {
     const previousKey = String(previous?.id || previous?.email || '').toLowerCase();
     const nextKey = String(session.user?.id || session.user?.email || '').toLowerCase();
     if (previousKey && nextKey && previousKey !== nextKey) {
+      forgetWatchCloud();
       window.dispatchEvent(new Event('crewcheck:auth-will-change'));
       sessionStorage.removeItem('crewcheck_roster');
       sessionStorage.removeItem('crewcheck_compliance');
@@ -122,7 +123,18 @@ export function expireSession() {
   try { window.dispatchEvent(new CustomEvent('crewcheck:auth-expired')); } catch {}
 }
 
+// Logout or account change revokes the watch's cloud credential while the old token still
+// authenticates (lib/watchCloud listens). A refresh or expiry of the same account keeps the
+// watch paired.
+function forgetWatchCloud() {
+  try {
+    const { token, owner } = captureAuthSession();
+    if (owner) window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token, owner } }));
+  } catch {}
+}
+
 export function clearSession() {
+  forgetWatchCloud();
   window.dispatchEvent(new Event('crewcheck:auth-will-change'));
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);

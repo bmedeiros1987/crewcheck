@@ -1208,6 +1208,17 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean setWatchCloudCredential(final String credential) {
+            return CrewCheckWatchPublisher.publishCloudCredential(MainActivity.this, credential);
+        }
+
+        @JavascriptInterface
+        public boolean clearWatchCloudCredential() {
+            CrewCheckWatchPublisher.clearCloudCredential(MainActivity.this);
+            return true;
+        }
+
+        @JavascriptInterface
         public boolean requestWatchSnapshot() {
             requestCrewCheckWatchSnapshotFromWeb("watch-request");
             return true;
