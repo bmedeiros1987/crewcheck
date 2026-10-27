@@ -18,22 +18,26 @@ export function applyNextFlightToWatchSnapshot(
 ): CrewCheckWatchSnapshot {
   if (!info) return snapshot;
   const out: CrewCheckWatchSnapshot = { ...snapshot, schedule: snapshot.schedule.map((item) => ({ ...item })) };
-  const gateLabel = gateDisplay(info);
-  const scheduleGate = info.gate ? (info.remote && !/\d/.test(info.gate) ? 'REMOTA' : info.gate) : '';
+  // The Wear v1 fields cannot carry a caveat: a provider-reported gate never reaches
+  // them as a number. The watch only says it must be confirmed in the app.
+  const reported = info.gateSource === 'reported';
+  const gate = reported ? '' : info.gate, remote = reported ? false : info.remote;
+  const gateLabel = gateDisplay({ gate, remote });
+  const scheduleGate = gate ? (remote && !/\d/.test(gate) ? 'REMOTA' : gate) : '';
 
   for (const item of out.schedule) {
     if (item.id === options.nextFlightScheduleId) item.gate = scheduleGate;
   }
 
   const notes: string[] = [];
-  if (info.divergence) notes.push(`Fonte indica portão ${info.divergence.sourceGate}`);
-  if (info.gateSource === 'reported') notes.push(`Portão informado por ${info.reportedProvider} · a confirmar`);
+  if (info.divergence) notes.push(info.divergence.source === 'reported' ? 'Fonte indica outro portão · confirme no app' : `Fonte indica portão ${info.divergence.sourceGate}`);
+  if (reported) notes.push('Portão a confirmar no app');
   if (info.status) notes.push(info.status + (info.statusSource === 'manual' ? ' · manual' : ''));
   if (info.stale) notes.push('Radar desatualizado');
 
   if (options.primaryEventId === info.eventId && out.currentFlight) {
-    out.gate = info.remote && !/\d/.test(info.gate) ? '' : info.gate;
-    out.remoteStand = info.remote;
+    out.gate = remote && !/\d/.test(gate) ? '' : gate;
+    out.remoteStand = remote;
     if (notes.length) out.detail = fit([notes.join(' · '), out.detail].filter(Boolean).join(' · '), 96);
   } else if (!out.nextFlight || out.nextFlight === info.flight) {
     out.nextFlight = fit(info.flight, 16);
@@ -42,7 +46,7 @@ export function applyNextFlightToWatchSnapshot(
     out.nextDetail = fit([
       temporalDetail,
       info.origin && info.destination ? `${info.origin} → ${info.destination}` : '',
-      info.gate ? `P${gateLabel}${info.gateSource === 'reported' ? ' a confirmar' : ''}` : 'Portão não informado',
+      gate ? `P${gateLabel}` : reported ? 'Portão a confirmar no app' : 'Portão não informado',
       departureKnown ? info.departure : '',
       info.stale ? 'desatualizado' : '',
     ].filter(Boolean).join(' • '), 64);
@@ -52,10 +56,10 @@ export function applyNextFlightToWatchSnapshot(
   // deadline of every automatic field actually projected, including a status
   // alongside a manual gate and the automatic gate shown in a divergence note.
   const automaticFields: Array<'gate' | 'status'> = [];
-  if (info.gate && (info.gateSource === 'radar' || info.gateSource === 'reported')) automaticFields.push('gate');
+  if (gate && info.gateSource === 'radar') automaticFields.push('gate');
   if (options.primaryEventId === info.eventId && out.currentFlight) {
     if (info.status && info.statusSource === 'radar') automaticFields.push('status');
-    if (info.divergence?.source === 'radar' || info.divergence?.source === 'reported') automaticFields.push('gate');
+    if (info.divergence?.source === 'radar') automaticFields.push('gate');
   }
   for (const field of automaticFields) {
     const expiry = info.automaticFieldValidUntilEpochMs?.[field];

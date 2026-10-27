@@ -25,8 +25,11 @@ try {
  for(const patch of [{flight:'QA124'},{sourceOrigin:'GRU'},{scheduledDepartureUtc:'2032-10-21T10:30:00.000Z'},{gate:'POSITION 4'},{operationalConflicts:['gate']},{ok:false},{updatedAt:now+1}])
   assert.equal(resolve({...radar,...patch}).gate,'',JSON.stringify(patch));
  // A source that sent observation proof which fails is not downgraded to "reported".
- for(const patch of [{operationalEvidence:{gate:{version:1,value:'12',sourceObservedAt:'2032-10-20T06:00:00Z',provenance:'synthetic'}}},{gateUpdate:{version:1,provider:'custom',kind:'departure-gate-update',sourceUpdatedAt:'2032-10-20T06:00:00Z',gate:'12',flight:'QA123',origin:'CGH',destination:'CNF',scheduledDepartureUtc:event.canonical.startDateTime}},{gateUpdateWatermark:{sourceUpdatedAtEpochMs:received,gate:'14',conflicted:false}}])
-  assert.equal(resolve({...radar,...patch}).gate,'',Object.keys(patch)[0]);
+ for(const patch of [{operationalEvidence:{gate:{version:1,value:'12',sourceObservedAt:'2032-10-20T06:00:00Z',provenance:'synthetic'}}},{gateUpdate:{version:1,provider:'custom',kind:'departure-gate-update',sourceUpdatedAt:'2032-10-20T06:00:00Z',gate:'12',flight:'QA123',origin:'CGH',destination:'CNF',scheduledDepartureUtc:event.canonical.startDateTime}},{gateUpdateWatermark:{sourceUpdatedAtEpochMs:received,gate:'14',conflicted:false}},
+  // Conflicting gate-update history blocks it even when its number matches the reported gate.
+  {gateUpdateWatermark:{sourceUpdatedAtEpochMs:received,gate:'12',conflicted:true}},{gateUpdateWatermark:{sourceUpdatedAtEpochMs:received-60_000,gate:'12',conflicted:true}}])
+  assert.equal(resolve({...radar,...patch}).gate,'',JSON.stringify(patch));
+ assert.equal(resolve({...radar,gateUpdateWatermark:{sourceUpdatedAtEpochMs:received,gate:'12',conflicted:false}}).gateSource,'reported','agreeing, non-conflicting history keeps it reported');
 
  // 2. Proven source keeps its own tier.
  const proven=resolve({...radar,operationalEvidence:{gate:{version:1,value:'12',sourceObservedAt:'2032-10-20T08:20:00Z',provenance:'synthetic'}}});
@@ -40,13 +43,21 @@ try {
  assert.deepEqual(withManual.divergence,{manualGate:'24',sourceGate:'12',source:'reported'});assert.equal(withManual.reportedProvider,'FlightAware');
  assert.equal(resolve({...radar,gate:'24'},manual).divergence,null,'same value is not a divergence');
 
- // Watch: reported gate is labelled and its expiry caps the snapshot.
+ // Watch: Wear v1 fields cannot carry the caveat, so a reported gate never reaches them as a number.
  const base=m.buildCrewCheckWatchSnapshot([event],event,null,now,false);
- const watch=m.applyNextFlightToWatchSnapshot(base,reported,{primaryEventId:event.id,nextFlightScheduleId:event.canonical.id});
- assert.equal(watch.gate,'12');assert.match(watch.detail,/Portão informado por FlightAware · a confirmar/);
- assert(watch.validUntilEpochMs<=received+m.RADAR_GATE_STALE_MS,'reported gate cannot outlive its receipt window on the watch');
+ const options={primaryEventId:event.id,nextFlightScheduleId:event.canonical.id};
+ const watch=m.applyNextFlightToWatchSnapshot(base,reported,options);
+ assert.equal(watch.gate,'');assert.equal(watch.remoteStand,false);assert.match(watch.detail,/Portão a confirmar no app/);
+ assert(watch.schedule.every(item=>!item.gate),'schedule rows carry no reported gate');
+ assert.doesNotMatch(JSON.stringify(watch),/"12"|P12|portão 12/i,'the reported number appears nowhere in the watch snapshot');
  const nextWatch=m.applyNextFlightToWatchSnapshot({...base,currentFlight:''},reported,{primaryEventId:'other',nextFlightScheduleId:event.canonical.id});
- assert.match(nextWatch.nextDetail,/P12 a confirmar/);
+ assert.match(nextWatch.nextDetail,/Portão a confirmar no app/);assert.doesNotMatch(nextWatch.nextDetail,/12/);
+ // Manual gate with a different reported gate: manual reaches the watch, the reported number does not.
+ const divergentWatch=m.applyNextFlightToWatchSnapshot(base,withManual,options);
+ assert.equal(divergentWatch.gate,'24');assert.match(divergentWatch.detail,/Fonte indica outro portão · confirme no app/);assert.doesNotMatch(divergentWatch.detail,/12/);
+ // A proven gate is still projected with its observation-capped expiry.
+ const provenWatch=m.applyNextFlightToWatchSnapshot(base,proven,options);
+ assert.equal(provenWatch.gate,'12');assert(provenWatch.validUntilEpochMs<=Date.parse('2032-10-20T08:20:00Z')+m.RADAR_GATE_STALE_MS);
 
  // Alerts: a reported gate never starts or anchors a gate-change alert (Home.tsx).
  const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
@@ -67,5 +78,5 @@ try {
  assert.deepEqual(JSON.parse(JSON.stringify(sent.body.providers)),[{key:'flightaware',configured:true,lastOkAt:null,lastFailAt:'2032-10-20T08:00:00.000Z',lastHttpStatus:401,lastErrorAt:null},{key:'airlabs',configured:false,lastOkAt:null,lastFailAt:null,lastHttpStatus:null,lastErrorAt:null}]);
  assert.doesNotMatch(JSON.stringify(sent.body),/key=|apikey|x-apikey|token/i);
  scope.markProvider('airlabs',false,403);assert.equal(radarHealth.get('airlabs').lastHttpStatus,403);
- console.log('PASS gate behavior rule: manual > proven source > reported source (named, 30 min, never alert/Pulse), failed proof never downgraded, watch labelled and capped, admin-only per-source health');
+ console.log('PASS gate behavior rule: manual > proven source > reported source (named, 30 min, never alert/Pulse), failed proof never downgraded, conflicting history rejected, reported number never sent to the watch, admin-only per-source health');
 } finally { fs.rmSync(dir,{recursive:true,force:true}); }

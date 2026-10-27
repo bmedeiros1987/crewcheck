@@ -594,7 +594,8 @@ export function resolveNextFlightGate(input: {
     // proof fails (stale, mismatched, conflicting) the gate stays hidden, never "reported".
     if (radarGate.gate || !radar || !receivedFresh || conflicts.gate || radar.operationalEvidence?.gate || radar.gateUpdate) return normalizeBoardingGate('');
     const value = normalizeBoardingGate(radar.gate), watermark = radar.gateUpdateWatermark;
-    if (!value.gate || (watermark && watermark.gate !== value.gate)) return normalizeBoardingGate('');
+    // Any gate-update history that differs or is itself marked conflicting blocks it.
+    if (!value.gate || (watermark && (watermark.gate !== value.gate || watermark.conflicted === true))) return normalizeBoardingGate('');
     automaticFieldValidUntilEpochMs.gate = receipt + RADAR_GATE_STALE_MS;
     return value;
   })();
