@@ -43,14 +43,14 @@ try {
  assert.deepEqual(withManual.divergence,{manualGate:'24',sourceGate:'12',source:'reported'});assert.equal(withManual.reportedProvider,'FlightAware');
  assert.equal(resolve({...radar,gate:'24'},manual).divergence,null,'same value is not a divergence');
 
- // Watch: the owner accepted showing a reported gate on the watch; it is labelled and capped.
+ // Watch: by owner decision the reported gate shows as the plain gate, capped at its receipt window.
  const base=m.buildCrewCheckWatchSnapshot([event],event,null,now,false);
  const options={primaryEventId:event.id,nextFlightScheduleId:event.canonical.id};
  const watch=m.applyNextFlightToWatchSnapshot(base,reported,options);
- assert.equal(watch.gate,'12');assert.match(watch.detail,/^Portão a confirmar/);assert(watch.detail.length<=96);
+ assert.equal(watch.gate,'12');assert.doesNotMatch(watch.detail,/a confirmar/);
  assert(watch.validUntilEpochMs<=received+m.RADAR_GATE_STALE_MS,'reported gate cannot outlive its receipt window on the watch');
  const nextWatch=m.applyNextFlightToWatchSnapshot({...base,currentFlight:''},reported,{primaryEventId:'other',nextFlightScheduleId:event.canonical.id});
- assert.match(nextWatch.nextDetail,/P12 a confirmar/);
+ assert.match(nextWatch.nextDetail,/P12(?! a confirmar)/);
  // A proven gate is still projected with its observation-capped expiry.
  const provenWatch=m.applyNextFlightToWatchSnapshot(base,proven,options);
  assert.equal(provenWatch.gate,'12');assert(provenWatch.validUntilEpochMs<=Date.parse('2032-10-20T08:20:00Z')+m.RADAR_GATE_STALE_MS);
@@ -74,5 +74,5 @@ try {
  assert.deepEqual(JSON.parse(JSON.stringify(sent.body.providers)),[{key:'flightaware',configured:true,lastOkAt:null,lastFailAt:'2032-10-20T08:00:00.000Z',lastHttpStatus:401,lastErrorAt:null},{key:'airlabs',configured:false,lastOkAt:null,lastFailAt:null,lastHttpStatus:null,lastErrorAt:null}]);
  assert.doesNotMatch(JSON.stringify(sent.body),/key=|apikey|x-apikey|token/i);
  scope.markProvider('airlabs',false,403);assert.equal(radarHealth.get('airlabs').lastHttpStatus,403);
- console.log('PASS gate behavior rule: manual > proven source > reported source (named, 30 min, never alert/Pulse), failed proof never downgraded, conflicting history rejected, watch labelled and capped, admin-only per-source health');
+ console.log('PASS gate behavior rule: manual > proven source > reported source (named, 30 min, never alert/Pulse), failed proof never downgraded, conflicting history rejected, watch shows the plain gate, capped, admin-only per-source health');
 } finally { fs.rmSync(dir,{recursive:true,force:true}); }

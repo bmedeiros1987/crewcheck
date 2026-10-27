@@ -84,10 +84,8 @@ public class WatchTextLayoutTest {
         }
     }
 
-    // Phone projection of a provider-reported gate (client/src/lib/nextFlightWatch.ts):
-    // gate number, "Portão a confirmar" leading the 96-character detail, "P… a confirmar" next.
-    private static final String REPORTED_DETAIL =
-            ("Portão a confirmar · Embarcando · " + LONG_TEXT).substring(0, 96);
+    // Gate fields on small and large watches with the longest gate and a full 96-character detail.
+    private static final String REPORTED_DETAIL = ("Embarcando · " + LONG_TEXT + " · " + LONG_TEXT).substring(0, 96);
 
     @Test public void reportedGateFitsLiveAndAmbientOnSmallAndLargeRoundScreens() throws Exception {
         for (int size : new int[]{192, 227}) {
@@ -103,7 +101,7 @@ public class WatchTextLayoutTest {
                     for (String state : new String[]{"BOARDING", "REPORTING", "CONNECTION", "CHANGED"}) {
                         JSONObject json = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson();
                         json.put("state", state).put("gate", "B123").put("remoteStand", false)
-                                .put("detail", REPORTED_DETAIL).put("nextDetail", "GRU → SSA • PB123 a confirmar • 09:30");
+                                .put("detail", REPORTED_DETAIL).put("nextDetail", "GRU → SSA • PB123 • 09:30");
                         WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(json.toString());
                         content.removeAllViews();
                         call(activity, "renderHeader", new Class[]{WatchContextSnapshot.class}, snapshot);
