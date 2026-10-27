@@ -25,12 +25,16 @@ final class ComplicationText {
                     "Abra o CrewCheck no celular para sincronizar a escala."
             );
         }
-        return new ComplicationRendering(
+        ComplicationRendering result = new ComplicationRendering(
                 snapshot.complicationShortText(nowEpochMs),
                 snapshot.complicationLongText(nowEpochMs),
                 snapshot.complicationTitle(nowEpochMs),
                 snapshot.accessibilityDescription(nowEpochMs)
         );
+        if (!snapshot.isStale(nowEpochMs) && "OVERNIGHT".equals(snapshot.state)) {
+            return result.withStayTarget(snapshot.contextId, snapshot.generatedAtEpochMs);
+        }
+        return result;
     }
 
     static ComplicationRendering gate(WatchContextSnapshot snapshot, long nowEpochMs) {

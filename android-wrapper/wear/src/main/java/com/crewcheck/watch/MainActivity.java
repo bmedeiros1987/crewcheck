@@ -48,6 +48,8 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_NOTIFICATIONS = 1;
     private static final int MODE_CREWLIFE = 2;
     private static final int MODE_SCHEDULE = 3;
+    private static final int MODE_STAY = 4;
+    private StayDetailsTarget stayDetailsTarget;
     private static final int REQUEST_NOTIFICATIONS = 4102;
 
     private static final int BLACK = Color.BLACK;
@@ -133,6 +135,7 @@ public final class MainActivity extends FragmentActivity
         setIntent(intent);
         applyIntentScreen(intent);
         renderSnapshot();
+        if (scroll != null) scroll.post(() -> scroll.scrollTo(0, 0));
     }
 
     @Override
@@ -192,6 +195,11 @@ public final class MainActivity extends FragmentActivity
         if ("notifications".equals(requested)) screenMode = MODE_NOTIFICATIONS;
         else if ("crewlife".equals(requested)) screenMode = MODE_CREWLIFE;
         else if ("schedule".equals(requested)) screenMode = MODE_SCHEDULE;
+        else if ("stay".equals(requested)) {
+            stayDetailsTarget = new StayDetailsTarget(intent.getStringExtra("crewcheck_stay_context"),
+                    intent.getLongExtra("crewcheck_stay_generation", 0L));
+            screenMode = MODE_STAY;
+        }
     }
 
     private void restartClock() {
@@ -216,7 +224,9 @@ public final class MainActivity extends FragmentActivity
             }
         });
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        scroll.setScrollbarFadingEnabled(true);
         enableRotaryScrolling(scroll);
 
         content = new LinearLayout(this);
@@ -345,6 +355,17 @@ public final class MainActivity extends FragmentActivity
         }
 
         ambientClockView = null;
+        if (screenMode == MODE_STAY) {
+            renderStayDetails(snapshot, now);
+            ensureRotaryFocus();
+            return;
+        }
+        if (screenMode == MODE_NOW && snapshot != null && !snapshot.isStale(now)
+                && "OVERNIGHT".equals(snapshot.state)) {
+            renderCompactStay(snapshot);
+            ensureRotaryFocus();
+            return;
+        }
         renderHeader(snapshot);
 
         switch (screenMode) {
@@ -565,6 +586,10 @@ public final class MainActivity extends FragmentActivity
             content.addView(sync);
             return;
         }
+        if ("OVERNIGHT".equals(snapshot.state)) {
+            renderCompactStay(snapshot);
+            return;
+        }
         Primary primary = primaryFor(snapshot);
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
 
@@ -615,6 +640,44 @@ public final class MainActivity extends FragmentActivity
                 stale ? WARNING : MUTED, false, Gravity.CENTER);
         freshness.setPadding(0, dp(5), 0, 0);
         content.addView(freshness);
+    }
+
+    private void renderCompactStay(WatchContextSnapshot snapshot) {
+        StaySummary summary = StaySummary.from(snapshot);
+        content.addView(text("Pernoite" + (summary.date.isBlank() ? "" : " · " + summary.date),
+                12, WARNING, true, Gravity.CENTER));
+        content.addView(text(summary.airport, 24, WHITE, true, Gravity.CENTER));
+        content.addView(text("APZ " + summary.time, 20, WHITE, true, Gravity.CENTER));
+        TextView details = heroAction("Ver pernoite", WARNING);
+        details.setMinHeight(dp(48));
+        details.setMinWidth(dp(48));
+        LinearLayout.LayoutParams action = (LinearLayout.LayoutParams) details.getLayoutParams();
+        action.topMargin = dp(2);
+        details.setLayoutParams(action);
+        details.setOnClickListener(view -> {
+            stayDetailsTarget = new StayDetailsTarget(snapshot.contextId, snapshot.generatedAtEpochMs);
+            showScreen(MODE_STAY); // Reload and revalidate before displaying any detail.
+        });
+        content.addView(details);
+    }
+
+    private void renderStayDetails(WatchContextSnapshot snapshot, long now) {
+        if (stayDetailsTarget == null || !stayDetailsTarget.matches(snapshot, now)) {
+            content.addView(text("Pernoite indisponível", 16, WHITE, true, Gravity.CENTER));
+        } else {
+            StaySummary summary = StaySummary.from(snapshot);
+            content.addView(text("Pernoite · " + summary.airport, 14, WARNING, true, Gravity.CENTER));
+            content.addView(text(snapshot.overnight.isBlank() ? "Hotel não informado" : snapshot.overnight,
+                    17, WHITE, true, Gravity.CENTER));
+            content.addView(text("APZ " + summary.time, 18, WHITE, true, Gravity.CENTER));
+            if (!summary.date.isBlank()) content.addView(text(summary.date, 13, WHITE, false, Gravity.CENTER));
+            if (!summary.zone.isBlank()) content.addView(text(summary.zone, 11, MUTED, false, Gravity.CENTER));
+        }
+        TextView back = heroAction("Voltar", CYAN);
+        back.setMinHeight(dp(48));
+        back.setMinWidth(dp(48));
+        back.setOnClickListener(view -> showScreen(MODE_NOW));
+        content.addView(back);
     }
 
     private void renderNotifications(WatchContextSnapshot snapshot, long now) {
