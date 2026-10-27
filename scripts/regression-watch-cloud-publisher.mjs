@@ -22,9 +22,27 @@ try {
     const body = init.method === 'POST' ? { ok: true, credential: `cw1.${'a'.repeat(32)}.${String(++credentials).padStart(43, 'C')}` } : { ok: status === 200 };
     return { status, ok: status === 200, json: async () => body };
   };
-  const handed = []; let nativeAccepts = true, cleared = 0;
-  let native = { setWatchCloudCredential: c => { handed.push(c); return nativeAccepts; }, clearWatchCloudCredential: () => { cleared++; return true; } };
-  const make = () => createWatchCloudPublisher({ fetch, storage, native: () => native, now: () => clock });
+  // Fake app bridge: accepts synchronously, confirms the Data Layer write later by event,
+  // like MainActivity.dispatchCrewCheckWatchSyncResult.
+  const events = new EventTarget(), handed = [];
+  let listening = 0;
+  const add = events.addEventListener.bind(events), remove = events.removeEventListener.bind(events);
+  events.addEventListener = (...a) => { listening++; add(...a); };
+  events.removeEventListener = (...a) => { listening--; remove(...a); };
+  let nativeAccepts = true, cleared = 0, delivery = 'delivered';
+  const result = (ok, code, message) => events.dispatchEvent(new CustomEvent('crewcheck:watch-sync-result', { detail: { ok, code, message } }));
+  const bridge = { setWatchCloudCredential: (c, id) => {
+    handed.push(c);
+    if (nativeAccepts) setTimeout(() => {
+      result(true, 'published', id); // an unrelated watch result never confirms the pairing
+      result(true, 'cloud_credential_delivered', 'someone-else');
+      if (delivery === 'delivered') result(true, 'cloud_credential_delivered', id);
+      else if (delivery === 'failed') result(false, 'cloud_credential_failed', id);
+    }, 1);
+    return nativeAccepts;
+  }, clearWatchCloudCredential: () => { cleared++; return true; } };
+  let native = bridge, ids = 0;
+  const make = () => createWatchCloudPublisher({ fetch, storage, native: () => native, events, now: () => clock, deliveryTimeoutMs: 50, requestId: () => 'req-' + (++ids) });
   let current = true;
   const session = (owner = 'owner-a', token = 'jwt-a') => ({ owner, token, isCurrent: () => current });
   const VALID = Date.parse('2032-10-20T16:00:00Z');
@@ -34,7 +52,7 @@ try {
   native = null;
   assert.equal(await make().publish(snap(), session()), 'skipped');
   assert.equal(calls.length, 0);
-  native = { setWatchCloudCredential: c => { handed.push(c); return nativeAccepts; }, clearWatchCloudCredential: () => { cleared++; return true; } };
+  native = bridge;
 
   // First publish pairs once, hands the credential to the watch, then publishes.
   const pub = make();
@@ -78,6 +96,21 @@ try {
   assert.equal(storage.getItem('crewcheck:watch-cloud:v1:paired:owner-b'), null);
   nativeAccepts = true;
 
+  // Delivery to the watch failed or was never confirmed: not paired, nothing published, retried.
+  for (const outcome of ['failed', 'silent']) {
+    delivery = outcome;
+    const n = calls.length;
+    assert.equal(await other.publish(snap(), session('owner-b', 'jwt-b')), 'skipped', outcome);
+    assert.deepEqual(calls.slice(n).map(c => c.method), ['POST'], `${outcome}: no PUT without a confirmed pairing`);
+    assert.equal(storage.getItem('crewcheck:watch-cloud:v1:paired:owner-b'), null, outcome);
+  }
+  assert.equal(listening, 0, 'every delivery wait removes its listener, also on timeout');
+  delivery = 'delivered';
+  const nb = calls.length;
+  assert.equal(await other.publish(snap(), session('owner-b', 'jwt-b')), 'sent', 'the next publish pairs again');
+  assert.deepEqual(calls.slice(nb).map(c => c.method), ['POST', 'PUT']);
+  assert.equal(storage.getItem('crewcheck:watch-cloud:v1:paired:owner-b'), '1');
+
   // Disabled on the server (404): back off for hours, no request per minute.
   const off = make(); serverStatus.pair = 404;
   const n0 = calls.length;
@@ -93,8 +126,15 @@ try {
   assert.deepEqual(calls.slice(n1).map(c => `${c.method} ${c.url} ${c.auth}`), ['DELETE /api/watch/cloud Bearer jwt-a']);
   assert.equal(cleared, 1);
   assert.equal(storage.getItem('crewcheck:watch-cloud:v1:paired:owner-a'), null);
-  await pub.forget({ owner: 'owner-a', token: 'jwt-a' });
-  assert.equal(calls.length - n1, 1, 'nothing to revoke twice');
+  // Forget also revokes a pairing that was never confirmed (a credential may exist or land late).
+  await pub.forget({ owner: 'owner-x', token: 'jwt-x' });
+  assert.deepEqual(calls.slice(n1 + 1).map(c => `${c.method} ${c.auth}`), ['DELETE Bearer jwt-x']);
+  assert.equal(cleared, 2);
+  // Without the app bridge (web) there is nothing to revoke.
+  native = null; const nw = calls.length;
+  await make().forget({ owner: 'owner-a', token: 'jwt-a' });
+  assert.equal(calls.length, nw);
+  native = bridge;
   // After logout the same content pairs again instead of being treated as already sent.
   assert.equal(await pub.publish(snap({ gate: 'C1' }), session()), 'sent');
   assert.equal(calls.at(-2).method, 'POST');

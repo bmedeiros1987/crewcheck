@@ -85,14 +85,21 @@ public final class CrewCheckWatchPublisher {
                 ));
     }
 
-    /** Entrega a credencial ao relógio pareado; formato inválido é recusado. */
-    public static boolean publishCloudCredential(Context context, String credential) {
+    /**
+     * Entrega a credencial ao relógio pareado; formato inválido é recusado na hora. O
+     * resultado da gravação no Data Layer chega depois pelo callback, e só ele confirma o
+     * pareamento para a página.
+     */
+    public static boolean publishCloudCredential(Context context, String credential, Callback callback) {
         if (credential == null || !CLOUD_CREDENTIAL.matcher(credential).matches()) return false;
+        final Callback safeCallback = callback == null ? (ok, code, message) -> {} : callback;
         PutDataMapRequest mapRequest = PutDataMapRequest.create(CLOUD_PATH);
         mapRequest.getDataMap().putString(DATA_KEY_CLOUD_CREDENTIAL, credential);
         mapRequest.getDataMap().putLong("sentAtEpochMs", System.currentTimeMillis());
         Wearable.getDataClient(context.getApplicationContext())
-                .putDataItem(mapRequest.asPutDataRequest().setUrgent());
+                .putDataItem(mapRequest.asPutDataRequest().setUrgent())
+                .addOnSuccessListener(item -> safeCallback.onResult(true, "cloud_credential_delivered", ""))
+                .addOnFailureListener(error -> safeCallback.onResult(false, "cloud_credential_failed", safeMessage(error)));
         return true;
     }
 

@@ -36,9 +36,8 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     new WellbeingStore(this).clearRoutine();
                 } else if (WatchContract.CLOUD_PATH.equals(path)) {
-                    // Logout no celular: parar de buscar na nuvem.
-                    new WatchCloudCredentialStore(this).clear();
-                    WatchCloudSyncJob.cancel(this);
+                    // Logout ou troca de conta no celular: credencial, escala e avisos saem juntos.
+                    WatchCloudClient.forgetPairing(this);
                 }
                 continue;
             }
@@ -59,17 +58,12 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                     String json = dataMap.getString(WatchContract.DATA_KEY_ROUTINE_JSON);
                     if (json != null) new WellbeingStore(this).saveRoutine(json);
                 } else if (WatchContract.CLOUD_PATH.equals(path)) {
-                    acceptCloudCredential(this, dataMap.getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL));
+                    WatchCloudClient.acceptCredential(this, dataMap.getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL));
                 }
             } catch (Exception ignored) {
                 // Fail closed: keep the last valid snapshot.
             }
         }
-    }
-
-    /** Credencial nova (pareamento ou troca de conta): guarda e agenda a busca periódica. */
-    static void acceptCloudCredential(android.content.Context context, String credential) {
-        if (new WatchCloudCredentialStore(context).save(credential)) WatchCloudSyncJob.schedulePeriodic(context);
     }
 
     @Override

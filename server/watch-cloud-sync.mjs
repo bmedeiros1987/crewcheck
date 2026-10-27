@@ -14,6 +14,10 @@ import crypto from 'node:crypto';
 // publish never overwrite each other.
 
 export const WATCH_CLOUD_MAX_SNAPSHOT_BYTES = 16 * 1024;
+// The phone clock may run slightly ahead; beyond this the projection is from the future.
+export const WATCH_CLOUD_MAX_CLOCK_SKEW_MS = 5 * 60_000;
+// Same maximum window the phone uses to build the projection (watchContext.validWindow).
+export const WATCH_CLOUD_MAX_VALIDITY_MS = 6 * 60 * 60_000;
 const STATES = new Set(['OFF_DUTY', 'LEAVE_SOON', 'REPORTING', 'BOARDING', 'IN_FLIGHT', 'CONNECTION', 'OVERNIGHT', 'CHANGED', 'UNKNOWN']);
 const FIELDS = [['contextId', 80], ['headline', 42], ['primaryTime', 12], ['detail', 96], ['presentationTime', 12], ['presentationPlace', 42],
   ['leaveTime', 12], ['trafficDetail', 64], ['currentFlight', 16], ['currentRoute', 32], ['gate', 18], ['boardingTime', 12], ['eta', 12],
@@ -25,12 +29,17 @@ const clean = (value, max) => typeof value === 'string' || typeof value === 'num
   ? String(value).replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
 const copy = (source, target, [key, max]) => { const value = clean(source[key], max); if (value && value.toLowerCase() !== 'null') target[key] = value; };
 
-/** Same allow-list as the phone's CrewCheckWatchPublisher.sanitize; null when rejected. */
-export function sanitizeWatchSnapshot(source) {
+/**
+ * Same allow-list as the phone's CrewCheckWatchPublisher.sanitize, plus the time limits the
+ * watch enforces on cloud data (no future generation, validity of at most 6 h); null when
+ * rejected.
+ */
+export function sanitizeWatchSnapshot(source, now = Date.now()) {
   if (!source || typeof source !== 'object' || Array.isArray(source) || source.schemaVersion !== 1) return null;
   if (PROHIBITED.some(key => Object.hasOwn(source, key))) return null;
   const generatedAt = source.generatedAtEpochMs, validUntil = source.validUntilEpochMs;
   if (!Number.isSafeInteger(generatedAt) || generatedAt <= 0 || !Number.isSafeInteger(validUntil) || validUntil < generatedAt) return null;
+  if (generatedAt > now + WATCH_CLOUD_MAX_CLOCK_SKEW_MS || validUntil - generatedAt > WATCH_CLOUD_MAX_VALIDITY_MS) return null;
   const state = clean(source.state, 24).toUpperCase();
   const out = { schemaVersion: 1 };
   copy(source, out, FIELDS[0]);
@@ -114,7 +123,7 @@ export function createWatchCloudHandler({ identity, db, sendJson, readJsonBody, 
     if (path === '/api/watch/cloud/snapshot' && req.method === 'PUT') {
       if (limited('put:' + owner, 15_000)) return sendJson(res, 429, { ok: false, retryAfterSeconds: 15 });
       const body = await readJsonBody(req, 32 * 1024);
-      const snapshot = sanitizeWatchSnapshot(body?.snapshot);
+      const snapshot = sanitizeWatchSnapshot(body?.snapshot, now());
       if (!snapshot) return sendJson(res, 400, { ok: false, reason: 'invalid-snapshot' });
       // Nobody can read it without a paired watch; tell the phone to pair (again).
       if (!(await db.get(deviceKey(owner)))?.tokenHash) return sendJson(res, 409, { ok: false, reason: 'not-paired' });

@@ -3,7 +3,7 @@
 // never unpairs the watch, phone allow-list mirrored. Synthetic accounts, in-memory store.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createWatchCloudHandler, sanitizeWatchSnapshot, parseWatchCredential, watchOwnerKey } from '../server/watch-cloud-sync.mjs';
+import { createWatchCloudHandler, sanitizeWatchSnapshot, parseWatchCredential, watchOwnerKey, WATCH_CLOUD_MAX_CLOCK_SKEW_MS, WATCH_CLOUD_MAX_VALIDITY_MS } from '../server/watch-cloud-sync.mjs';
 
 const rows = new Map();
 let outage = false, clock = Date.parse('2032-10-20T10:00:00Z');
@@ -105,6 +105,22 @@ assert.equal((await call('GET', '/api/watch/cloud/snapshot', { auth: 'Bearer ' +
 assert.equal((await call('DELETE', '/api/watch/cloud', { account: 'token-a' })).status, 200);
 assert.equal((await call('GET', '/api/watch/cloud/snapshot', { auth: 'Bearer ' + repaired })).status, 401);
 assert.equal(rows.has(`watch-cloud:v1:snapshot:${owner}`), false);
+
+// Time limits (review): future generation and validity beyond 6 h are refused; edges accepted.
+{
+  const at = clock;
+  const shaped = (generatedAtEpochMs, validUntilEpochMs) => sanitizeWatchSnapshot({ ...snapshot(), generatedAtEpochMs, validUntilEpochMs }, at);
+  assert.equal(shaped(at + WATCH_CLOUD_MAX_CLOCK_SKEW_MS + 1, at + 3_600_000), null, 'generation from the future');
+  assert.equal(shaped(at - 1000, at - 1000 + 365 * 24 * 3_600_000), null, 'one-year validity');
+  assert.equal(shaped(at - 1000, at - 1000 + WATCH_CLOUD_MAX_VALIDITY_MS + 1), null, 'validity over 6 h');
+  assert.ok(shaped(at + WATCH_CLOUD_MAX_CLOCK_SKEW_MS, at + WATCH_CLOUD_MAX_CLOCK_SKEW_MS + WATCH_CLOUD_MAX_VALIDITY_MS), 'edges accepted');
+  const paired = (await call('POST', '/api/watch/cloud/pair', { account: 'token-b' })).body.credential;
+  assert.ok(paired);
+  const future = await call('PUT', '/api/watch/cloud/snapshot', { account: 'token-b', body: { snapshot: { ...snapshot(), generatedAtEpochMs: clock + 3_600_000, validUntilEpochMs: clock + 7_200_000 } } });
+  assert.equal(future.status, 400, 'the route applies the server clock');
+  const watch = await call('GET', '/api/watch/cloud/snapshot', { auth: 'Bearer ' + paired });
+  assert.equal(watch.body.snapshot.gate, 'Z9', 'the refused projection never replaces the stored one');
+}
 
 // Phone and server allow-lists stay identical.
 const phone = fs.readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java', 'utf8');

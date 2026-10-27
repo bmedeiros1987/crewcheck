@@ -40,6 +40,14 @@ public final class WatchNotificationCenter {
         }
     }
 
+    /** Troca de conta ou logout: some o aviso da conta anterior e a deduplicação recomeça. */
+    public static void clear(Context context) {
+        if (context == null) return;
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager != null) manager.cancel(OPS_NOTIFICATION_ID);
+        preferences(context).edit().remove(LAST_FINGERPRINT).apply();
+    }
+
     public static void postForSnapshot(Context context, WatchContextSnapshot snapshot) {
         if (context == null || snapshot == null || !isEnabled(context)) return;
         if (Build.VERSION.SDK_INT >= 33

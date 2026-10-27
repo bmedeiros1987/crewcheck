@@ -20,9 +20,13 @@ public final class WatchCloudClient {
     static final String SNAPSHOT_URL = "https://crewcheck.online/api/watch/cloud/snapshot";
     private static final int TIMEOUT_MS = 10_000;
 
-    public enum Result { UPDATED, UNCHANGED, EMPTY, UNPAIRED, NOT_PAIRED_HERE, FAILED }
+    public enum Result { UPDATED, UNCHANGED, EMPTY, UNPAIRED, NOT_PAIRED_HERE, STALE, REJECTED, FAILED }
 
-    /** Resposta HTTP mínima; os testes trocam a rede por uma implementação falsa. */
+    /** Relógio do celular pode adiantar um pouco; mais que isso é geração futura. */
+    static final long MAX_CLOCK_SKEW_MS = 5 * 60_000L;
+    /** Mesma janela máxima que o celular usa ao montar a projeção (watchContext.validWindow). */
+    static final long MAX_VALIDITY_MS = 6 * 60 * 60_000L;
+
     public interface Transport {
         Response get(String url, String authorization, String ifNoneMatch) throws Exception;
     }
@@ -48,10 +52,19 @@ public final class WatchCloudClient {
     public static Result fetch(Context context, long nowEpochMs) {
         Context app = context.getApplicationContext();
         WatchCloudCredentialStore credentials = new WatchCloudCredentialStore(app);
-        String credential = credentials.load();
-        if (credential == null) return Result.NOT_PAIRED_HERE;
+        WatchCloudCredentialStore.Pairing pairing = credentials.current();
+        if (pairing == null) return Result.NOT_PAIRED_HERE;
+        String etag = credentials.etag();
+        Response response;
         try {
-            Response response = transport.get(SNAPSHOT_URL, "Bearer " + credential, credentials.etag());
+            response = transport.get(SNAPSHOT_URL, "Bearer " + pairing.credential, etag);
+        } catch (Exception error) {
+            return Result.FAILED;
+        }
+        // Tudo daqui em diante só vale para o pareamento que fez a requisição: logout ou
+        // outra conta durante a rede tornam a resposta velha, inclusive um 401.
+        synchronized (WatchCloudCredentialStore.LOCK) {
+            if (!credentials.isCurrent(pairing.generation)) return Result.STALE;
             credentials.markFetched(nowEpochMs);
             switch (response.status) {
                 case 304:
@@ -59,33 +72,67 @@ public final class WatchCloudClient {
                 case 204:
                     return Result.EMPTY;
                 case 401:
-                    // Logout, troca de conta ou novo pareamento: esquecer credencial e escala.
-                    credentials.clear();
-                    new SecureSnapshotStore(app).clear();
-                    WatchCloudSyncJob.cancel(app);
+                    forgetPairing(app);
                     return Result.UNPAIRED;
                 case 200:
                     break;
                 default:
                     return Result.FAILED;
             }
-            JSONObject payload = new JSONObject(response.body == null ? "" : response.body);
-            JSONObject snapshot = payload.optJSONObject("snapshot");
-            if (snapshot == null) return Result.FAILED;
-            String json = snapshot.toString();
-            if (json.getBytes(StandardCharsets.UTF_8).length > WatchContract.MAX_SNAPSHOT_BYTES) return Result.FAILED;
-            SecureSnapshotStore store = new SecureSnapshotStore(app);
-            WatchContextSnapshot current = store.load();
-            if (current != null && current.generatedAtEpochMs >= snapshot.optLong("generatedAtEpochMs", 0L)) {
+            try {
+                JSONObject payload = new JSONObject(response.body == null ? "" : response.body);
+                JSONObject snapshot = payload.optJSONObject("snapshot");
+                if (snapshot == null) return Result.FAILED;
+                String json = snapshot.toString();
+                if (json.getBytes(StandardCharsets.UTF_8).length > WatchContract.MAX_SNAPSHOT_BYTES) return Result.REJECTED;
+                long generatedAt = snapshot.optLong("generatedAtEpochMs", 0L);
+                long validUntil = snapshot.optLong("validUntilEpochMs", 0L);
+                if (generatedAt <= 0L || generatedAt > nowEpochMs + MAX_CLOCK_SKEW_MS
+                        || validUntil < generatedAt || validUntil - generatedAt > MAX_VALIDITY_MS) return Result.REJECTED;
+                SecureSnapshotStore store = new SecureSnapshotStore(app);
+                WatchContextSnapshot current = store.load();
+                // O cache é da conta deste pareamento: trocas de conta limpam antes (accept).
+                if (current != null && current.generatedAtEpochMs >= generatedAt) {
+                    if (response.etag != null) credentials.saveEtag(response.etag);
+                    return Result.UNCHANGED;
+                }
+                WatchContextSnapshot saved = store.save(json);
                 if (response.etag != null) credentials.saveEtag(response.etag);
-                return Result.UNCHANGED;
+                WatchNotificationCenter.postForSnapshot(app, saved);
+                return Result.UPDATED;
+            } catch (Exception error) {
+                return Result.FAILED;
             }
-            WatchContextSnapshot saved = store.save(json);
-            if (response.etag != null) credentials.saveEtag(response.etag);
-            WatchNotificationCenter.postForSnapshot(app, saved);
-            return Result.UPDATED;
-        } catch (Exception error) {
-            return Result.FAILED;
+        }
+    }
+
+    /**
+     * Credencial nova vinda do celular. Se é de outra conta, apaga escala e avisos da
+     * anterior antes de qualquer busca; em seguida agenda a periódica e uma busca já.
+     */
+    public static boolean acceptCredential(Context context, String credential) {
+        Context app = context.getApplicationContext();
+        synchronized (WatchCloudCredentialStore.LOCK) {
+            WatchCloudCredentialStore.SaveResult result = new WatchCloudCredentialStore(app).save(credential);
+            if (result == WatchCloudCredentialStore.SaveResult.REJECTED) return false;
+            if (result == WatchCloudCredentialStore.SaveResult.NEW_ACCOUNT) {
+                new SecureSnapshotStore(app).clear();
+                WatchNotificationCenter.clear(app);
+            }
+        }
+        WatchCloudSyncJob.schedulePeriodic(app);
+        WatchCloudSyncJob.fetchSoon(app);
+        return true;
+    }
+
+    /** Logout, troca de conta ou credencial recusada: nada da conta fica no relógio. */
+    public static void forgetPairing(Context context) {
+        Context app = context.getApplicationContext();
+        synchronized (WatchCloudCredentialStore.LOCK) {
+            new WatchCloudCredentialStore(app).clear();
+            new SecureSnapshotStore(app).clear();
+            WatchNotificationCenter.clear(app);
+            WatchCloudSyncJob.cancel(app);
         }
     }
 

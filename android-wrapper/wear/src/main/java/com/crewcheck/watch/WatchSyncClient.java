@@ -41,8 +41,12 @@ public final class WatchSyncClient {
                         for (DataItem item : buffer) {
                             if (WatchContract.CLOUD_PATH.equals(item.getUri().getPath())) {
                                 try {
-                                    CrewCheckDataLayerService.acceptCloudCredential(appContext, DataMapItem.fromDataItem(item)
-                                            .getDataMap().getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL));
+                                    String credential = DataMapItem.fromDataItem(item)
+                                            .getDataMap().getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL);
+                                    // O mesmo item reaparece a cada Sincronizar: só um pareamento novo conta.
+                                    if (credential != null && !credential.equals(new WatchCloudCredentialStore(appContext).load())) {
+                                        WatchCloudClient.acceptCredential(appContext, credential);
+                                    }
                                 } catch (Exception ignored) {
                                 }
                                 continue;

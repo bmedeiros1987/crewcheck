@@ -1178,7 +1178,8 @@ public final class MainActivity extends FragmentActivity
             case UPDATED -> "Atualizado pela nuvem";
             case UNCHANGED -> "Nuvem sem novidades";
             case EMPTY -> "Nada publicado na nuvem ainda";
-            case UNPAIRED, NOT_PAIRED_HERE -> "Abra o CrewCheck no celular";
+            case UNPAIRED, NOT_PAIRED_HERE, STALE -> "Abra o CrewCheck no celular";
+            case REJECTED -> "Dados da nuvem recusados";
             default -> "Sem conexão · dados anteriores mantidos";
         };
     }
