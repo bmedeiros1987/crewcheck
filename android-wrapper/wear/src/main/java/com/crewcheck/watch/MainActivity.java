@@ -547,6 +547,7 @@ public final class MainActivity extends FragmentActivity
         content.addView(title);
 
         TextView value = text("Conecte ao CrewCheck", 23, WHITE, true, Gravity.CENTER);
+        fitLongestWord(value, contentWidth());
         content.addView(value);
 
         TextView detail = text(
@@ -571,7 +572,9 @@ public final class MainActivity extends FragmentActivity
             eyebrow.setLetterSpacing(.08f);
             eyebrow.setPadding(0, dp(8), 0, dp(4));
             content.addView(eyebrow);
-            content.addView(text("Dados vencidos", 19, WHITE, true, Gravity.CENTER));
+            TextView title = text("Dados vencidos", 19, WHITE, true, Gravity.CENTER);
+            fitLongestWord(title, contentWidth());
+            content.addView(title);
             TextView hint = text("Confira a programação e o portão no celular.", 11, MUTED, false, Gravity.CENTER);
             hint.setPadding(0, dp(4), 0, 0);
             content.addView(hint);
@@ -602,6 +605,7 @@ public final class MainActivity extends FragmentActivity
         );
         value.setPadding(0, dp(3), 0, 0);
         tabular(value);
+        fitLongestWord(value, contentWidth());
         content.addView(value);
 
         if (!primary.detail.isBlank()) {
@@ -1212,19 +1216,52 @@ public final class MainActivity extends FragmentActivity
         // Botão preenchido com o acento do estado e texto preto — o contraste mais alto
         // disponível. O gradiente azul-para-acento que havia aqui lavava as duas cores.
         TextView chip = text(label, 12, BLACK, true, Gravity.CENTER);
-        chip.setPadding(dp(20), dp(11), dp(20), dp(11));
+        // Tela estreita ou fonte ampliada: o botão ocupa a largura toda, com menos respiro
+        // lateral, para que uma palavra longa ("Sincronizar") não quebre no meio.
+        boolean narrow = stackColumns();
+        chip.setPadding(dp(narrow ? 8 : 20), dp(11), dp(narrow ? 8 : 20), dp(11));
         GradientDrawable background = new GradientDrawable();
         background.setColor(accent);
         background.setCornerRadius(dp(24));
         chip.setBackground(background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                narrow ? LinearLayout.LayoutParams.MATCH_PARENT : LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
         params.setMargins(dp(2), dp(7), dp(2), dp(2));
         chip.setLayoutParams(params);
+        if (narrow) fitLongestWord(chip, contentWidth() - dp(4));
         return chip;
+    }
+
+    /**
+     * Mantém a fonte escolhida pelo usuário sempre que a palavra mais longa cabe. Só quando
+     * nem a largura toda comporta a palavra (fonte muito ampliada, títulos grandes) o tamanho
+     * cai o mínimo necessário, em vez de quebrar a palavra no meio.
+     */
+    private static void fitLongestWord(TextView view, int availableWidthPx) {
+        float room = availableWidthPx - view.getPaddingLeft() - view.getPaddingRight();
+        if (room <= 0f) return;
+        String[] words = view.getText().toString().split("\\s+");
+        // A largura do texto não escala de forma exatamente linear (hinting): reduz 1px por
+        // vez até caber, com piso para não chegar a um tamanho ilegível.
+        float floor = 10f * view.getResources().getDisplayMetrics().scaledDensity;
+        while (view.getTextSize() > floor && longestWord(view, words) > room) {
+            view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, view.getTextSize() - 1f);
+        }
+    }
+
+    private static float longestWord(TextView view, String[] words) {
+        float longest = 0f;
+        for (String word : words) longest = Math.max(longest, view.getPaint().measureText(word));
+        return longest;
+    }
+
+    private int contentWidth() {
+        int width = scroll.getWidth() > 0 ? scroll.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        return width - scroll.getPaddingLeft() - scroll.getPaddingRight();
     }
 
     private TextView actionChip(String label, int accent, boolean selected) {
