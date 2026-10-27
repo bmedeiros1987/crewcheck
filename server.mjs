@@ -2174,19 +2174,6 @@ async function conciergeDbDelete(key) {
     return false;
   }
 }
-// Strict read for watch cloud sync: throws when storage is unavailable, null only when absent.
-async function watchCloudDbGet(key) {
-  const pool = await conciergeDbPool();
-  if (!pool) throw new Error('storage-unavailable');
-  const [rows] = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [String(key)]);
-  const payload = rows?.[0]?.payload;
-  return typeof payload === 'string' ? JSON.parse(payload) : payload || null;
-}
-const handleWatchCloud = createWatchCloudHandler({
-  identity: req => cc1371Verify(cc1371RequestToken(req)),
-  db: { get: watchCloudDbGet, put: conciergeDbPut, delete: conciergeDbDelete },
-  sendJson, readJsonBody,
-});
 async function conciergeDbListSnapshots(limit = 200) {
   try {
     const pool = await conciergeDbPool();
@@ -4163,6 +4150,20 @@ function serveStatic(req, res, url) {
     res.end(data);
   });
 }
+// Strict read for watch cloud sync: throws when storage is unavailable, null only when absent.
+async function watchCloudDbGet(key) {
+  assertNotProtectedReleaseKey(key);
+  const pool = await conciergeDbPool();
+  if (!pool) throw new Error('storage-unavailable');
+  const [rows] = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [String(key)]);
+  const payload = rows?.[0]?.payload;
+  return typeof payload === 'string' ? JSON.parse(payload) : payload || null;
+}
+const handleWatchCloud = createWatchCloudHandler({
+  identity: req => cc1371Verify(cc1371RequestToken(req)),
+  db: { get: watchCloudDbGet, put: conciergeDbPut, delete: conciergeDbDelete },
+  sendJson, readJsonBody,
+});
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const incomingHost = String(req.headers.host || '').split(':')[0].toLowerCase();
