@@ -60,8 +60,11 @@ public class WatchCloudSyncTest {
     }
 
     static JSONObject snapshot(long generatedAt, String gate) throws Exception {
+        // The server stamps the pairing's account on every cloud roster; gates starting with
+        // "B" are account B's in these tests, the rest account A's.
         return WatchContextSnapshot.demo(generatedAt).toJson()
                 .put("gate", gate).put("state", "CHANGED").put("changed", true)
+                .put("account", gate.startsWith("B-") ? "b".repeat(32) : "a".repeat(32))
                 .put("validUntilEpochMs", generatedAt + 3_600_000L);
     }
 

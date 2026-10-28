@@ -31,6 +31,10 @@ public final class CrewCheckWatchPublisher {
      */
     public static final String CLOUD_PATH = "/crewcheck/watch/cloud/v1";
     public static final String DATA_KEY_CLOUD_CREDENTIAL = "credential";
+    /** Logout ou troca de conta: "conta X aposentada em T" para o relógio, um item por conta em
+     * ACCOUNT_PATH/&lt;conta&gt; (ver WatchAccountGuard). */
+    public static final String ACCOUNT_PATH = "/crewcheck/watch/account/v1";
+    private static final Pattern ACCOUNT = Pattern.compile("^[0-9a-f]{32}$");
     private static final Pattern CLOUD_CREDENTIAL = Pattern.compile("^cw1\\.[0-9a-f]{32}\\.[A-Za-z0-9_-]{43}$");
 
     private static final int SCHEMA_VERSION = 1;
@@ -103,10 +107,23 @@ public final class CrewCheckWatchPublisher {
         return true;
     }
 
-    /** Logout ou troca de conta: o relógio esquece a credencial e para de buscar na nuvem. */
-    public static void clearCloudCredential(Context context) {
-        Wearable.getDataClient(context.getApplicationContext()).deleteDataItems(
-                new Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(CLOUD_PATH).build());
+    /**
+     * Logout ou troca de conta. O relógio esquece a credencial da nuvem, e a escala da conta
+     * que saiu deixa de existir no celular (último resumo guardado e item do Data Layer) e
+     * fica aposentada no relógio a partir de agora: um item antigo dela não volta.
+     */
+    public static void clearCloudCredential(Context context, String account) {
+        Context app = context.getApplicationContext();
+        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(LAST_SNAPSHOT).apply();
+        com.google.android.gms.wearable.DataClient data = Wearable.getDataClient(app);
+        data.deleteDataItems(new Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(CLOUD_PATH).build());
+        data.deleteDataItems(new Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(SNAPSHOT_PATH).build());
+        if (account != null && ACCOUNT.matcher(account).matches()) {
+            PutDataMapRequest retired = PutDataMapRequest.create(ACCOUNT_PATH + "/" + account);
+            retired.getDataMap().putString("retiredAccount", account);
+            retired.getDataMap().putLong("retiredAtEpochMs", System.currentTimeMillis());
+            data.putDataItem(retired.asPutDataRequest().setUrgent());
+        }
     }
 
     public static void republishLast(Context context) {
@@ -158,6 +175,7 @@ public final class CrewCheckWatchPublisher {
         out.put("remoteStand", source.optBoolean("remoteStand", false));
         copyString(source, out, "gateSource", 12);
         copyString(source, out, "gateNote", 64);
+        copyString(source, out, "account", 32);
         copyString(source, out, "boardingTime", 12);
         copyString(source, out, "eta", 12);
         copyString(source, out, "connection", 16);

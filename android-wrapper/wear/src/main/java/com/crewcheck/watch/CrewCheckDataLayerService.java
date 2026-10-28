@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
  *   /crewcheck/watch/crewlife/v1  -> bem-estar agregado (WellbeingStore)
  *   /crewcheck/watch/routine/v1   -> sugestão de rotina (WellbeingStore)
  *   /crewcheck/watch/cloud/v1     -> credencial da nuvem (WatchCloudCredentialStore)
+ *   /crewcheck/watch/account/v1/* -> conta aposentada no logout/troca (WatchAccountGuard)
  *
  * O canal de saúde é separado para poder ser revogado sem derrubar a escala, e um payload
  * inválido em um canal nunca invalida os outros.
@@ -47,10 +48,10 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 DataMap dataMap = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
                 if (WatchContract.SNAPSHOT_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
-                    if (json != null) {
-                        WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
-                        WatchNotificationCenter.postForSnapshot(this, snapshot);
-                    }
+                    if (json != null) WatchAccountGuard.intake(this, json);
+                } else if (path != null && path.startsWith(WatchContract.ACCOUNT_PATH + "/")) {
+                    WatchAccountGuard.retire(this, dataMap.getString(WatchContract.DATA_KEY_RETIRED_ACCOUNT),
+                            dataMap.getLong(WatchContract.DATA_KEY_RETIRED_AT, 0L));
                 } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
                     if (json != null) new WellbeingStore(this).saveCrewLife(json);
@@ -75,9 +76,7 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
         try {
             if (WatchContract.SNAPSHOT_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_SNAPSHOT_BYTES) return;
-                WatchContextSnapshot snapshot = new SecureSnapshotStore(this)
-                        .save(new String(data, StandardCharsets.UTF_8));
-                WatchNotificationCenter.postForSnapshot(this, snapshot);
+                WatchAccountGuard.intake(this, new String(data, StandardCharsets.UTF_8));
             } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
                 new WellbeingStore(this).saveCrewLife(new String(data, StandardCharsets.UTF_8));

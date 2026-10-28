@@ -38,27 +38,39 @@ public final class WatchSyncClient {
         Wearable.getDataClient(appContext).getDataItems()
                 .addOnSuccessListener(buffer -> {
                     try {
+                        // Aposentadorias primeiro, depois a credencial, por último a escala:
+                        // um item antigo de outra conta nunca volta, qualquer que seja a ordem
+                        // em que o Data Layer devolve os itens.
                         for (DataItem item : buffer) {
-                            if (WatchContract.CLOUD_PATH.equals(item.getUri().getPath())) {
-                                try {
-                                    String credential = DataMapItem.fromDataItem(item)
-                                            .getDataMap().getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL);
-                                    // O mesmo item reaparece a cada Sincronizar: só um pareamento novo conta.
-                                    if (credential != null && !credential.equals(new WatchCloudCredentialStore(appContext).load())) {
-                                        WatchCloudClient.acceptCredential(appContext, credential);
-                                    }
-                                } catch (Exception ignored) {
-                                }
-                                continue;
+                            String itemPath = item.getUri().getPath();
+                            if (itemPath == null || !itemPath.startsWith(WatchContract.ACCOUNT_PATH + "/")) continue;
+                            try {
+                                DataMap map = DataMapItem.fromDataItem(item).getDataMap();
+                                WatchAccountGuard.retire(appContext, map.getString(WatchContract.DATA_KEY_RETIRED_ACCOUNT),
+                                        map.getLong(WatchContract.DATA_KEY_RETIRED_AT, 0L));
+                            } catch (Exception ignored) {
                             }
+                        }
+                        for (DataItem item : buffer) {
+                            if (!WatchContract.CLOUD_PATH.equals(item.getUri().getPath())) continue;
+                            try {
+                                String credential = DataMapItem.fromDataItem(item)
+                                        .getDataMap().getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL);
+                                // O mesmo item reaparece a cada Sincronizar: só um pareamento novo conta.
+                                if (credential != null && !credential.equals(new WatchCloudCredentialStore(appContext).load())) {
+                                    WatchCloudClient.acceptCredential(appContext, credential);
+                                }
+                            } catch (Exception ignored) {
+                            }
+                        }
+                        for (DataItem item : buffer) {
                             if (!WatchContract.SNAPSHOT_PATH.equals(item.getUri().getPath())) continue;
                             try {
                                 DataMap map = DataMapItem.fromDataItem(item).getDataMap();
                                 String json = map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
                                 long sentAt = map.getLong("sentAtEpochMs", 0L);
                                 baselineSentAt.set(Math.max(baselineSentAt.get(), sentAt));
-                                if (json != null) {
-                                    new SecureSnapshotStore(appContext).save(json);
+                                if (json != null && WatchAccountGuard.intake(appContext, json, false) != null) {
                                     recovered.set(true);
                                 }
                             } catch (Exception ignored) {
@@ -139,8 +151,7 @@ public final class WatchSyncClient {
                                 DataMap map = DataMapItem.fromDataItem(item).getDataMap();
                                 String json = map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
                                 long sentAt = map.getLong("sentAtEpochMs", 0L);
-                                if (json != null && sentAt > baselineSentAt) {
-                                    new SecureSnapshotStore(context).save(json);
+                                if (json != null && sentAt > baselineSentAt && WatchAccountGuard.intake(context, json, false) != null) {
                                     fresh = true;
                                     break;
                                 }

@@ -98,7 +98,7 @@ function persistSession(session: AuthSession) {
     const nextKey = String(session.user?.id || session.user?.email || '').toLowerCase();
     if (previousKey && nextKey && previousKey !== nextKey) {
       // Account change: revoke the watch's cloud credential while the old token still works.
-      window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token: localStorage.getItem(TOKEN_KEY), owner: previousKey.trim() } }));
+      window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token: localStorage.getItem(TOKEN_KEY), owner: previousKey.trim(), email: previous?.email || '' } }));
       window.dispatchEvent(new Event('crewcheck:auth-will-change'));
       sessionStorage.removeItem('crewcheck_roster');
       sessionStorage.removeItem('crewcheck_compliance');
@@ -130,7 +130,7 @@ export function clearSession() {
   try {
     const user = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
     const owner = String(user?.id || user?.email || '').trim().toLowerCase();
-    if (owner) window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token: localStorage.getItem(TOKEN_KEY), owner } }));
+    if (owner) window.dispatchEvent(new CustomEvent('crewcheck:watch-cloud-forget', { detail: { token: localStorage.getItem(TOKEN_KEY), owner, email: String(user?.email || '') } }));
   } catch {}
   window.dispatchEvent(new Event('crewcheck:auth-will-change'));
   localStorage.removeItem(TOKEN_KEY);

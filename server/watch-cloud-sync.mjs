@@ -23,7 +23,9 @@ const FIELDS = [['contextId', 80], ['headline', 42], ['primaryTime', 12], ['deta
   ['leaveTime', 12], ['trafficDetail', 64], ['currentFlight', 16], ['currentRoute', 32], ['gate', 18], ['boardingTime', 12], ['eta', 12],
   ['connection', 16], ['nextFlight', 16], ['nextDetail', 64], ['overnight', 24], ['hotelPickup', 64],
   // Gate provenance (gate rule, #1281): the watch's gate detail and its local notifications need it.
-  ['gateSource', 12], ['gateNote', 64]];
+  ['gateSource', 12], ['gateNote', 64],
+  // Account that owns the projection: the watch drops a former account's roster (any path).
+  ['account', 32]];
 const SCHEDULE_FIELDS = [['id', 80], ['kind', 12], ['time', 12], ['title', 24], ['route', 32], ['presentation', 12], ['gate', 18], ['detail', 64]];
 const PROHIBITED = ['cpf', 'email', 'phone', 'crewName', 'hotelRoom', 'roomNumber', 'token', 'accessToken', 'refreshToken', 'authorization'];
 
@@ -129,6 +131,8 @@ export function createWatchCloudHandler({ identity, db, sendJson, readJsonBody, 
       if (!snapshot) return sendJson(res, 400, { ok: false, reason: 'invalid-snapshot' });
       // Nobody can read it without a paired watch; tell the phone to pair (again).
       if (!(await db.get(deviceKey(owner)))?.tokenHash) return sendJson(res, 409, { ok: false, reason: 'not-paired' });
+      // The server knows the account; it is authoritative over whatever the page sent.
+      snapshot.account = owner;
       const etag = sha256(JSON.stringify(snapshot)).slice(0, 32);
       if (!await db.put(snapshotKey(owner), { v: 1, snapshot, etag, storedAt: now() })) return sendJson(res, 503, { ok: false, reason: 'storage-unavailable' });
       return sendJson(res, 200, { ok: true, etag });

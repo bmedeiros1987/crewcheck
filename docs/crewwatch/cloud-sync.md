@@ -16,6 +16,11 @@ Pedido: o relógio sincroniza pela nuvem, não só pelo celular, com economia de
    - Periódica: JobScheduler a cada 60 min (janela de 20 min), só com rede e bateria não baixa, para o sistema agrupar com outras tarefas. Sem dependência nova.
    - Manual: botão Sincronizar; se o celular não responde, o relógio tenta a nuvem.
 4. **Logout ou troca de conta.** O celular revoga no servidor (`DELETE /api/watch/cloud`) com o token ainda válido, inclusive um pareamento não confirmado, e apaga a credencial do Data Layer. No relógio, a exclusão desse item ou um 401 da geração atual apagam credencial, escala, avisos e jobs. Renovação ou expiração da sessão da mesma pessoa mantém o relógio pareado.
+5. **Conta no relógio, também com a nuvem desligada.** Cada projeção, por Bluetooth ou pela nuvem, leva `account`: os 32 primeiros hex de SHA-256(`crewcheck-watch:` + e-mail), o mesmo dono da credencial no servidor (`watchOwnerKey`). Na nuvem o servidor grava a conta autenticada, não a que a página enviou. No logout ou na troca, o celular apaga o último resumo guardado e o item `/crewcheck/watch/snapshot/v1` e publica `/crewcheck/watch/account/v1/<conta>` com o horário do próprio celular (um item por conta, para uma aposentadoria não apagar outra enquanto o relógio está longe). No relógio, toda entrada de escala (mensagem, item do Data Layer, Sincronizar, nuvem) passa por `WatchAccountGuard`:
+   - escala de conta aposentada gerada até o logout é recusada, sem aviso; gerada depois é novo login e volta a valer;
+   - escala ou credencial de outra conta apaga escala, avisos e pareamento da anterior antes de gravar, em qualquer ordem de entrega;
+   - a primeira conta conhecida apaga o cache legado sem dono; depois disso, escala sem dono é recusada. Antes (celular sem esta versão) tudo continua como era;
+   - Sincronizar processa aposentadorias, depois credencial, depois escala, e reimporta sem notificar, como antes.
 
 ## Limites
 
@@ -37,5 +42,8 @@ O aviso silencioso quando a escala muda usa Firebase Cloud Messaging, que o proj
 - `scripts/regression-watch-cloud-sync.mjs`: servidor com armazenamento em memória.
 - `scripts/regression-watch-cloud-publisher.mjs`: lado do celular com servidor falso.
 - `WatchCloudSyncTest` (Robolectric): credencial cifrada, ETag, troca A→B e logout durante a requisição (200 e 401), escala e avisos na troca de conta, limites de tempo, falhas e agendamento.
+- `WatchAccountBindingTest` (Robolectric): nuvem desligada com uma conta, celular antigo sem conta, logout por todos os caminhos do Bluetooth, troca A→B nas três ordens de entrega, primeiro pareamento e primeira escala com cache legado, escala da nuvem de outra conta, reimportação sem aviso.
+- `scripts/regression-watch-account-binding.mjs`: toda entrada de escala do relógio passa pela regra de conta e o celular aposenta a conta que sai.
+- `scripts/regression-mobile-watch-publish-cadence.mjs`: o efeito real da Home publica a primeira projeção na hora, já com a conta.
 
 Nenhuma rede real, credencial ou conta.

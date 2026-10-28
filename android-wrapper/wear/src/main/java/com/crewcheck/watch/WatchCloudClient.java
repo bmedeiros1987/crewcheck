@@ -89,9 +89,12 @@ public final class WatchCloudClient {
                 long validUntil = snapshot.optLong("validUntilEpochMs", 0L);
                 if (generatedAt <= 0L || generatedAt > nowEpochMs + MAX_CLOCK_SKEW_MS
                         || validUntil < generatedAt || validUntil - generatedAt > MAX_VALIDITY_MS) return Result.REJECTED;
+                // A escala da nuvem precisa ser da conta deste pareamento e passar pela regra de conta.
+                if (!snapshot.optString("account", "").equals(pairing.owner)
+                        || !WatchAccountGuard.admit(app, pairing.owner, generatedAt)) return Result.REJECTED;
                 SecureSnapshotStore store = new SecureSnapshotStore(app);
                 WatchContextSnapshot current = store.load();
-                // O cache é da conta deste pareamento: trocas de conta limpam antes (accept).
+                // Mesma conta: um resumo mais antigo da nuvem não troca o mais novo do Bluetooth.
                 if (current != null && current.generatedAtEpochMs >= generatedAt) {
                     if (response.etag != null) credentials.saveEtag(response.etag);
                     return Result.UNCHANGED;
@@ -107,18 +110,17 @@ public final class WatchCloudClient {
     }
 
     /**
-     * Credencial nova vinda do celular. Se é de outra conta, apaga escala e avisos da
-     * anterior antes de qualquer busca; em seguida agenda a periódica e uma busca já.
+     * Credencial nova vinda do celular. A regra de conta roda antes de gravar: outra conta
+     * (ou a primeira, sobre cache legado sem dono) apaga escala, avisos e o pareamento
+     * anterior; em seguida agenda a periódica e uma busca já.
      */
     public static boolean acceptCredential(Context context, String credential) {
         Context app = context.getApplicationContext();
+        java.util.regex.Matcher match = credential == null ? null : WatchCloudCredentialStore.CREDENTIAL.matcher(credential);
+        if (match == null || !match.matches()) return false;
         synchronized (WatchCloudCredentialStore.LOCK) {
-            WatchCloudCredentialStore.SaveResult result = new WatchCloudCredentialStore(app).save(credential);
-            if (result == WatchCloudCredentialStore.SaveResult.REJECTED) return false;
-            if (result == WatchCloudCredentialStore.SaveResult.NEW_ACCOUNT) {
-                new SecureSnapshotStore(app).clear();
-                WatchNotificationCenter.clear(app);
-            }
+            WatchAccountGuard.credentialFor(app, match.group(1));
+            if (new WatchCloudCredentialStore(app).save(credential) == WatchCloudCredentialStore.SaveResult.REJECTED) return false;
         }
         WatchCloudSyncJob.schedulePeriodic(app);
         WatchCloudSyncJob.fetchSoon(app);

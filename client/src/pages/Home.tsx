@@ -160,6 +160,7 @@ import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotel
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import { watchCloudPublisher } from '@/lib/watchCloud';
+import { watchAccountKey } from '@/lib/watchAccount';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import {stayEditorKey} from '@shared/stay-editor-store.mjs';
 import {setOperationalRadarContext,beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission} from '@/lib/operationalRadarAdmission';
@@ -5463,6 +5464,8 @@ export default function Home() {
 
   useEffect(() => {
     const watchSession = captureAuthSession();
+    // Every projection carries its account so the watch never shows a former account's roster.
+    const watchAccount = watchAccountKey(getStoredUser()?.email);
     const watchStayEditorKey=stayEditorKey(getStoredUser()?.id ?? null);
     let watchInvalidated = false;
     const invalidateWatchSnapshot = () => {
@@ -5503,6 +5506,7 @@ export default function Home() {
           nextFlightScheduleId: nextFlightEvent ? (nextFlightEvent.canonical?.id || nextFlightEvent.id) : '',
         });
         if (!watchSession.isCurrent()) { invalidateWatchSnapshot(); return; }
+        if (watchAccount) snapshot.account = watchAccount;
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
         // Same projection to the cloud, for the watch when the phone is away (deduplicated).
         void watchCloudPublisher().publish(snapshot, watchSession);

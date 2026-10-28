@@ -5,10 +5,14 @@ on:
       - 'server.mjs'
       - 'server/watch-cloud-sync.mjs'
       - 'client/src/lib/watchCloud.ts'
+      - 'client/src/lib/watchAccount.ts'
       - 'client/src/lib/authClient.ts'
       - 'client/src/pages/Home.tsx'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'android-wrapper/wear/src/main/**'
       - 'scripts/regression-watch-cloud-*.mjs'
+      - 'scripts/regression-watch-account-binding.mjs'
       - '.env.example'
       - '.github/workflows/watch-cloud-sync.yml'
 permissions:
@@ -27,3 +31,4 @@ jobs:
         run: |
           node scripts/regression-watch-cloud-sync.mjs
           node scripts/regression-watch-cloud-publisher.mjs
+          node scripts/regression-watch-account-binding.mjs

@@ -49,6 +49,8 @@ export type CrewCheckWatchSnapshot = {
   hotelPickup: string;
   changed: boolean;
   source: 'canonical-roster';
+  /** Account that owns the projection (same hash as the cloud credential owner); '' when unknown. */
+  account?: string;
   schedule: CrewCheckWatchScheduleItem[];
 };
 

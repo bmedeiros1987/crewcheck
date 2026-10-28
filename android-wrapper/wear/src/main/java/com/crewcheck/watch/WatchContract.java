@@ -14,6 +14,15 @@ public final class WatchContract {
     public static final String DATA_KEY_CLOUD_CREDENTIAL = "credential";
 
     /**
+     * Logout ou troca de conta no celular: "conta X aposentada em T" (relógio do celular), um
+     * item por conta em ACCOUNT_PATH/&lt;conta&gt;, para que uma aposentadoria nunca apague outra
+     * enquanto o relógio está fora de alcance.
+     */
+    public static final String ACCOUNT_PATH = "/crewcheck/watch/account/v1";
+    public static final String DATA_KEY_RETIRED_ACCOUNT = "retiredAccount";
+    public static final String DATA_KEY_RETIRED_AT = "retiredAtEpochMs";
+
+    /**
      * Bem-estar e rotina viajam em canais PRÓPRIOS, nunca dentro do snapshot
      * operacional. Três razões:
      *

@@ -64,7 +64,7 @@ assert.equal((await call('GET', '/api/watch/cloud/snapshot', { auth })).status, 
 // Publish: rejected shapes, then the allow-listed projection only.
 for (const bad of [null, {}, snapshot({ schemaVersion: 2 }), snapshot({ email: 'x@y' }), snapshot({ token: 't' }), snapshot({ validUntilEpochMs: 1 }), snapshot({ generatedAtEpochMs: 1.5 }), snapshot({ detail: 'x'.repeat(20_000), schedule: Array(8).fill({ detail: 'y'.repeat(64), title: 'z'.repeat(24) }), headline: 'h' })])
   assert.equal((await call('PUT', '/api/watch/cloud/snapshot', { account: 'token-a', body: { snapshot: bad } })).status, bad && bad.detail?.length === 20_000 ? 200 : 400, JSON.stringify(bad)?.slice(0, 80));
-const published = await call('PUT', '/api/watch/cloud/snapshot', { account: 'token-a', body: { snapshot: snapshot({ state: 'weird', cpfLike: 'drop', headline: ' EMB\u0007ARQUE  agora ' }) } });
+const published = await call('PUT', '/api/watch/cloud/snapshot', { account: 'token-a', body: { snapshot: snapshot({ state: 'weird', cpfLike: 'drop', headline: ' EMB\u0007ARQUE  agora ', account: 'b'.repeat(32) }) } });
 assert.equal(published.status, 200);
 const got = await call('GET', '/api/watch/cloud/snapshot', { auth });
 assert.equal(got.status, 200);
@@ -72,6 +72,9 @@ assert.equal(got.headers.etag, `"${published.body.etag}"`);
 assert.equal(got.body.snapshot.state, 'UNKNOWN');
 assert.equal(got.body.snapshot.headline, 'EMB ARQUE agora');
 assert.equal(got.body.snapshot.source, 'canonical-roster');
+// The server stamps the authenticated account, whatever the page claimed: the watch drops a
+// cloud roster that is not its pairing's owner.
+assert.equal(got.body.snapshot.account, watchOwnerKey('synthetic.a@crewcheck.invalid'));
 assert.equal('cpfLike' in got.body.snapshot, false);
 assert.deepEqual(got.body.snapshot.schedule, [{ id: 's1', kind: 'flight', time: '09:30', title: 'QA123', route: 'GRU → SSA' }]);
 assert.equal((await call('GET', '/api/watch/cloud/snapshot', { auth, etag: got.headers.etag })).status, 304, 'unchanged: no body');
