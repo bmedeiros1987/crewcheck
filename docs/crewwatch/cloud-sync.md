@@ -36,6 +36,8 @@ Pedido: o relógio sincroniza pela nuvem, não só pelo celular, com economia de
 
 - O relógio mostra a última projeção que o celular publicou, com a mesma validade (até 6 h). Sem o app aberto no celular não há projeção nova; o servidor não monta a escala sozinho.
 - Falha do banco responde 503, nunca 401: o relógio não perde o pareamento por instabilidade.
+- **Época depois de reinstalar o app do celular.** A época recomeça em `max(1, agora)` pelo relógio do celular. Se esse relógio estiver atrasado em relação à última época que o relógio de pulso conhece (por exemplo, reinstalação com data errada, ou outro celular com data atrasada), tudo o que o celular enviar fica com época menor e é recusado. O relógio de pulso continua mostrando a última escala até ela vencer, e depois passa a aguardar. Isso falha fechado: nunca mostra escala de outra conta. Corrige-se acertando a data do celular e fazendo novo login, ou limpando os dados do app no relógio de pulso. Não há detecção automática nesta versão.
+- **Defesa redundante na busca da nuvem.** A checagem de conta vigente (`isCurrent`) é coberta pela geração do pareamento (ver item 5) e fica de propósito, como segunda barreira.
 
 ## Ativação (desligada)
 
