@@ -59,6 +59,8 @@ export type RadarGateSnapshot = {
   scheduledDepartureUtc?: string;
   operationalDeparture?: string;
   updatedAt?: number;
+  /** Original receipt of the source response (number or ISO), as the server sent it. */
+  sourceReceivedAt?: number | string;
   sourceOrigin?: string;
   sourceDestination?: string;
   quality?: number;
@@ -387,12 +389,25 @@ export function canonicalFlightId(value: unknown): string {
   return match ? `${CARRIER_ALIASES[match[1]] || match[1]}${match[2]}` : raw;
 }
 
+/**
+ * Original source receipt of a Radar record: the earliest of the record's anchor and the
+ * source's own receipt. Caches saved before the receipt was preserved anchored updatedAt on
+ * the phone save time while keeping sourceReceivedAt; neither may extend the source's age.
+ * A receipt only, never a gate observation. 0 when there is none.
+ */
+export function radarReceiptEpochMs(radar: Pick<RadarGateSnapshot, 'updatedAt' | 'sourceReceivedAt'> | null | undefined): number {
+  const anchors = [radar?.updatedAt, radar?.sourceReceivedAt]
+    .map(value => typeof value === 'number' ? value : typeof value === 'string' ? radarSourceEpoch(value) : NaN)
+    .filter(value => Number.isFinite(value) && value > 0);
+  return anchors.length ? Math.min(...anchors) : 0;
+}
+
 /** Only an explicit source gate-update contract can establish chronology.
  * Aircraft signals, HTTP receipt time and cache updatedAt are never substitutes. */
 export function sourceGateUpdate(event: NextFlightLike, radar: RadarGateSnapshot | null, now = Date.now()): ManualGateReviewInfo['candidate'] {
   if (!Number.isFinite(now)) return null;
   const proof = radar?.gateUpdate;
-  const receipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  const receipt = radar?.gateEvidenceReceivedAt ?? radarReceiptEpochMs(radar);
   if (typeof receipt !== 'number' || !Number.isFinite(receipt) || receipt <= 0 || receipt > now || now - receipt > RADAR_GATE_STALE_MS) return null;
   const at = radarSourceEpoch(proof?.sourceUpdatedAt);
   const expected = flightDepartureEpochMs(event);
@@ -434,7 +449,7 @@ export function retainLatestGateEvidence<T extends RadarGateSnapshot>(event: Nex
   // The incoming answer keeps its own receipt; only a receipt-less one is "now".
   const after = sourceGateUpdate(event, { ...incoming, updatedAt: typeof incoming.updatedAt === 'number' ? incoming.updatedAt : now }, now);
   return previous && before && (!after || after.sourceUpdatedAtEpochMs < before.sourceUpdatedAtEpochMs)
-    ? { ...incoming, gate: previous.gate, gateUpdate: previous.gateUpdate, gateEvidenceReceivedAt: previous.gateEvidenceReceivedAt ?? previous.updatedAt }
+    ? { ...incoming, gate: previous.gate, gateUpdate: previous.gateUpdate, gateEvidenceReceivedAt: previous.gateEvidenceReceivedAt ?? radarReceiptEpochMs(previous) }
     : incoming;
 }
 
@@ -553,7 +568,7 @@ export function resolveNextFlightGate(input: {
     if (radarRejected) radar = null;
   }
 
-  const receipt = typeof radar?.updatedAt === 'number' ? radar.updatedAt : 0;
+  const receipt = radarReceiptEpochMs(radar);
   const receivedFresh = receipt > 0 && receipt <= now && now - receipt <= RADAR_GATE_STALE_MS;
   const conflicted = (field:'gate'|'status'|'registration') => radar?.operationalEvidence?.[field]?.conflict === true || (Array.isArray(radar?.operationalConflicts) && radar.operationalConflicts.includes(field));
   const conflicts = { gate:conflicted('gate'), status:conflicted('status'), registration:conflicted('registration') };
@@ -565,11 +580,12 @@ export function resolveNextFlightGate(input: {
   };
   const automaticFieldValidUntilEpochMs: NextFlightGateInfo['automaticFieldValidUntilEpochMs'] = {};
   const fieldValue = (field: 'gate' | 'status' | 'registration'): string => {
-    if (!radar || !receivedFresh || conflicts[field]) return '';
+    if (!radar || conflicts[field]) return '';
     const normalize = field === 'gate' ? (value:unknown)=>normalizeBoardingGate(value).gate : field === 'status' ? cleanStatus : cleanRegistration;
     const evidence = radar.operationalEvidence?.[field], value = normalize(radar[field]);
     const observed = sourceInstantEpochMs(evidence?.sourceObservedAt);
-    if (value && evidence?.version === 1 && typeof evidence.value === 'string' && normalize(evidence.value) === value
+    // Field evidence travels with the live response: that response's receipt must be fresh.
+    if (receivedFresh && value && evidence?.version === 1 && typeof evidence.value === 'string' && normalize(evidence.value) === value
       && typeof evidence.provenance === 'string' && Boolean(evidence.provenance.trim()) && Number.isFinite(observed)
       && observed <= now && observed <= receipt && now - observed <= RADAR_GATE_STALE_MS) {
       if (field === 'gate' && gateHistoryBlocks(observed)) return '';
@@ -578,9 +594,12 @@ export function resolveNextFlightGate(input: {
     }
     if (field === 'gate') {
       const proof = sourceGateUpdate(event,radar,now);
-      if (proof && proof.sourceUpdatedAtEpochMs <= receipt && now - proof.sourceUpdatedAtEpochMs <= RADAR_GATE_STALE_MS) {
+      // Retained gate proof keeps its own receipt, as on the server (gateEvidenceReceivedAt);
+      // sourceGateUpdate already requires that receipt to be fresh.
+      const proofReceipt = typeof radar.gateEvidenceReceivedAt === 'number' ? radar.gateEvidenceReceivedAt : receipt;
+      if (proof && proof.sourceUpdatedAtEpochMs <= proofReceipt && now - proof.sourceUpdatedAtEpochMs <= RADAR_GATE_STALE_MS) {
         if (gateHistoryBlocks(proof.sourceUpdatedAtEpochMs)) return '';
-        automaticFieldValidUntilEpochMs.gate = Math.min(receipt, proof.sourceUpdatedAtEpochMs) + RADAR_GATE_STALE_MS;
+        automaticFieldValidUntilEpochMs.gate = Math.min(proofReceipt, proof.sourceUpdatedAtEpochMs) + RADAR_GATE_STALE_MS;
         return proof.gate;
       }
     }
@@ -601,7 +620,7 @@ export function resolveNextFlightGate(input: {
     return value;
   })();
   const rosterGate = normalizeBoardingGate(event.gate);
-  const radarGateReceipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  const radarGateReceipt = radar?.gateEvidenceReceivedAt ?? radarReceiptEpochMs(radar);
   const radarUpdatedAt = radar && Number(radarGateReceipt) > 0 && Number(radarGateReceipt) <= now + 60_000 ? Number(radarGateReceipt) : 0;
   const radarStale = Boolean(radar) && (!radarUpdatedAt || now - radarUpdatedAt > RADAR_GATE_STALE_MS);
 
@@ -725,7 +744,7 @@ export function readCachedRadarForFlight(storage: Pick<Storage, 'getItem'>, even
   if (event.kind !== 'flight' || event.placeholder || !flightOperationalDate(event)) return null;
   try {
     const parsed = JSON.parse(storage.getItem(radarSnapshotStorageKey(event)) || 'null') as RadarCacheRecord | null;
-    if (!parsed || !parsed.updatedAt || now - Number(parsed.updatedAt) > RADAR_SNAPSHOT_TTL_MS) return null;
+    if (!parsed || !parsed.updatedAt || now - radarReceiptEpochMs(parsed) > RADAR_SNAPSHOT_TTL_MS) return null;
     if (canonicalFlightId(parsed.flight) !== canonicalFlightId(event.flightNumber)
       || parsed.operationalDate !== flightOperationalDate(event)
       || upper(parsed.origin) !== upper(event.origin)

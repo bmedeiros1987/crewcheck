@@ -57,4 +57,28 @@ now=at('09:00');const noReceipt=payload({sourceReceivedAt:undefined});delete noR
 assert.equal(client.saveRadarSnapshot(event,noReceipt).updatedAt,at('09:00'));
 assert.equal(client.saveRadarSnapshot(event,payload({sourceReceivedAt:at('09:05')})).updatedAt,at('09:00'));
 assert.equal(client.saveRadarSnapshot(event,payload({sourceReceivedAt:'2032-10-14T08:50:00Z'})).updatedAt,at('08:50'),'ISO receipt');
-console.log('PASS Radar receipt preserved: actual saveRadarSnapshot → cache → resolveNextFlightGate/Home card anchor the reported gate on the original source receipt (08:00 → until 08:30), never the phone save time, and never as an observation');
+
+// Upgrade: a cache written before d774e19e7 kept the source's sourceReceivedAt (08:00) but
+// anchored updatedAt on the phone save (08:04). Read straight from storage, without a new fetch,
+// by the direct reader and the actual card path (useNextFlightGate.computeNextFlightGate).
+const card=await build({stdin:{contents:"export {computeNextFlightGate} from './client/src/components/nextflight/useNextFlightGate';",resolveDir:root,loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false,alias:{'@':path.join(root,'client/src')},logLevel:'silent'});
+const cardModule={exports:{}};const cardWindow={localStorage:{getItem:k=>store.get(k)??null},addEventListener(){},removeEventListener(){},dispatchEvent(){return true;}};
+Function('module','exports','require','Date','window',card.outputFiles[0].text)(cardModule,cardModule.exports,require,FixedDate,cardWindow);
+const legacyCases=[['numeric receipt',at('08:00')],['ISO receipt','2032-10-14T08:00:00Z']];
+for(const [label,sourceReceivedAt] of legacyCases){
+  now=at('08:04');const legacy={...client.saveRadarSnapshot(event,payload()),sourceReceivedAt,updatedAt:at('08:04')};
+  store.set(gate.radarSnapshotStorageKey(event),JSON.stringify(legacy));
+  for(const [clock,shown] of [['08:29',true],['08:31',false]]){
+    now=at(clock);
+    for(const [path,info] of [['reader',gate.resolveNextFlightGate({event,radar:gate.readCachedRadarForFlight(storage,event,now),now})],['card',cardModule.exports.computeNextFlightGate(event,now)]]){
+      assert.equal(info.gateSource==='reported',shown,`${label} ${path} ${clock}`);
+      if(shown){assert.equal(info.automaticFieldValidUntilEpochMs.gate,at('08:30'),`${label} ${path}: until receipt + 30 min`);assert.equal(info.radarUpdatedAtEpochMs,at('08:00'));}
+      else assert.notEqual(info.gate,'12',`${label} ${path} 08:31`);
+    }
+  }
+}
+// A legacy record without a source receipt keeps its own anchor (nothing is invented).
+now=at('09:00');const anchorOnly={...client.saveRadarSnapshot(event,payload()),updatedAt:at('08:50')};delete anchorOnly.sourceReceivedAt;
+store.set(gate.radarSnapshotStorageKey(event),JSON.stringify(anchorOnly));
+assert.equal(gate.resolveNextFlightGate({event,radar:gate.readCachedRadarForFlight(storage,event,now),now}).automaticFieldValidUntilEpochMs.gate,at('09:20'));
+console.log('PASS Radar receipt preserved: actual saveRadarSnapshot → cache → resolveNextFlightGate/Home card and pre-existing caches through the reader and NextFlight card anchor the reported gate on the original source receipt (08:00 → until 08:30), never the phone save time, and never as an observation');
