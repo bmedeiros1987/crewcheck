@@ -22,7 +22,7 @@ import { alertAccount, alertDigest, alertIsReviewed, complianceAlertIdentity, AL
 import { alertText } from '@/lib/alertExperienceText';
 import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
 import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailability';
-import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
+import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate, radarSourceEpoch } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {OperationalBriefing} from '@/components/notifications/OperationalBriefing';
 import {ConciergeChannels} from '@/components/concierge/ConciergeChannels';
@@ -1739,9 +1739,16 @@ function confirmedRadarGate(value?: string): string {
 }
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: ReturnType<typeof beginOperationalRadarRead> = null, receipt = ""): RadarSnapshot {
   const previous = readRadarSnapshot(event);
+  // Âncora da janela de 30 min do portão: o recebimento original da fonte, o mesmo que a
+  // admissão conferiu (nunca no futuro do celular; sem ele, agora). Gravar no celular não
+  // renova a idade da fonte, e recebimento não é hora observada do portão.
+  const savedAt = Date.now(), sourceReceipt: unknown = payload.sourceReceivedAt ?? payload.updatedAt;
+  const sourceAt = typeof sourceReceipt === 'number' ? sourceReceipt : typeof sourceReceipt === 'string' ? radarSourceEpoch(sourceReceipt) : NaN;
+  const receivedAt = Number.isFinite(sourceAt) && sourceAt > 0 ? Math.min(sourceAt, savedAt) : savedAt;
+  const incoming = { ...payload, sourceReceivedAt: receivedAt, updatedAt: receivedAt };
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
-  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
-  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, incoming) : incoming;
+  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, incoming) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: receivedAt };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   retainOperationalRadarResponse(snapshot,key,JSON.stringify(event.canonical),readTicket,receipt);

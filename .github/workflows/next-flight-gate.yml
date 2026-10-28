@@ -26,6 +26,7 @@ on:
       - 'scripts/regression-radar-authority-followup.mjs'
       - 'scripts/regression-radar-availability-browser.mjs'
       - 'scripts/regression-radar-provider-provenance.mjs'
+      - 'scripts/regression-radar-receipt-preserved.mjs'
       - 'scripts/regression-radar-source-occurrence.mjs'
       - 'scripts/regression-flightaware-response-selection.mjs'
       - 'scripts/regression-gate-query-day.mjs'
@@ -64,6 +65,9 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          TZ=UTC node scripts/regression-radar-receipt-preserved.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-receipt-preserved.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-receipt-preserved.mjs
           node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-gate-behavior-rule.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
@@ -94,6 +98,9 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          TZ=UTC node scripts/regression-radar-receipt-preserved.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-receipt-preserved.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-receipt-preserved.mjs
           node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-gate-behavior-rule.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs

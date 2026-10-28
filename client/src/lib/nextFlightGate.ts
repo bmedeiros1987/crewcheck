@@ -431,7 +431,8 @@ export function nextGateUpdateWatermark(event: NextFlightLike, previous: RadarGa
  * Status, operational times, aircraft, terminal and query receipt remain live. */
 export function retainLatestGateEvidence<T extends RadarGateSnapshot>(event: NextFlightLike, previous: T | null, incoming: T, now = Date.now()): T {
   const before = sourceGateUpdate(event, previous, now);
-  const after = sourceGateUpdate(event, { ...incoming, updatedAt: now }, now);
+  // The incoming answer keeps its own receipt; only a receipt-less one is "now".
+  const after = sourceGateUpdate(event, { ...incoming, updatedAt: typeof incoming.updatedAt === 'number' ? incoming.updatedAt : now }, now);
   return previous && before && (!after || after.sourceUpdatedAtEpochMs < before.sourceUpdatedAtEpochMs)
     ? { ...incoming, gate: previous.gate, gateUpdate: previous.gateUpdate, gateEvidenceReceivedAt: previous.gateEvidenceReceivedAt ?? previous.updatedAt }
     : incoming;
