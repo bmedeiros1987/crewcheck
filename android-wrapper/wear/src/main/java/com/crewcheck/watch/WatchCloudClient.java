@@ -91,7 +91,7 @@ public final class WatchCloudClient {
                         || validUntil < generatedAt || validUntil - generatedAt > MAX_VALIDITY_MS) return Result.REJECTED;
                 // A escala da nuvem precisa ser da conta deste pareamento e passar pela regra de conta.
                 if (!snapshot.optString("account", "").equals(pairing.owner)
-                        || !WatchAccountGuard.admit(app, pairing.owner, generatedAt)) return Result.REJECTED;
+                        || !WatchAccountGuard.isCurrent(app, pairing.owner)) return Result.REJECTED;
                 SecureSnapshotStore store = new SecureSnapshotStore(app);
                 WatchContextSnapshot current = store.load();
                 // Mesma conta: um resumo mais antigo da nuvem não troca o mais novo do Bluetooth.
@@ -110,16 +110,16 @@ public final class WatchCloudClient {
     }
 
     /**
-     * Credencial nova vinda do celular. A regra de conta roda antes de gravar: outra conta
-     * (ou a primeira, sobre cache legado sem dono) apaga escala, avisos e o pareamento
-     * anterior; em seguida agenda a periódica e uma busca já.
+     * Credencial nova vinda do celular, carimbada com a época de conta. A regra de época roda
+     * antes de gravar: credencial de época anterior é recusada; de época nova apaga escala,
+     * avisos e o pareamento anterior; em seguida agenda a periódica e uma busca já.
      */
-    public static boolean acceptCredential(Context context, String credential) {
+    public static boolean acceptCredential(Context context, String credential, long accountEpoch) {
         Context app = context.getApplicationContext();
         java.util.regex.Matcher match = credential == null ? null : WatchCloudCredentialStore.CREDENTIAL.matcher(credential);
-        if (match == null || !match.matches()) return false;
+        if (match == null || !match.matches() || accountEpoch <= 0L) return false;
         synchronized (WatchCloudCredentialStore.LOCK) {
-            WatchAccountGuard.credentialFor(app, match.group(1));
+            if (!WatchAccountGuard.admit(app, match.group(1), accountEpoch)) return false;
             if (new WatchCloudCredentialStore(app).save(credential) == WatchCloudCredentialStore.SaveResult.REJECTED) return false;
         }
         WatchCloudSyncJob.schedulePeriodic(app);

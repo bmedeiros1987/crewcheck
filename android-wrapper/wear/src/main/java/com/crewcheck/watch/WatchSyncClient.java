@@ -10,6 +10,7 @@ import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -38,44 +39,14 @@ public final class WatchSyncClient {
         Wearable.getDataClient(appContext).getDataItems()
                 .addOnSuccessListener(buffer -> {
                     try {
-                        // Aposentadorias primeiro, depois a credencial, por último a escala:
-                        // um item antigo de outra conta nunca volta, qualquer que seja a ordem
-                        // em que o Data Layer devolve os itens.
+                        List<Item> items = new ArrayList<>();
                         for (DataItem item : buffer) {
-                            String itemPath = item.getUri().getPath();
-                            if (itemPath == null || !itemPath.startsWith(WatchContract.ACCOUNT_PATH + "/")) continue;
                             try {
-                                DataMap map = DataMapItem.fromDataItem(item).getDataMap();
-                                WatchAccountGuard.retire(appContext, map.getString(WatchContract.DATA_KEY_RETIRED_ACCOUNT),
-                                        map.getLong(WatchContract.DATA_KEY_RETIRED_AT, 0L));
+                                items.add(new Item(item.getUri().getPath(), DataMapItem.fromDataItem(item).getDataMap()));
                             } catch (Exception ignored) {
                             }
                         }
-                        for (DataItem item : buffer) {
-                            if (!WatchContract.CLOUD_PATH.equals(item.getUri().getPath())) continue;
-                            try {
-                                String credential = DataMapItem.fromDataItem(item)
-                                        .getDataMap().getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL);
-                                // O mesmo item reaparece a cada Sincronizar: só um pareamento novo conta.
-                                if (credential != null && !credential.equals(new WatchCloudCredentialStore(appContext).load())) {
-                                    WatchCloudClient.acceptCredential(appContext, credential);
-                                }
-                            } catch (Exception ignored) {
-                            }
-                        }
-                        for (DataItem item : buffer) {
-                            if (!WatchContract.SNAPSHOT_PATH.equals(item.getUri().getPath())) continue;
-                            try {
-                                DataMap map = DataMapItem.fromDataItem(item).getDataMap();
-                                String json = map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
-                                long sentAt = map.getLong("sentAtEpochMs", 0L);
-                                baselineSentAt.set(Math.max(baselineSentAt.get(), sentAt));
-                                if (json != null && WatchAccountGuard.intake(appContext, json, false) != null) {
-                                    recovered.set(true);
-                                }
-                            } catch (Exception ignored) {
-                            }
-                        }
+                        recovered.set(importItems(appContext, items, baselineSentAt));
                     } finally {
                         buffer.release();
                     }
@@ -88,6 +59,57 @@ public final class WatchSyncClient {
                 })
                 .addOnFailureListener(error ->
                         requestFromConnectedPhone(appContext, false, 0L, callback));
+    }
+
+    /** Um item do Data Layer já lido (caminho e conteúdo). */
+    static final class Item {
+        final String path;
+        final DataMap map;
+
+        Item(String path, DataMap map) {
+            this.path = path;
+            this.map = map;
+        }
+    }
+
+    /**
+     * Reimportação do Sincronizar. Estado de conta primeiro, depois a credencial, por último a
+     * escala; cada item passa pela regra de época, então um item antigo de outra conta (ou de
+     * uma sessão anterior da mesma) nunca volta, qualquer que seja a ordem dos itens.
+     * @return true se alguma escala foi aceita.
+     */
+    static boolean importItems(Context appContext, List<Item> items, AtomicLong baselineSentAt) {
+        boolean recovered = false;
+        for (Item item : items) {
+            if (!WatchContract.ACCOUNT_PATH.equals(item.path)) continue;
+            try {
+                WatchAccountGuard.bind(appContext, item.map.getString(WatchContract.DATA_KEY_ACCOUNT),
+                        item.map.getLong(WatchContract.DATA_KEY_ACCOUNT_EPOCH, 0L));
+            } catch (Exception ignored) {
+            }
+        }
+        for (Item item : items) {
+            if (!WatchContract.CLOUD_PATH.equals(item.path)) continue;
+            try {
+                String credential = item.map.getString(WatchContract.DATA_KEY_CLOUD_CREDENTIAL);
+                // O mesmo item reaparece a cada Sincronizar: só um pareamento novo conta.
+                if (credential != null && !credential.equals(new WatchCloudCredentialStore(appContext).load())) {
+                    WatchCloudClient.acceptCredential(appContext, credential, item.map.getLong(WatchContract.DATA_KEY_ACCOUNT_EPOCH, 0L));
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        for (Item item : items) {
+            if (!WatchContract.SNAPSHOT_PATH.equals(item.path)) continue;
+            try {
+                String json = item.map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
+                long sentAt = item.map.getLong("sentAtEpochMs", 0L);
+                baselineSentAt.set(Math.max(baselineSentAt.get(), sentAt));
+                if (json != null && WatchAccountGuard.intake(appContext, json, false) != null) recovered = true;
+            } catch (Exception ignored) {
+            }
+        }
+        return recovered;
     }
 
     private static void requestFromConnectedPhone(

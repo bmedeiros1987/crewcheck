@@ -1216,8 +1216,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public boolean clearWatchCloudCredential(final String account) {
-            CrewCheckWatchPublisher.clearCloudCredential(MainActivity.this, account);
+        public boolean clearWatchCloudCredential() {
+            CrewCheckWatchPublisher.clearCloudCredential(MainActivity.this);
             return true;
         }
 

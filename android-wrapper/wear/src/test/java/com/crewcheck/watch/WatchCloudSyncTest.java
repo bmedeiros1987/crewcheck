@@ -110,7 +110,7 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void downloadsWithEtagAndNeverReplacesNewerData() throws Exception {
-        assertTrue(WatchCloudClient.acceptCredential(context, A));
+        assertTrue(WatchCloudClient.acceptCredential(context, A, epochFor(A)));
         next = new WatchCloudClient.Response(200, "\"e1\"", body(NOW - 60_000, "B12"));
         assertEquals(WatchCloudClient.Result.UPDATED, WatchCloudClient.fetch(context, NOW));
         assertEquals("https://crewcheck.online/api/watch/cloud/snapshot", requests.get(0)[0]);
@@ -134,7 +134,7 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void temporalLimitsRejectFutureGenerationAndExcessiveValidity() throws Exception {
-        WatchCloudClient.acceptCredential(context, A);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
         JSONObject future = snapshot(NOW + WatchCloudClient.MAX_CLOCK_SKEW_MS + 1, "F1");
         JSONObject year = snapshot(NOW - 1000, "Y1").put("validUntilEpochMs", NOW - 1000 + 365L * 24 * 3_600_000L);
         JSONObject overSix = snapshot(NOW - 1000, "S7").put("validUntilEpochMs", NOW - 1000 + WatchCloudClient.MAX_VALIDITY_MS + 1);
@@ -150,7 +150,7 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void failuresKeepCredentialAndRoster() throws Exception {
-        WatchCloudClient.acceptCredential(context, A);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
         saveLocal(NOW, "B12");
         for (WatchCloudClient.Response response : new WatchCloudClient.Response[]{
                 null, new WatchCloudClient.Response(503, null, null), new WatchCloudClient.Response(429, null, null),
@@ -164,8 +164,8 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void pairingWithBDuringRequestDiscardsA200() throws Exception {
-        WatchCloudClient.acceptCredential(context, A);
-        duringRequest = () -> WatchCloudClient.acceptCredential(context, B);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
+        duringRequest = () -> WatchCloudClient.acceptCredential(context, B, epochFor(B));
         next = new WatchCloudClient.Response(200, "\"a\"", body(NOW, "A-GATE"));
         assertEquals(WatchCloudClient.Result.STALE, WatchCloudClient.fetch(context, NOW));
         assertNull("A's projection never lands after B paired", new SecureSnapshotStore(context).load());
@@ -176,10 +176,10 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void pairingWithBDuringRequestIgnoresA401() throws Exception {
-        WatchCloudClient.acceptCredential(context, A);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
         duringRequest = () -> {
             try {
-                WatchCloudClient.acceptCredential(context, B);
+                WatchCloudClient.acceptCredential(context, B, epochFor(B));
                 saveLocal(NOW, "B-GATE"); // B's roster arrives by Bluetooth meanwhile
             } catch (Exception error) { throw new RuntimeException(error); }
         };
@@ -191,7 +191,7 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void logoutDuringRequestDiscardsTheResponse() throws Exception {
-        WatchCloudClient.acceptCredential(context, A);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
         duringRequest = () -> WatchCloudClient.forgetPairing(context);
         next = new WatchCloudClient.Response(200, "\"a\"", body(NOW, "A-GATE"));
         assertEquals(WatchCloudClient.Result.STALE, WatchCloudClient.fetch(context, NOW));
@@ -201,18 +201,23 @@ public class WatchCloudSyncTest {
         assertNull(periodic());
     }
 
+    /** The phone stamps its account epoch on each credential; in these tests A is epoch 1, B epoch 2. */
+    static long epochFor(String credential) {
+        return credential.startsWith("cw1." + "b".repeat(32) + ".") ? 2L : 1L;
+    }
+
     @Test public void accountChangeClearsRosterAndNotificationsOfThePreviousAccount() throws Exception {
-        WatchCloudClient.acceptCredential(context, A);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
         next = new WatchCloudClient.Response(200, "\"a\"", body(NOW, "A-GATE"));
         assertEquals(WatchCloudClient.Result.UPDATED, WatchCloudClient.fetch(context, NOW));
         assertEquals(1, notifications());
 
         // Same account, new secret (re-pair): its roster stays.
-        WatchCloudClient.acceptCredential(context, A2);
+        WatchCloudClient.acceptCredential(context, A2, epochFor(A2));
         assertEquals("A-GATE", new SecureSnapshotStore(context).load().gate);
 
         // Another account: A's roster and notice go before anything of B is fetched.
-        WatchCloudClient.acceptCredential(context, B);
+        WatchCloudClient.acceptCredential(context, B, epochFor(B));
         assertNull(new SecureSnapshotStore(context).load());
         assertEquals(0, notifications());
         // B's projection is accepted even though it is older than A's was.
@@ -222,7 +227,7 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void unpairedOrLogoutForgetsCredentialRosterNotificationsAndJob() throws Exception {
-        WatchCloudClient.acceptCredential(context, A);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
         JobInfo job = periodic();
         assertNotNull("pairing schedules the periodic fetch", job);
         assertTrue(job.isPeriodic());
@@ -241,7 +246,7 @@ public class WatchCloudSyncTest {
         assertNull(periodic());
 
         // Phone logout (Data Layer item deleted) has the same effect.
-        WatchCloudClient.acceptCredential(context, A);
+        WatchCloudClient.acceptCredential(context, A, epochFor(A));
         saveLocal(NOW, "A-GATE");
         WatchCloudClient.forgetPairing(context);
         assertNull(new WatchCloudCredentialStore(context).load());
@@ -250,7 +255,7 @@ public class WatchCloudSyncTest {
     }
 
     @Test public void invalidCredentialFromThePhoneSchedulesNothing() {
-        assertFalse(WatchCloudClient.acceptCredential(context, "cw1.bad"));
+        assertFalse(WatchCloudClient.acceptCredential(context, "cw1.bad", epochFor("cw1.bad")));
         assertNull(periodic());
     }
 }

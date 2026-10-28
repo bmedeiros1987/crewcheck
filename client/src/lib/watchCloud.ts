@@ -1,5 +1,4 @@
 import type { CrewCheckWatchSnapshot } from '@/lib/watchContext';
-import { watchAccountKey } from '@/lib/watchAccount';
 
 // CrewWatch cloud sync, phone side. The Android app hands the paired watch a credential
 // once per account; afterwards the watch downloads this same projection from the server
@@ -10,10 +9,9 @@ import { watchAccountKey } from '@/lib/watchAccount';
 export type WatchCloudNative = {
   /** Accepted (valid format) or not; delivery arrives later as a crewcheck:watch-sync-result event. */
   setWatchCloudCredential?: (credential: string, requestId: string) => boolean;
-  /** Logout/account change: forget the cloud credential and retire this account's roster on the watch. */
-  clearWatchCloudCredential?: (account: string) => boolean;
+  /** Logout/account change: new account epoch on the watch (roster, notices and pairing go). */
+  clearWatchCloudCredential?: () => boolean;
 };
-
 export type WatchCloudSession = { token: string | null; owner: string; isCurrent: () => boolean };
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 type Events = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
@@ -109,13 +107,13 @@ export function createWatchCloudPublisher({ fetch, storage, native, events, now 
      * watch. Also when the pairing never got confirmed: a credential may still have been minted
      * or written late.
      */
-    async forget(session: Pick<WatchCloudSession, 'token' | 'owner'> & { email?: string }): Promise<void> {
+    async forget(session: Pick<WatchCloudSession, 'token' | 'owner'>): Promise<void> {
       lastKey = ''; lastSentAt = 0; lastOwner = ''; lastValidUntil = 0;
       if (!session.owner) return;
       storage.removeItem(PAIRED + session.owner);
       if (!bridge()) return;
-      // Retire this account on the watch even with cloud sync OFF: its Bluetooth roster must not return.
-      try { native()?.clearWatchCloudCredential?.(watchAccountKey(session.email)); } catch {}
+      // Also with cloud sync OFF: the watch drops this account's Bluetooth roster too.
+      try { native()?.clearWatchCloudCredential?.(); } catch {}
       try { if (session.token) await call({ ...session, isCurrent: () => true }, 'DELETE', '/api/watch/cloud'); } catch {}
     },
   };
@@ -132,11 +130,8 @@ export function watchCloudPublisher() {
     });
     // authClient announces logout/account change without importing this module.
     globalThis.addEventListener?.('crewcheck:watch-cloud-forget', event => {
-      const detail = (event as CustomEvent<{ token?: unknown; owner?: unknown; email?: unknown }>).detail;
-      if (typeof detail?.owner === 'string') void publisher.forget({
-        token: typeof detail.token === 'string' ? detail.token : '', owner: detail.owner,
-        email: typeof detail.email === 'string' ? detail.email : '',
-      });
+      const detail = (event as CustomEvent<{ token?: unknown; owner?: unknown }>).detail;
+      if (typeof detail?.owner === 'string') void publisher.forget({ token: typeof detail.token === 'string' ? detail.token : '', owner: detail.owner });
     });
     shared = publisher;
   }

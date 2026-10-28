@@ -37,7 +37,6 @@ try {
   events.addEventListener = (...a) => { listening++; add(...a); };
   events.removeEventListener = (...a) => { listening--; remove(...a); };
   let nativeAccepts = true, cleared = 0, delivery = 'delivered';
-  const retired = [];
   const result = (ok, code, message) => events.dispatchEvent(new CustomEvent('crewcheck:watch-sync-result', { detail: { ok, code, message } }));
   const bridge = { setWatchCloudCredential: (c, id) => {
     handed.push(c);
@@ -48,7 +47,7 @@ try {
       else if (delivery === 'failed') result(false, 'cloud_credential_failed', id);
     }, 1);
     return nativeAccepts;
-  }, clearWatchCloudCredential: account => { cleared++; retired.push(account); return true; } };
+  }, clearWatchCloudCredential: (...args) => { cleared++; assert.equal(args.length, 0, 'the logout epoch needs no account'); return true; } };
   let native = bridge, ids = 0;
   const make = () => createWatchCloudPublisher({ fetch, storage, native: () => native, events, now: () => clock, deliveryTimeoutMs: 50, requestId: () => 'req-' + (++ids) });
   let current = true;
@@ -130,13 +129,12 @@ try {
   // Logout / account change: revoke on the server with the old token, clear the watch.
   current = true;
   const n1 = calls.length;
-  await pub.forget({ owner: 'owner-a', token: 'jwt-a', email: ' Pilot.A@Example.test ' });
+  await pub.forget({ owner: 'owner-a', token: 'jwt-a' });
   assert.deepEqual(calls.slice(n1).map(c => `${c.method} ${c.url} ${c.auth}`), ['DELETE /api/watch/cloud Bearer jwt-a']);
   assert.equal(cleared, 1);
-  // The watch retires exactly the account the server stamps on the cloud copy (watchOwnerKey).
-  assert.equal(retired[0], watchOwnerKey('pilot.a@example.test'));
-  assert.match(retired[0], /^[0-9a-f]{32}$/);
-  assert.equal(watchAccountKey('PILOT.A@example.test'), retired[0]);
+  // Every projection names the account exactly as the server stamps the cloud copy (watchOwnerKey).
+  assert.equal(watchAccountKey(' Pilot.A@Example.test '), watchOwnerKey('pilot.a@example.test'));
+  assert.match(watchAccountKey('pilot.a@example.test'), /^[0-9a-f]{32}$/);
   assert.equal(watchAccountKey(''), '', 'no e-mail, no account key');
   assert.equal(watchAccountKey(' Joao.Ç@Exemplo.test '), watchOwnerKey('joao.ç@exemplo.test'), 'non-ASCII e-mail');
   assert.equal(storage.getItem('crewcheck:watch-cloud:v1:paired:owner-a'), null);
@@ -144,7 +142,6 @@ try {
   await pub.forget({ owner: 'owner-x', token: 'jwt-x' });
   assert.deepEqual(calls.slice(n1 + 1).map(c => `${c.method} ${c.auth}`), ['DELETE Bearer jwt-x']);
   assert.equal(cleared, 2);
-  assert.equal(retired[1], '', 'without an e-mail the cloud credential still goes; the watch keeps its own switch rule');
   // Without the app bridge (web) there is nothing to revoke.
   native = null; const nw = calls.length;
   await make().forget({ owner: 'owner-a', token: 'jwt-a' });
@@ -165,10 +162,7 @@ try {
   const fn = name => auth.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
   assert.match(fn('persistSession'), /if \(previousKey && nextKey && previousKey !== nextKey\) \{\n[^\n]*\n\s+window\.dispatchEvent\(new CustomEvent\('crewcheck:watch-cloud-forget'/);
   assert.match(fn('clearSession'), /crewcheck:watch-cloud-forget[\s\S]*crewcheck:auth-will-change[\s\S]*removeItem\(TOKEN_KEY\)/, 'revoked before the token is removed');
-  // Both revocations name the e-mail of the account that is leaving, so the watch can retire it.
-  assert.match(fn('persistSession'), /watch-cloud-forget', \{ detail: \{[^}]*email: previous\?\.email/);
-  assert.match(fn('clearSession'), /watch-cloud-forget', \{ detail: \{[^}]*email: String\(user\?\.email/);
   assert.doesNotMatch(fn('expireSession'), /watch-cloud-forget/, 'expiry of the same account keeps the watch paired');
   assert.equal((fn('persistSession').match(/watch-cloud-forget/g) || []).length, 1, 'same-account refresh does not revoke');
-  console.log('PASS watch cloud publisher: native-only, pair once, stale session never hands off, dedupe + 30 min refresh, 404 back-off, 409 re-pair, logout/account-change revoke only, retired account = server owner key');
+  console.log('PASS watch cloud publisher: native-only, pair once, stale session never hands off, dedupe + 30 min refresh, 404 back-off, 409 re-pair, logout/account-change revoke only, projection account = server owner key');
 } finally { fs.rmSync(dir, { recursive: true, force: true }); }
