@@ -327,18 +327,22 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
     return gateQuerySuppressed(decision.allowed ? { reason: 'occurrence-unverified' } : decision);
   if (ciriumRadarInjectionEnabled(ctx.ciriumRadarOptions)) {
     let result;
-    if (ctx.ciriumRadarOptions.flightAwareFallback === true) {
-      const options = ctx.ciriumRadarOptions;
+    const options = ctx.ciriumRadarOptions;
+    if (options.sequential === true || options.flightAwareFallback === true) {
+      // Paid routing (Cirium Flex) selects the sequence by itself and supplies its own budgeted
+      // primary; FlightAware is a separate permission and, for paid routing, only through its
+      // budget guard. Without it the fallback is null: no cache, reservation or call.
+      const paidRouting = typeof options.primary === 'function';
+      const fallbackAllowed = options.flightAwareFallback === true && (!paidRouting || typeof options.guardFallback === 'function');
       result = await runCiriumFlightAwareSequence({ identity: evidence, admit: ctx.radarReadAdmission,
-        // Paid routing (Cirium Flex) supplies its own budgeted primary and fallback guard.
-        primary: options.primary ? () => options.primary(evidence, ctx.radarReadAdmission) : () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, options, ctx.raw),
-        fallback: async () => {
+        primary: paidRouting ? () => options.primary(evidence, ctx.radarReadAdmission) : () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, options, ctx.raw),
+        fallback: fallbackAllowed ? async () => {
           const call = async () => {
             const response = await providerFlightAware(ctx, Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400))));
             return response ? { ...response, sourceReceivedAt: Date.now() } : null;
           };
-          return options.guardFallback ? options.guardFallback(evidence, call, ctx.radarReadAdmission) : call();
-        } });
+          return paidRouting ? options.guardFallback(evidence, call, ctx.radarReadAdmission) : call();
+        } : null });
     } else {
       result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
     }

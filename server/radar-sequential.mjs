@@ -31,9 +31,10 @@ function project(result, reason, fallbackAttempted, now) {
 }
 
 /** Callers provide the existing bounded/aborting adapters. Await primary completion
- * before starting at most one fallback; no retries, racing, new transport or activation. */
+ * before starting at most one fallback; no retries, racing, new transport or activation.
+ * `fallback: null` means the fallback is not permitted (Flex only): it is never started. */
 export async function runCiriumFlightAwareSequence({ identity, primary, fallback, admit, now = Date.now } = {}) {
-  if (!gateQueryDay(identity, now()).allowed || typeof primary !== 'function' || typeof fallback !== 'function' || typeof admit !== 'function')
+  if (!gateQueryDay(identity, now()).allowed || typeof primary !== 'function' || (typeof fallback !== 'function' && fallback !== null) || typeof admit !== 'function')
     return { ok: false, configured: false, radarRouting: ROUTING, canonicalReadOnly: true, exportedToConcierge: false, message: 'Contexto operacional não confirmado.' };
   const admitted = async () => { try { return await admit() === true && gateQueryDay(identity, now()).allowed; } catch { return false; } };
   const denied = () => ({ ok: false, configured: false, radarRouting: ROUTING, canonicalReadOnly: true, exportedToConcierge: false, message: 'Contexto operacional não confirmado.', fallbackReason: gateQueryDay(identity, now()).allowed ? 'authority-invalidated' : 'context-expired' });
@@ -45,10 +46,18 @@ export async function runCiriumFlightAwareSequence({ identity, primary, fallback
   const reason = first?.ok ? eligible(first, identity, now()) ? 'primary-gate-insufficient' : 'primary-occurrence-or-freshness-rejected' : 'primary-unavailable';
   // Revalidate calendar after waiting; no delayed fallback on an expired day.
   if (!gateQueryDay(identity, now()).allowed) return project({ ok: false, message: 'Contexto operacional expirou.' }, 'context-expired', false, now());
+  if (fallback === null) {
+    // Fallback not permitted: keep the primary's usable status; nothing was queried.
+    if (eligible(first, identity, now())) return project({ ...first, gate: '', gateUpdate: null }, reason, false, now());
+    return project({ ok: false, configured: Boolean(first?.configured), gate: '', message: 'Fontes operacionais sem dado confirmado para este voo.' }, reason, false, now());
+  }
   if (!await admitted()) return denied();
   let second;
   try { second = await fallback(); } catch { second = { ok: false }; }
   if (!await admitted()) return denied();
+  // A fallback vetoed before the network (budget, missing cost, revoked admission, no key)
+  // is not a query: only report one that may have reached the provider.
+  const attempted = second != null && second.networkAttempted !== false;
   if (eligible(second, identity, now())) {
     const received = second.sourceReceivedAt;
     // The existing FlightAware adapter provides live response receipt, but no
@@ -59,13 +68,13 @@ export async function runCiriumFlightAwareSequence({ identity, primary, fallback
           [['departureGate', gateValue(second.gate)], ['departureTerminal', second.terminal], ['status', second.status]]
             .filter(([, value]) => typeof value === 'string' && value.trim()).map(([field, value]) => [field,
               { value, provider: 'flightaware', observedAt: null, receivedAt: new Date(received).toISOString(), coverageState: 'provided_no_source_freshness' }])) } };
-      if (candidate.gate) return project(candidate, reason, true, now());
-      if (!eligible(first, identity, now())) return project(candidate, reason, true, now());
+      if (candidate.gate) return project(candidate, reason, attempted, now());
+      if (!eligible(first, identity, now())) return project(candidate, reason, attempted, now());
     }
   }
   // Retain usable primary status when neither source proves a usable departure gate.
-  if (eligible(first, identity, now())) return project({ ...first, gate: '', gateUpdate: null }, reason, true, now());
-  return project({ ok: false, configured: Boolean(first?.configured || second?.configured), gate: '', message: 'Fontes operacionais sem dado confirmado para este voo.' }, reason, true, now());
+  if (eligible(first, identity, now())) return project({ ...first, gate: '', gateUpdate: null }, reason, attempted, now());
+  return project({ ok: false, configured: Boolean(first?.configured || second?.configured), gate: '', message: 'Fontes operacionais sem dado confirmado para este voo.' }, reason, attempted, now());
 }
 
 export function sequentialRadarProjection(item) {

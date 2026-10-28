@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
 import { ciriumFlexStatusUrl, fetchCiriumFlexOccurrence, normalizeCiriumFlexRow, selectCiriumFlexOccurrence } from '../server/cirium-flex-radar.mjs';
-import { createRadarSpendLedger, createRadarSourceCache, createPaidRadarSource, radarPaidPolicy, radarOccurrenceKey, radarSpendKey, configureRadarPaidSources, ciriumFlexRadarOptions, RADAR_PAID_WINDOW_DAYS } from '../server/radar-paid-sources.mjs';
+import { createRadarSpendLedger, createRadarSourceCache, createPaidRadarSource, radarPaidPolicy, radarOccurrenceKey, radarSpendKey, configureRadarPaidSources, ciriumFlexRadarOptions, radarFlightAwareFallbackEnabled, RADAR_PAID_WINDOW_DAYS } from '../server/radar-paid-sources.mjs';
 import { runCiriumFlightAwareSequence } from '../server/radar-sequential.mjs';
 import * as gatePolicy from '../shared/gate-query-day.mjs';import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 const { gateQueryDay, radarResultDecision } = gatePolicy;
@@ -154,10 +154,10 @@ assert.notEqual(radarOccurrenceKey('cirium-flex', identity), radarOccurrenceKey(
 // 3. Paid source: reserve, then re-admit immediately before the paid call; no refund.
 pool = fakePool(); let upstream = 0, allowed = true, admissions = 0;
 const admit = async () => { admissions++; return allowed; };
-const paid = createPaidRadarSource({ ledger: createRadarSpendLedger({ pool, now: () => at }), cache: createRadarSourceCache({ now: () => at }), env: { FLIGHTAWARE_COST_PER_CALL_USD: '2' } });
+const paid = createPaidRadarSource({ ledger: createRadarSpendLedger({ pool, now: () => at }), cache: createRadarSourceCache({ now: () => at }), env: { FLIGHTAWARE_COST_PER_CALL_USD: '2', RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' } });
 const spent = () => JSON.parse(pool.table.get(radarSpendKey('flightaware')) || '{"days":{}}').days['2032-10-20'] || 0;
 const revokingLedger = { async reserve(provider, policy) { const r = await createRadarSpendLedger({ pool, now: () => at }).reserve(provider, policy); allowed = false; return r; } };
-const paidRevoked = createPaidRadarSource({ ledger: revokingLedger, cache: createRadarSourceCache({ now: () => at }), env: { FLIGHTAWARE_COST_PER_CALL_USD: '2' } });
+const paidRevoked = createPaidRadarSource({ ledger: revokingLedger, cache: createRadarSourceCache({ now: () => at }), env: { FLIGHTAWARE_COST_PER_CALL_USD: '2', RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' } });
 result = await paidRevoked('flightaware', identity, async () => { upstream++; return fa; }, admit);
 assert.equal(result.providerState, 'authority-invalidated'); assert.equal(upstream, 0, 'revoked while waiting for the ledger: no paid call');
 assert.equal(spent(), 2_000_000, 'the reservation is not refunded');
@@ -180,26 +180,34 @@ for (const e of [{}, { CIRIUM_APP_ID: 'a', CIRIUM_APP_KEY: 'b' }, { ...on, CIRIU
   assert.equal(ciriumFlexRadarOptions(e), undefined, JSON.stringify(e));
 let fallbackCalls = 0;
 for (const e of [on, { ...on, CIRIUM_APP_KEY: '' }, { ...on, CIRIUM_APP_ID: ' ' }]) {
-  const refusing = ciriumFlexRadarOptions(e); // `on` before configureRadarPaidSources: no ledger runtime
-  assert.equal(refusing.enabled, true); assert.equal(refusing.flightAwareFallback, true);
-  assert.equal((await refusing.primary(identity, admit)).providerState, 'not_configured');
-  assert.equal((await refusing.guardFallback(identity, async () => { fallbackCalls++; return fa; }, admit)).providerState, 'not_configured');
+  // FlightAware OFF by default (Flex only), also with a configured FlightAware key and cost.
+  for (const off of [e, { ...e, FLIGHTAWARE_AEROAPI_KEY: 'synthetic', FLIGHTAWARE_COST_PER_CALL_USD: '0.0017' }, { ...e, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'TRUE' }, { ...e, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: '1' }]) {
+    const refusing = ciriumFlexRadarOptions(off); // `on` before configureRadarPaidSources: no ledger runtime
+    assert.equal(refusing.enabled, true); assert.equal(refusing.sequential, true); assert.equal(refusing.flightAwareFallback, false);
+    assert.equal(refusing.guardFallback, undefined, 'no FlightAware path at all while OFF');
+    assert.equal((await refusing.primary(identity, admit)).providerState, 'not_configured');
+  }
+  const refusingFa = ciriumFlexRadarOptions({ ...e, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' });
+  assert.equal(refusingFa.flightAwareFallback, true);
+  assert.equal((await refusingFa.guardFallback(identity, async () => { fallbackCalls++; return fa; }, admit)).providerState, 'not_configured');
 }
 assert.equal(fallbackCalls, 0, 'refusal never reaches FlightAware');
+assert.equal(radarFlightAwareFallbackEnabled({}), false); assert.equal(radarFlightAwareFallbackEnabled({ RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }), true);
 configureRadarPaidSources({ pool: fakePool(), now: () => at, env: {} });
 const options = ciriumFlexRadarOptions(on);
-assert.equal(options.enabled, true); assert.equal(typeof options.primary, 'function'); assert.equal(typeof options.guardFallback, 'function');
+assert.equal(options.enabled, true); assert.equal(typeof options.primary, 'function'); assert.equal(options.guardFallback, undefined);
+assert.equal(typeof ciriumFlexRadarOptions({ ...on, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }).guardFallback, 'function');
 assert.equal((await options.primary(identity, admit)).providerState, 'budget-not-configured', 'no verified cost: no Cirium call');
 assert.equal((await import('../server/cirium-radar-injection.mjs')).defaultCiriumRadarOptions(), undefined, 'CI env: production stays OFF');
 
 // Actual runRadarRace: paid primary/guard receive admission; Cirium gate skips FlightAware; receipt not refreshed.
 const source = fs.readFileSync('server.mjs', 'utf8'), ast = ts.createSourceFile('server.mjs', source, 99, true, ts.ScriptKind.JS);
 const fn = name => { const n = ast.statements.find(x => ts.isFunctionDeclaration(x) && x.name?.text === name); assert(n, name); return n.getText(ast); };
-const later = at + 4 * 60_000; let faCalls = 0, guarded = 0, primaryAdmit = null;
+const later = at + 4 * 60_000; let faCalls = 0, guarded = 0, primaryAdmit = null, lastSequence = null;
 const scope = vm.createContext({ ...radarEvidence, Date: class extends Date { static now() { return later; } }, process: { env: {} },
   gateQueryDay: i => gateQueryDay(i, later), radarResultDecision: (p, i) => radarResultDecision(p, i, later), gateQuerySuppressed: d => ({ ok: false, querySuppressed: true, queryReason: d.reason }),
   ciriumRadarInjectionEnabled: o => o?.enabled === true, runCiriumRadarInjection: async () => { throw Error('Sky path must not run'); }, ciriumRadarProjection: () => ({}),
-  runCiriumFlightAwareSequence: o => runCiriumFlightAwareSequence({ ...o, now: () => later }), sequentialRadarProjection: () => ({}),
+  runCiriumFlightAwareSequence: async o => (lastSequence = await runCiriumFlightAwareSequence({ ...o, now: () => later })), sequentialRadarProjection: () => ({}),
   providerFlightAware: async () => { faCalls++; return fa; }, firstKnown: (...v) => v.find(x => x !== undefined && x !== null && x !== '') ?? '' });
 vm.runInContext(['publicRadarPayload', 'runRadarRace'].map(fn).join('\n'), scope);
 const readAdmission = async () => true;
@@ -212,4 +220,81 @@ assert.equal(body.gate, '12'); assert.equal(body.sourceReceivedAt, at, 'cached C
 body = await scope.runRadarRace(ctx(flexOk({ gate: '' })), 'GRU', 'SSA');
 assert.equal(guarded, 1); assert.equal(faCalls, 1); assert.equal(body.gate, '18');
 assert.match(source, /^configureRadarPaidSources\(\{ pool: conciergeDbPool \}\);$/m, 'startup hands the existing MySQL pool to the paid ledger');
-console.log('PASS paid Radar sequence: strict appendix FS→IATA binding and planned departure, Cirium gate skips FlightAware, re-admission after reservation, enabled-but-incomplete refuses, conservative cost/cap, rolling 33-day window, cache/coalescing without sharing refusals');
+
+// 5. Flex only (dot review of 5aa5a9fe): FlightAware OFF by default, vetoed before cache,
+//    reservation and network even when its key and cost are configured; Flex keeps its own
+//    status, cache, ledger, identity/freshness and fail-closed behaviour. Actual options,
+//    sequence, ledger and cache; fake Flex transport and fake MySQL.
+{
+  // Direct veto: the paid wrapper never touches cache or ledger for FlightAware while OFF.
+  let reserves = 0, cacheRuns = 0, calls = 0;
+  const spyPaid = createPaidRadarSource({ ledger: { reserve: async () => { reserves++; return { ok: true }; } }, cache: { run: (k, task) => { cacheRuns++; return task(); } },
+    env: { FLIGHTAWARE_COST_PER_CALL_USD: '1', FLIGHTAWARE_AEROAPI_KEY: 'synthetic' } });
+  const vetoed = await spyPaid('flightaware', identity, async () => { calls++; return fa; }, admit);
+  assert.equal(vetoed.providerState, 'fallback_disabled'); assert.equal(vetoed.networkAttempted, false); assert.equal(vetoed.cacheable, false);
+  assert.deepEqual([reserves, cacheRuns, calls], [0, 0, 0], 'no reservation, cache entry or call');
+
+  // Sequence with fallback not permitted: never started, primary status kept, nothing reported as queried.
+  for (const [first, expectOk] of [[flexOk({ gate: '' }), true], [flexOk({ gate: 'TBD' }), true], [{ ok: false, provider: 'cirium-flex', providerState: 'timeout', configured: true }, false], [null, false]]) {
+    const out = await runCiriumFlightAwareSequence({ identity, admit: async () => true, now: () => at, primary: async () => first, fallback: null });
+    assert.equal(out.fallbackAttempted, false); assert.equal(out.gate, ''); assert.equal(out.ok, expectOk, JSON.stringify(first)?.slice(0, 50));
+    if (expectOk) { assert.equal(out.provider, 'cirium-flex'); assert.equal(out.status, 'Programado'); assert.equal(out.fallbackReason, 'primary-gate-insufficient'); }
+  }
+  assert.equal((await runCiriumFlightAwareSequence({ identity, admit: async () => true, now: () => at, primary: async () => flexOk(), fallback: undefined })).configured, false, 'a missing fallback is not a permission');
+  // A fallback refused before the network (budget, missing cost, revoked admission) is not a query.
+  for (const refusal of ['budget-exhausted', 'budget-not-configured', 'ledger-unavailable', 'authority-invalidated'])
+    assert.equal((await runCiriumFlightAwareSequence({ identity, admit: async () => true, now: () => at, primary: async () => flexOk({ gate: '' }),
+      fallback: async () => ({ ok: false, provider: 'flightaware', providerState: refusal, networkAttempted: false }) })).fallbackAttempted, false, refusal);
+
+  // End to end through the actual options and runRadarRace.
+  const paidEnv = { CIRIUM_FLEX_COST_PER_CALL_USD: '0.01', FLIGHTAWARE_COST_PER_CALL_USD: '0.0017', FLIGHTAWARE_AEROAPI_KEY: 'synthetic-offline' };
+  const flexOn = { ...on, ...paidEnv };
+  const flexRows = { gate: envelope([row()]), nogate: envelope([row({ airportResources: { arrivalGate: '77' } })]), ambiguous: envelope([row(), row()]) };
+  const transport = mode => mode === 'error' ? flex(500, {}) : mode === 'timeout' ? flex(200, flexRows.gate, 200) : flex(200, flexRows[mode]);
+  const spentOf = (pool, provider) => JSON.parse(pool.table.get(radarSpendKey(provider)) || '{"days":{}}').days['2032-10-20'] || 0;
+  const configure = (mode, { env = paidEnv, pool = fakePool() } = {}) => { configureRadarPaidSources({ pool, now: () => later, env, fetchImpl: transport(mode), timeoutMs: 20 }); return pool; };
+  const race = async (optionsEnv = flexOn) => {
+    fetched = []; faCalls = 0; lastSequence = null;
+    const body = await scope.runRadarRace({ raw: 'LA3622', gateQueryEvidence: identity, radarReadAdmission: readAdmission, ciriumRadarOptions: ciriumFlexRadarOptions(optionsEnv) }, 'GRU', 'SSA');
+    return { body, flexCalls: fetched.length, faCalls: faCalls, seq: lastSequence };
+  };
+  let pool = configure('gate'), out = await race();
+  assert.equal(out.body.gate, '12'); assert.equal(out.flexCalls, 1); assert.equal(out.faCalls, 0); assert.equal(out.seq.fallbackAttempted, false);
+  assert.equal(spentOf(pool, 'cirium-flex'), 10_000, 'Flex reserves its own budget'); assert.equal(pool.table.has(radarSpendKey('flightaware')), false);
+  // Cache: the same occurrence within 5 min is not queried again and keeps receipt and provenance.
+  const firstReceipt = out.body.sourceReceivedAt, again = await race();
+  assert.equal(again.flexCalls, 0); assert.equal(again.body.gate, '12'); assert.equal(again.body.sourceReceivedAt, firstReceipt);
+  assert.equal(again.seq.cached, true); assert.equal(again.seq.provenance.fields.departureGate.observedAt, null);
+  assert.equal(again.seq.provenance.fields.departureGate.receivedAt, new Date(later).toISOString()); assert.equal(spentOf(pool, 'cirium-flex'), 10_000);
+  // No gate, error, timeout, ambiguity: FlightAware configured but OFF → zero reservations and zero calls.
+  for (const mode of ['nogate', 'error', 'timeout', 'ambiguous']) {
+    pool = configure(mode); out = await race();
+    assert.equal(out.flexCalls, 1, mode); assert.equal(out.faCalls, 0, mode); assert.equal(out.seq.fallbackAttempted, false, mode);
+    assert.equal(pool.table.has(radarSpendKey('flightaware')), false, mode + ': no FlightAware reservation'); assert.equal(out.body.gate, '', mode);
+    if (mode === 'nogate') { assert.equal(out.body.ok, true); assert.equal(out.body.status, 'Programado', 'Flex status kept'); }
+    else assert.equal(out.body.ok, false, mode);
+  }
+  // Flex on but incomplete: missing key, cost, DB or balance → zero calls of any source.
+  for (const [label, setup, optionsEnv] of [['key', () => configure('gate'), { ...flexOn, CIRIUM_APP_KEY: '' }], ['cost', () => configure('gate', { env: {} }), flexOn],
+    ['db', () => configure('gate', { pool: null }), flexOn]]) {
+    setup(); out = await race(optionsEnv);
+    assert.deepEqual([out.flexCalls, out.faCalls, out.body.ok, out.body.gate], [0, 0, false, ''], label);
+  }
+  pool = configure('gate', { env: { ...paidEnv, CIRIUM_FLEX_COST_PER_CALL_USD: '10' } }); out = await race();
+  assert.equal(out.flexCalls, 1); configure('gate', { env: { ...paidEnv, CIRIUM_FLEX_COST_PER_CALL_USD: '10' }, pool }); out = await race();
+  assert.deepEqual([out.flexCalls, out.faCalls, out.body.ok], [0, 0, false], 'balance exhausted');
+  // FlightAware only with the explicit permission, and then only through its budget guard.
+  const faOn = { ...flexOn, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' };
+  pool = configure('nogate', { env: faOn }); out = await race(faOn);
+  assert.deepEqual([out.flexCalls, out.faCalls, out.body.gate, out.seq.fallbackAttempted], [1, 1, '18', true]);
+  assert.equal(spentOf(pool, 'flightaware'), 1700);
+  configure('nogate', { env: { ...faOn, FLIGHTAWARE_COST_PER_CALL_USD: '' } }); out = await race(faOn);
+  assert.deepEqual([out.faCalls, out.seq.fallbackAttempted, out.body.status], [0, false, 'Programado'], 'FlightAware refused by its budget: not reported as queried');
+  // Paid routing permitted but without its guard never calls FlightAware unbudgeted.
+  configure('nogate', { env: faOn });
+  const unguarded = { ...ciriumFlexRadarOptions(faOn) }; delete unguarded.guardFallback;
+  fetched = []; faCalls = 0;
+  await scope.runRadarRace({ raw: 'LA3622', gateQueryEvidence: identity, radarReadAdmission: readAdmission, ciriumRadarOptions: unguarded }, 'GRU', 'SSA');
+  assert.equal(faCalls, 0, 'no unbudgeted FlightAware');
+}
+console.log('PASS paid Radar sequence: Flex only with FlightAware OFF before cache/reservation/network, strict appendix FS→IATA binding and planned departure, Cirium gate skips FlightAware, re-admission after reservation, enabled-but-incomplete refuses, conservative cost/cap, rolling 33-day window, cache/coalescing without sharing refusals');

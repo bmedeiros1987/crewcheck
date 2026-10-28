@@ -116,46 +116,65 @@ export function radarOccurrenceKey(provider, identity) {
 }
 
 /**
+ * FlightAware as paid fallback is a separate, explicit permission: OFF unless exactly 'true'.
+ * Distribution to end users needs an AeroAPI Standard plan, which is not contracted.
+ */
+export function radarFlightAwareFallbackEnabled(env = process.env) {
+  return env.RADAR_FLIGHTAWARE_FALLBACK_ENABLED === 'true';
+}
+
+/**
  * Budgeted, cached call of one paid source for one published occurrence. Account and
  * occurrence are re-admitted after the reservation, immediately before the paid call.
+ * `networkAttempted` says whether the paid call itself ran (a refusal never queried).
  */
 export function createPaidRadarSource({ ledger, cache, env = process.env }) {
-  return (provider, identity, call, admit) => cache.run(radarOccurrenceKey(provider, identity), async () => {
-    const reservation = await ledger.reserve(provider, radarPaidPolicy(provider, env));
-    if (!reservation.ok) return { ok: false, configured: reservation.reason !== 'budget-not-configured', provider, providerState: reservation.reason };
-    let admitted = false;
-    try { admitted = typeof admit === 'function' && await admit() === true; } catch {}
-    // The reservation stays spent: an abandoned attempt is never refunded.
-    if (!admitted) return { ok: false, configured: true, provider, providerState: 'authority-invalidated', cacheable: false };
-    try { return (await call()) || { ok: false, configured: true, provider, providerState: 'not_found' }; }
-    catch { return { ok: false, configured: true, provider, providerState: 'provider_error' }; }
-  });
+  return (provider, identity, call, admit) => {
+    // FlightAware OFF: vetoed before the cache, the reservation and the network.
+    if (provider === 'flightaware' && !radarFlightAwareFallbackEnabled(env))
+      return Promise.resolve({ ok: false, configured: false, provider, providerState: 'fallback_disabled', cacheable: false, networkAttempted: false });
+    return cache.run(radarOccurrenceKey(provider, identity), async () => {
+      const reservation = await ledger.reserve(provider, radarPaidPolicy(provider, env));
+      if (!reservation.ok) return { ok: false, configured: reservation.reason !== 'budget-not-configured', provider, providerState: reservation.reason, networkAttempted: false };
+      let admitted = false;
+      try { admitted = typeof admit === 'function' && await admit() === true; } catch {}
+      // The reservation stays spent: an abandoned attempt is never refunded.
+      if (!admitted) return { ok: false, configured: true, provider, providerState: 'authority-invalidated', cacheable: false, networkAttempted: false };
+      try { return { ...((await call()) || { ok: false, configured: true, provider, providerState: 'not_found' }), networkAttempted: true }; }
+      catch { return { ok: false, configured: true, provider, providerState: 'provider_error', networkAttempted: true }; }
+    });
+  };
 }
 
 let paidRuntime = null;
-/** Server startup hands the existing MySQL pool getter; nothing is created at import. */
-export function configureRadarPaidSources({ pool, now = Date.now, env = process.env } = {}) {
-  paidRuntime = { paid: createPaidRadarSource({ ledger: createRadarSpendLedger({ pool, now }), cache: createRadarSourceCache({ now }), env }) };
+/** Server startup hands the existing MySQL pool getter; nothing is created at import.
+ * fetchImpl/timeoutMs exist for offline tests; production passes neither. */
+export function configureRadarPaidSources({ pool, now = Date.now, env = process.env, fetchImpl, timeoutMs } = {}) {
+  paidRuntime = { paid: createPaidRadarSource({ ledger: createRadarSpendLedger({ pool, now }), cache: createRadarSourceCache({ now }), env }), now, fetchImpl, timeoutMs };
   return paidRuntime;
 }
 
-const refused = provider => ({ ok: false, configured: false, provider, providerState: 'not_configured', cacheable: false });
+const refused = provider => ({ ok: false, configured: false, provider, providerState: 'not_configured', cacheable: false, networkAttempted: false });
 
 /**
- * Sequential routing options: Cirium Flex first, FlightAware only when Cirium has no
- * valid gate for the same occurrence. Undefined (legacy race) unless
- * CIRIUM_FLEX_RADAR_ENABLED is exactly 'true'. When enabled but missing credentials
- * or the ledger runtime, every query is refused: never the unbudgeted legacy race.
+ * Sequential routing options: Cirium Flex first and, only with
+ * RADAR_FLIGHTAWARE_FALLBACK_ENABLED=true, FlightAware when Cirium has no valid gate for
+ * the same occurrence. `sequential` selects this routing; `flightAwareFallback` is only
+ * the fallback permission, and without it there is no `guardFallback` at all (Flex only).
+ * Undefined (legacy race) unless CIRIUM_FLEX_RADAR_ENABLED is exactly 'true'. When
+ * enabled but missing credentials or the ledger runtime, every query is refused: never
+ * the unbudgeted legacy race.
  */
 export function ciriumFlexRadarOptions(env = process.env) {
   if (env.CIRIUM_FLEX_RADAR_ENABLED !== 'true') return undefined;
   const appId = String(env.CIRIUM_APP_ID || '').trim(), appKey = String(env.CIRIUM_APP_KEY || '').trim();
-  const base = { enabled: true, flightAwareFallback: true, provider: 'cirium-flex' };
-  if (!appId || !appKey || !paidRuntime) return { ...base, primary: async () => refused('cirium-flex'), guardFallback: async () => refused('flightaware') };
-  const { paid } = paidRuntime;
+  const fallbackAllowed = radarFlightAwareFallbackEnabled(env);
+  const base = { enabled: true, sequential: true, flightAwareFallback: fallbackAllowed, provider: 'cirium-flex' };
+  if (!appId || !appKey || !paidRuntime) return { ...base, primary: async () => refused('cirium-flex'), ...(fallbackAllowed ? { guardFallback: async () => refused('flightaware') } : {}) };
+  const { paid, now, fetchImpl, timeoutMs } = paidRuntime;
   return {
     ...base,
-    primary: (identity, admit) => paid('cirium-flex', identity, () => fetchCiriumFlexOccurrence({ identity, credentials: { appId, appKey } }), admit),
-    guardFallback: (identity, call, admit) => paid('flightaware', identity, call, admit),
+    primary: (identity, admit) => paid('cirium-flex', identity, () => fetchCiriumFlexOccurrence({ identity, credentials: { appId, appKey }, fetchImpl, timeoutMs, now }), admit),
+    ...(fallbackAllowed ? { guardFallback: (identity, call, admit) => paid('flightaware', identity, call, admit) } : {}),
   };
 }
