@@ -24,10 +24,11 @@ Pedido: o relógio sincroniza pela nuvem, não só pelo celular, com economia de
      - Só a conta vigente pareia.
    - **No relógio, `WatchAccountGuard`.** Toda entrada (estado de conta, credencial, mensagem, item do Data Layer, Sincronizar e nuvem) passa pela regra de época:
      - época menor que a conhecida é recusada, mesmo que o resumo tenha sido gerado depois do último visto (horário de resumo não prova login);
-     - mesma época vale só para a mesma conta (ou sem conta);
+     - mesma época vale só para a mesma conta (ou sem conta), e só se for mais nova que a escala guardada: resumo mais antigo (item persistente do Bluetooth depois de uma cópia mais nova da nuvem, mensagem atrasada) é recusado sem gravar nem avisar; de mesmo horário fica o que chegou primeiro (nuvem e Bluetooth levam a mesma projeção);
      - época maior é a transição: escala, avisos e pareamento saem antes de gravar, em qualquer ordem de entrega;
      - um estado antigo reaplicado depois de um novo login não apaga nada;
      - a exclusão atrasada do item da credencial não encerra pareamento (não carrega época); o pareamento termina pela transição ou por um 401;
+     - resposta da nuvem ou credencial do pareamento anterior: a busca guarda a geração do pareamento antes da rede e descarta a resposta se ela mudou; toda transição e todo novo pareamento (também da mesma conta) avançam a geração. A checagem de conta vigente na busca é redundante com isso e fica como defesa;
      - a primeira época apaga o cache legado sem dono; depois dela, item sem época é recusado. Antes disso (celular sem esta versão) tudo segue como era;
      - o Sincronizar aplica o estado, depois a credencial, depois a escala, e reimporta sem notificar, como antes.
 

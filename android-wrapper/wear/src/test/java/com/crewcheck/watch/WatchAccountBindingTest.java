@@ -31,6 +31,7 @@ import static org.junit.Assert.*;
 public class WatchAccountBindingTest {
     static final String A = "a".repeat(32), B = "b".repeat(32);
     static final String CRED_A = "cw1." + A + "." + "C".repeat(43), CRED_B = "cw1." + B + "." + "E".repeat(43);
+    static final String CRED_A2 = "cw1." + A + "." + "D".repeat(43);
     static final long T = 1_900_000_000_000L;
     // Phone epochs: A logged in, logout, B logged in, A logged in again.
     static final long E_A = 10, E_LOGOUT = 20, E_B = 30, E_A2 = 40;
@@ -240,6 +241,77 @@ public class WatchAccountBindingTest {
                 new JSONObject().put("snapshot", new JSONObject(roster(A, 0, System.currentTimeMillis() - 1000, "A1"))).toString());
         assertEquals(WatchCloudClient.Result.REJECTED, WatchCloudClient.fetch(context, System.currentTimeMillis()));
         assertNull(cached());
+    }
+
+    /** dot, f478699a9 (P2): same account and epoch, a newer cloud copy and then older Bluetooth
+     * items (persistent Data Layer item via Sincronizar, late messages, descending times). */
+    @Test public void olderRosterOfTheSameEpochNeverOverwritesANewerOne() throws Exception {
+        long now = System.currentTimeMillis();
+        state(A, E_A);
+        credential(CRED_A, E_A);
+        WatchCloudClient.transport = (url, authorization, etag) -> new WatchCloudClient.Response(200, "\"t2\"",
+                new JSONObject().put("snapshot", new JSONObject(roster(A, 0, now - 60_000, "A-T2"))).toString());
+        assertEquals(WatchCloudClient.Result.UPDATED, WatchCloudClient.fetch(context, now));
+        assertEquals("A-T2", cached().gate);
+        int noticesAfterCloud = notices();
+        // Sincronizar re-imports the persistent, older Bluetooth item of the same epoch.
+        assertFalse(sync(at(WatchContract.SNAPSHOT_PATH, snapshotItem(roster(A, E_A, now - 120_000, "A-T1")))));
+        assertEquals("A-T2", cached().gate);
+        // Late messages and items, descending times: refused, no notice.
+        for (long age : new long[]{90_000, 100_000, 110_000, 600_000}) {
+            rosterMessage(roster(A, E_A, now - age, "A-OLD"));
+            rosterItem(roster(A, E_A, now - age, "A-OLD"));
+        }
+        assertEquals("A-T2", cached().gate);
+        assertEquals("no notice for a refused roster", noticesAfterCloud, notices());
+        // Same instant: the first copy stays (cloud and Bluetooth carry the same projection);
+        // Sincronizar still counts it as present, without saving or notifying again.
+        assertTrue(sync(at(WatchContract.SNAPSHOT_PATH, snapshotItem(roster(A, E_A, now - 60_000, "A-SAME")))));
+        rosterMessage(roster(A, E_A, now - 60_000, "A-SAME"));
+        assertEquals("A-T2", cached().gate);
+        assertEquals(noticesAfterCloud, notices());
+        // A newer one is accepted.
+        rosterMessage(roster(A, E_A, now - 30_000, "A-T3"));
+        assertEquals("A-T3", cached().gate);
+        // And the cloud copy older than it is ignored too (the inverse direction).
+        assertEquals(WatchCloudClient.Result.UNCHANGED, WatchCloudClient.fetch(context, now));
+        assertEquals("A-T3", cached().gate);
+    }
+
+    /** The cloud fetch's isCurrent(owner) check is redundant with the pairing generation: a
+     * response or credential of the previous pairing is discarded after any transition or
+     * re-pairing, also of the same account (where isCurrent alone could not tell them apart). */
+    @Test public void oldCloudResponseOrCredentialAfterATransitionIsDiscarded() throws Exception {
+        long now = System.currentTimeMillis();
+        String[] gate = {"A-OLD"};
+        Runnable[] duringRequest = {() -> {}};
+        WatchCloudClient.transport = (url, authorization, etag) -> {
+            duringRequest[0].run();
+            return new WatchCloudClient.Response(200, "\"x\"", new JSONObject().put("snapshot", new JSONObject(roster(A, 0, now - 1_000, gate[0]))).toString());
+        };
+        // Switch to B while A's request is in flight.
+        state(A, E_A);
+        credential(CRED_A, E_A);
+        duringRequest[0] = () -> { state(B, E_B); credential(CRED_B, E_B); };
+        assertEquals(WatchCloudClient.Result.STALE, WatchCloudClient.fetch(context, now));
+        assertNull(cached());
+        assertEquals(B, pairedOwner());
+        // Logout and a new login of the same account A while A's old request is in flight.
+        resetWatch();
+        state(A, E_A);
+        credential(CRED_A, E_A);
+        duringRequest[0] = () -> { state("", E_LOGOUT); state(A, E_A2); credential(CRED_A2, E_A2); };
+        assertEquals(WatchCloudClient.Result.STALE, WatchCloudClient.fetch(context, now));
+        assertNull("the old session's answer is not the new session's roster", cached());
+        assertEquals(CRED_A2, new WatchCloudCredentialStore(context).load());
+        // The old credential replayed after the new login is refused; the new pairing stays.
+        duringRequest[0] = () -> {};
+        assertFalse(WatchCloudClient.acceptCredential(context, CRED_A, E_A));
+        credential(CRED_A, E_A);
+        assertEquals(CRED_A2, new WatchCloudCredentialStore(context).load());
+        gate[0] = "A-NEW";
+        assertEquals(WatchCloudClient.Result.UPDATED, WatchCloudClient.fetch(context, now));
+        assertEquals("A-NEW", cached().gate);
     }
 
     static List<List<Integer>> permutations(List<Integer> items) {

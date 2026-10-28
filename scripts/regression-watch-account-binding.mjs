@@ -21,8 +21,8 @@ for (const file of fs.readdirSync(wear).filter(name => name.endsWith('.java'))) 
   else assert.equal(saves.length, 0, `${file} must route rosters through WatchAccountGuard.intake`);
 }
 const guard = strip(read(wear + 'WatchAccountGuard.java'));
-assert.match(guard, /synchronized \(WatchCloudCredentialStore\.LOCK\) \{\s*if \(!admit\(app, snapshot\.account, epoch\)\) return null;\s*WatchContextSnapshot saved = new SecureSnapshotStore\(app\)\.save\(rawJson\);/,
-  'intake: account rule before the save, under the cloud lock');
+assert.match(guard, /synchronized \(WatchCloudCredentialStore\.LOCK\) \{\s*if \(!admit\(app, snapshot\.account, epoch\)\) return null;\s*SecureSnapshotStore store = new SecureSnapshotStore\(app\);\s*WatchContextSnapshot current = store\.load\(\);\s*if \(current != null && snapshot\.generatedAtEpochMs <= current\.generatedAtEpochMs\) \{\s*return snapshot\.generatedAtEpochMs == current\.generatedAtEpochMs \? current : null;\s*\}\s*WatchContextSnapshot saved = store\.save\(rawJson\);/,
+  'intake: account rule, then same-epoch freshness (older refused, same instant kept), then the save, under the cloud lock');
 const cloud = strip(read(wear + 'WatchCloudClient.java'));
 assert(cloud.indexOf('WatchAccountGuard.isCurrent(app, pairing.owner)') > 0
   && cloud.indexOf('WatchAccountGuard.isCurrent(app, pairing.owner)') < cloud.indexOf('store.save(json)'), 'cloud: account rule before the save');
@@ -30,7 +30,8 @@ assert.match(cloud, /!snapshot\.optString\("account", ""\)\.equals\(pairing\.own
 assert.match(cloud, /if \(!WatchAccountGuard\.admit\(app, match\.group\(1\), accountEpoch\)\) return false;/, 'a credential passes the epoch rule before it is saved');
 assert.match(cloud, /\|\| !WatchAccountGuard\.isCurrent\(app, pairing\.owner\)\) return Result\.REJECTED;/, 'cloud roster only for the current account');
 assert.match(guard, /if \(epoch < known\) return false;/, 'an older epoch never comes back');
-assert.doesNotMatch(guard, /generatedAt/, 'snapshot time is never account authority');
+const admitBody = guard.match(/static boolean admit\(Context context, String account, long epoch\) \{[\s\S]*?\n {4}\}/)?.[0] || '';
+assert(admitBody && !/generatedAt/.test(admitBody), 'snapshot time is never account authority (only freshness after admission)');
 
 // 2. Bluetooth entry points.
 const service = strip(read(wear + 'CrewCheckDataLayerService.java'));

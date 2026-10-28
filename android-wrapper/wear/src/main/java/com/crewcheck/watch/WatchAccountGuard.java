@@ -42,14 +42,25 @@ public final class WatchAccountGuard {
         return intake(context, rawJson, true);
     }
 
-    /** Sincronizar reimporta sem notificar, como antes; a regra de conta vale igual. */
+    /**
+     * Sincronizar reimporta sem notificar, como antes; a regra de conta vale igual.
+     * Frescor, na mesma conta e época (uma transição já apagou o anterior): resumo mais antigo
+     * que o guardado é recusado sem gravar nem avisar (item persistente do Bluetooth depois de
+     * uma cópia mais nova da nuvem, mensagem atrasada); de mesmo horário fica o que chegou
+     * primeiro, que é devolvido como presente, sem gravar nem avisar de novo.
+     */
     public static WatchContextSnapshot intake(Context context, String rawJson, boolean notify) {
         Context app = context.getApplicationContext();
         WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(rawJson);
         long epoch = epochOf(rawJson);
         synchronized (WatchCloudCredentialStore.LOCK) {
             if (!admit(app, snapshot.account, epoch)) return null;
-            WatchContextSnapshot saved = new SecureSnapshotStore(app).save(rawJson);
+            SecureSnapshotStore store = new SecureSnapshotStore(app);
+            WatchContextSnapshot current = store.load();
+            if (current != null && snapshot.generatedAtEpochMs <= current.generatedAtEpochMs) {
+                return snapshot.generatedAtEpochMs == current.generatedAtEpochMs ? current : null;
+            }
+            WatchContextSnapshot saved = store.save(rawJson);
             if (notify) WatchNotificationCenter.postForSnapshot(app, saved);
             return saved;
         }

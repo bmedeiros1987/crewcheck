@@ -9,7 +9,7 @@ const memoStart=source.indexOf('  const operationalArrival=useMemo('),memoEnd=so
 const entry=`import React,{useMemo} from 'react';import {createRoot} from 'react-dom/client';import View from './client/src/components/regulation/RegulationScenarioView';import {buildCanonicalRosterEvents} from './client/src/lib/canonicalRoster';import {regulationProgramDay} from './shared/regulationScenarioPrefill.mjs';
 import * as auth from './client/src/lib/authClient';import * as admission from './client/src/lib/operationalRadarAdmission';
 import {readStayOperationalProjection} from './client/src/lib/stayOperationalProjection';
-import * as gate from './client/src/lib/nextFlightGate';import {applyNextFlightToWatchSnapshot} from './client/src/lib/nextFlightWatch';import {buildCrewCheckWatchSnapshot} from './client/src/lib/watchContext';
+import * as gate from './client/src/lib/nextFlightGate';import {applyNextFlightToWatchSnapshot} from './client/src/lib/nextFlightWatch';import {buildCrewCheckWatchSnapshot} from './client/src/lib/watchContext';import {watchAccountKey} from './client/src/lib/watchAccount';
 import * as stayStore from './client/src/lib/stayEditorStore';import {emptyStayEditor,stayEditorKey} from './shared/stay-editor-store.mjs';import {alertRosterOwned} from './client/src/lib/alertRosterOwnership';import {startupKey,startupOwner} from './client/src/lib/rosterStartup';
 import {gateQueryDay,gateQuerySuppressed,originFlightDate,radarResultDecision} from './shared/gate-query-day.mjs';import {radarFailurePayload} from './client/src/lib/radarAvailability';
 const {captureAuthSession,getStoredUser,getToken,authFetch}=auth;const {beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission}=admission;
