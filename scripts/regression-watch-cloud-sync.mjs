@@ -128,7 +128,14 @@ const phoneFields = [...phone.matchAll(/copyString\((?:source|item), (?:out|clea
 const serverSource = fs.readFileSync('server/watch-cloud-sync.mjs', 'utf8');
 const serverFields = [...serverSource.matchAll(/\['(\w+)', (\d+)\]/g)].map(m => `${m[1]}:${m[2]}`).sort();
 assert.deepEqual(serverFields, phoneFields, 'server sanitize mirrors the phone publisher');
-assert.equal(sanitizeWatchSnapshot({ ...snapshot(), phone: '1' }), null);
+assert.ok(sanitizeWatchSnapshot(snapshot(), clock), 'control: the same snapshot without the field is accepted');
+assert.equal(sanitizeWatchSnapshot({ ...snapshot(), phone: '1' }, clock), null);
+// Gate provenance reaches the watch through the cloud like through Bluetooth (gate rule).
+{
+  const kept = sanitizeWatchSnapshot({ ...snapshot(), gateSource: 'reported', gateNote: 'Informado por FlightAware · a confirmar · recebido 09:20 BRT' + 'x'.repeat(80) }, clock);
+  assert.equal(kept.gateSource, 'reported');
+  assert.equal(kept.gateNote.length, 64);
+}
 
 // Server wiring: route registered, strict read, flag documented OFF.
 const server = fs.readFileSync('server.mjs', 'utf8');

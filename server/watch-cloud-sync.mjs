@@ -21,7 +21,9 @@ export const WATCH_CLOUD_MAX_VALIDITY_MS = 6 * 60 * 60_000;
 const STATES = new Set(['OFF_DUTY', 'LEAVE_SOON', 'REPORTING', 'BOARDING', 'IN_FLIGHT', 'CONNECTION', 'OVERNIGHT', 'CHANGED', 'UNKNOWN']);
 const FIELDS = [['contextId', 80], ['headline', 42], ['primaryTime', 12], ['detail', 96], ['presentationTime', 12], ['presentationPlace', 42],
   ['leaveTime', 12], ['trafficDetail', 64], ['currentFlight', 16], ['currentRoute', 32], ['gate', 18], ['boardingTime', 12], ['eta', 12],
-  ['connection', 16], ['nextFlight', 16], ['nextDetail', 64], ['overnight', 24], ['hotelPickup', 64]];
+  ['connection', 16], ['nextFlight', 16], ['nextDetail', 64], ['overnight', 24], ['hotelPickup', 64],
+  // Gate provenance (gate rule, #1281): the watch's gate detail and its local notifications need it.
+  ['gateSource', 12], ['gateNote', 64]];
 const SCHEDULE_FIELDS = [['id', 80], ['kind', 12], ['time', 12], ['title', 24], ['route', 32], ['presentation', 12], ['gate', 18], ['detail', 64]];
 const PROHIBITED = ['cpf', 'email', 'phone', 'crewName', 'hotelRoom', 'roomNumber', 'token', 'accessToken', 'refreshToken', 'authorization'];
 
