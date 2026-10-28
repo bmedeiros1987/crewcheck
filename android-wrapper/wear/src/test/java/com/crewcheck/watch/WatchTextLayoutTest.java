@@ -251,7 +251,7 @@ public class WatchTextLayoutTest {
             json.put("gate", "B123").put("presentationTime", "18:20").put("boardingTime", "17:40");
             call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json.toString()), now);
             String text = allText(content);
-            assertTrue(text.contains("Snapshot vencido"));
+            assertTrue(text.contains("Dados vencidos"));
             assertFalse(text.contains("B123"));
             assertFalse(text.contains("18:20"));
             assertFalse(text.contains("17:40"));
