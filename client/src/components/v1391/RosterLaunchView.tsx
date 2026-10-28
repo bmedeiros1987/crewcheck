@@ -332,7 +332,6 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}. Horários publicados preservados.</p>
     </section>
 
-    <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>
     {categoryFilter.filter !== 'all' && !visibleEvents.length && <div className="cc-roster-filter-empty"><p>Nenhum item deste filtro no período selecionado.</p><button type="button" onClick={categoryFilter.reset}>Mostrar tudo</button></div>}
 
     <FinancialPrivacyToggle/><details className="cc-roster-finance-summary">
@@ -465,6 +464,9 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p>Estas programações têm data confirmada, mas não têm um instante confirmado para posicioná-las na sequência das jornadas. Estão listadas por data publicada.</p>
       <AimsRosterTable operationalEvents={allOrdered} events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
     </section>}
+
+    {/* A legenda original, perto do rodapé, é o único controle de filtro (Tudo reúne todas). */}
+    {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
 
     {ordered.length > 0 && <footer className="cc-roster-estimate-note-v1397"><ShieldCheck/><p><strong>Estimativa conferível.</strong> Diárias e produção por KM usam as regras ACT, tarifas administrativas e dados aprendidos já configurados no CrewCheck. Não substituem o demonstrativo oficial.</p></footer>}
   </div>;
