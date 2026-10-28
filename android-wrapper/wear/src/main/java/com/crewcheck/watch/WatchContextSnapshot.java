@@ -115,6 +115,8 @@ public final class WatchContextSnapshot {
     public final String hotelPickup;
     public final boolean changed;
     public final String source;
+    /** Conta dona da escala (hash de 32 hex, o mesmo da credencial da nuvem); "" em celulares antigos. */
+    public final String account;
     public final List<ScheduleItem> schedule;
 
     private WatchContextSnapshot(
@@ -143,6 +145,7 @@ public final class WatchContextSnapshot {
             String hotelPickup,
             boolean changed,
             String source,
+            String account,
             List<ScheduleItem> schedule
     ) {
         this.schemaVersion = schemaVersion;
@@ -170,6 +173,7 @@ public final class WatchContextSnapshot {
         this.hotelPickup = hotelPickup;
         this.changed = changed;
         this.source = source;
+        this.account = account;
         this.schedule = Collections.unmodifiableList(new ArrayList<>(schedule));
     }
 
@@ -262,6 +266,7 @@ public final class WatchContextSnapshot {
                 clean(json.optString("hotelPickup", ""), 64),
                 changed,
                 clean(json.optString("source", "canonical-roster"), 40),
+                account(json.optString("account", "")),
                 schedule
         );
     }
@@ -293,7 +298,8 @@ public final class WatchContextSnapshot {
                     .put("overnight", overnight)
                     .put("hotelPickup", hotelPickup)
                     .put("changed", changed)
-                    .put("source", source);
+                    .put("source", source)
+                    .put("account", account);
 
             JSONArray items = new JSONArray();
             for (ScheduleItem item : schedule) items.put(item.toJson());
@@ -480,6 +486,11 @@ public final class WatchContextSnapshot {
             case "OVERNIGHT" -> "PERNOITE";
             default -> "PRÓXIMO PASSO";
         };
+    }
+
+    private static String account(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        return value.matches("[0-9a-f]{32}") ? value : "";
     }
 
     private static String clean(String value, int maxLength) {

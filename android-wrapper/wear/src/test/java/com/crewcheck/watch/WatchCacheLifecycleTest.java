@@ -45,8 +45,11 @@ public class WatchCacheLifecycleTest {
             return new SecretKeySpec(new byte[32], "AES");
         }
     }
+    private static long sequence;
     private static String payload(String gate, long validUntil) throws Exception {
-        long now=ShadowSystemClock.currentTimeMillis();
+        // Each delivery is a newer projection, as the phone stamps them (the watch keeps the
+        // newest of the same account and refuses an older or same-instant one).
+        long now=ShadowSystemClock.currentTimeMillis()+(++sequence);
         JSONObject json=WatchContextSnapshot.demo(now).toJson();
         return json.put("state","REPORTING").put("presentationTime","18:20").put("primaryTime","18:20").put("gate",gate)
                 .put("validUntilEpochMs",validUntil).toString();

@@ -1,6 +1,7 @@
 package com.crewcheck.watch;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
@@ -127,6 +128,7 @@ public final class MainActivity extends FragmentActivity
         applyIntentScreen(getIntent());
         renderRoot();
         handler.postDelayed(this::requestNotificationPermissionIfNeeded, 850L);
+        if (new WatchCloudCredentialStore(this).load() != null) WatchCloudSyncJob.schedulePeriodic(this);
     }
 
     @Override
@@ -1171,7 +1173,33 @@ public final class MainActivity extends FragmentActivity
         WatchSyncClient.refresh(this, (received, status) -> runOnUiThread(() -> {
             renderSnapshot();
             if (transientStatus != null) transientStatus.setText(status);
+            // Celular longe ou sem resposta: tentar a mesma escala na nuvem, se pareado.
+            if (!received) requestCloudSync();
         }));
+    }
+
+    private void requestCloudSync() {
+        Context app = getApplicationContext();
+        if (new WatchCloudCredentialStore(app).load() == null) return;
+        if (transientStatus != null) transientStatus.setText("Buscando na nuvem…");
+        new Thread(() -> {
+            WatchCloudClient.Result result = WatchCloudClient.fetch(app, System.currentTimeMillis());
+            runOnUiThread(() -> {
+                renderSnapshot();
+                if (transientStatus != null) transientStatus.setText(cloudStatus(result));
+            });
+        }, "crewcheck-cloud-sync").start();
+    }
+
+    private static String cloudStatus(WatchCloudClient.Result result) {
+        return switch (result) {
+            case UPDATED -> "Atualizado pela nuvem";
+            case UNCHANGED -> "Nuvem sem novidades";
+            case EMPTY -> "Nada publicado na nuvem ainda";
+            case UNPAIRED, NOT_PAIRED_HERE, STALE -> "Abra o CrewCheck no celular";
+            case REJECTED -> "Dados da nuvem recusados";
+            default -> "Sem conexão · dados anteriores mantidos";
+        };
     }
 
     private void requestNotificationPermissionIfNeeded() {

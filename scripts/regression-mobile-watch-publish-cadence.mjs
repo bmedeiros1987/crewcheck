@@ -6,6 +6,7 @@ import * as stayEditPlan from '../shared/stay-edit-plan.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import { stripTypeScriptTypes } from 'node:module';
 const source = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const marker = '    const watchSession = captureAuthSession();';
@@ -28,7 +29,7 @@ const localStorage = {
   setItem: (key, value) => stored.set(key, String(value)),
   removeItem: key => stored.delete(key),
 };
-localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-watch-cadence-owner' }));
+localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-watch-cadence-owner', email: 'Synthetic.Cadence@crewcheck.invalid' }));
 localStorage.setItem('crewcheck_auth_token', 'synthetic-offline-token');
 // Strip types only; execute real modules in separate scopes with their real imports.
 // This guard also supports current main before the Next Flight imports are integrated.
@@ -55,6 +56,8 @@ if (source.includes("from '@/lib/nextFlightGate'")) {
   const auth = actualModule('authClient');
   Object.assign(gateBindings, gate, watch, { getStoredUser: auth.getStoredUser, captureAuthSession: auth.captureAuthSession });
 }
+// Account marking (#1283) is synchronous so the first publication stays immediate.
+if (source.includes("from '@/lib/watchAccount'")) Object.assign(gateBindings, { watchAccountKey: actualModule('watchAccount').watchAccountKey });
 const flight = (id, flightNumber, date, gate) => ({ id, kind: 'flight', flightNumber,
   origin: 'BSB', destination: 'GRU', gate, presentation: '09:30',
   canonical: { id: 'canonical-' + id, journeyId: id, leg:{departureTime:'09:00'}, legIndex:0, startDateTime: date + 'T12:00:00Z', endDateTime: date + 'T14:00:00Z' } });
@@ -94,6 +97,8 @@ function assertPublished(selected, gate, remoteStand = false) {
   assert.equal(snapshot.source, 'canonical-roster');
 }
 assertPublished(event, '');
+if (gateBindings.watchAccountKey) assert.equal(published[0].detail.account,
+  createHash('sha256').update('crewcheck-watch:synthetic.cadence@crewcheck.invalid').digest('hex').slice(0, 32), 'the first, immediate projection already names its account');
 assert.notEqual(published[0].detail.contextId, otherFlight.canonical.id);
 assert.notEqual(published[0].detail.contextId, otherDate.canonical.id);
 for (const name of ['crewcheck:watch-snapshot-request', 'crewcheck:native-ready']) listeners.get(name)();
