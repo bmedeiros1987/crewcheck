@@ -8,7 +8,7 @@ O portão do próximo voo vem de duas consultas: a **manual**, informada pelo tr
 |---|---|---|---|---|---|
 | 1 | `manual` | Portão manual vinculado a esta partida (voo, trecho e horário UTC iguais) | "Portão manual · informado por você" | Revisão de nova fonte comprovada, como hoje | Mostra o portão |
 | 2 | `radar` (comprovado) | Fonte informa a hora em que o portão foi observado, ou envia atualização de portão com prova, há no máximo 30 min | "Portão · fonte operacional" | Sim, dentro da janela operacional do voo | Mostra o portão; validade limitada pela observação |
-| 3 | `reported` (informado) | Fonte respondeu para esta partida exata, com recebimento há no máximo 30 min, mas sem hora de observação do portão | "Portão informado por FlightAware · a confirmar" e, nos detalhes, a hora de recebimento | **Nunca** | Mostra só o portão (ex.: "P12"), por decisão do responsável pelo produto; validade de 30 min após o recebimento |
+| 3 | `reported` (informado) | Fonte respondeu para esta partida exata, com recebimento há no máximo 30 min, mas sem hora de observação do portão | "Portão informado por FlightAware · a confirmar" e, nos detalhes, a hora de recebimento | **Nunca** | Mostra só o portão (ex.: "P12"), por decisão do responsável pelo produto; ao tocar no portão, "A confirmar" com fonte e hora de recebimento; nunca entra em aviso local do relógio; validade de 30 min após o recebimento |
 | — | nenhum | Nada acima | "Não confirmado" | — | "Portão não informado" |
 
 O portão publicado na escala aparece só como referência ("não confirma portão atual") e nunca preenche o portão do dia.
@@ -29,6 +29,10 @@ Se existir portão manual e a fonte (comprovada ou informada) indicar outro, o m
 ## Fora do app
 
 Telegram, Concierge, `/saida` e notificações continuam usando somente campos comprovados (`verifiedRadarFields`). O portão informado existe apenas no app e no relógio. No relógio aparece só o portão, sem ressalva, por decisão do responsável pelo produto (27/10/2026).
+
+O resumo do relógio leva a origem do portão (`gateSource`: `manual`, `radar` ou `reported`) e uma nota curta (`gateNote`, ex.: "Informado por FlightAware · a confirmar · recebido 09:20 BRT"). Com isso:
+- tocar no dado PORTÃO ou na complicação de portão abre o detalhe com a origem e o estado ("Informado por você", "Confirmado pela fonte" ou "A confirmar");
+- os avisos locais do relógio (`WatchNotificationCenter`: embarque e conexão) nunca anunciam um portão informado, nem como portão nem como posição remota, e ele fica fora da deduplicação: aparecer ou mudar não dispara aviso.
 
 ## Consulta automática e diagnóstico
 

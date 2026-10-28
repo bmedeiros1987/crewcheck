@@ -54,6 +54,18 @@ try {
  // A proven gate is still projected with its observation-capped expiry.
  const provenWatch=m.applyNextFlightToWatchSnapshot(base,proven,options);
  assert.equal(provenWatch.gate,'12');assert(provenWatch.validUntilEpochMs<=Date.parse('2032-10-20T08:20:00Z')+m.RADAR_GATE_STALE_MS);
+ // Provenance travels with the gate (watch detail screen and notification rule), never the gate itself.
+ assert.equal(watch.gateSource,'reported');assert.match(watch.gateNote,/^Informado por FlightAware · a confirmar · recebido \d\d:\d\d BRT$/);
+ assert.equal(nextWatch.gateSource,'reported');
+ assert.equal(provenWatch.gateSource,'radar');assert.match(provenWatch.gateNote,/^Fonte operacional · recebido \d\d:\d\d BRT$/);
+ const manualWatch=m.applyNextFlightToWatchSnapshot(base,withManual,options);
+ assert.equal(manualWatch.gateSource,'manual');assert.match(manualWatch.gateNote,/^Informado por você · às \d\d:\d\d BRT$/);
+ const noGate=m.applyNextFlightToWatchSnapshot(base,resolve({...radar,gate:''}),options);
+ assert.equal(noGate.gateSource,'');assert.equal(noGate.gateNote,'');
+ assert(watch.gateNote.length<=64&&manualWatch.gateNote.length<=64);
+ // The phone forwards both fields to the watch (allow-list) within the same limits.
+ const publisher=fs.readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java','utf8');
+ assert.match(publisher,/copyString\(source, out, "gateSource", 12\);/);assert.match(publisher,/copyString\(source, out, "gateNote", 64\);/);
 
  // Alerts: a reported gate never starts or anchors a gate-change alert (Home.tsx).
  const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
@@ -74,5 +86,5 @@ try {
  assert.deepEqual(JSON.parse(JSON.stringify(sent.body.providers)),[{key:'flightaware',configured:true,lastOkAt:null,lastFailAt:'2032-10-20T08:00:00.000Z',lastHttpStatus:401,lastErrorAt:null},{key:'airlabs',configured:false,lastOkAt:null,lastFailAt:null,lastHttpStatus:null,lastErrorAt:null}]);
  assert.doesNotMatch(JSON.stringify(sent.body),/key=|apikey|x-apikey|token/i);
  scope.markProvider('airlabs',false,403);assert.equal(radarHealth.get('airlabs').lastHttpStatus,403);
- console.log('PASS gate behavior rule: manual > proven source > reported source (named, 30 min, never alert/Pulse), failed proof never downgraded, conflicting history rejected, watch shows the plain gate, capped, admin-only per-source health');
+ console.log('PASS gate behavior rule: manual > proven source > reported source (named, 30 min, never alert/Pulse), failed proof never downgraded, conflicting history rejected, watch shows the plain gate with provenance for its detail screen, capped, admin-only per-source health');
 } finally { fs.rmSync(dir,{recursive:true,force:true}); }

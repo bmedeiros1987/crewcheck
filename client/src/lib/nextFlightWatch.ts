@@ -5,6 +5,18 @@ function fit(value: string, max: number): string {
   return value.length <= max ? value : value.slice(0, max);
 }
 
+const brtClock = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo', hourCycle: 'h23' });
+const clockAt = (epochMs: number) => Number.isFinite(epochMs) && epochMs > 0 ? `${brtClock.format(epochMs)} BRT` : '';
+
+/** Provenance of the projected gate for the watch's gate detail; never the gate itself. */
+export function watchGateNote(info: NextFlightGateInfo): string {
+  const at = (label: string, epochMs: number) => clockAt(epochMs) ? `${label} ${clockAt(epochMs)}` : '';
+  if (info.gateSource === 'manual') return fit(['Informado por você', at('às', info.updatedAtEpochMs)].filter(Boolean).join(' · '), 64);
+  if (info.gateSource === 'radar') return fit(['Fonte operacional', at('recebido', info.radarUpdatedAtEpochMs)].filter(Boolean).join(' · '), 64);
+  if (info.gateSource === 'reported') return fit([`Informado por ${info.reportedProvider || 'fonte operacional'}`, 'a confirmar', at('recebido', info.radarUpdatedAtEpochMs)].filter(Boolean).join(' · '), 64);
+  return '';
+}
+
 /**
  * Projeta no snapshot do CrewWatch a mesma decisão de portão exibida no celular.
  * Não muda o contrato v1 nem a escala canônica: apenas preenche campos já existentes
@@ -24,6 +36,11 @@ export function applyNextFlightToWatchSnapshot(
   for (const item of out.schedule) {
     if (item.id === options.nextFlightScheduleId) item.gate = scheduleGate;
   }
+  // The watch must know where the gate came from: its detail screen shows it, and its local
+  // notifications never treat a reported gate as confirmed.
+  const gateSource = info.gate && info.gateSource && info.gateSource !== 'roster' ? info.gateSource : '';
+  out.gateSource = gateSource;
+  out.gateNote = gateSource ? watchGateNote(info) : '';
 
   const notes: string[] = [];
   if (info.divergence) notes.push(`Fonte indica portão ${info.divergence.sourceGate}`);

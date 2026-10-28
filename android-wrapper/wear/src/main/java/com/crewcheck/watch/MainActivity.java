@@ -48,6 +48,7 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_NOTIFICATIONS = 1;
     private static final int MODE_CREWLIFE = 2;
     private static final int MODE_SCHEDULE = 3;
+    private static final int MODE_GATE = 4;
     private static final int REQUEST_NOTIFICATIONS = 4102;
 
     private static final int BLACK = Color.BLACK;
@@ -192,6 +193,7 @@ public final class MainActivity extends FragmentActivity
         if ("notifications".equals(requested)) screenMode = MODE_NOTIFICATIONS;
         else if ("crewlife".equals(requested)) screenMode = MODE_CREWLIFE;
         else if ("schedule".equals(requested)) screenMode = MODE_SCHEDULE;
+        else if ("gate".equals(requested)) screenMode = MODE_GATE;
     }
 
     private void restartClock() {
@@ -351,6 +353,7 @@ public final class MainActivity extends FragmentActivity
             case MODE_NOTIFICATIONS -> renderNotifications(snapshot, now);
             case MODE_CREWLIFE -> renderCrewLife(now);
             case MODE_SCHEDULE -> renderSchedule(snapshot, now);
+            case MODE_GATE -> renderGateDetail(snapshot, now);
             default -> {
                 if (snapshot == null) renderEmptyState();
                 else renderLiveState(snapshot, now);
@@ -773,6 +776,61 @@ public final class MainActivity extends FragmentActivity
         content.addView(freshness);
     }
 
+    /**
+     * Detalhe do portão: de onde veio e se está confirmado. A tela inicial mostra só o
+     * número (decisão do responsável); aqui fica a ressalva de um portão informado.
+     */
+    private void renderGateDetail(WatchContextSnapshot snapshot, long now) {
+        TextView eyebrow = text("PORTÃO", 10, WARNING, true, Gravity.CENTER);
+        eyebrow.setLetterSpacing(.09f);
+        eyebrow.setPadding(0, dp(4), 0, dp(4));
+        content.addView(eyebrow);
+
+        String gate = snapshot == null ? "" : snapshot.remoteStand ? "REMOTA" : snapshot.gate;
+        if (snapshot == null || snapshot.isStale(now) || gate.isBlank()) {
+            TextView empty = text(snapshot != null && snapshot.isStale(now)
+                    ? "Dado de portão desatualizado. Confira no celular."
+                    : "Portão ainda não informado para este voo.", 11, MUTED, false, Gravity.CENTER);
+            empty.setPadding(0, dp(10), 0, dp(10));
+            content.addView(empty);
+            return;
+        }
+
+        TextView value = text(gate, 32, WHITE, true, Gravity.CENTER);
+        tabular(value);
+        content.addView(value);
+
+        String flight = join(" · ", firstNonBlank(snapshot.currentFlight, snapshot.nextFlight), snapshot.currentRoute);
+        if (!flight.isBlank()) content.addView(text(flight, 10, MUTED, false, Gravity.CENTER));
+
+        String status;
+        int accent;
+        switch (snapshot.gateSource) {
+            case "manual" -> { status = "Informado por você"; accent = CYAN; }
+            case "radar" -> { status = "Confirmado pela fonte"; accent = SUCCESS; }
+            case "reported" -> { status = "A confirmar"; accent = WARNING; }
+            default -> { status = "Origem não informada"; accent = MUTED; }
+        }
+        TextView state = text(status, 13, accent, true, Gravity.CENTER);
+        state.setPadding(0, dp(8), 0, dp(2));
+        content.addView(state);
+
+        if (!snapshot.gateNote.isBlank()) {
+            TextView note = text(snapshot.gateNote, 10, MUTED, false, Gravity.CENTER);
+            note.setPadding(0, 0, 0, dp(4));
+            content.addView(note);
+        }
+        if (snapshot.gateReported()) {
+            TextView hint = text("Confirme no painel do aeroporto antes de seguir.", 10, MUTED, false, Gravity.CENTER);
+            hint.setPadding(0, dp(2), 0, dp(4));
+            content.addView(hint);
+        }
+
+        TextView freshness = text(snapshot.statusLabel(now), 8, MUTED, false, Gravity.CENTER);
+        freshness.setPadding(0, dp(6), 0, 0);
+        content.addView(freshness);
+    }
+
     private void addScheduleItem(WatchContextSnapshot.ScheduleItem item, boolean first) {
         LinearLayout card = premiumCard(
                 "stay".equals(item.kind) ? MAGENTA :
@@ -945,7 +1003,7 @@ public final class MainActivity extends FragmentActivity
         }
 
         if (!s.gateLabel().isBlank()) {
-            facts.add(new Fact("PORTÃO", s.remoteStand ? "REMOTA" : s.gate, "", WARNING));
+            facts.add(new Fact("PORTÃO", s.remoteStand ? "REMOTA" : s.gate, "", WARNING, MODE_GATE));
         }
 
         if (!s.eta.isBlank() && "IN_FLIGHT".equals(s.state)) {
@@ -1036,6 +1094,13 @@ public final class MainActivity extends FragmentActivity
         if (!fact.detail.isBlank()) {
             TextView detail = text(fact.detail, 7, MUTED, false, Gravity.CENTER);
             box.addView(detail);
+        }
+
+        if (fact.mode >= 0) {
+            // Tocável: alvo de pelo menos 48dp e nome falado com a ação.
+            box.setMinimumHeight(dp(48));
+            box.setContentDescription(fact.label + " " + fact.value + ", ver detalhes");
+            box.setOnClickListener(view -> showScreen(fact.mode));
         }
 
         LinearLayout.LayoutParams p = columnParams();
@@ -1373,11 +1438,19 @@ public final class MainActivity extends FragmentActivity
         final String detail;
         final int accent;
 
+        /** Tela aberta ao tocar no dado; -1 quando o dado não é tocável. */
+        final int mode;
+
         Fact(String label, String value, String detail, int accent) {
+            this(label, value, detail, accent, -1);
+        }
+
+        Fact(String label, String value, String detail, int accent, int mode) {
             this.label = label;
             this.value = value == null ? "" : value;
             this.detail = detail == null ? "" : detail;
             this.accent = accent;
+            this.mode = mode;
         }
     }
 
