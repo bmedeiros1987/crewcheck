@@ -27,8 +27,8 @@ const roster = { year: 2032, month: 10, base: 'GRU', days: [{ date: '14/10/2032'
 const records = () => roster.days.map(day => ({ day, legs: day.legs }));
 const faRow = { ident: 'LAN100', ident_iata: 'LA100', scheduled_out: '2032-10-14T12:00:00Z', origin: { code_iata: 'GRU' }, destination: { code_iata: 'REC' }, gate_origin: '18', status: 'Scheduled' };
 
-function scopeWith(env, { jsonFetch } = {}) {
-  const calls = [];
+function scopeWith(env, { jsonFetch, snapshotLoad } = {}) {
+  const calls = [], legacy = [], saves = [];
   const scope = vm.createContext({
     ...policy, ...radarEvidence, buildCanonicalRosterEvents, URL, Map, Promise,
     Date: class extends Date { constructor(...a) { super(...(a.length ? a : [now])); } static now() { return now; } },
@@ -39,38 +39,25 @@ function scopeWith(env, { jsonFetch } = {}) {
     ciriumRadarInjectionEnabled: o => o?.enabled === true, ciriumRadarProjection: () => ({}),
     runCiriumFlightAwareSequence: o => runCiriumFlightAwareSequence({ ...o, now: () => now }), sequentialRadarProjection,
     runCiriumRadarInjection: async () => { throw Error('Sky path must not run'); },
-    providerCustom: async () => null, providerAviationstack: async () => null, providerAirLabs: async () => null, providerAeroDataBox: async () => null,
+    providerCustom: async () => { legacy.push('custom'); return null; }, providerAviationstack: async () => { legacy.push('aviationstack'); return null; },
+    providerAirLabs: async () => { legacy.push('airlabs'); return null; }, providerAeroDataBox: async () => { legacy.push('aerodatabox'); return null; },
+    // Real paid options builder (the server's defaultCiriumRadarOptions with Sky hard OFF).
+    defaultCiriumRadarOptions: () => ciriumFlexRadarOptions(env),
     scoreRadar: () => 95, configuredProviders: () => [],
-    conciergeLoadSnapshot: async () => ({ email: 'fictional-a', roster }), conciergeAccessMatches: () => true,
-    conciergeFindFlight: () => ({ record: records()[0], leg }), conciergeSaveSnapshotAsync: async () => {},
+    conciergeLoadSnapshot: snapshotLoad || (async () => ({ email: 'fictional-a', roster })), conciergeAccessMatches: () => true,
+    conciergeFindFlight: () => ({ record: records()[0], leg }), conciergeSaveSnapshotAsync: async (...args) => { saves.push(args); },
     conciergeExtractFlight: () => 'LA100', conciergeNextProgram: () => records()[0], conciergeNextJourneyProgram: () => records()[0],
     conciergeProgramRecords: records, conciergeJourneyProgramRecords: (_r, rs) => rs,
   });
   vm.runInContext(functions(['envAny', 'firstKnown', 'normalizeFlightRaw', 'buildFlightContext', 'providerAvailable', 'markProvider',
     ...optional(['radarAirportCode', 'flightAwareAirport', 'flightAwareScheduledDeparture', 'flightAwareOccurrenceRank', 'selectFlightAwareOccurrence']),
     'normalizeFlightAwareFlight', 'providerFlightAware', 'publicRadarPayload', 'runRadarRace', 'conciergeRadarReply', 'conciergeApplyRadar']), scope);
-  return { scope, calls, faCalls: () => calls.filter(url => new URL(url).hostname === 'aeroapi.flightaware.com').length };
+  return { scope, calls, legacy, saves, faCalls: () => calls.filter(url => new URL(url).hostname === 'aeroapi.flightaware.com').length };
 }
 
 const key = { FLIGHTAWARE_AEROAPI_KEY: 'synthetic-offline-key', FLIGHTAWARE_COST_PER_CALL_USD: '0.0017' };
 const flexOn = { CIRIUM_FLEX_RADAR_ENABLED: 'true', CIRIUM_APP_ID: 'synthetic-id', CIRIUM_APP_KEY: 'synthetic-key', CIRIUM_FLEX_COST_PER_CALL_USD: '0.01' };
 
-// 1. Actual Concierge entry: no paid guard there, so FlightAware is never reached while OFF,
-//    and with Flex on it is never reached outside the budget guard even when permitted.
-for (const [label, env, expected] of [
-  ['Flex on, FlightAware key+cost, permission unset', { ...flexOn, ...key }, 0],
-  ['Flex on, permission TRUE (not exact)', { ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'TRUE' }, 0],
-  ['Flex on, permission 1 (not exact)', { ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: '1' }, 0],
-  ['Flex on, permission true: Concierge has no budget guard', { ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }, 0],
-  ['Flex off, FlightAware key, permission unset', { ...key }, 0],
-  ['Flex off, permission true: legacy race, explicitly permitted', { ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }, 1],
-]) {
-  const { scope, faCalls } = scopeWith(env);
-  await scope.conciergeRadarReply('/radar LA100', { email: 'fictional-a' }, { roster });
-  assert.equal(faCalls(), expected, label);
-}
-
-// 2. Paid Flex routing (the HTTP handler's options) with the actual providerFlightAware.
 function fakePool() {
   const table = new Map(), locks = new Map();
   const lock = async k => { while (locks.has(k)) await locks.get(k).promise; let release; const promise = new Promise(r => { release = r; }); locks.set(k, { promise, release }); return () => { locks.delete(k); release(); }; };
@@ -84,6 +71,48 @@ function fakePool() {
 const flexNoGate = { appendix: { airlines: [{ fs: 'JJ', iata: 'LA' }], airports: [{ fs: 'GRU', iata: 'GRU' }, { fs: 'REC', iata: 'REC' }] },
   flightStatuses: [{ carrierFsCode: 'JJ', flightNumber: 100, departureAirportFsCode: 'GRU', arrivalAirportFsCode: 'REC', status: 'S',
     operationalTimes: { scheduledGateDeparture: { dateUtc: '2032-10-14T12:00:00.000Z' } }, airportResources: {} }] };
+const spentOn = (pool, provider) => JSON.parse(pool.table.get(radarSpendKey(provider)) || '{"days":{}}').days['2032-10-14'] || 0;
+
+// 1. Actual Concierge entry. With Flex on it takes the same paid routing as the HTTP radar (budget,
+//    cache, ledger, re-admission), never the unbudgeted legacy race, and FlightAware only with the
+//    exact permission and through its budget guard. Flex off: the legacy race is unchanged.
+async function concierge(env, { snapshotLoad } = {}) {
+  const pool = fakePool(); let flexCalls = 0;
+  configureRadarPaidSources({ pool, now: () => now, env, fetchImpl: async () => { flexCalls++; return { ok: true, status: 200, json: async () => structuredClone(flexNoGate) }; }, timeoutMs: 50 });
+  const run = scopeWith(env, { snapshotLoad });
+  const reply = await run.scope.conciergeRadarReply('/radar LA100', { email: 'fictional-a' }, { roster });
+  return { reply, fa: run.faCalls(), flex: flexCalls, legacy: run.legacy.length, saves: run.saves.length, faSpent: spentOn(pool, 'flightaware'), flexSpent: spentOn(pool, 'cirium-flex') };
+}
+for (const [label, env, expected] of [
+  ['Flex on, FlightAware key+cost, permission unset', { ...flexOn, ...key }, { fa: 0, faSpent: 0, flex: 1, flexSpent: 10000, legacy: 0, saves: 0 }],
+  ['Flex on, permission TRUE (not exact)', { ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'TRUE' }, { fa: 0, faSpent: 0, flex: 1, flexSpent: 10000, legacy: 0, saves: 0 }],
+  ['Flex on, permission 1 (not exact)', { ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: '1' }, { fa: 0, faSpent: 0, flex: 1, flexSpent: 10000, legacy: 0, saves: 0 }],
+  ['Flex on, permission true: one FlightAware call, only through the budget guard', { ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }, { fa: 1, faSpent: 1700, flex: 1, flexSpent: 10000, legacy: 0, saves: 0 }],
+  ['Flex on without credentials: refused, never the legacy race', { CIRIUM_FLEX_RADAR_ENABLED: 'true', ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }, { fa: 0, faSpent: 0, flex: 0, flexSpent: 0, legacy: 0, saves: 0 }],
+  ['Flex off, FlightAware key, permission unset', { ...key }, { fa: 0, faSpent: 0, flex: 0, flexSpent: 0, legacy: 4, saves: 1 }],
+  ['Flex off, permission true: legacy race, explicitly permitted', { ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }, { fa: 1, faSpent: 0, flex: 0, flexSpent: 0, legacy: 4, saves: 1 }],
+]) {
+  const { reply, ...seen } = await concierge(env);
+  assert.deepEqual(seen, expected, label);
+  assert.equal(typeof reply, 'string', label);
+}
+// Paid answers are read-only (saves 0 above) and the reply keeps the Concierge's evidence rule: a gate
+// without a source observation time (FlightAware's 18 here) is never presented as confirmed.
+{
+  const { reply } = await concierge({ ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' });
+  assert.match(reply, /^Radar LA100\nGRU → REC\n/, 'reply for the exact published occurrence');
+  assert.match(reply, /Portão: indisponível \(fonte sem horário de observação deste campo\)/);
+  assert.doesNotMatch(reply, /Portão: 18/);
+}
+// Account or occurrence revoked before the paid call: the Concierge admission refuses, no Flex/FlightAware call.
+{
+  let loads = 0;
+  const revoked = await concierge({ ...flexOn, ...key, RADAR_FLIGHTAWARE_FALLBACK_ENABLED: 'true' }, { snapshotLoad: async () => (++loads, null) });
+  assert.deepEqual([revoked.flex, revoked.fa, revoked.legacy, revoked.saves], [0, 0, 0, 0], 'revoked Concierge authority: no paid call');
+  assert(loads >= 1, 'admission reloads the Concierge snapshot');
+}
+
+// 2. Paid Flex routing (the HTTP handler's options) with the actual providerFlightAware.
 const identity = { flight: 'LA100', origin: 'GRU', destination: 'REC', departureDate: '2032-10-14', scheduledDepartureUtc: '2032-10-14T12:00:00.000Z' };
 async function paidRace(env, { cooldown = false, faStatus = 200 } = {}) {
   const pool = fakePool();
@@ -124,4 +153,4 @@ assert.deepEqual([run.fa, run.spent, run.seq.fallbackAttempted], [1, 1700, true]
   assert.equal(calls, 1, 'not cached: the next request may try again');
 }
 
-console.log('PASS FlightAware OFF everywhere: actual Concierge entry and paid routing reach FlightAware only with the exact permission (and with Flex only through the budget guard); no key/cooldown refused before the ledger; real failures still count');
+console.log('PASS FlightAware OFF everywhere: actual Concierge entry uses the paid Flex routing (budget, cache, ledger, re-admission; read-only, never the legacy race) and, like the HTTP paid routing, reaches FlightAware only with the exact permission and through the budget guard; no key/cooldown refused before the ledger; real failures still count');

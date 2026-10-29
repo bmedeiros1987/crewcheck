@@ -2524,6 +2524,21 @@ async function conciergeRadarReply(text, profile, snapshot) {
   if (bindings.size !== 1) return gateQuerySuppressed({reason:'occurrence-unverified'}).message;
   let info = [...bindings.values()][0];
   queryContext.gateQueryEvidence = info.identity;
+  // Same paid routing as the HTTP radar: with Cirium Flex on, the Concierge goes through the
+  // Flex budget, cache and ledger, with account/occurrence re-admission around each paid call,
+  // never through the unbudgeted legacy race. Off (no paid primary), the legacy race is unchanged.
+  const paidOptions = defaultCiriumRadarOptions();
+  if (ciriumRadarInjectionEnabled(paidOptions) && typeof paidOptions.primary === 'function') {
+    queryContext.ciriumRadarOptions = paidOptions;
+    queryContext.radarReadAdmission = async () => {
+      try {
+        if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return false;
+        const current = await conciergeLoadSnapshot(profile);
+        return Boolean(current?.roster && conciergeAccessMatches(profile,current) && gateQueryDay(queryContext.gateQueryEvidence).allowed
+          && findPublishedGateLeg(current.roster,queryContext.gateQueryEvidence,buildCanonicalRosterEvents(current.roster)));
+      } catch { return false; }
+    };
+  }
   const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');
   if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({ reason: 'response-context-expired' }).message;
   if (radar.querySuppressed) return radar.message;
@@ -2534,7 +2549,8 @@ async function conciergeRadarReply(text, profile, snapshot) {
   if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
   snapshot = currentSnapshot;
   info = currentBinding;
-  if (snapshot && info?.leg) {
+  // Paid/Cirium answers are read-only (as in the HTTP radar): shown, never written to the Concierge.
+  if (snapshot && info?.leg && radar.canonicalReadOnly !== true) {
     conciergeApplyRadar(snapshot, info, radar);
     await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
   }
