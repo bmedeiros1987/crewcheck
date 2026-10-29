@@ -43,17 +43,22 @@ try {
     sessionStorage.setItem('crewcheck_initial_view', 'roster');
   });
   await page.goto(origin + '/app');
+  // Format and reset sit under the collapsed "Exibição" expander; open it (again after a remount) before use.
+  const openView = async () => { const details = page.locator('details.cc-roster-view-options'); await details.waitFor({ state: 'attached' }); if (!await details.evaluate(e => e.open)) await details.locator(':scope > summary').click(); };
   const picker = page.getByRole('combobox', { name: 'Formato da escala', exact: true });
+  await openView();
   await picker.waitFor();
   const peer = await context.newPage();
   await peer.goto(origin + '/fixture-peer.html');
   const sync = async () => { await page.waitForTimeout(100); };
   const expectLayout = async (expected, label) => {
     await page.waitForFunction(expected => document.querySelector('select[aria-label="Formato da escala"]')?.value === expected,expected);
+    await openView();
     assert.equal(await picker.inputValue(), expected, label);
     results.push(label);
   };
   for (const layout of ['aims', 'calendar']) {
+    await openView();
     await picker.selectOption(layout);
     if (layout === 'aims') {
       // The single AIMS mode uses the document overview.
@@ -70,6 +75,7 @@ try {
     assert(maintenanceRequests > before, 'maintenance minute interval exercised');
     assert.match(await page.locator('.cc-roster-layout-status').innerText(), /nesta sessão/);
     assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('crewcheck:roster-layout:')).length), 0, 'guest never persisted as an account');
+    await openView();
     await page.getByRole('button', { name: 'Restaurar padrão', exact: true }).click();
     await expectLayout('cards', `guest ${layout}: explicit reset`);
   }
@@ -79,9 +85,11 @@ try {
   };
   await owner('fixture-A');
   await expectLayout('cards', 'account A starts isolated');
+  await openView();
   await picker.selectOption('aims');
   await owner('fixture-B');
   await expectLayout('cards', 'account B does not inherit A');
+  await openView();
   await picker.selectOption('calendar');
   await page.clock.fastForward(65_000);
   await expectLayout('calendar', 'account B survives minute timers');
@@ -95,6 +103,7 @@ try {
   await expectLayout('calendar', 'account B preference untouched');
   await owner(null);
   await expectLayout('cards', 'logout does not inherit account B');
+  await openView();
   await picker.selectOption('calendar');
   await peer.evaluate(() => localStorage.clear());
   await expectLayout('cards', 'storage clear resets visitor');
