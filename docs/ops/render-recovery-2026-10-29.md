@@ -29,13 +29,14 @@ Não há mudança de DNS nem de configuração. É o menor risco e o menor tempo
 
 **Pré-requisito:** alguém com acesso ao painel da conta antiga confirma o motivo da suspensão e o valor.
 
-O plano atual no `render.yaml` é `free`. Confirme no painel qual cobrança gerou a suspensão: plano, banda, minutos de build ou outro item. Respeite o teto de **US$ 7/mês por aplicativo**. O valor de um plano não é teto de fatura, e custo variável não coberto exige decisão do Bruno.
+O plano atual no `render.yaml` é `free`. Confirme no painel qual cobrança gerou a suspensão: plano, banda, minutos de build ou outro item. Respeite o teto de **US$ 7/mês por aplicativo**. Ainda falta o Bruno esclarecer se o teto vale para o plano-base ou para o total. Até lá, não contrate nada além do plano. O valor de um plano não é teto de fatura, e custo variável não coberto exige decisão do Bruno.
 
 ## 3. Alternativa: migrar para o workspace novo ("My Workspace", conexão CrewCheck Novo)
 
 ### 3.0 Verificações antes de qualquer criação (só leitura)
 
-1. **Domínio.** Confirme se `crewcheck.online` pode ser **removido do serviço antigo**, que está suspenso. O Render só aceita um domínio personalizado em um serviço por vez. Se não for possível remover pelo painel antigo, será preciso falar com o suporte do Render. Este é o bloqueio principal da migração.
+1. **Domínio.** Dentro do Render, um domínio personalizado fica em um serviço por vez. Para anexar `crewcheck.online` a um serviço novo do Render, é preciso **removê-lo antes do serviço antigo**, que está suspenso, pelo painel antigo ou pelo suporte do Render.
+   - Essa restrição vale só entre serviços do Render. Ela **não impede** que o DNS na UOL aponte para um host fora do Render, desde que esse host sirva `crewcheck.online` com TLS válido (seção 3.1, opção B).
 2. **Banco (Aiven, não mover).**
    - O host e a CA estão fixados em `server/mysql-verified-tls.mjs` (porta 22966).
    - Confirme no console do Aiven se há **filtro de IP**: o serviço novo sai por outros IPs.
@@ -60,12 +61,21 @@ O plano atual no `render.yaml` é `free`. Confirme no painel qual cobrança gero
 
 Não há prazo prometido (sem `Retry-After`).
 
-Serviço web no workspace novo, plano **free**, sem variáveis de ambiente:
+A entrada não quebra com request malformado: a rota é lida como texto, sem `new URL`. Alvos como `//%` ou `//[` recebem resposta, e o processo segue no ar.
+
+**Opção A, no Render (workspace novo).** Serviço web, plano **free**, sem variáveis de ambiente:
 - Build Command: `true`
 - Start Command: `node ops/maintenance/server.mjs`
 - Health Check Path: `/__maintenance/health`
 
-Depois de liberar o domínio, anexe `crewcheck.online` a este serviço. Se o Render indicar outro alvo de DNS, a alteração na UOL exige autorização.
+O domínio só entra depois de liberado do serviço antigo (3.0, item 1). Se o Render indicar outro alvo de DNS, a alteração na UOL exige autorização.
+
+**Opção B, fora do Render (hospedagem estática).** Só o `ops/maintenance/index.html`, um arquivo estático, sem Node, na hospedagem UOL ("somente hospedagem").
+- Pré-requisitos:
+  - TLS válido para `crewcheck.online` nesse host; sem isso, navegadores e o WebView do app recusam a conexão;
+  - autorização do Bruno para alterar o registro A na UOL. O login tem CAPTCHA pendente, e nenhum DNS foi alterado.
+- O host estático provavelmente responde 200, não 503, e o cache depende da configuração dele.
+- O corte e o retorno são feitos pelo registro A (`216.24.57.1` é o valor atual). Com TTL de cerca de 30 min, a propagação leva até esse tempo nos dois sentidos.
 
 Observações:
 - **Hibernação:** o plano free hiberna; a primeira visita pode demorar.
@@ -82,11 +92,17 @@ Conferência: `node scripts/ops/post-cutover-smoke.mjs https://crewcheck.online 
 2. **Variáveis.** Copie no painel, direto, os mesmos nomes e os mesmos valores do serviço antigo. Não passe valores por chat.
 3. **Estado definido/ausente.** Reproduza para cada variável abaixo exatamente o estado do serviço antigo: definida ou ausente.
    - Vários nomes caem em `CREWCHECK_AUTH_SECRET` quando ausentes. Definir um que antes não existia muda a chave derivada e torna ilegíveis os dados cifrados.
-   - Variáveis que precisam manter o mesmo valor e o mesmo estado: `DATABASE_URL`, `MYSQL_SSL_MODE`, `CREWCHECK_AUTH_SECRET`, `CREWCHECK_DATA_ENCRYPTION_KEY`, `CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY`, `CREWCHECK_WHATSAPP_AUDIT_SALT`, `CREWCHECK_AUDIT_HASH_SALT`, `CREWCHECK_TERMS_AUDIT_SALT`.
+   - Obrigatórias, com o mesmo valor: `DATABASE_URL` e `CREWCHECK_AUTH_SECRET`.
+   - Opcionais, com o mesmo valor **e** o mesmo estado (definida ou ausente): `MYSQL_SSL_MODE`, `CREWCHECK_DATA_ENCRYPTION_KEY`, `CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY`, `CREWCHECK_WHATSAPP_AUDIT_SALT`, `CREWCHECK_AUDIT_HASH_SALT`, `CREWCHECK_TERMS_AUDIT_SALT`, `JWT_SECRET`.
    - Sem `CREWCHECK_AUTH_SECRET`, o código usa um segredo de desenvolvimento fixo (`cc1371Secret`). **Não inicie o serviço sem ele.**
 4. **Ligadas a provedores** (precisam bater com o que o provedor tem): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `META_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN`, `MAILERSEND_API_KEY`, `MAILERSEND_WEBHOOK_SECRET`, `INFOBIP_API_KEY`, `GOOGLE_OAUTH_WEB_CLIENT_ID`, `GOOGLE_OAUTH_WEB_CLIENT_SECRET`.
 5. **URLs públicas:** continuam `https://crewcheck.online` (`CREWCHECK_PUBLIC_BASE_URL`, `TELEGRAM_PUBLIC_BASE_URL`, `GOOGLE_OAUTH_REDIRECT_URI`). Como o domínio não muda, os webhooks não mudam: Telegram, Meta/WhatsApp, Infobip, Asaas, MailerSend e o redirect do Google OAuth.
-6. **Checagem de nomes:** gere um arquivo só com nomes, um por linha, e rode `node scripts/ops/env-names.mjs --check nomes.txt`. A ferramenta recusa linhas com valor.
+6. **Checagem de nomes, antigo × novo:** gere dois arquivos só com nomes, um por linha: os definidos no serviço antigo e os definidos no novo. Rode `node scripts/ops/env-names.mjs --check --old antigos.txt --new novos.txt`. A ferramenta recusa linhas com valor e falha quando:
+   - falta um nome obrigatório (`DATABASE_URL`, `CREWCHECK_AUTH_SECRET`);
+   - um nome sensível à derivação muda de presença em qualquer direção (por exemplo, um salt opcional que era ausente passa a definido);
+   - um nome que o serviço antigo tinha some no novo.
+
+   Nomes só acrescentados no novo, e não sensíveis, aparecem no relatório sem reprovar. Chaves e salts opcionais ausentes nos dois lados estão corretos e **não** devem ser criados.
 7. **Migração automática:** o `render.yaml` define `CREWCHECK_AUTO_MIGRATE`, mas o código lê `CREWCHECK_DB_AUTO_MIGRATE` (padrão `false`). Mantenha o estado do serviço antigo. A última migração do repositório é de 20/10.
 
 **Nunca rode duas instâncias com segredos de produção.** Ao iniciar, `server/telegram-fast-ack.mjs`:
@@ -100,7 +116,13 @@ Consequências:
 ### 3.3 Corte
 
 1. Retirar `crewcheck.online` do serviço de manutenção e anexar ao serviço principal.
-2. `node scripts/ops/post-cutover-smoke.mjs https://crewcheck.online`. São só GETs. Verifica que não é a página do Render, que `/api/health` responde 200 em JSON, e que o shell, o `sw.js` e o `manifest.json` estão presentes. `/api/health` sozinho não basta, porque responde `ok` sem configuração.
+2. `node scripts/ops/post-cutover-smoke.mjs https://crewcheck.online --expected-release <commit implantado>`. São só GETs. Verifica:
+   - que não é a página do Render;
+   - que `/api/health` responde 200 em JSON;
+   - que o `release` de `/api/health`, e de `/api/release` quando existir, é o commit esperado (completo ou prefixo de 7+ caracteres hex);
+   - que o shell, o `sw.js` e o `manifest.json` estão presentes.
+
+   Sem `--expected-release`, o smoke não aprova. Outra versão, uma divergência entre as duas rotas ou um build `local` reprovam o corte. `/api/health` sozinho não basta, porque responde `ok` sem configuração.
 3. Conferir no painel do Telegram que o webhook aponta para `https://crewcheck.online/api/telegram/webhook`. A aplicação repara isso sozinha.
 
 ### 3.4 Rollback
@@ -113,18 +135,18 @@ Consequências:
 
 - Enquanto o domínio estiver preso ao serviço suspenso, quem responde é o Render. Não há como trocar a página dele.
 - O Telegram, o WhatsApp e os e-mails saem do mesmo servidor suspenso.
-- O aviso no app e no site depende de o domínio apontar para o serviço de manutenção (3.1). Fora disso, só por canais externos.
+- O aviso no app e no site depende de o domínio apontar para a entrada de manutenção: opção A, com o domínio liberado no Render, ou opção B, com o DNS na UOL apontando para um host estático com TLS válido (3.1). Fora disso, só por canais externos.
 
 ## 5. Autorizações necessárias
 
 | # | Autorização | Para quê |
 |---|---|---|
 | 1 | Acesso ao painel da conta antiga do Render | Ver motivo e valor da suspensão, nomes das variáveis, região e liberação do domínio |
-| 2 | Decisão de plano e custo | Teto de US$ 7/mês por aplicativo; banda e builds como custo variável |
+| 2 | Decisão de plano e custo | Teto de US$ 7/mês por aplicativo (falta definir se é plano-base ou total); banda e builds como custo variável |
 | 3 | Criar o serviço de manutenção (free) e o principal no workspace novo | Seções 3.1 e 3.2 |
 | 4 | Inserir as variáveis direto no painel novo | Pelo responsável pelos segredos, sem trânsito por chat |
 | 5 | Acesso ao Aiven, leitura | Filtro de IP e último backup |
-| 6 | DNS na UOL | Só se o Render indicar outro alvo para o domínio |
+| 6 | DNS na UOL | Opção B do aviso (host estático com TLS válido) ou outro alvo indicado pelo Render; login com CAPTCHA pendente de autorização do Bruno |
 
 ## 6. Achados para depois (fora desta recuperação)
 

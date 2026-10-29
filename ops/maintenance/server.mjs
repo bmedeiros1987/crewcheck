@@ -12,14 +12,25 @@ const page = fs.readFileSync(new URL('./index.html', import.meta.url));
 const message = 'Sistema em manutenção. Estamos trabalhando para restabelecer o acesso.';
 const common = { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'X-Content-Type-Options': 'nosniff' };
 
+// The route comes from the raw request target as a string: no URL parsing, so a malformed
+// target (for example "//%" or "//[") cannot throw. Anything unexpected still answers.
+function routeOf(target) {
+  return String(target || '/').split(/[?#]/, 1)[0];
+}
+
 export function handle(req, res) {
-  const route = new URL(req.url || '/', 'http://maintenance.invalid').pathname;
-  const body = route === '/__maintenance/health' ? JSON.stringify({ ok: true, maintenance: true })
-    : route.startsWith('/api/') ? JSON.stringify({ ok: false, maintenance: true, message })
-    : page;
-  const json = typeof body === 'string';
-  res.writeHead(route === '/__maintenance/health' ? 200 : 503, { ...common, 'Content-Type': json ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
-  res.end(req.method === 'HEAD' ? undefined : body);
+  try {
+    const route = routeOf(req.url);
+    const body = route === '/__maintenance/health' ? JSON.stringify({ ok: true, maintenance: true })
+      : route.startsWith('/api/') ? JSON.stringify({ ok: false, maintenance: true, message })
+      : page;
+    const json = typeof body === 'string';
+    res.writeHead(route === '/__maintenance/health' ? 200 : 503, { ...common, 'Content-Type': json ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
+    res.end(req.method === 'HEAD' ? undefined : body);
+  } catch {
+    if (!res.headersSent) res.writeHead(400, { ...common, 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end();
+  }
 }
 
 export function start(port = Number(process.env.PORT || 10000)) {

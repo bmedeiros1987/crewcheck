@@ -1,9 +1,11 @@
 // Read-only smoke check of a CrewCheck origin after a cutover: GET requests only, no login, no
 // mutation, no secret. It tells the restored app apart from the platform's suspension page and
 // from the maintenance entry (ops/maintenance). A passing /api/health alone proves little (it
-// answers ok without configuration), so the shell, worker and manifest are checked too.
+// answers ok without configuration), so the shell, worker and manifest are checked too, and the
+// cutover gate pins the release: /api/health (and /api/release when served) must report the
+// commit that was meant to go live (RENDER_GIT_COMMIT on the platform).
 //
-//   node scripts/ops/post-cutover-smoke.mjs https://crewcheck.online
+//   node scripts/ops/post-cutover-smoke.mjs https://crewcheck.online --expected-release <sha>
 //   node scripts/ops/post-cutover-smoke.mjs https://crewcheck.online --expect-maintenance
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +21,10 @@ async function get(base, route, fetchImpl) {
   } finally { clearTimeout(timer); }
 }
 
-export async function smoke(base, { expectMaintenance = false, fetchImpl = fetch } = {}) {
+// A full commit or an unambiguous prefix (at least 7 hex characters).
+export const releaseMatches = (reported, expected) => /^[0-9a-f]{7,40}$/.test(expected) && /^[0-9a-f]{40}$/.test(String(reported || '')) && String(reported).startsWith(expected);
+
+export async function smoke(base, { expectMaintenance = false, expectedRelease = '', fetchImpl = fetch } = {}) {
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok: Boolean(ok), detail });
   const health = await get(base, '/api/health', fetchImpl);
@@ -33,6 +38,11 @@ export async function smoke(base, { expectMaintenance = false, fetchImpl = fetch
   } else {
     let body = null; try { body = JSON.parse(health.text); } catch {}
     check('/api/health 200 JSON ok', health.status === 200 && body?.ok === true && body?.app === 'CrewCheck', health.status);
+    check('expected release pinned', /^[0-9a-f]{7,40}$/.test(expectedRelease), expectedRelease || 'missing --expected-release');
+    check('/api/health reports the expected release', releaseMatches(body?.release, expectedRelease), body?.release || 'no release field');
+    const release = await get(base, '/api/release', fetchImpl);
+    let releaseBody = null; try { releaseBody = JSON.parse(release.text); } catch {}
+    check('/api/release agrees when served', release.status === 404 || (release.status === 200 && releaseMatches(releaseBody?.release, expectedRelease)), `${release.status} ${releaseBody?.release || ''}`);
     const root = await get(base, '/', fetchImpl);
     check('/ serves the app shell', root.status === 200 && /text\/html/.test(root.type) && /<div id="root"/.test(root.text) && !/Sistema em manutenção/.test(root.text), root.status);
     const worker = await get(base, '/sw.js', fetchImpl);
@@ -45,8 +55,12 @@ export async function smoke(base, { expectMaintenance = false, fetchImpl = fetch
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const base = process.argv[2];
-  if (!/^https?:\/\//.test(base || '')) { console.error('Usage: post-cutover-smoke.mjs <https://origin> [--expect-maintenance]'); process.exit(2); }
-  const report = await smoke(base, { expectMaintenance: process.argv.includes('--expect-maintenance') });
+  const at = process.argv.indexOf('--expected-release'), expectedRelease = at > 0 ? String(process.argv[at + 1] || '').toLowerCase() : '';
+  const expectMaintenance = process.argv.includes('--expect-maintenance');
+  if (!/^https?:\/\//.test(base || '') || (!expectMaintenance && !/^[0-9a-f]{7,40}$/.test(expectedRelease))) {
+    console.error('Usage: post-cutover-smoke.mjs <https://origin> --expected-release <commit sha> | --expect-maintenance'); process.exit(2);
+  }
+  const report = await smoke(base, { expectMaintenance, expectedRelease });
   console.log(JSON.stringify(report, null, 2));
   process.exitCode = report.ok ? 0 : 1;
 }

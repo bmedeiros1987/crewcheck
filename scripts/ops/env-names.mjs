@@ -1,20 +1,25 @@
 // Environment inventory for a service move, by NAME only. It never reads process.env or any
-// value: it scans render.yaml and the server sources for variable names, and with --check it
-// compares a list of names (one per line, e.g. copied from the new service's dashboard) with
-// the names the move cannot go without. A line carrying a value (NAME=...) is refused.
+// value: it scans render.yaml and the server sources for variable names, and --check compares
+// the names set on the old service with the names set on the new one (one per line, copied
+// from each dashboard). A line carrying a value (NAME=...) is refused.
 //
-//   node scripts/ops/env-names.mjs                 # JSON inventory of names by group
-//   node scripts/ops/env-names.mjs --check FILE    # missing critical names in FILE
+//   node scripts/ops/env-names.mjs                                  # inventory by group
+//   node scripts/ops/env-names.mjs --check --old OLD.txt --new NEW.txt
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Same value as before or users/data break: sessions, stored ciphertexts, audit hashes, the DB.
-// Several fall back to CREWCHECK_AUTH_SECRET when unset (data key, audit salts), so the new
-// service must also keep each one SET or UNSET exactly as the old one: setting a name that was
-// unset changes the derived key and makes stored ciphertexts unreadable.
-export const KEEP_SAME = ['DATABASE_URL', 'MYSQL_SSL_MODE', 'CREWCHECK_AUTH_SECRET', 'CREWCHECK_DATA_ENCRYPTION_KEY',
-  'CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY', 'CREWCHECK_WHATSAPP_AUDIT_SALT', 'CREWCHECK_AUDIT_HASH_SALT', 'CREWCHECK_TERMS_AUDIT_SALT'];
+// Truly mandatory: the database, and the session secret (without it the code signs with a
+// fixed development secret).
+export const REQUIRED = ['DATABASE_URL', 'CREWCHECK_AUTH_SECRET'];
+// Optional, but their presence decides a derivation: several fall back to CREWCHECK_AUTH_SECRET
+// (or to each other) when unset. Each must be SET or UNSET on the new service exactly as on the
+// old one: adding a name that was unset changes the derived key and makes stored ciphertexts or
+// audit hashes unreadable; dropping one that was set does the same.
+export const PRESENCE_LOCKED = ['MYSQL_SSL_MODE', 'CREWCHECK_DATA_ENCRYPTION_KEY', 'CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY',
+  'CREWCHECK_WHATSAPP_AUDIT_SALT', 'CREWCHECK_AUDIT_HASH_SALT', 'CREWCHECK_TERMS_AUDIT_SALT', 'JWT_SECRET'];
+// Same value as before (values are never handled here).
+export const KEEP_SAME = [...REQUIRED, ...PRESENCE_LOCKED];
 // Bound to configuration held by a provider (webhooks, OAuth): must match what the provider has.
 export const PROVIDER_BOUND = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'META_APP_SECRET', 'WHATSAPP_VERIFY_TOKEN',
   'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'ASAAS_API_KEY', 'ASAAS_WEBHOOK_TOKEN', 'MAILERSEND_API_KEY',
@@ -60,9 +65,21 @@ export function parseNameList(text) {
   return names;
 }
 
-export function missingCritical(names) {
-  const present = new Set(names);
-  return { keepSame: KEEP_SAME.filter(n => !present.has(n)), providerBound: PROVIDER_BOUND.filter(n => !present.has(n)), publicUrls: PUBLIC_URLS.filter(n => !present.has(n)) };
+/**
+ * Compares the names set on the old and on the new service. Fails on a missing required name,
+ * on any presence change of a derivation-sensitive name and on any name the old service had and
+ * the new one lacks. Names only added on the new side (and not sensitive) are reported, not failed.
+ */
+export function compareNames(oldNames, newNames) {
+  const before = new Set(oldNames), after = new Set(newNames);
+  const report = {
+    requiredMissing: REQUIRED.filter(n => !after.has(n)),
+    presenceChanged: PRESENCE_LOCKED.filter(n => before.has(n) !== after.has(n)).map(n => ({ name: n, old: before.has(n) ? 'set' : 'unset', new: after.has(n) ? 'set' : 'unset' })),
+    missingFromOld: [...before].filter(n => !after.has(n) && !PRESENCE_LOCKED.includes(n)).sort(),
+    addedOnNew: [...after].filter(n => !before.has(n) && !PRESENCE_LOCKED.includes(n)).sort(),
+  };
+  report.ok = !report.requiredMissing.length && !report.presenceChanged.length && !report.missingFromOld.length;
+  return report;
 }
 
 export function serverSources(root) {
@@ -78,16 +95,17 @@ export function serverSources(root) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = process.cwd();
-  const check = process.argv.indexOf('--check');
-  if (check > 0) {
-    const missing = missingCritical(parseNameList(fs.readFileSync(process.argv[check + 1], 'utf8')));
-    console.log(JSON.stringify(missing, null, 2));
-    process.exitCode = Object.values(missing).some(list => list.length) ? 1 : 0;
+  const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : ''; };
+  if (process.argv.includes('--check')) {
+    if (!arg('--old') || !arg('--new')) { console.error('Usage: env-names.mjs --check --old OLD.txt --new NEW.txt (names only, one per line)'); process.exit(2); }
+    const report = compareNames(parseNameList(fs.readFileSync(arg('--old'), 'utf8')), parseNameList(fs.readFileSync(arg('--new'), 'utf8')));
+    console.log(JSON.stringify(report, null, 2));
+    process.exitCode = report.ok ? 0 : 1;
   } else {
     const render = renderYamlNames(fs.readFileSync(path.join(root, 'render.yaml'), 'utf8'));
     const code = codeNames(serverSources(root));
     const declared = new Set([...render.secret, ...render.declared, ...render.generated]);
-    console.log(JSON.stringify({ critical: { keepSame: KEEP_SAME, providerBound: PROVIDER_BOUND, publicUrls: PUBLIC_URLS },
+    console.log(JSON.stringify({ critical: { required: REQUIRED, presenceLocked: PRESENCE_LOCKED, providerBound: PROVIDER_BOUND, publicUrls: PUBLIC_URLS },
       renderYaml: render, readByCodeNotInRenderYaml: code.filter(n => !declared.has(n)) }, null, 2));
   }
 }

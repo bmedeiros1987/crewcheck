@@ -3,15 +3,17 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import { spawn } from 'node:child_process';
-import { smoke } from './ops/post-cutover-smoke.mjs';
-import { renderYamlNames, codeNames, serverSources, parseNameList, missingCritical, CRITICAL } from './ops/env-names.mjs';
+import { smoke, releaseMatches } from './ops/post-cutover-smoke.mjs';
+import { renderYamlNames, codeNames, serverSources, parseNameList, compareNames, CRITICAL, REQUIRED, PRESENCE_LOCKED } from './ops/env-names.mjs';
 
 const notice = 'Sistema em manutenção. Estamos trabalhando para restabelecer o acesso.';
 
 // 1. Maintenance entry: independent of the app, honest 503, never cached, exact notice.
 const entry = fs.readFileSync('ops/maintenance/server.mjs', 'utf8'), html = fs.readFileSync('ops/maintenance/index.html', 'utf8');
 assert.deepEqual([...entry.matchAll(/^import .* from '([^']+)';$/gm)].map(m => m[1]).sort(), ['node:fs', 'node:http', 'node:path', 'node:url'], 'node builtins only: no server.mjs, no app module');
+assert.doesNotMatch(entry.slice(entry.indexOf('function routeOf')), /new URL\(req/, 'request targets are never parsed with URL (malformed targets cannot throw)');
 assert.doesNotMatch(entry, /process\.env\.(?!PORT\b)|setInterval|setTimeout|fetch\(|DATABASE|TOKEN|SECRET/, 'no secret, timer, outbound call or database');
 assert(html.includes(notice) && html.includes('lang="pt-BR"') && html.includes('name="robots" content="noindex"'));
 assert.doesNotMatch(html, /https?:\/\/|<script|<link|<img/i, 'self-contained: no external resource or script');
@@ -43,6 +45,17 @@ try {
   const health = await get('/__maintenance/health');
   assert.equal(health.status, 200); assert.deepEqual(JSON.parse(health.text), { ok: true, maintenance: true });
   const head = await get('/', 'HEAD'); assert.equal(head.status, 503); assert.equal(head.text, '');
+  // Malformed request targets over a raw socket (fetch would normalize them): an answer, no crash.
+  const raw = target => new Promise((resolve, reject) => {
+    const socket = net.connect(port, '127.0.0.1', () => socket.write(`GET ${target} HTTP/1.1\r\nHost: crewcheck.online\r\nConnection: close\r\n\r\n`));
+    let data = ''; socket.on('data', d => { data += d; }); socket.on('end', () => resolve(data)); socket.on('error', reject);
+  });
+  for (const target of ['//%', '//[', '//%zz/api/x', '/%', '/api/%E0%A4%A', '*', 'http://[::1', '//' + 'a'.repeat(4000)]) {
+    const answer = await raw(target);
+    assert.match(answer, /^HTTP\/1\.1 (503|400) /, `answers ${JSON.stringify(target.slice(0, 20))}: ${answer.slice(0, 40)}`);
+  }
+  assert.equal(child.exitCode, null, 'the process is still running after malformed targets');
+  assert.equal((await get('/')).status, 503, 'and keeps serving');
 
   // 2. Smoke: the maintenance entry passes only in maintenance mode.
   const asMaintenance = await smoke(base, { expectMaintenance: true });
@@ -53,15 +66,28 @@ try {
 
 // Synthetic app and synthetic platform suspension (no network).
 const respond = routes => async url => { const r = routes[new URL(url).pathname] || [404, 'text/plain', '', {}]; return new Response(r[2], { status: r[0], headers: { 'content-type': r[1], ...(r[3] || {}) } }); };
-const app = respond({ '/api/health': [200, 'application/json', JSON.stringify({ ok: true, app: 'CrewCheck' })], '/': [200, 'text/html', '<!doctype html><div id="root"></div>'],
-  '/sw.js': [200, 'text/javascript', 'self.addEventListener("fetch",()=>{})'], '/manifest.json': [200, 'application/json', '{}'] });
-assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: app })).ok, true);
+const sha = '39f3e84adca7ee047489a41385751a875d5a2248', other = '0123456789abcdef0123456789abcdef01234567';
+const appWith = (healthRelease, releaseRoute = [200, 'application/json', JSON.stringify({ ok: true, release: healthRelease })]) => respond({
+  '/api/health': [200, 'application/json', JSON.stringify({ ok: true, app: 'CrewCheck', release: healthRelease })], '/api/release': releaseRoute,
+  '/': [200, 'text/html', '<!doctype html><div id="root"></div>'], '/sw.js': [200, 'text/javascript', 'self.addEventListener("fetch",()=>{})'], '/manifest.json': [200, 'application/json', '{}'] });
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: appWith(sha), expectedRelease: sha })).ok, true);
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: appWith(sha), expectedRelease: sha.slice(0, 12) })).ok, true, 'unambiguous prefix');
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: appWith(sha, [404, 'text/plain', '']), expectedRelease: sha })).ok, true, '/api/release optional');
+const mismatch = await smoke('https://synthetic.invalid', { fetchImpl: appWith(other), expectedRelease: sha });
+assert.equal(mismatch.ok, false, 'another release never passes the cutover gate');
+assert.deepEqual(mismatch.results.filter(r => !r.ok).map(r => r.name), ['/api/health reports the expected release', '/api/release agrees when served']);
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: appWith(sha, [200, 'application/json', JSON.stringify({ release: other })]), expectedRelease: sha })).ok, false, 'routes disagreeing');
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: appWith(sha, [200, 'text/html', '<html>']), expectedRelease: sha })).ok, false, 'SPA fallback is not a release');
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: appWith(sha) })).ok, false, 'no expected release, no pass');
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: appWith('local'), expectedRelease: sha })).ok, false, "a build without commit ('local')");
+for (const [reported, expected, ok] of [[sha, sha, true], [sha, sha.slice(0, 7), true], [sha, sha.slice(0, 6), false], [sha, 'ABCDEF1', false], [sha.slice(0, 12), sha.slice(0, 12), false], ['', sha, false]])
+  assert.equal(releaseMatches(reported, expected), ok, `${reported} vs ${expected}`);
 const suspended = respond({ '/api/health': [503, 'text/html', '<title>Service Suspended</title>', { 'x-render-routing': 'suspend' }], '/': [503, 'text/html', 'Service Suspended', { 'x-render-routing': 'suspend' }] });
 const s1 = await smoke('https://synthetic.invalid', { fetchImpl: suspended });
 assert.equal(s1.ok, false); assert.equal(s1.results[0].ok, false, 'platform suspension detected first');
 assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: suspended, expectMaintenance: true })).ok, false);
 const healthOnly = respond({ '/api/health': [200, 'application/json', JSON.stringify({ ok: true, app: 'CrewCheck' })] });
-assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: healthOnly })).ok, false, 'health alone is not enough');
+assert.equal((await smoke('https://synthetic.invalid', { fetchImpl: healthOnly, expectedRelease: sha })).ok, false, 'health alone is not enough');
 
 // 3. Env inventory by name only.
 const render = renderYamlNames(fs.readFileSync('render.yaml', 'utf8'));
@@ -76,8 +102,24 @@ assert.throws(() => parseNameList('DATABASE_URL=mysql://x'), /Only variable name
 assert.throws(() => parseNameList('TELEGRAM_BOT_TOKEN: abc'), /Only variable names/);
 assert.throws(() => parseNameList('lowercase'), /Only variable names/);
 assert.deepEqual(parseNameList('# from dashboard\nDATABASE_URL\n\nMYSQL_SSL_MODE\n'), ['DATABASE_URL', 'MYSQL_SSL_MODE']);
-const missing = missingCritical(['DATABASE_URL', 'MYSQL_SSL_MODE']);
-assert(missing.keepSame.includes('CREWCHECK_AUTH_SECRET') && !missing.keepSame.includes('DATABASE_URL') && missing.publicUrls.length === 3);
-assert.deepEqual(missingCritical(CRITICAL), { keepSame: [], providerBound: [], publicUrls: [] });
+// Old vs new presence, never values: only truly required names are demanded; optional
+// derivation-sensitive names must keep their old presence (absent stays absent).
+const old = ['DATABASE_URL', 'CREWCHECK_AUTH_SECRET', 'TELEGRAM_BOT_TOKEN', 'MYSQL_SSL_MODE'];
+let report = compareNames(old, [...old]);
+assert.equal(report.ok, true, 'optional salts and keys absent on both sides is correct');
+assert.deepEqual([report.requiredMissing, report.presenceChanged, report.missingFromOld], [[], [], []]);
+report = compareNames(old, [...old, 'CREWCHECK_DATA_ENCRYPTION_KEY']);
+assert.equal(report.ok, false, 'adding an unset derivation key changes stored ciphertexts');
+assert.deepEqual(report.presenceChanged, [{ name: 'CREWCHECK_DATA_ENCRYPTION_KEY', old: 'unset', new: 'set' }]);
+report = compareNames([...old, 'CREWCHECK_AUDIT_HASH_SALT'], old);
+assert.deepEqual([report.ok, report.presenceChanged[0]], [false, { name: 'CREWCHECK_AUDIT_HASH_SALT', old: 'set', new: 'unset' }]);
+report = compareNames(old, old.filter(n => n !== 'CREWCHECK_AUTH_SECRET'));
+assert.deepEqual([report.ok, report.requiredMissing], [false, ['CREWCHECK_AUTH_SECRET']]);
+report = compareNames(old, old.filter(n => n !== 'TELEGRAM_BOT_TOKEN'));
+assert.deepEqual([report.ok, report.missingFromOld], [false, ['TELEGRAM_BOT_TOKEN']], 'configuration the old service had is not dropped');
+report = compareNames(old, [...old, 'NODE_VERSION']);
+assert.deepEqual([report.ok, report.addedOnNew], [true, ['NODE_VERSION']], 'a non-sensitive addition is reported, not failed');
+assert.deepEqual(compareNames([], ['DATABASE_URL']).requiredMissing, ['CREWCHECK_AUTH_SECRET']);
+assert(!PRESENCE_LOCKED.some(n => REQUIRED.includes(n)));
 
-console.log('PASS ops recovery: maintenance entry independent/honest 503/no-store/exact notice, smoke tells app, maintenance and platform suspension apart, env inventory by name only');
+console.log('PASS ops recovery: maintenance entry independent/honest 503/no-store/exact notice and survives malformed targets, smoke pins the expected release and tells app, maintenance and platform suspension apart, env names compared old vs new by presence only');
