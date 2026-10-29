@@ -1,0 +1,14 @@
+# Build context: sources only. Never local secrets, dependencies, builds or evidence.
+.git
+node_modules
+**/node_modules
+dist
+artifacts
+test-results
+.env
+.env.*
+!.env.example
+*.log
+.crewcheck-source-preparation.json
+android-wrapper/**/build
+android-wrapper/.gradle

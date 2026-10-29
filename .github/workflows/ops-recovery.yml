@@ -6,6 +6,10 @@ on:
       - 'scripts/ops/**'
       - 'scripts/regression-ops-recovery.mjs'
       - 'render.yaml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'package.json'
+      - 'scripts/regression-container-image.mjs'
       - '.github/workflows/ops-recovery.yml'
 permissions:
   contents: read
@@ -20,3 +24,4 @@ jobs:
           node-version: '22.13.0'
       # Builtins only: no install, no secret, loopback servers and synthetic responses.
       - run: node scripts/regression-ops-recovery.mjs
+      - run: node scripts/regression-container-image.mjs
