@@ -27,7 +27,7 @@ Nada privado entra na imagem: nenhum segredo, proxy ou CA privado ou do proxy. O
 **Testes:**
 - `scripts/regression-container-image.mjs`: contrato estático do Dockerfile e da lista.
 - `scripts/regression-container-context.mjs --full`, job `container-context`:
-  - planta 42 canários sintéticos (conteúdo `SYNTHETIC-CANARY`, nunca valores reais) numa cópia dos arquivos versionados;
+  - planta 42 canários sintéticos (marcador gerado na execução, que não existe em nenhum arquivo versionado; nunca valores reais) numa cópia dos arquivos versionados;
   - com o próprio Docker, prova que nenhum entra no contexto;
   - constrói a imagem real e varre todas as camadas listadas no manifesto;
   - confere que o CA público e o `dist/` estão presentes e que não há secret mount, proxy nem CA privado.

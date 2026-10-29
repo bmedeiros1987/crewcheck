@@ -14,7 +14,8 @@ import zlib from 'node:zlib';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const MARK = 'SYNTHETIC-CANARY-NOT-A-SECRET';
+// Built at run time so the marker never appears in any tracked file (this script is in the context).
+const MARK = ['SYNTHETIC', 'CANARY', 'NOT', 'A', 'SECRET', process.pid, Date.now()].join('-');
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 1 << 30, ...opts });
 const canaries = ['.env', '.env.production', 'client/.env.local', 'server/.env', 'scripts/deep/nested/.env.staging', '.npmrc', 'scripts/.npmrc', '.yarnrc.yml',
   '.crewcheck-google-oauth-store.json', '.crewcheck-telegram-links.json', '.crewcheck-telegram-rosters.json', '.crewcheck-runtime-patch.json',
