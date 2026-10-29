@@ -1,0 +1,22 @@
+name: Ops recovery tooling (offline)
+on:
+  pull_request:
+    paths:
+      - 'ops/maintenance/**'
+      - 'scripts/ops/**'
+      - 'scripts/regression-ops-recovery.mjs'
+      - 'render.yaml'
+      - '.github/workflows/ops-recovery.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      # Builtins only: no install, no secret, loopback servers and synthetic responses.
+      - run: node scripts/regression-ops-recovery.mjs
