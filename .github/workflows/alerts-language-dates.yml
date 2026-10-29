@@ -1,0 +1,83 @@
+name: Alerts language and proven dates
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/alerts/**'
+      - 'client/src/lib/alertDateRanges.ts'
+      - 'client/src/lib/alertExperienceText.ts'
+      - 'client/src/lib/i18n.ts'
+      - 'client/src/lib/nightAlertEvidence.ts'
+      - 'scripts/fixtures/alerts-language-app.tsx'
+      - 'scripts/regression-alerts-language-*'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/alerts-language-dates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alerts-language-dates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  alerts-language-dates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Isolated synthetic DOM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/alerts-dom" --ignore-scripts --no-audit --no-fund --package-lock=false jsdom@26.1.0
+      - name: Grouping, languages and translator (raw sources)
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/alerts-dom/node_modules/jsdom/package.json
+        run: node scripts/regression-alerts-language-dates.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Grouping, languages and translator (prepared sources)
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/alerts-dom/node_modules/jsdom/package.json
+        run: node scripts/regression-alerts-language-dates.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Build web
+        run: npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/alerts-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/alerts-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Alerts in every language at 320 px / 200 % (real AlertCenter, shipping CSS)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/alerts-browser/package.json
+        run: node scripts/regression-alerts-language-dates-browser.mjs
+      - name: Integrated compiled app (real BottomNav and AlertCenter, language switches)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/alerts-browser/package.json
+        run: node scripts/regression-alerts-language-integrated-browser.cjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alerts-language-dates-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/alerts-language-dates
+            artifacts/alerts-language-integrated
+          if-no-files-found: warn
