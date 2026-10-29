@@ -30,10 +30,23 @@ try {
  await typeSelect.selectOption('remote');assert((await page.evaluate(()=>window.concurrentGate('49'))).ok);const concurrentBytes=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:manual-gate:'))));
  await page.getByRole('button',{name:'Salvar portão',exact:true}).click();assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:manual-gate:')))),concurrentBytes);assert.equal((await page.evaluate(()=>window.read())).gate,'49');assert.equal((await page.evaluate(()=>window.read())).boardingType,'unknown');
  await page.evaluate(()=>window.dispatchEvent(new Event('crewcheck:manual-gate-updated')));await page.waitForFunction(()=>document.querySelector('input[placeholder="Ex.: 24"]').value==='49');
- // A same-account token change also rejects the stale editor before storage mutation.
- await typeSelect.selectOption('finger');await page.evaluate(()=>localStorage.setItem('crewcheck_auth_token','other-synthetic-token'));await page.getByRole('button',{name:'Salvar portão',exact:true}).click();assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:manual-gate:')))),concurrentBytes);
+ // A same-account token change also rejects the stale editor before storage mutation. Change and
+ // Save run in the same JS turn, as in the A→B→A cycle below: with separate Playwright round trips a
+ // render could observe the new token first and renew the editor (CI 2026-10-27, reproduced by
+ // forcing that render), which is the other ordering, asserted right after.
+ await typeSelect.selectOption('finger');assert.deepEqual(await page.evaluate(()=>{const save=[...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Salvar portão');localStorage.setItem('crewcheck_auth_token','other-synthetic-token');save.click();return Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:manual-gate:')));}),concurrentBytes);
+ assert.match(await page.locator('.cc-manual-gate-status').innerText(),/A conta ou sessão mudou/);
  // Finish the synthetic notification before observing the returned session.
  // Runtime must invalidate the rejected choice even when B never rendered.
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','offline-token');window.notifyAuthChange();});assert.equal(await typeSelect.inputValue(),'unknown');
+ // Other ordering: a render observes the silent token change first. The renewed editor shows only the
+ // stored record (49, Não confirmado); the old Finger draft never comes back, and its Save can only
+ // re-confirm what it shows for the current session (same value, new author/time), never Finger.
+ await typeSelect.selectOption('finger');
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','other-synthetic-token');window.dispatchEvent(new Event('crewcheck:radar-updated'));});
+ await page.waitForFunction(()=>document.querySelector('select').value==='unknown');assert.equal(await page.getByLabel('Portão de embarque',{exact:true}).inputValue(),'49');
+ await page.getByRole('button',{name:'Salvar portão',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.cc-manual-gate-status').textContent.startsWith('Portão 49 salvo'));
+ {const renewed=await page.evaluate(()=>window.read());assert.equal(renewed.gate,'49');assert.equal(renewed.boardingType,'unknown','renewed editor never saves the discarded Finger draft');assert.equal(renewed.manual.author,'Autor sintético');}
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','offline-token');window.notifyAuthChange();});assert.equal(await typeSelect.inputValue(),'unknown');
  // Rejected A→B→A may have no intermediate render, or may commit B before returning.
  // Neither ordering may revive the old Finger draft, even with Save in the same JS turn.
