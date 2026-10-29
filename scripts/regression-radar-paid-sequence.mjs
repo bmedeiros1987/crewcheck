@@ -208,7 +208,8 @@ const scope = vm.createContext({ ...radarEvidence, Date: class extends Date { st
   gateQueryDay: i => gateQueryDay(i, later), radarResultDecision: (p, i) => radarResultDecision(p, i, later), gateQuerySuppressed: d => ({ ok: false, querySuppressed: true, queryReason: d.reason }),
   ciriumRadarInjectionEnabled: o => o?.enabled === true, runCiriumRadarInjection: async () => { throw Error('Sky path must not run'); }, ciriumRadarProjection: () => ({}),
   runCiriumFlightAwareSequence: async o => (lastSequence = await runCiriumFlightAwareSequence({ ...o, now: () => later })), sequentialRadarProjection: () => ({}),
-  providerFlightAware: async () => { faCalls++; return fa; }, firstKnown: (...v) => v.find(x => x !== undefined && x !== null && x !== '') ?? '' });
+  // Stubbed FlightAware adapter with a synthetic key and healthy provider (pre-admission sees the same).
+  providerFlightAware: async () => { faCalls++; return fa; }, envAny: () => 'synthetic-offline-key', providerAvailable: () => true, firstKnown: (...v) => v.find(x => x !== undefined && x !== null && x !== '') ?? '' });
 vm.runInContext(['publicRadarPayload', 'runRadarRace'].map(fn).join('\n'), scope);
 const readAdmission = async () => true;
 const ctx = (primary) => ({ raw: 'LA3622', gateQueryEvidence: identity, radarReadAdmission: readAdmission,

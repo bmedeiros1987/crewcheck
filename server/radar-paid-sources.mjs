@@ -129,10 +129,14 @@ export function radarFlightAwareFallbackEnabled(env = process.env) {
  * `networkAttempted` says whether the paid call itself ran (a refusal never queried).
  */
 export function createPaidRadarSource({ ledger, cache, env = process.env }) {
-  return (provider, identity, call, admit) => {
+  return (provider, identity, call, admit, ready) => {
     // FlightAware OFF: vetoed before the cache, the reservation and the network.
     if (provider === 'flightaware' && !radarFlightAwareFallbackEnabled(env))
       return Promise.resolve({ ok: false, configured: false, provider, providerState: 'fallback_disabled', cacheable: false, networkAttempted: false });
+    // Pre-admission: a call that cannot leave (no key, cooldown) never reserves budget.
+    let canLeave = true;
+    try { canLeave = typeof ready !== 'function' || ready() === true; } catch { canLeave = false; }
+    if (!canLeave) return Promise.resolve({ ok: false, configured: false, provider, providerState: 'provider_unavailable', cacheable: false, networkAttempted: false });
     return cache.run(radarOccurrenceKey(provider, identity), async () => {
       const reservation = await ledger.reserve(provider, radarPaidPolicy(provider, env));
       if (!reservation.ok) return { ok: false, configured: reservation.reason !== 'budget-not-configured', provider, providerState: reservation.reason, networkAttempted: false };
@@ -140,8 +144,11 @@ export function createPaidRadarSource({ ledger, cache, env = process.env }) {
       try { admitted = typeof admit === 'function' && await admit() === true; } catch {}
       // The reservation stays spent: an abandoned attempt is never refunded.
       if (!admitted) return { ok: false, configured: true, provider, providerState: 'authority-invalidated', cacheable: false, networkAttempted: false };
-      try { return { ...((await call()) || { ok: false, configured: true, provider, providerState: 'not_found' }), networkAttempted: true }; }
-      catch { return { ok: false, configured: true, provider, providerState: 'provider_error', networkAttempted: true }; }
+      try {
+        const out = await call();
+        // No result means the adapter refused before its transport (the spent reservation stays).
+        return out ? { ...out, networkAttempted: true } : { ok: false, configured: true, provider, providerState: 'provider_unavailable', cacheable: false, networkAttempted: false };
+      } catch { return { ok: false, configured: true, provider, providerState: 'provider_error', networkAttempted: true }; }
     });
   };
 }
@@ -175,6 +182,6 @@ export function ciriumFlexRadarOptions(env = process.env) {
   return {
     ...base,
     primary: (identity, admit) => paid('cirium-flex', identity, () => fetchCiriumFlexOccurrence({ identity, credentials: { appId, appKey }, fetchImpl, timeoutMs, now }), admit),
-    ...(fallbackAllowed ? { guardFallback: (identity, call, admit) => paid('flightaware', identity, call, admit) } : {}),
+    ...(fallbackAllowed ? { guardFallback: (identity, call, admit, ready) => paid('flightaware', identity, call, admit, ready) } : {}),
   };
 }

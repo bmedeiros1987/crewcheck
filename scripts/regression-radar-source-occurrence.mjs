@@ -17,7 +17,7 @@ function extract(file,names,optional=false,jsx=false){const s=fs.readFileSync(pa
 const now=Date.parse('2032-10-14T12:00:00Z'),roster={year:2032,month:10,base:'GRU',days:[{date:'14/10/2032',type:'VOO',legs:[{flightNumber:'LA100',origin:'GRU',destination:'REC',departureTime:'09:00',arrivalTime:'11:00',gate:'24'}]}]};
 let sourceDate='2032-10-15T12:00:00Z',saveCalls=0,providerCalls=0,estimated='',selectedNow=now;
 const scope=vm.createContext({...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??selectedNow),Date:class extends Date{static now(){return selectedNow;}},URL,setTimeout,clearTimeout,
- process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},envAny:keys=>keys.includes('FLIGHTAWARE_AEROAPI_KEY')?'OFFLINE_ONLY':'',providerAvailable:()=>true,markProvider:()=>{},
+ process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800',RADAR_FLIGHTAWARE_FALLBACK_ENABLED:'true'}},envAny:keys=>keys.includes('FLIGHTAWARE_AEROAPI_KEY')?'OFFLINE_ONLY':'',providerAvailable:()=>true,markProvider:()=>{},
  jsonFetch:async()=>{providerCalls++;return{response:{ok:true},payload:{flights:[{ident:'LAN100',gate_origin:'99',scheduled_out:sourceDate,estimated_out:estimated,origin:{code_iata:'GRU'},destination:{code_iata:'REC'}}]}};},
  providerCustom:async()=>null,providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,
  telegramRequestUser:()=>({email:'fixture@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,

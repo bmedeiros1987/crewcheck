@@ -157,6 +157,11 @@ function normalizeFlightAwareFlight(row = {}, ctx) {
   };
 }
 async function providerFlightAware(ctx, timeoutMs) {
+  // FlightAware is not licensed for distribution to end users: no transport from any entry
+  // point (HTTP, Concierge, legacy race) without the exact permission, and with the paid Flex
+  // routing on only through its budget guard (ledger reservation and admission already done).
+  if (process.env.RADAR_FLIGHTAWARE_FALLBACK_ENABLED !== 'true'
+    || (process.env.CIRIUM_FLEX_RADAR_ENABLED === 'true' && ctx?.flightAwareBudgetGranted !== true)) return null;
   const key = envAny(['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY']);
   if (!key || !providerAvailable('flightaware', ['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY'])) return null;
   const started = Date.now();
@@ -338,10 +343,12 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
         primary: paidRouting ? () => options.primary(evidence, ctx.radarReadAdmission) : () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, options, ctx.raw),
         fallback: fallbackAllowed ? async () => {
           const call = async () => {
-            const response = await providerFlightAware(ctx, Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400))));
+            const response = await providerFlightAware(paidRouting ? { ...ctx, flightAwareBudgetGranted: true } : ctx, Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400))));
             return response ? { ...response, sourceReceivedAt: Date.now() } : null;
           };
-          return paidRouting ? options.guardFallback(evidence, call, ctx.radarReadAdmission) : call();
+          // Pre-admission before the ledger: no key or a provider in cooldown cannot leave.
+          const ready = () => Boolean(envAny(['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY'])) && providerAvailable('flightaware', ['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY']);
+          return paidRouting ? options.guardFallback(evidence, call, ctx.radarReadAdmission, ready) : call();
         } : null });
     } else {
       result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
