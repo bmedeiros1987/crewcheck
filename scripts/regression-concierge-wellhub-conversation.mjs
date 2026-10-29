@@ -16,6 +16,8 @@ import {
 } from '../server/v14341/concierge-semantic.mjs';
 import { stayMenuReply } from '../server/concierge/stay-menu.mjs';
 import * as radarEvidence from '../shared/radar-field-evidence.mjs';
+import { ciriumRadarInjectionEnabled } from '../server/cirium-radar-injection.mjs';
+import { ciriumFlexRadarOptions } from '../server/radar-paid-sources.mjs';
 import * as wellhub from '../server/v14407/wellhub.mjs';
 import * as preferences from '../server/v14410/wellhub-concierge.mjs';
 import * as personality from '../server/v14336/concierge-personality.mjs';
@@ -155,7 +157,9 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
       findPublishedGateLeg: (_roster, query) => ({ identity: { eventId: 'synthetic-event', flight: query.flight }, leg: { flightNumber: query.flight, origin: 'SBGR', destination: 'SBSP' } }),
       originFlightDate: () => '2026-10-19', gateQueryDay: () => ({ allowed: true }),
       gateQuerySuppressed: () => ({ message: 'Dados sintéticos insuficientes' }),
-      runRadarRace: async query => { trace.search.push({ boundary: 'radar', flight: query.raw }); return { ok: true, status: 'SYNTHETIC', gate: '', departure: '09:00', arrival: '10:00' }; },
+      // The real paid-routing builder with this harness's env (Flex OFF): the Concierge keeps the legacy race.
+      defaultCiriumRadarOptions: () => ciriumFlexRadarOptions(context.process.env), ciriumRadarInjectionEnabled,
+      runRadarRace: async query => { assert.equal(query.ciriumRadarOptions, undefined, 'Flex OFF: no paid routing'); assert.equal(query.radarReadAdmission, undefined, 'Flex OFF: no paid admission'); trace.search.push({ boundary: 'radar', flight: query.raw }); return { ok: true, status: 'SYNTHETIC', gate: '', departure: '09:00', arrival: '10:00' }; },
       conciergeApplyRadar: () => {}, airportIcao: value => /^[A-Z]{4}$/.test(value) ? value : '',
       fetchAviationWeatherReport: async (station, type) => { trace.search.push({ boundary: 'weather', station, type }); return { ok: true, raw: 'SYNTHETIC REPORT', source: 'fixture', cache: 'live' }; },
       decodeTafPtBr: () => ['Fixture TAF'], decodeMetarPtBr: () => ['Fixture METAR'],
