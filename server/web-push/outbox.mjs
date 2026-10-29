@@ -42,7 +42,7 @@ export async function dispatchPersistentPush(db, selected, { configuration, veri
     let result;try{const subscription=openSubscription(installation.sealed,configuration.encryptionKey,[job.ownerId,job.envelope.installationId,job.envelope.consentRevision]);result=await send(subscription,job.envelope,configuration,{now:clock(),clock});}catch{result={status:'uncertain',received:null};}
     const status=['accepted_unconfirmed','expired_subscription','expired','disabled'].includes(result.status)?result.status:'uncertain';
     await save(c,key,{...job,status,received:null});
-    if(status==='expired_subscription')await save(c,job.installationKey,{...installation,active:false,sealed:null,revision:installation.revision+1});
+    if(status==='expired_subscription')await save(c,job.installationKey,{...installation,active:false,sealed:null,revision:installation.revision+1,inactiveReason:'expired_subscription'});
     return {status,received:null};
   });
 }

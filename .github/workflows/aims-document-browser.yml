@@ -4,10 +4,15 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/v1391/**'
       - 'client/src/lib/rosterLayoutPreference.ts'
       - 'scripts/regression-aims-document-browser.mjs'
       - 'scripts/regression-aims-document-app.cjs'
+      - 'scripts/lib/aims-preaction-stability.cjs'
+      - 'scripts/regression-aims-preaction-stability.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - '.github/workflows/aims-document-browser.yml'
   workflow_dispatch:
@@ -32,6 +37,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Reject unstable preparation and application layout shifts
+        run: node scripts/regression-aims-preaction-stability.cjs
       - name: Prepare once and build the shipping app
         run: |
           node scripts/v139/apply.mjs
@@ -40,6 +47,15 @@ jobs:
           npx vite build
       - name: Verify account-scoped mode and existing layouts
         run: node scripts/regression-roster-layout-preference.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser runtime
         run: |
           npm install --prefix "$RUNNER_TEMP/aims-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

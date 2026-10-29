@@ -92,7 +92,7 @@ public class WatchCacheLifecycleTest {
             ShadowSystemClock.setNanoTime((expiry + 1L) * 1_000_000L);
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(3));
             assertTrue(ShadowSystemClock.currentTimeMillis()>expiry);
-            assertTrue(text(content(screen)).contains("Snapshot vencido"));
+            assertTrue(text(content(screen)).contains("Dados vencidos"));
             assertFalse("automatic minute tick hides expired gate",text(content(screen)).contains("C234"));
         } finally { service.destroy(); }
     }

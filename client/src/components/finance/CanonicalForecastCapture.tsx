@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/authClient';
 import { canonicalAllowanceCapture, canonicalBrlCycleKeys, canonicalBrlCycleThursday } from '@shared/financialCanonicalCapture.mjs';
 
@@ -10,46 +10,64 @@ export default function CanonicalForecastCapture(props:Props){
  const [foreign,setForeign]=useState(false),[flightLinks,setFlightLinks]=useState<Record<string,string>>({});
  const [review,setReview]=useState<any>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const brlCycleCount=canonicalBrlCycleKeys(props.rows).length, brlThursday=canonicalBrlCycleThursday(props.rows);
- const clear=()=>{setReview(null);setMessage('');};
+ // A prior review is valid only for the still-mounted, complete source snapshot.
+ // Check synchronously as well as invalidating UI state: deferred work can settle
+ // between a new render and its effect, or after this component has unmounted.
+ const identity=JSON.stringify([props.complete,props.range,props.rows,props.flights,props.coveredDays,props.crewId,props.airline]);
+ const current=useRef({identity,epoch:0,complete:props.complete,mounted:true,inFlight:false});
+ const operation=useRef(0);
+ const reviewVersion=useRef(0);
+ if(current.current.identity!==identity)current.current={identity,epoch:current.current.epoch+1,complete:props.complete,mounted:current.current.mounted,inFlight:false};
+ useEffect(()=>{current.current.mounted=true;return()=>{current.current.mounted=false;operation.current++;};},[]);
+ useEffect(()=>{setReview(null);setBusy(false);setMessage('');},[identity]);
+ const clear=()=>{if(!current.current.mounted||current.current.identity!==identity||current.current.inFlight)return false;operation.current++;reviewVersion.current++;setReview(null);setMessage('');return true;};
+ const ownsOperation=(epoch:number,op:number)=>current.current.mounted&&current.current.epoch===epoch&&operation.current===op;
+ const isCurrent=(epoch:number,op:number,session:{isCurrent:()=>boolean})=>ownsOperation(epoch,op)&&current.current.complete&&session.isCurrent();
  const preview=async()=>{
+  if(!current.current.complete||!current.current.mounted||current.current.identity!==identity||current.current.inFlight)return;
+  const epoch=current.current.epoch,op=++operation.current,reviewGeneration=++reviewVersion.current;current.current.inFlight=true;
   const session=captureAuthSession(),user=getStoredUser(),ownerId=String(user?.email||'').trim().toLowerCase();
   setBusy(true);setReview(null);setMessage('');
   try{
    if(!getToken()||!ownerId||['visitor','guest'].includes(user?.role||'')||(user as any)?.crewId&&String((user as any).crewId)!==String(props.crewId))throw Error('owner');
    const source=await canonicalAllowanceCapture({...props,ownerId,review:{reference,ownerConfirmed:confirmed,brlConfirmed:brl,brlCycleDate:cycle,foreignConfirmed:foreign,flightLinks}});
-   if(!session.isCurrent())return;
+   if(!isCurrent(epoch,op,session))return;
    const result=await authFetch<any>('/api/platform/finance/capture',{method:'POST',body:JSON.stringify({action:'preview',source})});
-   if(session.isCurrent()&&result?.ok===true)setReview({...result,session});
-  }catch(error){if(session.isCurrent())setMessage(error instanceof Error&&error.message==='CANONICAL_CAPTURE_BRL_CYCLE_DATE_MISMATCH'?'A quinta-feira informada não pertence à semana de trabalho selecionada. Confira o ciclo; sem comprovação, mantenha a data pendente.':'Não foi possível preparar a revisão. Confira titular, cobertura, referência e disponibilidade do histórico.');}
-  finally{if(session.isCurrent())setBusy(false);}
+   if(isCurrent(epoch,op,session)&&result?.ok===true)setReview({...result,session,epoch,reviewGeneration});
+  }catch(error){if(isCurrent(epoch,op,session))setMessage(error instanceof Error&&error.message==='CANONICAL_CAPTURE_BRL_CYCLE_DATE_MISMATCH'?'A quinta-feira informada não pertence à semana de trabalho selecionada. Confira o ciclo; sem comprovação, mantenha a data pendente.':'Não foi possível preparar a revisão. Confira titular, cobertura, referência e disponibilidade do histórico.');}
+  finally{if(ownsOperation(epoch,op)){current.current.inFlight=false;setBusy(false);}}
  };
  const save=async()=>{
+  if(!current.current.mounted)return;
+  if(current.current.inFlight)return;
+  if(!current.current.complete||review?.epoch!==current.current.epoch||review?.reviewGeneration!==reviewVersion.current){setReview(null);setMessage('A escala ou sua cobertura mudou. Revise novamente.');return;}
   if(!review?.session.isCurrent()){setReview(null);setMessage('Conta alterada. Revise novamente.');return;}
+  const epoch=current.current.epoch,op=++operation.current;current.current.inFlight=true;
   setBusy(true);
   try{
    const result=await authFetch<any>('/api/platform/finance/capture',{method:'POST',body:JSON.stringify({action:'capture',source:review.source,reviewDigest:review.reviewDigest,confirmed:true})});
-   if(review.session.isCurrent()&&result?.ok===true){setReview(null);setMessage('Previsão salva. Isso não confirma recebimento.');}
-  }catch{if(review.session.isCurrent())setMessage('Gravação não confirmada. Tente novamente a mesma revisão; se houver conflito, prepare uma nova revisão.');}
-  finally{if(review.session.isCurrent())setBusy(false);}
+   if(isCurrent(epoch,op,review.session)&&result?.ok===true){reviewVersion.current++;setReview(null);setMessage('Previsão salva. Isso não confirma recebimento.');}
+  }catch{if(isCurrent(epoch,op,review.session))setMessage('Gravação não confirmada. Tente novamente a mesma revisão; se houver conflito, prepare uma nova revisão.');}
+  finally{if(ownsOperation(epoch,op)){current.current.inFlight=false;setBusy(false);}}
  };
  return <details className="cc-persisted-finance"><summary>Revisar captura da previsão de diárias</summary>
   <p>Valores calculados da escala, na moeda original. A revisão é informada pelo titular; não equivale a demonstrativo da empresa ou confirmação bancária.</p>
   <p>{props.rows.length} itens · {props.range.start} a {props.range.end}. A substituição da escala não apaga o histórico salvo.</p>
-  <fieldset disabled={busy}><label>Referência da revisão<input aria-label="Referência da revisão financeira" value={reference} maxLength={128} onChange={e=>{clear();setReference(e.target.value);}} placeholder="revisao-2026-10"/></label>
-  <label><input type="checkbox" checked={confirmed} onChange={e=>{clear();setConfirmed(e.target.checked);}}/>Confirmo que esta escala é minha e revisei os valores calculados.</label>
-  <label><input type="checkbox" disabled={brlCycleCount!==1} checked={brl} onChange={e=>{clear();setBrl(e.target.checked);}}/>Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.</label>
+  <fieldset disabled={busy}><label>Referência da revisão<input aria-label="Referência da revisão financeira" value={reference} maxLength={128} onChange={e=>{if(!clear())return;setReference(e.target.value);}} placeholder="revisao-2026-10"/></label>
+  <label><input type="checkbox" checked={confirmed} onChange={e=>{if(!clear())return;setConfirmed(e.target.checked);}}/>Confirmo que esta escala é minha e revisei os valores calculados.</label>
+  <label><input type="checkbox" disabled={brlCycleCount!==1} checked={brl} onChange={e=>{if(!clear())return;setBrl(e.target.checked);}}/>Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.</label>
   {brlCycleCount>1&&<p>Para confirmar a data BRL, selecione uma única semana de trabalho (quarta a terça) no filtro financeiro. Nesta seleção, os valores podem ser salvos com datas pendentes.</p>}
-  {brl&&<label>Quinta-feira do ciclo comprovado<input aria-label="Data comprovada do ciclo BRL" type="date" min={brlThursday||undefined} max={brlThursday||undefined} value={cycle} onChange={e=>{clear();setCycle(e.target.value);}}/></label>}
+  {brl&&<label>Quinta-feira do ciclo comprovado<input aria-label="Data comprovada do ciclo BRL" type="date" min={brlThursday||undefined} max={brlThursday||undefined} value={cycle} onChange={e=>{if(!clear())return;setCycle(e.target.value);}}/></label>}
   <p>Sem ciclo comprovado, a data fica pendente.</p>
   {props.rows.some(row=>row.currency!=='BRL')&&<fieldset><legend>Vínculo internacional revisado</legend>
-   <label><input type="checkbox" checked={foreign} onChange={e=>{clear();setForeign(e.target.checked);}}/>Confirmo a política: a diária internacional selecionada é prevista na data do voo vinculado.</label>
+   <label><input type="checkbox" checked={foreign} onChange={e=>{if(!clear())return;setForeign(e.target.checked);}}/>Confirmo a política: a diária internacional selecionada é prevista na data do voo vinculado.</label>
    <p>Selecione explicitamente o voo para cada item. Datas e relógios publicados abaixo são da escala em BRT (America/Sao_Paulo); não representam conversão para o fuso do destino. Nenhum vínculo é escolhido automaticamente.</p>
-   {foreign&&props.rows.filter(row=>row.currency!=='BRL').map(row=>{const key=JSON.stringify([row.iso,row.label]);return <label key={key}>{row.iso} · {row.label} · {row.currency}<select aria-label={`Voo comprovado ${row.iso} ${row.label}`} value={flightLinks[key]||''} onChange={e=>{clear();setFlightLinks({...flightLinks,[key]:e.target.value});}}><option value="">Sem vínculo comprovado — data pendente</option>{props.flights.map(flight=><option key={flight.id} value={flight.id}>{flight.label}</option>)}</select></label>;})}
+   {foreign&&props.rows.filter(row=>row.currency!=='BRL').map(row=>{const key=JSON.stringify([row.iso,row.label]);return <label key={key}>{row.iso} · {row.label} · {row.currency}<select aria-label={`Voo comprovado ${row.iso} ${row.label}`} value={flightLinks[key]||''} onChange={e=>{if(!clear())return;setFlightLinks({...flightLinks,[key]:e.target.value});}}><option value="">Sem vínculo comprovado — data pendente</option>{props.flights.map(flight=><option key={flight.id} value={flight.id}>{flight.label}</option>)}</select></label>;})}
    {!props.flights.length&&<p>Nenhum voo com data e relógios publicados comprovados nesta cobertura.</p>}
   </fieldset>}
   <p>Salário exige crédito líquido e ciclo comprovado: “até dia 5” é prazo, não dia exato. Férias e 13º continuam sem data sem dados da empresa.</p>
   </fieldset><button type="button" disabled={busy||!props.complete||!confirmed||!reference} onClick={preview}>Preparar revisão sem gravar</button>
-  {review&&review.session.isCurrent()&&<div role="status"><p>{review.count} itens revisados; {review.pendingDates} datas pendentes; {review.pendingAmounts} valores pendentes. Nenhum recebimento será confirmado.</p><button type="button" disabled={busy} onClick={save}>Confirmar gravação da previsão revisada</button><button type="button" disabled={busy} onClick={clear}>Cancelar revisão</button></div>}
+  {review&&props.complete&&review.epoch===current.current.epoch&&review.reviewGeneration===reviewVersion.current&&review.session.isCurrent()&&<div role="status"><p>{review.count} itens revisados; {review.pendingDates} datas pendentes; {review.pendingAmounts} valores pendentes. Nenhum recebimento será confirmado.</p><button type="button" disabled={busy||!props.complete} onClick={save}>Confirmar gravação da previsão revisada</button><button type="button" disabled={busy} onClick={clear}>Cancelar revisão</button></div>}
   {message&&<p role="status">{message}</p>}
  </details>;
 }

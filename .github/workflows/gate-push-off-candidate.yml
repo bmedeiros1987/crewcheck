@@ -2,6 +2,9 @@ name: Gate push OFF candidate
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server/web-push/**'
       - 'server/watch-authority/mysql-authority-producer.mjs'
       - 'scripts/regression-gate-host-off.mjs'
@@ -9,6 +12,10 @@ on:
       - 'server/gate-source-update.mjs'
       - 'shared/gate-query-day.mjs'
       - 'shared/crewcheckPushContract.mjs'
+      - 'client/public/sw.js'
+      - 'client/src/lib/crewcheckPush*.ts'
+      - 'client/src/components/notifications/CrewCheckPushDevice.tsx'
+      - 'scripts/regression-web-push-*.mjs'
       - 'client/public/crewcheck-push-offline.js'
       - 'client/public/crewcheck-gate-receiver-offline.js'
       - 'scripts/regression-gate-push-candidate.mjs'
@@ -40,6 +47,12 @@ jobs:
           node scripts/regression-gate-receiver-fence.mjs
           node scripts/regression-web-push-offline.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
+          node scripts/regression-web-push-reconciliation.mjs
+          node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-api.mjs
+          node scripts/regression-web-push-provider.mjs
+          node scripts/regression-web-push-permission.mjs
+          node scripts/regression-web-push-user-gesture.mjs
       - name: Canonical preparation and repeat receiver/lifecycle checks
         run: |
           npm run prepare:v139
@@ -51,6 +64,21 @@ jobs:
           node scripts/regression-gate-receiver-fence.mjs
           node scripts/regression-web-push-offline.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
+          node scripts/regression-web-push-reconciliation.mjs
+          node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-api.mjs
+          node scripts/regression-web-push-provider.mjs
+          node scripts/regression-web-push-permission.mjs
+          node scripts/regression-web-push-user-gesture.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser
         run: |
           npm install --prefix "$RUNNER_TEMP/gate-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -58,7 +86,11 @@ jobs:
       - name: Real IndexedDB and origin lock revocation fixture, display mocked
         env:
           GATE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/gate-browser/package.json
-        run: node scripts/regression-gate-receiver-browser.mjs
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/gate-browser/package.json
+        run: |
+          node scripts/regression-gate-receiver-browser.mjs
+          node scripts/regression-web-push-shipping-worker.mjs
+          node scripts/regression-web-push-device-browser.mjs
 
   isolated-sql:
     runs-on: ubuntu-latest

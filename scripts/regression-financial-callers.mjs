@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -9,7 +10,7 @@ import { loadClientModules } from './lib/ts-module-harness.mjs';
 
 const modules = loadClientModules({ files: ['client/src/lib/financialAmounts.ts',
   'client/src/lib/financialStatementLearning.ts', 'client/src/lib/financialJourneyGrouping.ts',
-  'client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts'], prefix: 'synthetic-finance-callers-' });
+  'client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts', 'client/src/lib/rosterDayAllowanceSummary.ts'], prefix: 'synthetic-finance-callers-' });
 try {
   const amounts = modules.load('financialAmounts');
   const learning = modules.load('financialStatementLearning');
@@ -30,7 +31,7 @@ try {
   let activeEvents = [];
   let fxUSD = 0;
   const iso = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const context = vm.createContext({FinancialScreen:p=>p.children, React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
+  const context = vm.createContext({FinancialScreen:p=>p.children, PersonalAllowanceReference:()=>React.createElement("div",{"data-personal-reference-control":"reachable"}), React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
     useMemo: React.useMemo, useState: React.useState,
     useFinancialPrivacy: () => ({ hidden:false, text:value=>value, amount:value=>value }), FinancialPrivacyToggle: () => null,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1',
@@ -61,6 +62,7 @@ try {
   if (home.includes('MoneyText')) {
     const source = fs.readFileSync('client/src/components/MoneyText.tsx', 'utf8').replace(/^import.*$/gm, '').replace('export default function', 'function');
     vm.runInContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText, context);
+  installAllowanceDependencies(context,{manual:{domestic:100,other_international:20}});
   }
   const compiled = ts.transpileModule(functions.map(node => node.getText(ast)).join('\n')
     + `\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView: ${monthlyViewName} };`,
@@ -82,11 +84,11 @@ try {
   assert.ok(dated.rows.every(row => row.source.includes(row.iso)), 'item provenance carries queried effective date');
   const inherited = amounts.DEMONSTRATED_DOMESTIC_EFFECTIVE_FROM;
   const inheritedEnd = amounts.DEMONSTRATED_DOMESTIC_EFFECTIVE_TO;
-  // Existing demonstrated resolver is exercised at its real boundaries without
-  // copying private money figures into a new fixture or creating a tariff.
-  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'act');
+  // Historical demonstrated boundaries cannot implicitly enroll this account.
+  // The explicit synthetic manual reference stays manual on both sides.
+  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'manual');
   const after = new Date(inheritedEnd + 'T12:00:00'); after.setDate(after.getDate() + 1);
-  assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'act');
+  assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'manual');
   const night = { ...event('2032-09-01'), kind: 'flight', presentation: '23:50',
     start: '2032-09-01T23:50:00-03:00', end: '2032-09-02T00:30:00-03:00', day:{type:'VOO',dutyReport:'23:50',dutyReportSource:'published'}, canonical: { journeyId: 'synthetic-night',leg:{departureTime:'23:50',arrivalTime:'00:30'} } };
   const nightResult = calculatePerDiem([night], roster(2032, 9), new Date('2032-09-02T12:00:00'));
@@ -108,7 +110,7 @@ try {
   assert.equal(outside.weekly, 100);
   assert.equal(outside.weeklySummary.convertedComplete, true);
   fxUSD = 2;
-  assert.equal(calculatePerDiem([event('2032-01-31', 'INT'), event('2032-02-01')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weekly, 140);
+  assert.equal(calculatePerDiem([event('2032-01-31', 'INT'), event('2032-02-01')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weekly, null,'an undated raw setting cannot convert native entitlements; use the shared validated FX projection');
   fxUSD = 0;
   assert.equal(calculatePerDiem([event('2032-02-01', 'UNKNOWN')], roster(2032, 2), new Date('2032-02-02T12:00:00')).weeklySummary.state, 'unclassified');
   const empty = calculatePerDiem([], roster(2032, 2), new Date('2032-02-02T12:00:00'));
@@ -123,7 +125,7 @@ try {
   assert.deepEqual(Object.keys(mixed.totalsByCurrency), []);
   assert.equal(mixed.nativeSummary.complete, false);
   const originalRate = context.readOptionalNumberSetting;
-  context.readOptionalNumberSetting = key => key === 'crewcheck_perdiem_rate_other_international' ? NaN : null;
+  context.readOptionalNumberSetting = key => key === 'crewcheck_perdiem_rate_other_international' ? NaN : originalRate(key);
   const invalidRate = calculatePerDiem([event('2032-02-01'), event('2032-02-02', 'INT')], roster(2032, 2));
   assert.equal(invalidRate.nativeSummary.complete, false);
   assert.match(invalidRate.currencySummary, /Subtotal estimado: R\$\s*100,00/);
@@ -175,6 +177,7 @@ try {
   const many=calculatePerDiem(activeEvents,roster(2032,2));
   assert.ok(many.monthlyRows.length>40,'synthetic canonical windows produce more than forty monthly items');
   const manyHtml=renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
+  assert.match(manyHtml,/data-personal-reference-control="reachable"/,'real statement host keeps reference change/revoke controls reachable without pending taxi');
   assert.equal((manyHtml.match(/class="cz-finance-row"/g)||[]).length,many.monthlyRows.length,'selected monthly items must not be truncated or borrowed from adjacent months');
   assert.ok([...manyHtml.matchAll(/data-financial-iso="([^"]+)"/g)].every(match=>match[1].startsWith('2032-02-')));
   assert.doesNotMatch(manyHtml,/<details[^>]*\bopen/,'details start folded');
@@ -244,8 +247,18 @@ try {
   }
   findGroupTotal(rosterAst); assert.ok(actualGroupTotal);
   const groupCode=ts.transpileModule(actualGroupTotal+'\nglobalThis.value=groupPerDiemTotal;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-  for (const [groupPerDiems,complete,expected] of [[missingFxRows,true,null],[missingFxRows.slice(0,1),false,null],[missingFxRows.slice(0,1),true,100]]) {
-    const c=vm.createContext({...periods,groupPerDiems,scopedFinance:{perdiem:{nativeSummary:{complete}}}});vm.runInContext(groupCode,c);assert.equal(c.value,expected,'day grouping must not show a partial total');
+  const day='2032-02-01',sameDayFx=missingFxRows.map(row=>({...row,iso:day}));
+  for (const [groupPerDiems,complete,pending,expected] of [
+    [sameDayFx,true,[],null],
+    [missingFxRows.slice(0,1).map(row=>({...row,partial:true})),false,[{iso:'2032-01-31',airport:'TEST'}],null],
+    [missingFxRows.slice(0,1),false,undefined,null],
+    [missingFxRows.slice(0,1),true,undefined,100],
+    [missingFxRows.slice(0,1),false,[{iso:'2032-02-02',airport:'OTHER'}],100],
+    [missingFxRows.slice(0,1),false,[{iso:day,airport:'TEST'}],null],
+    [missingFxRows.slice(0,1),false,[{iso:'invalid',airport:'TEST'}],null],
+  ]) {
+    const c=vm.createContext({...periods,...modules.load('rosterDayAllowanceSummary'),group:{iso:day},groupPerDiems,scopedFinance:{perdiem:{nativeSummary:{complete},...(pending===undefined?{}:{unclassifiedItems:pending})}}});
+    vm.runInContext(groupCode,c);assert.equal(c.value,expected,'day grouping preserves own/unknown pending and FX while isolating unrelated dates');
   }
   console.log('PASS production financial callers: per-item dates, expiry/night, cross-month currency completeness, no-data UI and separate observed periods — TZ=' + (process.env.TZ || 'device'));
 } finally { modules.cleanup(); }

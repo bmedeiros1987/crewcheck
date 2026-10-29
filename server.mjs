@@ -1,3 +1,5 @@
+import { runCiriumFlightAwareSequence, sequentialRadarProjection } from './server/radar-sequential.mjs';
+import { configureRadarPaidSources } from './server/radar-paid-sources.mjs';
 import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
@@ -63,6 +65,7 @@ function publicRadarPayload(item = {}, now = Date.now()) {
     // Unproven gate/status/registration carry a fixed reason; proof itself stays in gateUpdate.
     ...radarFieldEvidenceGaps(item, now),
     ...ciriumRadarProjection(item),
+    ...(item.radarRouting ? sequentialRadarProjection(item) : {}),
     ok: Boolean(item.ok),
     configured: Boolean(item.configured),
     flight: firstKnown(item.flight, item.ident),
@@ -154,6 +157,11 @@ function normalizeFlightAwareFlight(row = {}, ctx) {
   };
 }
 async function providerFlightAware(ctx, timeoutMs) {
+  // FlightAware is not licensed for distribution to end users: no transport from any entry
+  // point (HTTP, Concierge, legacy race) without the exact permission, and with the paid Flex
+  // routing on only through its budget guard (ledger reservation and admission already done).
+  if (process.env.RADAR_FLIGHTAWARE_FALLBACK_ENABLED !== 'true'
+    || (process.env.CIRIUM_FLEX_RADAR_ENABLED === 'true' && ctx?.flightAwareBudgetGranted !== true)) return null;
   const key = envAny(['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY']);
   if (!key || !providerAvailable('flightaware', ['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY'])) return null;
   const started = Date.now();
@@ -323,9 +331,31 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
   if (!decision.allowed || evidence?.origin !== origin || evidence?.destination !== destination || evidence?.flight !== ctx.raw)
     return gateQuerySuppressed(decision.allowed ? { reason: 'occurrence-unverified' } : decision);
   if (ciriumRadarInjectionEnabled(ctx.ciriumRadarOptions)) {
-    const result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
+    let result;
+    const options = ctx.ciriumRadarOptions;
+    if (options.sequential === true || options.flightAwareFallback === true) {
+      // Paid routing (Cirium Flex) selects the sequence by itself and supplies its own budgeted
+      // primary; FlightAware is a separate permission and, for paid routing, only through its
+      // budget guard. Without it the fallback is null: no cache, reservation or call.
+      const paidRouting = typeof options.primary === 'function';
+      const fallbackAllowed = options.flightAwareFallback === true && (!paidRouting || typeof options.guardFallback === 'function');
+      result = await runCiriumFlightAwareSequence({ identity: evidence, admit: ctx.radarReadAdmission,
+        primary: paidRouting ? () => options.primary(evidence, ctx.radarReadAdmission) : () => runCiriumRadarInjection(ctx.ciriumRadarIdentity, options, ctx.raw),
+        fallback: fallbackAllowed ? async () => {
+          const call = async () => {
+            const response = await providerFlightAware(paidRouting ? { ...ctx, flightAwareBudgetGranted: true } : ctx, Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400))));
+            return response ? { ...response, sourceReceivedAt: Date.now() } : null;
+          };
+          // Pre-admission before the ledger: no key or a provider in cooldown cannot leave.
+          const ready = () => Boolean(envAny(['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY'])) && providerAvailable('flightaware', ['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY']);
+          return paidRouting ? options.guardFallback(evidence, call, ctx.radarReadAdmission, ready) : call();
+        } : null });
+    } else {
+      result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
+    }
     if (result?.ok && !radarResultDecision(result,evidence,Date.now()).allowed) return gateQuerySuppressed(radarResultDecision(result,evidence,Date.now()));
-    return publicRadarPayload({...result,sourceReceivedAt:Date.now()});
+    // Keep the original receipt: a cached answer must not look newer than it is.
+    return publicRadarPayload({...result,sourceReceivedAt:result?.sourceReceivedAt ?? Date.now()});
   }
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
@@ -411,6 +441,14 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   if (!authorityCurrent()) return sendJson(res,200,{...gateQuerySuppressed({reason:'account-unverified'}),exportedToConcierge:false});
   const queryDecision = gateQueryDay(ctx.gateQueryEvidence);
   if (!queryDecision.allowed) return sendJson(res, 200, { ...gateQuerySuppressed(queryDecision), exportedToConcierge: false });
+  ctx.radarReadAdmission = async () => {
+    try {
+      if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed) return false;
+      const current = await loadAuthority();
+      return Boolean(authorityCurrent() && gateQueryDay(ctx.gateQueryEvidence).allowed && current && current.kind === authority.kind && current.id === authority.id && current.revision === authority.revision
+        && findPublishedGateLeg(current.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(current.roster)));
+    } catch { return false; }
+  };
   radarOptions = { ...radarOptions, cirium: radarOptions.cirium || defaultCiriumRadarOptions() };
   if (ciriumRadarInjectionEnabled(radarOptions.cirium)) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
@@ -418,7 +456,7 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   }
   const payload = await runRadarRace(ctx, origin, destination);
   if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
-  if (payload.querySuppressed || payload.provider === 'cirium-sky') return sendJson(res, 200, { ...payload, exportedToConcierge: false });
+  if (payload.querySuppressed || (payload.provider === 'cirium-sky' && payload.radarRouting !== 'cirium-flightaware-v1')) return sendJson(res, 200, { ...payload, exportedToConcierge: false });
   let exportedToConcierge = false;
   let currentAuthority;
   try { currentAuthority = await loadAuthority(); }
@@ -429,7 +467,7 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
   const info = findPublishedGateLeg(currentAuthority.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(currentAuthority.roster));
   if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
-  if (!payload.ok) return sendJson(res,200,{...payload,exportedToConcierge:false});
+  if (!payload.ok || payload.radarRouting === 'cirium-flightaware-v1') return sendJson(res,200,{...payload,exportedToConcierge:false});
   if (currentAuthority.snapshot) {
     const snapshot = currentAuthority.snapshot;
     conciergeApplyRadar(snapshot, info, payload);
@@ -2486,6 +2524,21 @@ async function conciergeRadarReply(text, profile, snapshot) {
   if (bindings.size !== 1) return gateQuerySuppressed({reason:'occurrence-unverified'}).message;
   let info = [...bindings.values()][0];
   queryContext.gateQueryEvidence = info.identity;
+  // Same paid routing as the HTTP radar: with Cirium Flex on, the Concierge goes through the
+  // Flex budget, cache and ledger, with account/occurrence re-admission around each paid call,
+  // never through the unbudgeted legacy race. Off (no paid primary), the legacy race is unchanged.
+  const paidOptions = defaultCiriumRadarOptions();
+  if (ciriumRadarInjectionEnabled(paidOptions) && typeof paidOptions.primary === 'function') {
+    queryContext.ciriumRadarOptions = paidOptions;
+    queryContext.radarReadAdmission = async () => {
+      try {
+        if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return false;
+        const current = await conciergeLoadSnapshot(profile);
+        return Boolean(current?.roster && conciergeAccessMatches(profile,current) && gateQueryDay(queryContext.gateQueryEvidence).allowed
+          && findPublishedGateLeg(current.roster,queryContext.gateQueryEvidence,buildCanonicalRosterEvents(current.roster)));
+      } catch { return false; }
+    };
+  }
   const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');
   if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({ reason: 'response-context-expired' }).message;
   if (radar.querySuppressed) return radar.message;
@@ -2496,7 +2549,8 @@ async function conciergeRadarReply(text, profile, snapshot) {
   if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
   snapshot = currentSnapshot;
   info = currentBinding;
-  if (snapshot && info?.leg) {
+  // Paid/Cirium answers are read-only (as in the HTTP radar): shown, never written to the Concierge.
+  if (snapshot && info?.leg && radar.canonicalReadOnly !== true) {
     conciergeApplyRadar(snapshot, info, radar);
     await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
   }
@@ -4149,6 +4203,7 @@ function serveStatic(req, res, url) {
     res.end(data);
   });
 }
+configureRadarPaidSources({ pool: conciergeDbPool });
 http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const incomingHost = String(req.headers.host || '').split(':')[0].toLowerCase();

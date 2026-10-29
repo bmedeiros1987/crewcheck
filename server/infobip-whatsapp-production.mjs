@@ -1,3 +1,6 @@
+import {createInfobipPromotionalBetaScope} from './infobip-whatsapp-promotional-beta.mjs';
+import {createInfobipFiniteBetaScope} from './infobip-whatsapp-finite-beta.mjs';
+import {withConciergeConversationWritesOnly} from './concierge-read-only-scope.mjs';
 import {createHeldInfobipWhatsAppRuntime,bindInfobipWhatsAppRuntime} from './infobip-whatsapp-runtime.mjs';
 import {createInfobipRenderIngressPolicy} from './infobip-whatsapp-render-ingress.mjs';
 import {createInfobipWebhookAuthenticator} from './infobip-whatsapp-auth.mjs';
@@ -8,6 +11,10 @@ import {createInfobipProductionTextTransport} from './infobip-whatsapp-transport
 import {createInfobipSendAdmission} from './infobip-whatsapp-admission.mjs';
 import {preflightInfobipWhatsAppStorage} from './infobip-whatsapp-preflight.mjs';
 import {invokeConfiguredWhatsAppConcierge,isWhatsAppConciergeConfigured,withWhatsAppConciergeQuiesced} from './whatsapp.mjs';
+import {createOperationalPilotScope} from './infobip-whatsapp-operational-pilot.mjs';
+import {createInfobipPilotRenewalAdmission} from './infobip-whatsapp-pilot-renewal.mjs';
+
+const singleTestInput='Teste CrewCierge',singleTestReply='Teste de conexão CrewCierge.';
 
 const fail=()=>{throw Error('INFOBIP_PRODUCTION_CONFIGURATION');};
 const reference=value=>typeof value==='string'&&/^[A-Za-z0-9_.:/-]{1,160}$/.test(value);
@@ -58,7 +65,22 @@ export async function createInfobipWhatsAppProduction(options={}) {
     if(!binding||!reference(binding.profileId)||!Array.isArray(binding.subscriptionIds)||!binding.subscriptionIds.length||
       !binding.subscriptionIds.every(reference)||binding.sender!==sender||binding.baseUrl!==baseUrl||
       binding.publicOrigin!==httpsOrigin(ingress.publicOrigin)||binding.linkHashKeyReference!==refs.linkHashKey)fail();
-    const admission=createInfobipSendAdmission(options.admission,{sender,now});
+    const singleTest=input.singleMessageTest===true;
+    if(input.operationalPilot!==undefined&&typeof input.operationalPilot!=='boolean')fail();
+    if(singleTest&&input.operationalPilot===true)fail();
+    const pilot=input.operationalPilot===true?createOperationalPilotScope(input,options.admission,{now}):null;
+    const linkHandshake=singleTest&&input.canonicalLinkHandshake===true;
+    const linkOnly=linkHandshake&&input.canonicalLinkHandshakeOnly===true;
+    if(input.canonicalLinkHandshake!==undefined&&typeof input.canonicalLinkHandshake!=='boolean')fail();
+    if(input.canonicalLinkHandshakeOnly!==undefined&&typeof input.canonicalLinkHandshakeOnly!=='boolean')fail();
+    if(input.canonicalLinkHandshakeOnly===true&&!linkHandshake)fail();
+    if(singleTest&&(options.admission?.maxAttempts!==1||options.admission?.recipients?.length!==1))fail();
+    if(input.promotionalBeta!==undefined&&typeof input.promotionalBeta!=='boolean')fail();
+    if(input.finiteBeta!==undefined&&typeof input.finiteBeta!=='boolean')fail();
+    const promotional=input.promotionalBeta===true?createInfobipPromotionalBetaScope(input,options.admission,{now}):null;
+    const finite=input.finiteBeta===true?createInfobipFiniteBetaScope(input,options.admission,{now}):null;
+    const restricted=finite||promotional;
+    const originalQuantity=restricted?null:createInfobipSendAdmission(options.admission,{sender,now});
     const scheduler=options.scheduler;
     if(typeof scheduler?.set!=='function'||typeof scheduler?.clear!=='function'||typeof options.request!=='function'||
       !isWhatsAppConciergeConfigured())fail();
@@ -68,14 +90,40 @@ export async function createInfobipWhatsAppProduction(options={}) {
     if(typeof sourceDb?.getConnection!=='function')fail();
     const db=Object.freeze({getConnection:sourceDb.getConnection.bind(sourceDb)});
     const credentials=await resolveCredentials(options.credentials,refs);
+    const quantity=restricted?restricted.createAdmission(credentials.linkHashKey):pilot?.renewal?createInfobipPilotRenewalAdmission(input,options.admission,{linkHashKey:credentials.linkHashKey,now})
+      :originalQuantity;
+    const testFrom=options.admission.validFrom;
+    const testInput=job=>!linkOnly&&job?.text===singleTestInput&&job.receivedAt>=testFrom;
+    const admission=restricted?quantity:pilot?Object.freeze({
+      allows:job=>pilot.allows(job)&&quantity.allows(job),
+      reserve:(c,job)=>pilot.reserve(c,job,quantity.reserve),
+    }):singleTest?Object.freeze({
+      allows:job=>testInput(job)&&quantity.allows(job),
+      reserve:(c,job)=>testInput(job)?quantity.reserve(c,job):Promise.resolve(false),
+    }):quantity;
     const configuration=Object.freeze({sender,baseUrl,apiKey:credentials.apiKey,
       encryptionKey:Buffer.isBuffer(credentials.encryptionKey)?Buffer.from(credentials.encryptionKey):null,
       linkHashKey:credentials.linkHashKey,webhookAuthentication:Object.freeze({mode:'hmac-sha256',secretKey:credentials.webhookSecret})});
     const auth=createInfobipWebhookAuthenticator(configuration.webhookAuthentication);
     const transport=createInfobipProductionTextTransport({...configuration,request});
-    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge:invokeConfiguredWhatsAppConcierge,send:transport.send,admission});
+    // Neutral transport smoke test uses the same binding/consent, durable
+    // reservation, lifecycle and send locks, without invoking account tools.
+    const concierge=restricted?async input=>{
+      if(!restricted.allowsOwner(input.accountId))throw Error('INFOBIP_PROMOTIONAL_OWNER');
+      const selected=restricted.command(input.text);if(selected.reply)return selected.reply;
+      return withConciergeConversationWritesOnly(input.email,()=>invokeConfiguredWhatsAppConcierge({...input,text:selected.text}));
+    }:pilot?async input=>{
+      const text=pilot.command(input.text);
+      if(!text||!pilot.allowsOwner(input.accountId))throw Error('INFOBIP_OPERATIONAL_PILOT_DENIED');
+      return withConciergeConversationWritesOnly(input.email,()=>invokeConfiguredWhatsAppConcierge({...input,text}));
+    }:singleTest?async()=>singleTestReply:invokeConfiguredWhatsAppConcierge;
+    const store=createInfobipProductionStore({...configuration,db,now,sqlBudget},{concierge,...(restricted?{allowsOwner:restricted.allowsOwner}:pilot?{allowsOwner:pilot.allowsOwner}:{}),
+      send:restricted?(proposal,context)=>restricted.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'}):pilot?(proposal,context)=>pilot.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'})
+        :singleTest?(proposal,context)=>!linkOnly&&proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
     await preflightInfobipWhatsAppStorage(db,sqlBudget); // SELECT only; never create or repair tables.
-    const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now});
+    const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now,
+      ...(restricted?{queueLinkConfirmation:false,acceptEvent:restricted.acceptEvent}:pilot?{queueLinkConfirmation:false,acceptEvent:event=>admission.allows(event)}:singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
+        (linkHandshake&&/^\d{6}$/.test(event.text)&&event.receivedAt>=testFrom&&quantity.allows(event))}:{})});
     const report=kind=>createInfobipReportReceiver({kind,authentication:configuration.webhookAuthentication,store,now});
     const pipeline=Object.freeze({receive,receiveDelivery:report('delivery'),receiveSeen:report('seen'),
       dispatch:store.dispatch,expire:store.expirePayload,maintain:store.maintain,nextHeld:store.nextHeld,eraseAccount:(email,context)=>withWhatsAppConciergeQuiesced(email,async()=>{await store.waitForLocalPreparations(email);return store.eraseAccount(email,context);})});

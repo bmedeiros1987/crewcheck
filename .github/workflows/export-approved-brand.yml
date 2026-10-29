@@ -2,6 +2,9 @@ name: Exported PDF approved brand
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/lib/brand.ts'
       - 'client/src/lib/pdfExport.ts'
       - 'client/src/lib/blobDownload.ts'
@@ -30,6 +33,15 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Isolated browser and PDF validators
         run: |
           npm install --prefix "$RUNNER_TEMP/export-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
