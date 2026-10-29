@@ -318,7 +318,9 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p className="cc-roster-period-count" role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}</p>
     </section>
 
-    {/* Presentation collapsed: format, reset and month/day zoom under one discreet expander. */}
+    {/* Top controls: presentation (format, reset, month/day zoom) and the legend, which is the single
+        category filter (Tudo restores all). Both collapse independently; nothing repeats at the footer. */}
+    <div className="cc-roster-top-controls">
     <details className="cc-roster-view-options">
       <summary><SlidersHorizontal aria-hidden="true"/><span>Exibição</span><small>{({ cards: 'Cards', list: 'Lista', aims: 'AIMS', calendar: 'Calendário' } as Record<string, string>)[layout] || 'Cards'} · {zoom === 'day' ? 'Dia' : 'Mês'}</small><ChevronDown className="cc-roster-disclosure" aria-hidden="true"/></summary>
       <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
@@ -336,6 +338,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
         {zoom === 'day' && <label>Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
       </section>
     </details>
+    {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
+    </div>
     <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
 
     {categoryFilter.filter !== 'all' && !visibleEvents.length && <div className="cc-roster-filter-empty"><p>Nenhum item deste filtro no período selecionado.</p><button type="button" onClick={categoryFilter.reset}>Mostrar tudo</button></div>}
@@ -471,9 +475,6 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p>Estas programações têm data confirmada, mas não têm um instante confirmado para posicioná-las na sequência das jornadas. Estão listadas por data publicada.</p>
       <AimsRosterTable operationalEvents={allOrdered} events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
     </section>}
-
-    {/* A legenda original, perto do rodapé, é o único controle de filtro (Tudo reúne todas). */}
-    {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
 
     {ordered.length > 0 && <footer className="cc-roster-estimate-note-v1397"><ShieldCheck/><p><strong>Estimativa conferível.</strong> Diárias e produção por KM usam as regras ACT, tarifas administrativas e dados aprendidos já configurados no CrewCheck. Não substituem o demonstrativo oficial.</p></footer>}
   </div>;
