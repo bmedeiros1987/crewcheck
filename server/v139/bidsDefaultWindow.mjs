@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import {requireExistingIdentity,readBody,sendJson,parseJsonColumn} from './common.mjs';
 import {bidsCampaignPending,parseBidsInstant,validTimezone} from './bidsAlertPolicy.mjs';
+import {configuredTrustedAppOrigin,originAllowed} from '../trusted-app-origin.mjs';
+// Confirmation origins kept as they are; an operator-configured exact HTTPS origin may be added.
+export const BIDS_CONFIRMATION_ORIGINS=Object.freeze(['https://crewcheck.onrender.com','https://crewcheck.online','https://www.crewcheck.online']);
 // Only an independently verified, bounded, current source can populate this registry.
 // The yearless legacy PBS table is not a policy and is never extrapolated.
 export const CURRENT_BIDS_WINDOW_POLICY=null;
@@ -18,14 +21,16 @@ export function resolveDefaultBidsWindow({ownerId,profile,policy=CURRENT_BIDS_WI
  if(bidsCampaignPending({id:policy.id,revision:policy.revision,source,timezone:policy.timezone,targetMonth,opensAt:value.opensAt,closesAt:value.closesAt,audience:{verified:true,airline:profile.airline,roles:[profile.role]}}).length||!zoned(value.opensAt)||!zoned(value.closesAt)||Date.parse(value.closesAt)<=Date.parse(value.opensAt)||Date.parse(value.closesAt)-Date.parse(value.opensAt)>45*86400000||Date.parse(value.opensAt)<Date.parse(policy.validFrom)||Date.parse(value.closesAt)>Date.parse(policy.validUntil)){pending.push('Instantes explícitos de abertura e encerramento ainda não validados.');return blocked();}
  return {status:'resolved',pending:[],window:{targetMonth,opensAt:value.opensAt,closesAt:value.closesAt,timezone:policy.timezone,policyId:policy.id,policyRevision:policy.revision,source:{label:source.label,url:source.url,sha256:source.sha256,publishedOn:source.publishedOn},profileRevision:profile.revision,profileSource:profile.source,instructorKind:profile.instructorKind},scheduled:false,externalDelivery:false};
 }
-export async function handleBidsDefaultWindow(req,res,url,{identify=requireExistingIdentity,read=readBody,getPolicy=()=>CURRENT_BIDS_WINDOW_POLICY,clock=()=>Date.now()}={}){
+export async function handleBidsDefaultWindow(req,res,url,{identify=requireExistingIdentity,read=readBody,getPolicy=()=>CURRENT_BIDS_WINDOW_POLICY,clock=()=>Date.now(),trustedOrigin=configuredTrustedAppOrigin}={}){
  if(url.pathname!=='/api/platform/bids/default-window')return false;
- res.setHeader('Cache-Control','no-store');const context=await identify(req,res);if(!context)return true;
+ res.setHeader('Cache-Control','no-store');
+ // A refused origin is answered before identity, body or SQL.
+ if(req.method==='POST'&&!originAllowed(req.headers.origin,[...BIDS_CONFIRMATION_ORIGINS,trustedOrigin()].filter(Boolean))){sendJson(res,403,{ok:false,message:'Confirme o perfil no CrewCheck.'});return true;}
+ const context=await identify(req,res);if(!context)return true;
  const ownerId=context.payload?.sub;if(!ownerId||context.profile?.public_id!==ownerId){sendJson(res,401,{ok:false,message:'Sessão da conta não é mais válida.'});return true;}
  const key=functionalProfileKey(context.email,ownerId),readState=async db=>{const[rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[key]);const state=parseJsonColumn(rows[0]?.payload,null);return state?.ownerId===ownerId&&state.email===context.email?state:null;};
  if(req.method==='GET'){const profile=await readState(context.db);sendJson(res,200,{ok:true,ownerId,profile,revision:profile?.revision||0,resolution:resolveDefaultBidsWindow({ownerId,profile,targetMonth:url.searchParams.get('targetMonth'),policy:getPolicy(),now:clock()})});return true;}
  if(req.method!=='POST'){sendJson(res,405,{ok:false,message:'Método não permitido.'});return true;}
- if(!['https://crewcheck.onrender.com','https://crewcheck.online','https://www.crewcheck.online'].includes(req.headers.origin)){sendJson(res,403,{ok:false,message:'Confirme o perfil no CrewCheck.'});return true;}
  const body=await read(req,5000);if(body?.ownerId!==ownerId){sendJson(res,409,{ok:false,message:'A conta mudou. Recarregue o perfil.'});return true;}if(body?.confirmed!==true||!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<0||!['LATAM','AZUL','GOL','OTHER'].includes(body.airline)||!['cabin','pilot'].includes(body.role)||!['route','other','none'].includes(body.instructorKind)){sendJson(res,400,{ok:false,message:'Confirme companhia, função e condição de instrutor.'});return true;}
  const db=await context.db.getConnection();try{
   await db.beginTransaction();const[owners]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[context.email]);if(owners[0]?.public_id!==ownerId)throw Object.assign(Error('Conta mudou. Nada foi salvo.'),{status:401});
