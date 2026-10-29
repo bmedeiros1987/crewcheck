@@ -13,6 +13,10 @@
    scrolls inside itself (the document never widens). The chips stay filters; Tudo restores all. */
 .cc-roster-filter > details > summary { display:flex; align-items:center; gap:8px; min-height:44px; padding:10px 12px; box-sizing:border-box; cursor:pointer; font-weight:650; list-style:revert; }
 .cc-roster-filter > details > summary small { font-weight:500; opacity:.85; font-variant-numeric:tabular-nums; }
+.cc-roster-filter > details > summary > svg:first-child { width:18px; height:18px; flex-shrink:0; }
+/* Exibição and the legend sit together at the top, one compact group. */
+.cc-roster-top-controls { margin:4px 0 8px; min-width:0; max-width:100%; }
+.cc-roster-top-controls > .cc-roster-view-options, .cc-roster-top-controls > .cc-roster-filter { margin:0; }
 .cc-roster-filter > details > summary:focus-visible { outline:3px solid #60a5fa; outline-offset:2px; }
 .cc-roster-filter-options { display:flex; flex-wrap:nowrap; gap:6px; min-width:0; max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; padding:4px 4px 8px; box-sizing:border-box; }
 .cc-roster-filter-options button { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:flex-start; gap:4px; min-height:44px; padding:4px 10px; border:1px solid var(--ccr-line,#64748b); border-radius:999px; background:var(--ccr-panel-soft,#172537); color:var(--ccr-text,#edf4fb); font:inherit; cursor:pointer; white-space:nowrap; }
