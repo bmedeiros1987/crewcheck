@@ -27,7 +27,7 @@ export default function FinancialStatementReconciliation({ rows, unclassified, c
   const valid=result?.periodStart&&result.periodEnd&&validFinancialDay(result.periodStart)&&validFinancialDay(result.periodEnd)&&result.periodStart<=result.periodEnd;
   const range={start:result?.periodStart||'',end:result?.periodEnd||'',valid:Boolean(valid),kind:'custom' as const};
   const scopedRows=financialRowsInRange(rows,range);
-  const items:Row[]=quotes===undefined?scopedRows:projectAllowanceFxRows(scopedRows,quotes,today||new Date().toISOString().slice(0,10)),pending=financialRowsInRange(unclassified,range),forecast=summarizeForecastRows(items,pending);
+  const items:Row[]=quotes===undefined?scopedRows:projectAllowanceFxRows(scopedRows,quotes,today||new Date().toISOString().slice(0,10)),pending=[...financialRowsInRange(unclassified,range),...unclassified.filter(item=>!validFinancialDay(item.iso))],forecast=summarizeForecastRows(items,pending);
   useEffect(()=>{if(valid)requestRange(range);},[result?.periodStart,result?.periodEnd]);
   const missingMonths=financialMonths(range).filter(month=>!coveredMonths.includes(month));
   const completeCoverage=Boolean(valid)&&missingMonths.length===0;

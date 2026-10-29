@@ -1,3 +1,4 @@
+import {PreferenceSwitch} from '../preferences/PreferenceSwitch';
 import { useSyncExternalStore } from 'react';
 import { financialRateSession } from '@/lib/financialStatementLearning';
 import { readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
@@ -14,7 +15,7 @@ export function useSalaryDisplayBasis(){
  return {basis,choose:(value:SalaryDisplayBasis)=>writeFinancialSetting(key,value,session)};
 }
 export function SalaryBasisControl({basis,choose}:{basis:SalaryDisplayBasis;choose:(value:SalaryDisplayBasis)=>unknown}){
- return <fieldset className="cc-salary-basis"><legend>Valor salarial</legend>{(['gross','net'] as const).map(value=><label key={value}><input type="radio" name="salary-display-basis" value={value} checked={basis===value} onChange={()=>choose(value)}/>{value==='gross'?'Bruto':'Líquido'}</label>)}</fieldset>;
+ return <fieldset className="cc-salary-basis"><legend>Valor salarial</legend><label><span>Líquido</span><PreferenceSwitch aria-label="Líquido" aria-describedby="salary-basis-hint" checked={basis==='net'} onChange={event=>choose(event.target.checked?'net':'gross')}/></label><small id="salary-basis-hint">{basis==='net'?'Exibindo líquido estimado':'Exibindo bruto estimado'}</small></fieldset>;
 }
 export function SalaryBasisAmount({summary}:{summary:SalaryDisplaySummary}){
  const privacy=useFinancialPrivacy();

@@ -18,11 +18,93 @@ import {createInfobipWhatsAppRuntime,INFOBIP_WHATSAPP_CALLBACK_PATH} from '../se
 import {eraseWhatsAppAccountState,installWhatsAppLifecycle} from '../server/whatsapp-lifecycle.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
 import {createInfobipSqlStore,createInfobipProductionStore} from '../server/infobip-whatsapp-store.mjs';
+import {createOperationalPilotScope,INFOBIP_OPERATIONAL_PILOT_INPUTS} from '../server/infobip-whatsapp-operational-pilot.mjs';
+import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
+import {configureSyntheticOperationalPilot} from './fixtures/infobip-operational-pilot.mjs';
+import {seedSyntheticPilotRenewalLedger} from './fixtures/infobip-pilot-renewal-sql.mjs';
 
 export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock}) {
  const packet=item=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
  const raw=async()=>{const [r]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);return typeof r[0]?.payload==='string'?JSON.parse(r[0].payload):r[0]?.payload;};
  const configuration={sender,encryptionKey:key,linkHashKey:salt,webhookUsername:'synthetic',webhookPassword:password,baseUrl:'https://synthetic.api.infobip.com',apiKey:'synthetic-api-key-not-real'};
+ await run('one explicit renewal preserves original quota digest under concurrent InnoDB CAS',async()=>{
+  await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch}),before=await x.read();
+  const results=await Promise.all(Array.from({length:8},()=>x.reserve()));assert.equal(results.filter(Boolean).length,1);
+  const after=await x.read();assert.equal(after.used,3);assert.equal(after.limit,3);assert.equal(after.digest,before.digest);assert.equal(after.validUntil,before.validUntil);
+  assert.equal(after.execution.revision,1);assert.equal(after.execution.previousRevision,0);assert.equal(after.execution.startingUsed,2);
+  assert.equal(await x.reserve(),false);assert.equal(x.scope.allows({...x.job,receivedAt:epoch}),false);
+ });
+ await run('renewal audit quantity and pickup slot roll back together under actual InnoDB',async()=>{
+  await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch});
+  await assert.rejects(x.tx(async c=>{assert.equal(await x.scope.reserve(c,x.job,x.quantity.reserve),true);throw Error('SYNTHETIC_POST_RENEWAL_FAILURE');}));
+  const after=await x.read();assert.equal(after.used,2);assert.equal(after.execution,undefined);
+  const [slots]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[x.pickupSlot]);assert.equal(slots.length,0);
+ });
+ await run('unknown prior attempt and actual failed revision CAS cannot renew or reset quantity',async()=>{
+  for(const status of ['uncertain','dispatching','preparing','accepted_unconfirmed']){
+   await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch});
+   await db.query("UPDATE crewcheck_telegram_state SET payload=JSON_SET(payload,'$.status',?) WHERE state_key=?",[status,x.historyKeys[0]]);
+   assert.equal(await x.reserve(),false);assert.equal((await x.read()).used,2);assert.equal((await x.read()).execution,undefined);
+  }
+  await reset();const x=await seedSyntheticPilotRenewalLedger(db,{sender,recipient,owner,salt,epoch});
+  await assert.rejects(x.tx(c=>x.scope.reserve(c,x.job,(conn,job)=>x.quantity.reserve({query:(sql,args)=>conn.query(sql,sql.includes("JSON_EXTRACT(payload,'$.used')=?")?[args[0],args[1],999]:args)},job))));
+  assert.equal((await x.read()).used,2);assert.equal((await x.read()).execution,undefined);
+ });
+ await run('operational pilot slots and distinct quota commit atomically under concurrent InnoDB dispatch',async()=>{
+  await reset();let engine=0,sends=0;
+  const f=configureSyntheticOperationalPilot({state:{clock:epoch},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});
+  const scope=createOperationalPilotScope(f.dependencies.configuration,f.dependencies.admission,{now:()=>epoch});
+  const quantity=createInfobipSendAdmission(f.dependencies.admission,{sender,now:()=>epoch});
+  const old=createInfobipSendAdmission({id:INFOBIP_SINGLE_TEST_APPROVAL,recipients:[recipient],maxAttempts:1,validFrom:epoch-1000,validUntil:epoch+600000},{sender,now:()=>epoch});
+  assert.equal(await createInfobipSqlBudget(db)(c=>old.reserve(c,{sender,recipient})),true);
+  const makePilot=()=>createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{
+   allowsOwner:scope.allowsOwner,admission:{allows:j=>scope.allows(j)&&quantity.allows(j),reserve:(c,j)=>scope.reserve(c,j,quantity.reserve)},
+   concierge:async input=>{assert(scope.command(input.text));engine++;return 'SYNTHETIC OPERATIONAL SQL';},
+   send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
+  let store=makePilot();
+  const receive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:password},store,now:()=>epoch,acceptEvent:scope.allows,queueLinkConfirmation:false});
+  const receiveText=async(id,text)=>{const rawBody=Buffer.from(JSON.stringify({results:[{...event,messageId:id,message:{type:'TEXT',text}}]}));return receive({method:'POST',rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')],rawBody});};
+  const keys=[];
+  for(const [i,text]of INFOBIP_OPERATIONAL_PILOT_INPUTS.entries()){
+   const id='synthetic-pilot-sql-'+i;await receiveText(id,i===2?'Que horas a van me busca no hotel?':text);keys.push(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex'));
+  }
+  await Promise.all(keys.flatMap(k=>[store.dispatch(k),store.dispatch(k)]));
+  assert.equal(sends,3);assert.equal(engine,3);
+  store=makePilot();await Promise.all(keys.map(k=>store.dispatch(k)));assert.equal(sends,3);
+  await receiveText('synthetic-pilot-van-alias-new-message',INFOBIP_OPERATIONAL_PILOT_INPUTS[2]);
+  await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,'synthetic-pilot-van-alias-new-message'])).digest('hex'));assert.equal(sends,3,'recreated store preserves the shared alias slot');
+  await receiveText('synthetic-pilot-same-menu-new-message','menu');
+  await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,'synthetic-pilot-same-menu-new-message'])).digest('hex'));assert.equal(sends,3);
+  const [rows]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%'");
+  const quotas=rows.map(r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload);
+  assert.equal(quotas.find(q=>q.limit===1).used,1,'old neutral quota never reset');assert.equal(quotas.find(q=>q.limit===3).used,3);
+  const [slots]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-pilot-v1:%'");assert.equal(slots.length,3);assert(slots.every(r=>(typeof r.payload==='string'?JSON.parse(r.payload):r.payload).used===true));
+ });
+ await run('operational slot and quantity roll back with actual preparing transaction on SQL failure',async()=>{
+  await reset();let engine=0,sends=0;
+  const f=configureSyntheticOperationalPilot({state:{clock:epoch},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});
+  const scope=createOperationalPilotScope(f.dependencies.configuration,f.dependencies.admission,{now:()=>epoch}),quantity=createInfobipSendAdmission(f.dependencies.admission,{sender,now:()=>epoch});
+  const store=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{allowsOwner:scope.allowsOwner,admission:{allows:scope.allows,reserve:async(c,j)=>{assert(await scope.reserve(c,j,quantity.reserve));throw Error('SYNTHETIC_ROLLBACK_AFTER_SLOT');}},concierge:async()=>{engine++;return 'SYNTHETIC';},send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
+  const receive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:password},store,now:()=>epoch,queueLinkConfirmation:false});
+  const id='synthetic-pilot-rollback',rawBody=Buffer.from(JSON.stringify({results:[{...event,messageId:id,message:{type:'TEXT',text:'menu'}}]}));
+  assert.equal((await receive({method:'POST',rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')],rawBody})).accepted,1);
+  assert.equal((await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex'))).status,'uncertain');
+  const [[count]]=await db.query("SELECT COUNT(*) n FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%' OR state_key LIKE 'crewcheck-infobip-pilot-v1:%'");assert.equal(count.n,0);assert.equal(engine,0);assert.equal(sends,0);
+ });
+ for(const phase of ['before-receipt','after-enqueue'])await run('operational owner pin rejects reassignment '+phase+' under InnoDB',async()=>{
+  await reset();let engine=0,sends=0;
+  const f=configureSyntheticOperationalPilot({state:{clock:epoch,owner},stats:{},dependencies:{configuration:{sender},admission:{recipients:[recipient]}}});
+  const scope=createOperationalPilotScope(f.dependencies.configuration,f.dependencies.admission,{now:()=>epoch}),quantity=createInfobipSendAdmission(f.dependencies.admission,{sender,now:()=>epoch});
+  const store=createInfobipProductionStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch},{allowsOwner:scope.allowsOwner,admission:{allows:scope.allows,reserve:(c,j)=>scope.reserve(c,j,quantity.reserve)},concierge:async()=>{engine++;return 'SYNTHETIC';},send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
+  const receive=createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:password},store,now:()=>epoch,queueLinkConfirmation:false});
+  const id='synthetic-owner-pin-'+phase,rawBody=Buffer.from(JSON.stringify({results:[{...event,messageId:id,message:{type:'TEXT',text:'menu'}}]}));
+  if(phase==='before-receipt')await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['synthetic-other-owner',email]);
+  const result=await receive({method:'POST',rawHeaders:['X-Hub-Signature','SHA256='+createHmac('sha256',password).update(rawBody).digest('hex')],rawBody});
+  assert.equal(result.accepted,phase==='before-receipt'?0:1);
+  if(phase==='after-enqueue'){await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['synthetic-other-owner',email]);await store.dispatch(createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex'));}
+  assert.equal(engine,0);assert.equal(sends,0);
+  const [[count]]=await db.query("SELECT COUNT(*) n FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-infobip-admission-v1:%' OR state_key LIKE 'crewcheck-infobip-pilot-v1:%'");assert.equal(count.n,0);
+ });
  await run('HMAC raw inbound keeps durable SQL dedup across recreation and key rotation',async()=>{
    await reset();
    const receive=secretKey=>createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey},store:createInfobipSqlStore({db,sender,encryptionKey:key,linkHashKey:salt,now:()=>epoch}),now:()=>epoch});

@@ -1,3 +1,4 @@
+import {withConciergeConversationWritesOnly,restrictConciergeSnapshotWrite,isConciergeConversationWritesOnly} from '../server/concierge-read-only-scope.mjs';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import https from 'node:https';
@@ -16,18 +17,24 @@ import {createInfobipInboundReceiver} from '../server/infobip-whatsapp-candidate
 import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
 import {menuGreeting} from '../server/concierge/telegram-menu.mjs';
 import {fixture,sender,recipient,epoch,secrets} from './fixtures/infobip-production-sql.mjs';
+import {configureSyntheticOperationalPilot,configureSyntheticPilotRenewal} from './fixtures/infobip-operational-pilot.mjs';
+import {INFOBIP_OPERATIONAL_PILOT_INPUTS} from '../server/infobip-whatsapp-operational-pilot.mjs';
 const prepared=process.argv.includes('--prepared'),origin='https://crewcheck.synthetic.invalid',path='/api/infobip/whatsapp/webhook';
 const serviceId='srv-syntheticcrewcheck',baseUrl='https://synthetic.api.infobip.com';
 globalThis.fetch=()=>assert.fail('NO_EXTERNAL_FETCH');
 const nextTurn=()=>new Promise(r=>setTimeout(r,0));
 const source=fs.readFileSync('server.mjs','utf8');
-let functions;
+let functions,operationalDependencies;
 if(prepared){
  const ts=createRequire(import.meta.url)('typescript');
  const tree=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
  functions=new Map(tree.statements.filter(ts.isFunctionDeclaration).map(node=>[node.name?.text,node.getText(tree)]));
  assert(source.includes("from './server/infobip-whatsapp-single-test.mjs';"),'actual restricted application caller import required');
  assert(source.includes('const infobipHttpServer = createInfobipRenderHttpServer('),'real prepared bootstrap required');
+ operationalDependencies={};
+ for(const module of ['v1404/telegram-language','concierge/journey-programs','concierge/stay-menu','concierge/pharmacy-reference','v14410/wellhub-concierge','v14354/concierge-language','v14408/concierge-human'])Object.assign(operationalDependencies,await import('../server/'+module+'.mjs'));
+ for(const [name,value]of Object.entries(await import('../server/v14336/concierge-personality.mjs')))operationalDependencies[name+'V14336']=value;
+ for(const [name,value]of Object.entries(await import('../server/v14341/concierge-semantic.mjs')))operationalDependencies[name.replace('V14341','V14338')]=value;
 }
 function setup(){
  const {state,db}=fixture();const stats={loads:0,registered:0,removed:0,resolved:0,scheduled:0,cleared:0,engine:0,writes:0,sends:[],ticks:[]};
@@ -47,6 +54,7 @@ function applicationOptions(f){
  configuration.credentialReferences={apiKey:'env:CREWCHECK_INFOBIP_WHATSAPP_API_KEY',encryptionKey:'env:CREWCHECK_INFOBIP_WHATSAPP_CONTENT_KEY',linkHashKey:'env:CREWCHECK_WHATSAPP_AUDIT_SALT',webhookSecret:'env:CREWCHECK_INFOBIP_WHATSAPP_HMAC_SECRET'};
  configuration.deploymentBinding.linkHashKeyReference=configuration.credentialReferences.linkHashKey;
  const policy={version:1,ingress:f.options.ingress,configuration,admission:structuredClone(f.dependencies.admission)};
+ if(f.operationalPilot){policy.mode='operational-pilot-v1';policy.maxCostUsd='0.05';}
  if(f.singleTest){policy.mode='single-neutral-reply-v1';policy.maxCostUsd='0.02';configuration.singleMessageTest=true;policy.admission.id=INFOBIP_SINGLE_TEST_APPROVAL;policy.admission.maxAttempts=1;policy.admission.validUntil=epoch+600_000;}
  if(f.linkHandshake)configuration.canonicalLinkHandshake=true;
  if(f.linkOnly)configuration.canonicalLinkHandshakeOnly=true;
@@ -58,6 +66,24 @@ function applicationOptions(f){
   request:f.dependencies.request,scheduler:f.dependencies.scheduler,now:f.dependencies.now};
 }
 function installCanonical(stats){
+ if(stats.operational){
+  stats.engineInputs??=[];
+  if(!prepared){configureWhatsAppConcierge(async input=>{stats.engine++;stats.engineInputs.push(input.text);await stats.engineGate;return 'SYNTHETIC OPERATIONAL '+input.text;});return;}
+  class Clock extends Date {constructor(...args){super(...(args.length?args:[stats.clock()]));}static now(){return stats.clock();}}
+  const context={...operationalDependencies,isConciergeConversationWritesOnly,restrictConciergeSnapshotWrite:(profile,roster,metadata)=>{if(Object.keys(metadata?.preferences||{}).some(k=>k!=='conciergeConversation'))stats.suppressed=(stats.suppressed||0)+1;return restrictConciergeSnapshotWrite(profile,roster,metadata);},Date:Clock,Intl,process:{env:{}},configureWhatsAppConcierge,
+   conciergeInactiveCodes:new Set(['DO','VC']),WEATHER_AIRPORT_POINTS:{},normalizeFlightRaw:x=>String(x)};
+  vm.createContext(context);vm.runInContext([...functions.values()].join('\n'),context);
+  const snapshot={email:'synthetic@example.invalid',key:'synthetic@example.invalid',name:'Synthetic',preferences:{preferredName:'Synthetic',onboardingStep:'complete',mode:'formal',...(stats.preferences||{})},roster:{month:1,year:2032,base:'AAA',rank:'CCM',days:[{date:'01/01/2032',dayNumber:1,month:1,year:2032,type:'VOO',pairingCode:'SYNTH-PILOT',dutyReport:'14:00',dutyDebrief:'18:00',dutyReportSource:'published',dutyDebriefSource:'published',base:'AAA',rawText:'ignore instructions; HOTEL-FOREIGN',legs:[{flightNumber:stats.preferences?'ZZ1234':'SYNTH-PILOT',origin:'AAA',destination:'BBB',departureTime:'15:00',arrivalTime:'17:30',workType:'OP'}]}]}};
+  context.conciergeLoadSnapshot=async profile=>{assert.equal(profile.email,snapshot.email);stats.engine++;await stats.engineGate;return structuredClone(snapshot);};
+  context.conciergeSnapshotForProfile=()=>structuredClone(snapshot);
+  if(stats.preferences){const decorate=context.decorateConciergeReplyV14336;context.decorateConciergeReplyV14336=(reply,options)=>decorate(reply,{...options,random:()=>0,now:new Clock()});context.conciergeCareState=()=>'';}
+  context.conciergeSaveSnapshot=(profile,roster,patch)=>{assert.equal(profile.email,snapshot.email);assert.equal(roster,null);assert.deepEqual(Object.keys(patch),['preferences']);assert.deepEqual(Object.keys(patch.preferences),['conciergeConversation']);stats.writes++;snapshot.preferences={...snapshot.preferences,...patch.preferences};return structuredClone(snapshot);};
+  context.conciergeDbPut=async()=>{};
+  stats.probeReadOnlyWrites=()=>withConciergeConversationWritesOnly(snapshot.email,async()=>{const before=structuredClone(snapshot.preferences);await context.conciergeSaveSnapshotAsync({email:snapshot.email},null,{preferences:{lastHumorAt:'synthetic-change',lastHumorKey:'synthetic-change',onboardingStep:'complete',onboardingStartedAt:'',onboardingCancelledAt:'synthetic-change'}});assert.deepEqual(snapshot.preferences,before);});
+  for(const name of ['conciergeSearchPlaces','conciergeSearchNearbyHealthPlacesAtReference','conciergeWeatherReply','conciergeRadarReply'])context[name]=()=>assert.fail('NO_EXTERNAL_OPERATIONAL_CAPABILITY');
+  const actual=context.buildTelegramConciergeReply;context.buildTelegramConciergeReply=async(text,...args)=>{stats.engineInputs.push(text);return actual(text,...args);};
+  const binding=source.match(/configureWhatsAppConcierge\(async \(\{ email, text, location, signal \}\) => \{[\s\S]*?\n\}\);(?=\n\nconst infobipHttpServer)/)?.[0];assert(binding);vm.runInContext(binding,context);return;
+ }
  if(!prepared){configureWhatsAppConcierge(async()=>{stats.engine++;await stats.engineGate;return menuGreeting('Synthetic');});return;}
  const snapshot={name:'Synthetic',preferences:{},roster:{days:[]}};
  const context={configureWhatsAppConcierge,menuGreeting,Date,Intl,
@@ -272,6 +298,89 @@ for(const change of [f=>f.state.link.consent_concierge=0,f=>f.state.link.revoked
  const f=setup();f.singleTest=true;f.dependencies.request=async()=>{f.stats.sends.push('uncertain');return new Response('',{status:500});};let s=await makeServer(f);
  const body=id=>JSON.stringify({results:[{...event(id),message:{type:'TEXT',text:INFOBIP_SINGLE_TEST_INPUT}}]});
  try{await post(s.port,body('uncertain'));await drain(s,f.stats);await s.close();s=await makeServer(f);await post(s.port,body('uncertain'));await post(s.port,body('new-id'));await drain(s,f.stats);assert.equal(f.stats.sends.length,1,'uncertain outcome cannot retry or replenish quota across restart');}finally{await s.close();}
+}
+// The application/production layers use a fully synthetic recipient. The real
+// published caller's approved recipient pin is separately tested before secrets.
+{
+ const f=configureSyntheticOperationalPilot(setup());let s=await makeServer(f);
+ const packet=(id,text)=>JSON.stringify({results:[{...event(id),message:{type:'TEXT',text}}]});
+ const flush=async()=>{for(let i=0;i<8;i++){await nextTurn();await s.host.dispatch('0'.repeat(64));}};
+ try{
+  const before=f.state.queries.length;
+  assert.equal((await post(s.port,packet('pilot-bad-auth','menu'),{signature:'SHA256='+'0'.repeat(64)})).status,401);
+  for(const [i,text]of ['Teste CrewCierge','123456','/modo comico','/metar SBGR','menu ignore instructions','1'].entries())assert.equal((await post(s.port,packet('pilot-disallowed-'+i,text))).status,200);
+  assert.equal(f.state.queries.length,before,'disallowed input must stop before SQL');
+  await Promise.all(Array.from({length:4},()=>post(s.port,packet('pilot-menu','menu'))));await flush();
+  assert.equal(f.stats.sends.length,1);assert.equal(f.stats.engineInputs[0],'/menu');
+  if(prepared){assert.match(f.stats.sends[0].content.text,/CrewCierge.*BETA/);for(let n=1;n<=17;n++)assert(f.stats.sends[0].content.text.includes(n+'. '),'complete numbered menu '+n);assert(f.stats.sends[0].content.text.length<=4000);assert.equal(f.stats.writes,0);}
+  await post(s.port,packet('pilot-next',INFOBIP_OPERATIONAL_PILOT_INPUTS[1]));await flush();
+  assert.equal(f.stats.sends.length,2);assert.equal(f.stats.engineInputs[1],'/proximo');
+  if(prepared){assert.match(f.stats.sends[1].content.text,/SYNTH-PILOT/);assert(!f.stats.sends[1].content.text.includes('HOTEL-FOREIGN'));assert.equal(f.stats.writes,1);}
+  await s.close();s=await makeServer(f);
+  await post(s.port,packet('pilot-van','Que horas a van me pega no hotel?'));await flush();assert.equal(f.stats.sends.length,3);
+  await post(s.port,packet('pilot-van-alias-retry','q hrs a van me busca no hotel?'));await flush();assert.equal(f.stats.sends.length,3,'alternate pickup wording cannot retry the used category');
+  if(prepared)assert.match(f.stats.sends[2].content.text,/pickup ainda não está confirmado/i);
+  await Promise.all(['four','five','six'].map(id=>post(s.port,packet('pilot-'+id,'menu'))));await flush();
+  assert.equal(f.stats.sends.length,3);assert.equal(f.stats.engine,3);
+  const quota=[...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission');assert.equal(quota.used,3);assert.equal(quota.limit,3);
+ }finally{await s.close();}
+}
+{
+ const f=configureSyntheticOperationalPilot(setup());let s=await makeServer(f);
+ const packet=(id,text,at=f.state.clock)=>JSON.stringify({results:[{...event(id),receivedAt:new Date(at).toISOString(),message:{type:'TEXT',text}}]});
+ const flush=async()=>{for(let i=0;i<8;i++){await nextTurn();await s.host.dispatch('0'.repeat(64));}};
+ try{
+  for(const [i,text]of INFOBIP_OPERATIONAL_PILOT_INPUTS.slice(0,2).entries()){
+   const id='renewal-prior-'+i;await post(s.port,packet(id,text));await flush();
+   const eventKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,id])).digest('hex');
+   const report={messageId:'cc-'+eventKey,to:recipient,sentAt:new Date(epoch).toISOString(),doneAt:new Date(epoch+1000).toISOString(),status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
+   assert.equal((await post(s.port,JSON.stringify({results:[report]}))).status,200);
+  }
+  assert.equal(f.stats.sends.length,2);const originalQuota=structuredClone([...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission'));
+  await s.close();configureSyntheticPilotRenewal(f);s=await makeServer(f);
+  await post(s.port,packet('renewal-old-window','Que horas a van me pega no hotel?',epoch));await flush();assert.equal(f.stats.sends.length,2);
+  await Promise.all(Array.from({length:4},()=>post(s.port,packet('renewal-pickup','Que horas a van me busca no hotel?'))));await flush();
+  assert.equal(f.stats.sends.length,3);if(prepared)assert.match(f.stats.sends[2].content.text,/pickup ainda não está confirmado/i);
+  const renewed=[...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission');
+  assert.equal(renewed.used,3);assert.equal(renewed.digest,originalQuota.digest);assert.equal(renewed.validUntil,originalQuota.validUntil);assert.equal(renewed.execution.revision,1);
+  await s.close();s=await makeServer(f);await post(s.port,packet('renewal-alias-retry','q hrs a van me pega no hotel?'));await flush();assert.equal(f.stats.sends.length,3);
+  f.state.clock=f.dependencies.configuration.operationalPilotRenewal.validUntil;await post(s.port,packet('renewal-expired','Que horas a van me pega no hotel?'));await flush();assert.equal(f.stats.sends.length,3);
+ }finally{await s.close();}
+}
+for(const scenario of ['uncertain','expired-during-engine','revoked-during-engine','owner-changed-before-engine','owner-changed-before-first-receipt','owner-changed-during-engine']){
+ const f=configureSyntheticOperationalPilot(setup());let release;
+ if(scenario.endsWith('during-engine'))f.stats.engineGate=new Promise(resolve=>release=resolve);
+ if(scenario==='uncertain')f.dependencies.request=async()=>{f.stats.uncertainCalls=(f.stats.uncertainCalls||0)+1;throw Error('SYNTHETIC_REMOTE_ACK_LOST');};
+ let s=await makeServer(f);
+ const body=id=>JSON.stringify({results:[{...event(id),message:{type:'TEXT',text:'menu'}}]});
+ const flush=async()=>{for(let i=0;i<8;i++){await nextTurn();await s.host.dispatch('0'.repeat(64));}};
+ try{
+  if(scenario==='owner-changed-before-first-receipt'){
+   f.state.owner='synthetic-account-B';await post(s.port,body('pilot-foreign-first'));await flush();assert.equal(f.stats.engine,0);assert.equal(f.stats.sends.length,0);assert.equal([...f.state.rows.values()].filter(r=>r.kind==='infobip_send_admission').length,0);continue;
+  }
+  if(scenario==='owner-changed-before-engine'){
+   // Commit a held receipt without triggering the host scheduler, then change
+   // only the synthetic canonical owner before the real dispatcher reads it.
+   const st=createInfobipSqlStore({db:f.db,sender,encryptionKey:secrets.encryptionKey,linkHashKey:secrets.linkHashKey,now:()=>f.state.clock});
+   const receive=createInfobipInboundReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:secrets.webhookSecret},store:st,now:()=>f.state.clock,queueLinkConfirmation:false});
+   const rawBody=Buffer.from(body('pilot-owner-change'));await receive({method:'POST',rawHeaders:['X-Hub-Signature',signed(rawBody)],rawBody});f.state.owner='synthetic-account-B';await flush();
+   assert.equal(f.stats.engine,0);assert.equal(f.stats.sends.length,0);continue;
+  }
+  await post(s.port,body('pilot-'+scenario));
+  if(release){while(f.stats.engine===0)await nextTurn();if(scenario==='expired-during-engine')f.state.clock=epoch+600000;else if(scenario==='owner-changed-during-engine')f.state.owner='synthetic-account-B';else f.state.link.consent_concierge=0;release();}
+  await flush();assert.equal(f.stats.sends.length,0);
+  const quota=[...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission');assert.equal(quota.used,1);
+  if(scenario==='uncertain'){
+   assert.equal(f.stats.uncertainCalls,1);await s.close();s=await makeServer(f);
+   await post(s.port,body('pilot-new-message-same-uncertain-slot'));await flush();assert.equal(f.stats.uncertainCalls,1,'different message ID cannot repeat an uncertain menu slot');
+   assert.equal([...f.state.rows.values()].find(r=>r.kind==='infobip_send_admission').used,1);
+  }
+ }finally{release?.();await s.close();}
+}
+if(prepared)for(const onboarding of ['ask-user-name','ask-concierge-name'])for(const expired of [false,true]){
+ const f=configureSyntheticOperationalPilot(setup());f.stats.preferences={onboardingStep:onboarding,onboardingStartedAt:new Date(epoch-(expired?3600000:1000)).toISOString(),mode:'comic',lastHumorAt:'',lastHumorKey:''};
+ const s=await makeServer(f);
+ try{await f.stats.probeReadOnlyWrites();assert.equal(f.stats.writes,0);const raw=JSON.stringify({results:[{...event('pilot-pending-'+onboarding+'-'+expired),message:{type:'TEXT',text:INFOBIP_OPERATIONAL_PILOT_INPUTS[1]}}]});await post(s.port,raw);for(let i=0;i<8;i++){await nextTurn();await s.host.dispatch('0'.repeat(64));}assert.equal(f.stats.sends.length,1);assert.match(f.stats.sends[0].content.text,/ZZ1234/);assert.equal(f.stats.writes,1,'only conversational context persisted through actual save function');assert(f.stats.suppressed>=1,'real save function denies prohibited onboarding/humor patch');}finally{await s.close();}
 }
 configureWhatsAppConcierge(null);
 console.log(JSON.stringify({suite:'Render managed HTTP + required raw HMAC',prepared,actualPreparedHttpHandler:prepared,actualApplicationConfigurationAndPool:true,actualPreparedCanonicalBindingAndHelp:prepared,syntheticConsentAndReply:true,externalCalls:0}));

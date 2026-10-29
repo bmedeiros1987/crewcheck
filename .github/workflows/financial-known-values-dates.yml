@@ -2,10 +2,15 @@ name: Financial known values and payment dates
 on:
   pull_request:
     paths:
+      - 'client/src/components/preferences/PreferenceSwitch.tsx'
+      - 'client/src/components/preferences/preference-switch.css'
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/lib/rosterDayAllowanceSummary.ts'
+      - 'scripts/regression-roster-daily-allowance-browser.mjs'
       - 'client/src/lib/*Salary*.ts'
       - 'client/src/lib/salaryDisplayBasis.ts'
       - 'scripts/regression-salary-display-basis*'
@@ -16,6 +21,8 @@ on:
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/ownerPerDiemReview.ts'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/personalAllowanceReference.ts'
+      - 'scripts/regression-personal-allowance-*.mjs'
       - 'scripts/regression-owner-per-diem-review.mjs'
       - 'scripts/regression-owner-per-diem-browser.mjs'
       - 'scripts/regression-owner-per-diem-caller.mjs'
@@ -101,6 +108,7 @@ jobs:
           node scripts/regression-financial-history-loading-ui.cjs
           node scripts/regression-owner-per-diem-browser.mjs
           node scripts/regression-taxi-pending-row-browser.mjs
+          node scripts/regression-roster-daily-allowance-browser.mjs
           TZ=UTC node scripts/regression-finance-actionable-browser.mjs
           TZ=America/Sao_Paulo node scripts/regression-finance-actionable-browser.mjs
           TZ=Pacific/Auckland node scripts/regression-finance-actionable-browser.mjs

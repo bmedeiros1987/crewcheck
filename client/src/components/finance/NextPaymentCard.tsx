@@ -9,7 +9,7 @@ import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy'
 import './payment-preview.css';
 import { useFinancialScreen } from './FinancialScreen';
 
-export default function NextPaymentCard({ payment, requestRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void; extraDetails?:ReactNode;salaryDisplay?:{control:ReactNode;amount:ReactNode;caption:string} }) {
+export default function NextPaymentCard({ payment, requestRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void; extraDetails?:ReactNode;salaryDisplay?:{title?:string;control:ReactNode;amount:ReactNode;caption:string} }) {
   const privacy=useFinancialPrivacy(), root=useRef<HTMLDivElement>(null);
   const {screen,navigate,back,controls,history,range,changesDetails}=useFinancialScreen();
   const overviewCaption=payment.kind==='payroll'?(payment.estimationBasis==='operational_month'&&payment.range?`Salário · ${payment.range.start.slice(0,7).split('-').reverse().join('/')} · bruto estimado`:payment.caption.replace(', antes dos descontos','').replace(' · antes dos descontos','')):'Diárias';
@@ -39,7 +39,7 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails, s
     {(screen==='overview'||screen==='payment')&&<>
     <section className="cc-payment-hero" aria-label="Próximo pagamento previsto">
       <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> {payment.estimationBasis==='operational_month'?'CÁLCULO DA ESCALA':'PRÓXIMO CICLO'}</span><FinancialPrivacyToggle/><details className="cc-payment-help"><summary aria-label="Entender esta previsão"><span aria-hidden="true">?</span></summary><div><p>{privacy.text(payment.source)}</p>{Object.entries(payment.currencyTiming||{}).map(([currency,timing])=><p key={currency}>{currency} · {privacy.text(timing)}</p>)}{payment.issues.length>0&&<ul>{payment.issues.map(issue=><li key={issue}>{privacy.text(issue)}</li>)}</ul>}</div></details>{payment.kind==='allowance'&&<button type="button" className="cc-financial-calculator-shortcut" aria-label="Abrir calculadora de moedas" onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'currency'}))}><Calculator size={20} aria-hidden="true"/></button>}</div>
-      <h2 data-financial-screen-heading={screen==='overview'?true:undefined} tabIndex={-1}>{payment.estimationBasis==='operational_month'?'Estimativa salarial da escala':'Próximo pagamento previsto'}</h2>
+      <h2 data-financial-screen-heading={screen==='overview'?true:undefined} tabIndex={-1}>{payment.kind==='payroll'&&salaryDisplay?.title?salaryDisplay.title:payment.estimationBasis==='operational_month'?'Estimativa salarial da escala':'Próximo pagamento previsto'}</h2>
       <p className="cc-payment-caption">{payment.kind==='payroll'&&salaryDisplay?salaryDisplay.caption:screen==='overview'?overviewCaption:payment.caption}</p>
       {payment.kind==='payroll'&&salaryDisplay?salaryDisplay.amount:<ForecastCurrencyCarousel payment={payment}/>}
       {screen==='payment'&&payment.range&&<p className="cc-payment-period">Ciclo · {payment.kind==='allowance'?'Trabalho de':'Composição de'} {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)} · {payment.lines.length} itens</p>}

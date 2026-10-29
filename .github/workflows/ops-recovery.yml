@@ -1,0 +1,39 @@
+name: Ops recovery tooling (offline)
+on:
+  pull_request:
+    paths:
+      - 'ops/maintenance/**'
+      - 'scripts/ops/**'
+      - 'scripts/regression-ops-recovery.mjs'
+      - 'render.yaml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'package.json'
+      - 'scripts/regression-container-image.mjs'
+      - 'scripts/regression-container-context.mjs'
+      - '.github/workflows/ops-recovery.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      # Builtins only: no install, no secret, loopback servers and synthetic responses.
+      - run: node scripts/regression-ops-recovery.mjs
+      - run: node scripts/regression-container-image.mjs
+  container-context:
+    # Docker's own .dockerignore matching with synthetic canaries; the real image is built and every
+    # layer scanned. No push, no registry login, no secret.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - run: node scripts/regression-container-context.mjs --full

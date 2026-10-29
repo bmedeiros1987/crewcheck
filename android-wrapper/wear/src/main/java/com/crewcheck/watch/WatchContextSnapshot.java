@@ -357,7 +357,7 @@ public final class WatchContextSnapshot {
     }
 
     public String complicationLongText(long nowEpochMs) {
-        if (isStale(nowEpochMs)) return "Abra o CrewCheck no celular";
+        if (isStale(nowEpochMs)) return "Abra no celular";
 
         return truncate(switch (state) {
             case "LEAVE_SOON" -> {

@@ -111,6 +111,8 @@ public final class MainActivity extends FragmentActivity
     private TextView clockView;
     private TextView ambientClockView;
     private TextView transientStatus;
+    /** A tela atual já tem o botão principal de sincronizar; o rodapé não repete. */
+    private boolean heroSyncShown;
     private boolean ambient;
     private int screenMode = MODE_NOW;
 
@@ -332,6 +334,7 @@ public final class MainActivity extends FragmentActivity
         if (content == null) return;
 
         content.removeAllViews();
+        heroSyncShown = false;
         applySafePadding();
         content.getRootView().setBackgroundColor(BLACK);
 
@@ -380,21 +383,34 @@ public final class MainActivity extends FragmentActivity
         ensureRotaryFocus();
     }
 
+    /**
+     * Topo no padrão do Wear OS: hora centralizada no alto da tela redonda, marca e
+     * alertas logo abaixo. Antes a linha logo + nome + alertas + hora não cabia na largura
+     * útil do círculo e o nome virava "Crew…".
+     */
     private void renderHeader(WatchContextSnapshot snapshot) {
+        clockView = text(LocalTime.now().format(clockFormatter), 13, WHITE, true, Gravity.CENTER);
+        tabular(clockView);
+        clockView.setMaxLines(1);
+        content.addView(clockView);
+
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setGravity(Gravity.CENTER);
 
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.crewcheck_official);
-        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        row.addView(logo, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        row.addView(logo, new LinearLayout.LayoutParams(dp(20), dp(20)));
 
-        TextView brand = text("CrewCheck", 11, WHITE, true, Gravity.START);
-        brand.setPadding(dp(6), 0, 0, 0);
-        brand.setMaxLines(1);
-        row.addView(brand, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        // Com fonte ampliada ou tela estreita a logo identifica o app sozinha.
+        if (!stackColumns()) {
+            TextView brand = text("CrewCheck", 10, MUTED, true, Gravity.CENTER);
+            brand.setMaxLines(1);
+            brand.setPadding(dp(5), 0, 0, 0);
+            row.addView(brand, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
 
         int count = alertCount(snapshot);
         if (count > 0) {
@@ -404,29 +420,22 @@ public final class MainActivity extends FragmentActivity
             bg.setShape(GradientDrawable.OVAL);
             badge.setBackground(bg);
             badge.setMinHeight(dp(20));
+            badge.setMaxLines(1);
             LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20),
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-            badge.setMaxLines(1);
-            bp.setMargins(0, 0, dp(4), 0);
+            bp.setMargins(dp(6), 0, 0, 0);
+            // Só indicador: com 20dp seria um alvo de toque abaixo de 48dp. O botão
+            // "Alertas · N" da lista abre a mesma tela.
+            badge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             row.addView(badge, bp);
-            badge.setOnClickListener(view -> showScreen(MODE_NOTIFICATIONS));
-        }
-
-        clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
-        tabular(clockView);
-        clockView.setMaxLines(1);
-        if (!stackColumns()) {
-            row.addView(clockView, new LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         }
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        params.setMargins(dp(2), 0, dp(2), dp(6));
+        params.setMargins(0, dp(2), 0, dp(6));
         content.addView(row, params);
-        if (stackColumns()) content.addView(clockView);
     }
 
     private void renderAmbient(WatchContextSnapshot snapshot, long now) {
@@ -538,6 +547,7 @@ public final class MainActivity extends FragmentActivity
         content.addView(title);
 
         TextView value = text("Conecte ao CrewCheck", 23, WHITE, true, Gravity.CENTER);
+        fitLongestWord(value, contentWidth());
         content.addView(value);
 
         TextView detail = text(
@@ -550,6 +560,7 @@ public final class MainActivity extends FragmentActivity
         TextView sync = heroAction("Sincronizar agora", CYAN);
         sync.setOnClickListener(view -> requestSync());
         content.addView(sync);
+        heroSyncShown = true;
     }
 
     private void renderLiveState(WatchContextSnapshot snapshot, long now) {
@@ -557,12 +568,20 @@ public final class MainActivity extends FragmentActivity
         if (stale) {
             // Every visible part of the card is invalidated, including facts below
             // the fold: no old gate/boarding/APZ can appear current while scrolling.
-            content.addView(text("DADOS ANTIGOS", 10, WARNING, true, Gravity.CENTER));
-            content.addView(text("Snapshot vencido", 19, WHITE, true, Gravity.CENTER));
-            content.addView(text("Confira a programação e o portão no celular.", 11, MUTED, false, Gravity.CENTER));
+            TextView eyebrow = text("DADOS ANTIGOS", 10, WARNING, true, Gravity.CENTER);
+            eyebrow.setLetterSpacing(.08f);
+            eyebrow.setPadding(0, dp(8), 0, dp(4));
+            content.addView(eyebrow);
+            TextView title = text("Dados vencidos", 19, WHITE, true, Gravity.CENTER);
+            fitLongestWord(title, contentWidth());
+            content.addView(title);
+            TextView hint = text("Confira a programação e o portão no celular.", 11, MUTED, false, Gravity.CENTER);
+            hint.setPadding(0, dp(4), 0, 0);
+            content.addView(hint);
             TextView sync = heroAction("Sincronizar", WARNING);
             sync.setOnClickListener(view -> requestSync());
             content.addView(sync);
+            heroSyncShown = true;
             return;
         }
         Primary primary = primaryFor(snapshot);
@@ -586,6 +605,7 @@ public final class MainActivity extends FragmentActivity
         );
         value.setPadding(0, dp(3), 0, 0);
         tabular(value);
+        fitLongestWord(value, contentWidth());
         content.addView(value);
 
         if (!primary.detail.isBlank()) {
@@ -812,45 +832,37 @@ public final class MainActivity extends FragmentActivity
         content.addView(card, cardParams());
     }
 
+    /**
+     * Navegação em lista vertical de botões com a largura toda, como as listas do Wear OS.
+     * A grade 2×2 deixava cada botão com metade da largura útil do círculo e quebrava os
+     * rótulos no meio da palavra ("CrewLif/e", "Alertas/1").
+     */
     private void addNavigation(WatchContextSnapshot snapshot) {
-        LinearLayout first = navRow();
-        first.addView(navChip("Agora", CYAN, MODE_NOW));
-        first.addView(navChip("Alertas" + (alertCount(snapshot) > 0 ? " " + alertCount(snapshot) : ""),
-                MAGENTA, MODE_NOTIFICATIONS));
-
-        LinearLayout second = navRow();
-        second.addView(navChip("CrewLife", SUCCESS, MODE_CREWLIFE));
-        second.addView(navChip(
-                snapshot != null && !snapshot.schedule.isEmpty()
-                        ? "Escala " + snapshot.schedule.size()
-                        : "Escala",
-                VIOLET, MODE_SCHEDULE
-        ));
-
-        content.addView(first);
-        content.addView(second);
-    }
-
-    private LinearLayout navRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(stackColumns() ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        p.setMargins(0, dp(5), 0, 0);
-        row.setLayoutParams(p);
-        return row;
+        int alerts = alertCount(snapshot);
+        int items = snapshot != null ? snapshot.schedule.size() : 0;
+        View gap = new View(this);
+        content.addView(gap, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(6)));
+        content.addView(navChip("Agora", CYAN, MODE_NOW));
+        content.addView(navChip(alerts > 0 ? "Alertas · " + alerts : "Alertas", MAGENTA, MODE_NOTIFICATIONS));
+        content.addView(navChip("CrewLife", SUCCESS, MODE_CREWLIFE));
+        content.addView(navChip(items > 0 ? "Escala · " + items : "Escala", VIOLET, MODE_SCHEDULE));
     }
 
     private TextView navChip(String label, int accent, int mode) {
         TextView chip = actionChip(label, accent, screenMode == mode);
-        LinearLayout.LayoutParams params = columnParams();
-        params.setMargins(dp(2), dp(2), dp(2), 0);
-        chip.setLayoutParams(params);
+        chip.setMaxLines(1);
+        chip.setLayoutParams(listChipParams());
         chip.setOnClickListener(view -> showScreen(mode));
         return chip;
+    }
+
+    private LinearLayout.LayoutParams listChipParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(4), 0, 0);
+        return params;
     }
 
     private void renderFooter() {
@@ -858,7 +870,10 @@ public final class MainActivity extends FragmentActivity
         transientStatus.setPadding(dp(4), dp(3), dp(4), 0);
         content.addView(transientStatus);
 
+        if (heroSyncShown) return;
         TextView sync = actionChip("Sincronizar", BLUE, false);
+        sync.setMaxLines(1);
+        sync.setLayoutParams(listChipParams());
         sync.setOnClickListener(view -> requestSync());
         content.addView(sync);
     }
@@ -991,8 +1006,9 @@ public final class MainActivity extends FragmentActivity
      * fora. Agora tudo que existe aparece, em linhas de dois, na ordem de importância
      * operacional em que a lista é construída.
      *
-     * Com número ímpar entra um espaçador em vez de deixar o último quadro esticar para a
-     * largura toda. Em tela estreita ou fonte ampliada, cada dado ganha sua própria linha.
+     * Com número ímpar o último quadro fica com meia largura e centralizado, entre dois
+     * espaçadores, em vez de esticar ou ficar sozinho à esquerda. Em tela estreita ou fonte
+     * ampliada, cada dado ganha sua própria linha.
      */
     private void addFactGrid(List<Fact> facts) {
         for (int index = 0; index < facts.size(); index += stackColumns() ? 1 : 2) {
@@ -1000,13 +1016,15 @@ public final class MainActivity extends FragmentActivity
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER);
 
+            boolean single = !stackColumns() && index + 1 >= facts.size();
+            if (single) row.addView(new View(this), new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.MATCH_PARENT, .5f));
             addMiniStat(row, facts.get(index));
             if (!stackColumns() && index + 1 < facts.size()) {
                 addMiniStat(row, facts.get(index + 1));
-            } else if (!stackColumns()) {
-                View filler = new View(this);
-                row.addView(filler, new LinearLayout.LayoutParams(
-                        0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+            } else if (single) {
+                row.addView(new View(this), new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.MATCH_PARENT, .5f));
             }
 
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -1198,19 +1216,52 @@ public final class MainActivity extends FragmentActivity
         // Botão preenchido com o acento do estado e texto preto — o contraste mais alto
         // disponível. O gradiente azul-para-acento que havia aqui lavava as duas cores.
         TextView chip = text(label, 12, BLACK, true, Gravity.CENTER);
-        chip.setPadding(dp(20), dp(11), dp(20), dp(11));
+        // Tela estreita ou fonte ampliada: o botão ocupa a largura toda, com menos respiro
+        // lateral, para que uma palavra longa ("Sincronizar") não quebre no meio.
+        boolean narrow = stackColumns();
+        chip.setPadding(dp(narrow ? 8 : 20), dp(11), dp(narrow ? 8 : 20), dp(11));
         GradientDrawable background = new GradientDrawable();
         background.setColor(accent);
         background.setCornerRadius(dp(24));
         chip.setBackground(background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                narrow ? LinearLayout.LayoutParams.MATCH_PARENT : LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
         params.setMargins(dp(2), dp(7), dp(2), dp(2));
         chip.setLayoutParams(params);
+        if (narrow) fitLongestWord(chip, contentWidth() - dp(4));
         return chip;
+    }
+
+    /**
+     * Mantém a fonte escolhida pelo usuário sempre que a palavra mais longa cabe. Só quando
+     * nem a largura toda comporta a palavra (fonte muito ampliada, títulos grandes) o tamanho
+     * cai o mínimo necessário, em vez de quebrar a palavra no meio.
+     */
+    private static void fitLongestWord(TextView view, int availableWidthPx) {
+        float room = availableWidthPx - view.getPaddingLeft() - view.getPaddingRight();
+        if (room <= 0f) return;
+        String[] words = view.getText().toString().split("\\s+");
+        // A largura do texto não escala de forma exatamente linear (hinting): reduz 1px por
+        // vez até caber, com piso para não chegar a um tamanho ilegível.
+        float floor = 10f * view.getResources().getDisplayMetrics().scaledDensity;
+        while (view.getTextSize() > floor && longestWord(view, words) > room) {
+            view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, view.getTextSize() - 1f);
+        }
+    }
+
+    private static float longestWord(TextView view, String[] words) {
+        float longest = 0f;
+        for (String word : words) longest = Math.max(longest, view.getPaint().measureText(word));
+        return longest;
+    }
+
+    private int contentWidth() {
+        int width = scroll.getWidth() > 0 ? scroll.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        return width - scroll.getPaddingLeft() - scroll.getPaddingRight();
     }
 
     private TextView actionChip(String label, int accent, boolean selected) {
@@ -1316,7 +1367,7 @@ public final class MainActivity extends FragmentActivity
             case "BOARDING" -> "✈";
             case "IN_FLIGHT" -> "✈";
             case "CONNECTION" -> "↗";
-            case "OVERNIGHT" -> "■";
+            case "OVERNIGHT" -> "☾";
             case "CHANGED" -> "!";
             default -> "•";
         };

@@ -1,29 +1,28 @@
+import { rosterCardPresentation, rosterSourceSignature } from '@/lib/rosterPresentation';
+import { RosterActivityIcon } from './RosterLegend';
 import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { rosterDisplayIso, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { getStoredUser } from '@/lib/authClient';
 import { AimsRosterTable } from './AimsRosterTable';
 import './aims-document.css';
-import { rosterActivityLabel } from './rosterActivityLabel';
 
 type Event = ComponentProps<typeof AimsRosterTable>['events'][number];
 type Description = { mode: string; label: string };
 const MIN_ZOOM = .01, MAX_ZOOM = 2;
 const bounded = (value: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
-const code = (event: Event) => rosterActivityLabel(String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação'));
-// Keep source clocks intact: suffixes such as (+1) and explicit unknowns matter.
-const clock = (value?: string) => String(value || '').trim() || '—';
+const code = (event: Event) => rosterCardPresentation(event).title;
 
 /** Read-only document projection. Array positions identify duplicate IDs without
  * guessing a match, creating events, or using coordinates from a private PDF. */
-export function AimsDocumentView({ events, operationalEvents = events, month, day, describe, focusEventId, onReturnToMonth }: {
-  events: Event[]; operationalEvents?: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string; onReturnToMonth?: () => void;
+export function AimsDocumentView({ events, periodEvents = events, filtered = false, operationalEvents = events, month, day, describe, focusEventId, onReturnToMonth }: {
+  events: Event[]; periodEvents?: Event[]; filtered?: boolean; operationalEvents?: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string; onReturnToMonth?: () => void;
 }) {
   const id = useId(), viewport = useRef<HTMLDivElement>(null), sheet = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | HTMLSelectElement | null>(null);
   const [zoom, setZoom] = useState(1), [size, setSize] = useState({ width: 3744, height: 0 });
-  const [selection, setSelection] = useState<{ event: Event; owner: string | null } | null>(null);
+  const [selection, setSelection] = useState<{ event: Event; owner: string | null; signature: string } | null>(null);
   const owner = getStoredUser()?.id || null;
-  const selected = selection?.owner === owner && events.includes(selection.event) ? selection.event : null;
+  const selected = selection?.owner === owner && events.includes(selection.event) && selection.signature === rosterSourceSignature([selection.event]) ? selection.event : null;
   const suppressUntil = useRef(0), mouse = useRef<{ x: number; scroll: number; moved: boolean } | null>(null);
   const pinch = useRef<{ distance: number; zoom: number; anchor: number; center: number } | null>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
@@ -51,11 +50,10 @@ export function AimsDocumentView({ events, operationalEvents = events, month, da
     const all = Array.from({ length: new Date(Date.UTC(year, m, 0)).getUTCDate() }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
     return day ? (all.includes(day) ? [day] : []) : all;
   }, [month, day]);
-  const groups = useMemo(() => dates.map(iso => ({ iso, entries: events.map((event, index) => ({ event, index })).filter(({ event }) => rosterDisplayIso(event) === iso) })), [dates, events]);
+  const sourceSignature = rosterSourceSignature(events);
+  const groups = useMemo(() => dates.map(iso => ({ iso, entries: events.map((event, index) => ({ event, index })).filter(({ event }) => rosterDisplayIso(event) === iso) })), [dates, events, sourceSignature]);
   const zones = [...new Set(events.map(event => event.operationalTimeZone || 'não informado'))];
   const selectedDayEvents = selected ? events.filter(event => rosterDisplayIso(event) === rosterDisplayIso(selected)) : [];
-  const sourceStart = (event: Event) => clock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure);
-  const sourceEnd = (event: Event) => clock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival);
   const outside = events.filter(event => !dates.includes(rosterDisplayIso(event) || ''));
   useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) { viewport.current.scrollLeft = 0; viewport.current.scrollTop = 0; } }, [owner, month, day]);
   useEffect(() => {
@@ -70,7 +68,7 @@ export function AimsDocumentView({ events, operationalEvents = events, month, da
     if (button) opener.current = button;
     const frame = viewport.current;
     returnPosition.current = { x: window.scrollX, y: window.scrollY, left: frame?.scrollLeft || 0, top: frame?.scrollTop || 0 };
-    setSelection({ event, owner });
+    setSelection({ event, owner, signature: rosterSourceSignature([event]) });
   }
   useEffect(() => { if (selected && detail.current) { detail.current.focus({ preventScroll: true }); detail.current.scrollIntoView({ block: 'start', behavior: 'instant' }); } }, [selected]);
   const consumed = useRef<string>();
@@ -105,7 +103,7 @@ export function AimsDocumentView({ events, operationalEvents = events, month, da
     </div>
     <p id={`${id}-help`} className="cc-doc-help">Toque para ampliar o dia · deslize para percorrer · dois dedos ou +/− para zoom.</p>
     <label className="cc-doc-picker"><span className="cc-doc-picker-label">Ir para uma programação</span><select aria-label="Abrir programação publicada" value="" onChange={e=>{const index=Number(e.target.value);if(e.target.value!==''&&events[index]){opener.current=e.currentTarget;open(events[index]);}}}><option value="">Escolher programação</option>{events.map((event,index)=><option key={index} value={index}>{rosterDisplayIso(event) || 'Data não informada'} · {describe(event).label} · {code(event)}</option>)}</select></label>
-    {!events.length && <p role="status">Nenhuma programação informada no período selecionado.</p>}
+    {!events.length && <p role="status">{filtered ? 'Nenhum item deste filtro no período selecionado.' : 'Nenhuma programação informada no período selecionado.'}</p>}
     <div ref={viewport} className="cc-doc-viewport" tabIndex={0} role="region" aria-label="Dias do documento; rolagem horizontal" aria-describedby={`${id}-help`}
       onKeyDown={event => { if (event.target !== event.currentTarget) return; if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); event.currentTarget.scrollLeft += event.key === 'ArrowRight' ? 160 : -160; } if (event.key === 'Home') { event.preventDefault(); event.currentTarget.scrollLeft = 0; } if (event.key === 'End') { event.preventDefault(); event.currentTarget.scrollLeft = event.currentTarget.scrollWidth; } }}
       onClickCapture={event => { if (performance.now() < suppressUntil.current) { event.preventDefault(); event.stopPropagation(); } }}
@@ -120,18 +118,17 @@ export function AimsDocumentView({ events, operationalEvents = events, month, da
           {<div className="cc-doc-strip">
             {groups.map(group => <section key={group.iso} className="cc-doc-day" data-roster-iso={group.iso} aria-label={`Dia ${group.iso}`}>
               <h3 aria-current={group.iso === today ? 'date' : undefined}><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
-              {group.entries.map(({ event, index }) => { const meta = describe(event); return <div className="cc-doc-entry cc-roster-legend-v1397" key={index}>
-                <span data-mode={meta.mode} className="cc-doc-token"><button type="button" data-roster-event-id={event.id} data-event-index={index} aria-label={`${meta.label}: ${code(event)}, dia ${group.iso}. Abrir detalhes publicados`} aria-expanded={selected === event} onClick={e => open(event, e.currentTarget)}>
-                  {meta.mode === 'stay' ? <span className="cc-doc-stay-line">{event.destination || event.origin || '—'} · {sourceStart(event)}–{sourceEnd(event)}</span> : <>
-                    <strong>{code(event)}{meta.mode === 'extra' && <small> · Extra</small>}</strong>
-                    {event.presentation && event.presentation !== 'Conexão/Solo' && <span><abbr title="Apresentação">APZ</abbr> {clock(event.presentation)}</span>}
-                    {event.presentation === 'Conexão/Solo' && <span className="cc-doc-connection">Conexão/Solo</span>}
-                    <span>{sourceStart(event)}–{sourceEnd(event)}</span>
-                    {(event.origin || event.destination) && <span>{event.origin || '—'}{event.destination ? ` → ${event.destination}` : ''}</span>}
-                  </>}
+              {group.entries.map(({ event, index }) => { const meta = describe(event), card = rosterCardPresentation(event, group.iso); return <div className="cc-doc-entry cc-roster-legend-v1397" key={`${event.id}:${periodEvents.indexOf(event)}:${index}`}>
+                <span data-mode={card.mode} data-roster-mode={card.mode} className="cc-doc-token cc-roster-token"><button type="button" data-roster-event-id={event.id} data-event-index={index} aria-label={`${meta.label}: ${card.title}, dia ${group.iso}. Abrir detalhes publicados`} aria-expanded={selected === event} onClick={e => open(event, e.currentTarget)}>
+                  <strong className="cc-roster-card-heading"><RosterActivityIcon mode={card.mode}/>{card.title}{card.mode === 'extra' && <small> · Extra</small>}</strong>
+                  {card.presentation && <span><abbr title="Apresentação">APZ</abbr> {card.presentation}</span>}
+                  {!card.nonOperational && event.presentation === 'Conexão/Solo' && <span className="cc-doc-connection">Conexão/Solo</span>}
+                  <span>{card.start}{card.startDate && ` (${card.startDate})`}–{card.end}{card.endDate && ` (${card.endDate})`}</span>
+                  {card.context && <span>{card.context}</span>}
+                  {card.datesUnconfirmed && <span>Virada de dia indicada; datas a confirmar</span>}
                 </button></span>
               </div>; })}
-              {!group.entries.length && <p className="cc-doc-empty" aria-label="Sem programação informada">—</p>}
+              {!group.entries.length && <p className="cc-doc-empty" aria-label={filtered && periodEvents.some(event => rosterDisplayIso(event) === group.iso) ? 'Nenhum item deste filtro' : 'Sem programação informada'}>{filtered && periodEvents.some(event => rosterDisplayIso(event) === group.iso) ? 'Nenhum item deste filtro' : '—'}</p>}
             </section>)}
           </div>}
         </div>

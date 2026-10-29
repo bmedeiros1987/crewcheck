@@ -2,7 +2,7 @@ import { draftPayrollDsrEvidence, validPayrollDsrEvidence, payrollDsrContext, ty
 import { extractPrivatePayroll, type PayrollPage, type PrivatePayrollExtraction, type PayrollSourceOrigin } from './privatePayrollExtraction';
 import { getStoredUser, getToken } from './authClient';
 import { payrollMonthBounds, payrollCompetences, PAYROLL_CYCLE_SOURCE } from './financialPayrollPeriods';
-import { currentPersonalAllowance, parsePersonalAllowanceHistory, planPersonalAllowance, resolvePersonalAllowance, type AllowanceCategory, type PersonalAllowanceHistory } from './personalAllowanceReference';
+import { parsePersonalAllowanceHistory, planPersonalAllowance, personalAllowanceAt, type AllowanceCategory, type PersonalAllowanceHistory } from './personalAllowanceReference';
 export type StatementKind = 'per_diem' | 'payroll';
 export type LearningConfidence = 'high' | 'medium' | 'review';
 
@@ -410,28 +410,28 @@ export function readConfirmedFinancialRates(): LearnedRate[] {
   return readFinancialRateArchive().rates;
 }
 export const personalAllowanceStorageKey=(owner:string)=>'crewcheck_personal_allowance_reference_v1:'+encodeURIComponent(owner);
-export function readPersonalAllowanceReferences(archive=readFinancialRateArchive()):{state:FinancialRateArchive['state'];history:PersonalAllowanceHistory|null;rates:LearnedRate[]} {
+export function readPersonalAllowanceReferences(archive=readFinancialRateArchive()):{state:FinancialRateArchive['state'];history:PersonalAllowanceHistory|null;rates:LearnedRate[];raw?:string|null} {
  if(!['ready','missing'].includes(archive.state))return {state:archive.state,history:null,rates:[]};
  try{
   const owner=financialRateOwnerFromStorage();
   if(!owner||archive.rates.some(rate=>rate.ownerId!==owner))return {state:'unavailable',history:null,rates:[]};
   const raw=localStorage.getItem(personalAllowanceStorageKey(owner));
-  if(raw===null)return {state:'missing',history:{schema:1,ownerId:owner,revision:0,events:[]},rates:archive.rates};
+  if(raw===null)return {state:'missing',history:{schema:1,ownerId:owner,revision:0,events:[]},rates:archive.rates,raw};
   const history=parsePersonalAllowanceHistory(raw,owner);
-  return history?{state:'ready',history,rates:archive.rates}:{state:'invalid',history:null,rates:[]};
+  return history?{state:'ready',history,rates:archive.rates,raw}:{state:'invalid',history:null,rates:[]};
  }catch{return {state:'unavailable',history:null,rates:[]};}
 }
 /** Explicit local forecast configuration, separate from the immutable rate archive
  * and any ledger/payment record. Same-origin locks serialize revoke/reuse. */
-export async function savePersonalAllowanceReference(args:{expectedSession:string;expectedRevision:number;category:AllowanceCategory;sourceId?:string;from?:string;active:boolean}):Promise<boolean> {
+export async function savePersonalAllowanceReference(args:{expectedSession:string;expectedRevision:number;expectedSchema:1|2;expectedRaw:string|null;reviewedTimeline:true;category:AllowanceCategory;sourceId?:string;from?:string;active:boolean}):Promise<boolean> {
  try{
   const owner=financialRateOwnerFromStorage(),request={...args};
-  if(!owner||!request.expectedSession||request.expectedSession!==financialRateSession()||typeof navigator==='undefined'||!navigator.locks?.request)return false;
+  if(!owner||!request.expectedSession||request.expectedSession!==financialRateSession()||request.reviewedTimeline!==true||!Object.prototype.hasOwnProperty.call(request,'expectedRaw')||typeof navigator==='undefined'||!navigator.locks?.request)return false;
   return await navigator.locks.request(personalAllowanceStorageKey(owner),()=>{
    if(owner!==financialRateOwnerFromStorage()||request.expectedSession!==financialRateSession())return false;
    const snapshot=readPersonalAllowanceReferences();
-   if(!snapshot.history||!['ready','missing'].includes(snapshot.state)||snapshot.history.ownerId!==owner)return false;
-   const next=planPersonalAllowance(snapshot.history,snapshot.rates,request.expectedRevision,request);
+   if(!snapshot.history||!['ready','missing'].includes(snapshot.state)||snapshot.history.ownerId!==owner||snapshot.history.schema!==request.expectedSchema||snapshot.raw!==request.expectedRaw)return false;
+   const next=planPersonalAllowance(snapshot.history,snapshot.rates,request.expectedRevision,request,{raw:request.expectedRaw,reviewedTimeline:request.reviewedTimeline});
    if(!next||owner!==financialRateOwnerFromStorage()||request.expectedSession!==financialRateSession())return false;
    if(next!==snapshot.history){
     localStorage.setItem(personalAllowanceStorageKey(owner),JSON.stringify(next));
@@ -508,9 +508,10 @@ export function confirmedPerDiemReferencesAt(date: string) {
   const at = (key: string) => confirmedRateIn(archive.rates, key, date, 'BRL');
   const personal=readPersonalAllowanceReferences(archive);
   const bounded={mainMeal:at('per_diem.lunch')??at('per_diem.dinner')??at('per_diem.supper'),breakfast:at('per_diem.breakfast'),taxi:at('per_diem.taxi')};
-  const recurring=(category:AllowanceCategory)=>!bounded[category]&&personal.history?resolvePersonalAllowance(personal.history,archive.rates,category,date):null;
-  const selected={mainMeal:recurring('mainMeal'),breakfast:recurring('breakfast'),taxi:recurring('taxi')};
-  const unresolved=(['mainMeal','breakfast','taxi'] as const).some(category=>{const current=personal.history&&currentPersonalAllowance(personal.history,category);return !bounded[category]&&current?.active&&current.from<=date&&!selected[category];});
+  const recurring=(category:AllowanceCategory)=>!bounded[category]&&personal.history?personalAllowanceAt(personal.history,archive.rates,category,date):{state:'none'} as const;
+  const assessed={mainMeal:recurring('mainMeal'),breakfast:recurring('breakfast'),taxi:recurring('taxi')};
+  const selected={mainMeal:assessed.mainMeal.state==='active'?assessed.mainMeal:null,breakfast:assessed.breakfast.state==='active'?assessed.breakfast:null,taxi:assessed.taxi.state==='active'?assessed.taxi:null};
+  const unresolved=Object.values(assessed).some(selection=>selection.state==='unavailable');
   const state=['ready','missing'].includes(archive.state)?(personal.state==='invalid'?'invalid':personal.state==='unavailable'||unresolved?'unavailable':archive.state):archive.state;
   return {
     state,
