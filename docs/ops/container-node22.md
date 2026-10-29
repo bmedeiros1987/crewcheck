@@ -16,9 +16,21 @@ Preparação para recuperação: só arquivos e testes locais. Nenhum provedor, 
 - Já preparado, o `server.mjs` carrega sozinho o runtime de notificações (`telegram-fast-ack`).
 - `/api/health` e `/api/release` informam o commit passado em `--build-arg SOURCE_VERSION=<sha>`.
 
-Nada privado entra na imagem: nenhum segredo, proxy ou CA. A verificação TLS fica ligada, e toda a configuração vem de variáveis de ambiente no runtime.
+Nada privado entra na imagem: nenhum segredo, proxy ou CA privado ou do proxy. O CA **público** do MySQL (`server/certs/crewcheck-aiven-project-ca.pem`), que fixa a confiança TLS, é obrigatório e entra. A verificação TLS fica ligada, e toda a configuração vem de variáveis de ambiente no runtime.
 
-Contrato estático: `scripts/regression-container-image.mjs` (workflow `ops-recovery`).
+**Contexto de build por lista de inclusão** (`.dockerignore`):
+- primeiro exclui tudo;
+- depois libera só as entradas do build: arquivos de raiz necessários, `client`, `config`, `database`, `migrations`, `scripts`, `server`, `shared`, `android-wrapper` e `docs`. A preparação canônica altera fontes Android e confere documentos obrigatórios;
+- em qualquer profundidade, exclui de novo `.env*`, `.npmrc`, `.yarnrc*`, `.crewcheck-*` (arquivos de runtime do app: store do OAuth do Google, vínculos e escalas do Telegram, patch de runtime), chaves, keystores, `*.pem`, `local.properties`, `google-services.json`, `node_modules`, `dist`, saídas de build e logs;
+- por fim, reinclui só o CA público e o modelo `.env.example`, que tem só nomes.
+
+**Testes:**
+- `scripts/regression-container-image.mjs`: contrato estático do Dockerfile e da lista.
+- `scripts/regression-container-context.mjs --full`, job `container-context`:
+  - planta 42 canários sintéticos (conteúdo `SYNTHETIC-CANARY`, nunca valores reais) numa cópia dos arquivos versionados;
+  - com o próprio Docker, prova que nenhum entra no contexto;
+  - constrói a imagem real e varre todas as camadas listadas no manifesto;
+  - confere que o CA público e o `dist/` estão presentes e que não há secret mount, proxy nem CA privado.
 
 ## Medições locais (sem banco, sem segredos, rede do app bloqueada)
 
@@ -59,7 +71,7 @@ Um job de notificação ou alarme que passa **mais de 120 s** do horário é mar
 
 | | Aviso de manutenção | App completo |
 |---|---|---|
-| Entrada | `ops/maintenance/` (`server.mjs` ou `index.html` estático) | esta imagem |
+| Entrada | `ops/maintenance/server.mjs` (o `index.html` estático, sozinho, não devolve 503 em `/api` e nos webhooks, logo não cumpre o contrato) | esta imagem |
 | Segredos e banco | nenhum | todos os nomes do serviço antigo, com presença preservada (`scripts/ops/env-names.mjs --check --old --new`) |
 | Timers | nenhum | os da tabela acima |
 | Sempre ligado | não precisa | precisa, para alarmes e avisos |
@@ -67,4 +79,8 @@ Um job de notificação ou alarme que passa **mais de 120 s** do horário é mar
 
 ## Teste local da imagem
 
-O sandbox de desenvolvimento usa um proxy próprio. Por isso o teste local usou uma **variante temporária, fora do repositório**, que injeta o proxy e o CA só nas etapas `npm ci` e `npm run build`. O Dockerfile publicado não tem nenhuma dessas linhas, e a imagem final foi verificada sem CA nem variável de proxy.
+O sandbox de desenvolvimento usa um proxy TLS próprio.
+- Por isso o teste local passa o CA do proxy às etapas `npm ci` e `npm run build` por **secret mount do BuildKit** (`SANDBOX_CA_FILE`, só local). Esse CA nunca entra no contexto nem em nenhuma camada.
+- O Dockerfile publicado não tem nenhuma dessas linhas.
+- A imagem final foi verificada sem secret mount, sem variável de proxy e sem CA privado ou do proxy. O CA público do MySQL está presente.
+- Os artefatos temporários de testes anteriores, que tinham o CA do proxy, foram apagados localmente: variantes de Dockerfile, imagens e cache de build. Nenhuma imagem foi publicada.

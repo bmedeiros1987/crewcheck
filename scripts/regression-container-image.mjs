@@ -23,12 +23,19 @@ assert(instructions.includes('CMD ["node", "server.mjs"]'));
 assert(instructions.includes('USER node') && instructions.indexOf('RUN chown node:node /app') < instructions.indexOf('USER node'), 'non-root, app dir writable for runtime files');
 assert.match(docker, /ENV NODE_ENV=production PORT=10000 SOURCE_VERSION=\$SOURCE_VERSION/, '/api/health reports the built commit');
 
-// Nothing private or insecure is baked in: no secret-like build arg/env, no proxy or CA, TLS on.
+// Nothing private or insecure is baked in: no secret-like build arg/env, no proxy or private/proxy CA, TLS on.
 const argsAndEnv = instructions.filter(line => /^(ARG|ENV) /.test(line)).join('\n');
 assert.doesNotMatch(argsAndEnv, /TOKEN|SECRET|PASSWORD|KEY|DATABASE|MYSQL|PROXY|CAFILE|CA_CERTS/i);
 assert.doesNotMatch(docker, /NODE_TLS_REJECT_UNAUTHORIZED|strict-ssl|--insecure|\.pem|ca-bundle|https?_proxy/i);
-for (const entry of ['.git', 'node_modules', '**/node_modules', 'dist', '.env', '.env.*', '!.env.example'])
-  assert(ignore.split('\n').includes(entry), `.dockerignore keeps ${entry} out of the context`);
+// Allowlist context: everything excluded first, then only build inputs; private names re-excluded
+// at any depth; the public pinned MySQL CA and the names-only .env.example template re-included.
+const rules = ignore.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+assert.equal(rules[0], '*', 'allowlist: exclude everything first');
+for (const entry of ['**/.env', '**/.env.*', '**/.npmrc', '**/.crewcheck-*', '**/node_modules', '**/dist', '**/*.pem', '**/*.key', '**/*.jks', '**/*.keystore', '**/local.properties'])
+  assert(rules.includes(entry), `.dockerignore re-excludes ${entry}`);
+assert(rules.indexOf('!server/certs/crewcheck-aiven-project-ca.pem') > rules.indexOf('**/*.pem'), 'public pinned CA re-included after the *.pem exclusion');
+assert(rules.indexOf('!.env.example') > rules.indexOf('**/.env.*'), 'template re-included after the .env.* exclusion');
+assert(!rules.some(rule => /^!\.(git|github)$|^!\*\*|^!\.env$|^!\.npmrc$/.test(rule)), 'nothing private or broad is re-included');
 
 // npm prune --omit=dev is safe: every package the server imports is a production dependency.
 const sources = ['server.mjs', ...execFileSync('git', ['ls-files', 'server', 'shared'], { encoding: 'utf8' }).split('\n').filter(f => /\.mjs$/.test(f))];
