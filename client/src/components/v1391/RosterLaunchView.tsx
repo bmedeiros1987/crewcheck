@@ -17,6 +17,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
+  ChevronDown,
   Clock,
   Coffee,
   Dumbbell,
@@ -29,6 +30,7 @@ import {
   Moon,
   Plane,
   RotateCcw,
+  SlidersHorizontal,
   Route,
   ShieldCheck,
   Sparkles,
@@ -309,32 +311,37 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
     <div className="cz-roster-actions cc-share-entry"><a className="cc-roster-changes-link" href="?view=perdiem&fmode=allowance&fscreen=changes" aria-label="Alterações" title="Alterações"><GitCompareArrows size={18} aria-hidden="true"/></a><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
-    <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
-      <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
-        <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">CrewCheck AIMS</option><option value="calendar">Calendário</option>
-      </select></label>
-      <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards', 'month')} disabled={layout === 'cards' && zoom === 'month'}><RotateCcw aria-hidden="true"/> Restaurar padrão</button>
-      <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
-    </section>
-
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
 
       <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label>
       <button type="button" onClick={goToday}><Clock/> Hoje</button>
+      <p className="cc-roster-period-count" role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}</p>
     </section>
 
-    <section className="cc-roster-zoom" aria-label="Zoom da escala">
-      <div role="group" aria-label="Escolher período de leitura">
-        <button type="button" aria-pressed={zoom === 'month'} onClick={() => chooseZoom('month')}>Mês completo</button>
-        <button type="button" aria-pressed={zoom === 'day'} onClick={() => chooseZoom('day')}>Dia ampliado</button>
-      </div>
-      {zoom === 'day' && <label>Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
-      <p role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}. Horários publicados preservados.</p>
-    </section>
+    {/* Presentation collapsed: format, reset and month/day zoom under one discreet expander. */}
+    <details className="cc-roster-view-options">
+      <summary><SlidersHorizontal aria-hidden="true"/><span>Exibição</span><small>{({ cards: 'Cards', list: 'Lista', aims: 'AIMS', calendar: 'Calendário' } as Record<string, string>)[layout] || 'Cards'} · {zoom === 'day' ? 'Dia' : 'Mês'}</small><ChevronDown className="cc-roster-disclosure" aria-hidden="true"/></summary>
+      <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
+        <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
+          <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">CrewCheck AIMS</option><option value="calendar">Calendário</option>
+        </select></label>
+        <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards', 'month')} disabled={layout === 'cards' && zoom === 'month'}><RotateCcw aria-hidden="true"/> Restaurar padrão</button>
+      </section>
+
+      <section className="cc-roster-zoom" aria-label="Zoom da escala">
+        <div role="group" aria-label="Escolher período de leitura">
+          <button type="button" aria-pressed={zoom === 'month'} onClick={() => chooseZoom('month')}>Mês completo</button>
+          <button type="button" aria-pressed={zoom === 'day'} onClick={() => chooseZoom('day')}>Dia ampliado</button>
+        </div>
+        {zoom === 'day' && <label>Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
+      </section>
+    </details>
+    <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
 
     {categoryFilter.filter !== 'all' && !visibleEvents.length && <div className="cc-roster-filter-empty"><p>Nenhum item deste filtro no período selecionado.</p><button type="button" onClick={categoryFilter.reset}>Mostrar tudo</button></div>}
 
-    <FinancialPrivacyToggle/><details className="cc-roster-finance-summary">
+    {/* The eye (values only) sits beside the month summary instead of taking a row of its own. */}
+    <div className="cc-roster-finance-row"><FinancialPrivacyToggle iconOnly/><details className="cc-roster-finance-summary">
       <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
       <section className="cc-roster-hero-v1397">
       <div className="cc-roster-hero-copy-v1397">
@@ -360,7 +367,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
         </button>
       </div>
     </section>
-    </details>
+    </details></div>
 
     {unconfirmed.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada">
       <h2>Data não confirmada</h2>
