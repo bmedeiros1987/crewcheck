@@ -70,11 +70,14 @@ A entrada não quebra com request malformado: a rota é lida como texto, sem `ne
 
 O domínio só entra depois de liberado do serviço antigo (3.0, item 1). Se o Render indicar outro alvo de DNS, a alteração na UOL exige autorização.
 
-**Opção B, fora do Render (hospedagem estática).** Só o `ops/maintenance/index.html`, um arquivo estático, sem Node, na hospedagem UOL ("somente hospedagem").
+**Opção B, fora do Render.** Um host externo com TLS válido para `crewcheck.online`, com o DNS na UOL apontando para ele.
 - Pré-requisitos:
-  - TLS válido para `crewcheck.online` nesse host; sem isso, navegadores e o WebView do app recusam a conexão;
-  - autorização do Bruno para alterar o registro A na UOL. O login tem CAPTCHA pendente, e nenhum DNS foi alterado.
-- O host estático provavelmente responde 200, não 503, e o cache depende da configuração dele.
+  - TLS válido nesse host; sem isso, navegadores e o WebView do app recusam a conexão;
+  - autorização do Bruno para alterar o registro A. A UOL já está autenticada, mas mostra só Domínios e Conecte, sem hospedagem contratada comprovada. Nenhum DNS foi alterado.
+- **O contrato de manutenção vale também aqui:**
+  - `/api/*` e os webhooks respondem **503**, nunca 200, para que clientes e provedores não tratem o aviso como resposta válida nem percam entregas;
+  - nada fica em cache (`no-store`).
+- Um HTML estático servido com 200, sozinho, **não** cumpre esse contrato. Ele só serve num host que permita devolver 503 nessas rotas. Fora disso, use a entrada Node `ops/maintenance/server.mjs`.
 - O corte e o retorno são feitos pelo registro A (`216.24.57.1` é o valor atual). Com TTL de cerca de 30 min, a propagação leva até esse tempo nos dois sentidos.
 
 Observações:
@@ -146,7 +149,7 @@ Consequências:
 | 3 | Criar o serviço de manutenção (free) e o principal no workspace novo | Seções 3.1 e 3.2 |
 | 4 | Inserir as variáveis direto no painel novo | Pelo responsável pelos segredos, sem trânsito por chat |
 | 5 | Acesso ao Aiven, leitura | Filtro de IP e último backup |
-| 6 | DNS na UOL | Opção B do aviso (host estático com TLS válido) ou outro alvo indicado pelo Render; login com CAPTCHA pendente de autorização do Bruno |
+| 6 | DNS na UOL | Opção B do aviso (host estático com TLS válido) ou outro alvo indicado pelo Render; UOL autenticada; alteração depende de autorização do Bruno |
 
 ## 6. Achados para depois (fora desta recuperação)
 
