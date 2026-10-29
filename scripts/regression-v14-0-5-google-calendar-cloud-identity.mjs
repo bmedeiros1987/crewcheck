@@ -18,16 +18,16 @@ assert.match(android, /versionName '14\.0\.5'/);
 
 assert.match(calendar, /googleCalendarOAuthBridge/);
 assert.match(calendar, /calendar\.events\.owned/);
-assert.doesNotMatch(calendar, /calendar\.calendarlist\.readonly/);
-assert.doesNotMatch(calendar, /https:\/\/www\.googleapis\.com\/auth\/calendar\.events['"\s]/);
+assert.match(calendar, /calendar\.calendarlist\.readonly/);
+assert.doesNotMatch(calendar, /https:\/\/www\.googleapis\.com\/auth\/calendar(?:\.events|\.calendarlist)?['"\s]/);
 assert.match(calendar, /include_granted_scopes: false/);
 assert.match(calendar, /error_callback:/);
 assert.match(calendar, /isEmbeddedCrewCheckWebView/);
 assert.match(calendar, /connectGoogleCalendarViaServer/);
 assert.match(calendar, /serverGoogleCalendarFetch/);
 assert.match(calendar, /localStorage\.removeItem\(CLIENT_ID_OVERRIDE_KEY\)/);
-assert.match(calendar, /const calendarId = 'primary'/);
-assert.match(calendar, /return \[\{ id: 'primary'/);
+assert.match(calendar, /const calendarId = normalizeGoogleCalendarId\(settings\.selectedCalendarId\) \|\| 'primary'/);
+assert.match(calendar, /\/users\/me\/calendarList\?minAccessRole=owner/);
 assert.match(calendar, /origin_mismatch/);
 assert.match(calendar, /disallowed_useragent/);
 
@@ -43,10 +43,12 @@ assert.match(serverBridge, /access_type: 'offline'/);
 assert.match(serverBridge, /refresh_token/);
 assert.match(serverBridge, /aes-256-gcm/);
 assert.match(serverBridge, /crewcheck_google_oauth_store/);
-assert.match(serverBridge, /\/calendars\\\/primary\\\/events/);
+assert.match(serverBridge, /export function validateGoogleCalendarProxyRequest/);
+assert.match(serverBridge, /payload\?\.accessRole === 'owner'/);
 assert.match(serverBridge, /GOOGLE_PATH_BLOCKED/);
 assert.match(serverBridge, /calendar\.events\.owned/);
-assert.doesNotMatch(serverBridge, /calendar\.calendarlist\.readonly/);
+assert.match(serverBridge, /calendar\.calendarlist\.readonly/);
+assert.doesNotMatch(serverBridge, /https:\/\/www\.googleapis\.com\/auth\/calendar['"\s]/);
 
 assert.match(server, /handleGoogleCalendarOAuthRoute/);
 assert.match(server, /googleCalendarOAuthReliability/);
@@ -58,4 +60,4 @@ assert.match(render, /GOOGLE_OAUTH_REDIRECT_URI/);
 assert.match(render, /https:\/\/crewcheck\.online\/api\/google-calendar\/oauth\/callback/);
 assert.match(render, /CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY/);
 
-console.log('CrewCheck v14.0.5 Google Calendar Cloud Identity, external browser OAuth, encrypted token and primary-calendar proxy OK.');
+console.log('CrewCheck v14.0.5 Google Calendar Cloud Identity, external browser OAuth, encrypted token and owned-calendar proxy OK.');
