@@ -8,17 +8,37 @@
 .cc-roster-token[data-roster-mode="reserve"] { --cc-roster-accent:#fbbf24; --cc-roster-rgb:251,191,36; }
 .cc-roster-token[data-roster-mode="standby"] { --cc-roster-accent:#fb7185; --cc-roster-rgb:251,113,133; }
 .cc-roster-token[data-roster-mode="training"] { --cc-roster-accent:#818cf8; --cc-roster-rgb:129,140,248; }
-.cc-roster-filter { display:grid; gap:8px; margin:12px 0; color:inherit; min-width:0; }
-.cc-roster-filter-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
-.cc-roster-filter-heading span { font-size:.85rem; }
-.cc-roster-filter-options { display:flex; gap:8px; flex-wrap:wrap; min-width:0; }
-.cc-roster-filter-options button { display:inline-flex; align-items:center; justify-content:flex-start; gap:6px; min-height:44px; max-width:100%; padding:8px 10px; border:1px solid var(--ccr-line,#64748b); border-radius:12px; background:var(--ccr-panel-soft,#172537); color:var(--ccr-text,#edf4fb); font:inherit; font-size:calc(.82rem * var(--cc-text-scale,1)); cursor:pointer; white-space:normal; }
-.cc-roster-filter-options button svg { width:18px; height:18px; flex-shrink:0; color:var(--cc-roster-accent,currentColor); }
+.cc-roster-filter { margin:8px 0; color:inherit; min-width:0; max-width:100%; }
+/* Legend near the footer: collapsed by default; open = one horizontal strip of small chips that
+   scrolls inside itself (the document never widens). The chips stay filters; Tudo restores all. */
+.cc-roster-filter > details > summary { display:flex; align-items:center; gap:8px; min-height:44px; padding:10px 12px; box-sizing:border-box; cursor:pointer; font-weight:650; list-style:revert; }
+.cc-roster-filter > details > summary small { font-weight:500; opacity:.85; font-variant-numeric:tabular-nums; }
+.cc-roster-filter > details > summary:focus-visible { outline:3px solid #60a5fa; outline-offset:2px; }
+.cc-roster-filter-options { display:flex; flex-wrap:nowrap; gap:6px; min-width:0; max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; padding:4px 4px 8px; box-sizing:border-box; }
+.cc-roster-filter-options button { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:flex-start; gap:4px; min-height:44px; padding:4px 10px; border:1px solid var(--ccr-line,#64748b); border-radius:999px; background:var(--ccr-panel-soft,#172537); color:var(--ccr-text,#edf4fb); font:inherit; cursor:pointer; white-space:nowrap; }
+/* Small chips: above the roster's generic button font (.cc-roster-premium-v1397 button { font:inherit }). */
+.cc-roster-filter .cc-roster-filter-options button { font-size:calc(.84rem * var(--cc-text-scale,1)); line-height:1.2; }
+/* Summary titles never shrink (no mid-word break at 200%); the state text may wrap instead. */
+:is(.cc-roster-filter > details, .cc-roster-view-options) > summary > span { flex-shrink:0; }
+.cc-roster-disclosure { width:18px; height:18px; margin-inline-start:auto; flex-shrink:0; }
+details[open] > summary > .cc-roster-disclosure { transform:rotate(180deg); }
+.cc-roster-finance-row { display:flex; align-items:flex-start; gap:8px; min-width:0; max-width:100%; }
+.cc-roster-finance-row > .cc-roster-finance-summary { flex:1 1 auto; min-width:0; }
+.cc-roster-finance-row > .cc-financial-privacy-control { flex:0 0 auto; }
+.cc-roster-finance-row .cc-financial-privacy-toggle { margin:8px 0; }
+.cc-roster-sr { position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+/* Top of the roster: month and Hoje stay visible; presentation sits under a discreet expander. */
+.cc-roster-period-count { flex-basis:100%; margin:0; font-size:calc(.78rem * var(--cc-text-scale,1)); opacity:.85; }
+.cc-roster-view-options { margin:4px 0; min-width:0; max-width:100%; }
+.cc-roster-view-options > summary { display:flex; align-items:center; gap:8px; min-height:44px; padding:10px 12px; box-sizing:border-box; cursor:pointer; font-weight:650; list-style:revert; }
+.cc-roster-view-options > summary svg { width:18px; height:18px; flex-shrink:0; }
+.cc-roster-view-options > summary small { font-weight:500; opacity:.85; }
+.cc-roster-view-options > summary:focus-visible { outline:3px solid #60a5fa; outline-offset:2px; }
+.cc-roster-layout-status:empty { display:none; }
+.cc-roster-filter-options button svg { width:16px; height:16px; flex-shrink:0; color:var(--cc-roster-accent,currentColor); }
 .cc-roster-filter-options button b { font-variant-numeric:tabular-nums; }
 .cc-roster-filter-options button[aria-pressed="true"] { outline:2px solid currentColor; outline-offset:1px; }
 .cc-roster-filter-options button:focus-visible { outline:3px solid #60a5fa; outline-offset:3px; }
-.cc-roster-filter p { margin:0; line-height:1.5; font-size:calc(.78rem * var(--cc-text-scale,1)); }
-.cc-roster-filter-result { font-weight:650; }
 html[data-crew-theme="light"] .cc-roster-filter-options button { background:#f5f8fb; color:#18334a; border-color:#a8bed0; }
 html body #root .cz-app[data-version] .cc-home-roster .cc-roster-filter-options button[aria-pressed="true"] { outline:2px solid currentColor!important; outline-offset:1px!important; }
 html body #root .cz-app[data-version] .cc-home-roster .cc-roster-filter-options button:focus-visible { outline:3px solid #3b82f6!important; outline-offset:3px!important; }

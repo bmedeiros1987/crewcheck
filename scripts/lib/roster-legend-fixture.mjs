@@ -6,7 +6,6 @@ export async function buildRosterLegendFixture(outfile) {
   b.onResolve({filter:/\/v139\/Shell$/},()=>({path:'shell',namespace:'synthetic'}));
   b.onResolve({filter:/AlertRosterNavigation$/},()=>({path:'alerts',namespace:'synthetic'}));
   b.onResolve({filter:/StayOperationalDetails$/},()=>({path:'stay',namespace:'synthetic'}));
-  b.onResolve({filter:/\/finance\/FinancialPrivacy$/},()=>({path:'privacy',namespace:'synthetic'}));
-  b.onLoad({filter:/.*/,namespace:'synthetic'},args=>({contents:args.path==='next'?'export const NextFlightGateCard=({events})=>{window.__nextFlightInput=events;return null;}':args.path==='shell'?'export const V139Header=()=>null;':args.path==='alerts'?'export const AlertRosterNavigation=()=>null;':args.path==='stay'?'export const StayOperationalDetails=({events})=>{window.__stayOperationalInput=events;return null;}':'export const useFinancialPrivacy=()=>({text:value=>value});export const FinancialPrivacyToggle=()=>null;'}));
+  b.onLoad({filter:/.*/,namespace:'synthetic'},args=>({contents:args.path==='next'?'export const NextFlightGateCard=({events})=>{window.__nextFlightInput=events;return null;}':args.path==='shell'?'export const V139Header=()=>null;':args.path==='alerts'?'export const AlertRosterNavigation=()=>null;':'export const StayOperationalDetails=({events})=>{window.__stayOperationalInput=events;return null;}'}));
  }}]});
 }
