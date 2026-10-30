@@ -6,7 +6,7 @@ const scope=vm.createContext({guardStaticHtml: require('../server/static-html-gu
 const server=http.createServer((req,res)=>scope.respond(req,res,new URL(req.url,'http://localhost')));
 function seed({unknown,unknownAddition,futureForeign}){
  const NativeDate=Date,instant=Date.parse('2026-10-18T15:00:00Z');globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
- const owner='financial-ui-qa';localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner,email:'synthetic@example.invalid',name:'SYNTHETIC FINANCE',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-only');
+ const owner='financial-ui-qa';localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner,email:'synthetic@example.invalid',name:'SYNTHETIC FINANCE',role:'user'}));localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-only');
  localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');localStorage.setItem('crewcheck_demo_mode_seen','1');
  const days=Array.from({length:31},(_,i)=>({date:String(i+1).padStart(2,'0')+'/10/2026',dayOfWeek:'SYN',type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,legs:[],dutyHours:0,flyingHours:0,isNextDay:false,hotel:null,base:'BSB',rawText:'SYNTHETIC QA ONLY'}));
  const leg=(flightNumber,origin,destination,departureTime,arrivalTime)=>({flightNumber,origin,destination,departureTime,arrivalTime,workType:'OP',duration:120,aircraftType:'SYN'});

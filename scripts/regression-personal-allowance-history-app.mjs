@@ -36,7 +36,7 @@ function seed({owner}){
  const NativeDate=Date,instant=Date.parse('2032-02-05T12:00:00Z');
  globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
  localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner,email:'synthetic@example.invalid',name:'SYNTHETIC HISTORY',role:'user'}));
- localStorage.setItem('crewcheck_auth_token','synthetic-history-only');
+ localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-history-only');
  localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');
  sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
  localStorage.setItem('crewcheck_demo_mode_seen','1');

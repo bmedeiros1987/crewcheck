@@ -28,7 +28,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
   const NativeDate=Date,instant=Date.parse('2032-02-02T15:00:00Z');
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
-  localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+  localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
   localStorage.setItem('crewcheck_demo_mode_seen','1');
   localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
@@ -214,7 +214,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    assert.match(await page.locator('.cc-per-diem-summary').textContent(),/Não calculável/,'monthly salary is not prorated into a week');
    await page.screenshot({path:path.join(out,theme+'-history-'+width+'-salary-week.png')});
    assert.equal(await page.locator('.cc-per-diem-competence').count(),0,'reference competence must not masquerade as the selected work interval');
-   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'foreign-owner',name:'FOREIGN SYNTHETIC',role:'user'}));localStorage.setItem('crewcheck_auth_token','foreign-synthetic-token');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
+   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'foreign-owner',name:'FOREIGN SYNTHETIC',role:'user'}));localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','foreign-synthetic-token');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
    assert.equal(await page.locator('.cc-per-diem-summary').count(),0,'account switch hides prior owner financial view');
    await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC',role:'visitor'}));window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'}));});await settle(page);assert.equal(await page.locator('.cc-per-diem-summary').count(),0,'visitor has no financial access');
    historyResults.push({theme,width,timezoneId,checks:['latest revision','foreign crew excluded','year incomplete','month drilldown','cross-month week','custom sync','salary no weekly proration','account switch','visitor denied','private read-only document reconciliation','repeated total dedup'],synthetic:true});await context.close();
@@ -248,7 +248,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')).rates.length),1,'actual repeat import deduplicates');
    await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();
-   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'different-admin',name:'OTHER SYNTHETIC',role:'admin'}));localStorage.setItem('crewcheck_auth_token','other-synthetic');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
+   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'different-admin',name:'OTHER SYNTHETIC',role:'admin'}));localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','other-synthetic');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
    assert.equal(await page.locator('.finance-learning-review').count(),0,'account change clears pending document review');
    assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_financial_learned_rates_v2:different-admin')),null,'no document is written to the other account');
    historyResults.push({scenario:'actual-owner-document-review',width,synthetic:true,checks:['bounded review dates','explicit owner consent','owner-scoped write','repeat PDF dedup','account switch clears review']});await context.close();

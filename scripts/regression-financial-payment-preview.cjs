@@ -26,7 +26,7 @@ function seed({theme,kind,amount,history,salaryBase,homeMode}) {
   const NativeDate=Date,instant=Date.parse('2032-02-02T15:00:00Z');
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
-  localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+  localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
  // Only callers that require the detailed financial card explicitly choose a Home mode.
  if(homeMode)localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa',JSON.stringify({version:1,mode:homeMode,order:['summary','finance','next','limits','smart'],visible:['summary','finance','next','limits','smart']}));
 
