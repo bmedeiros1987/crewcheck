@@ -11,6 +11,8 @@ on:
       - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/complianceAlertSemantics.ts'
       - 'client/src/components/alerts/**'
+      - 'client/src/lib/alertExperienceText.ts'
+      - 'scripts/regression-unresolved-window-alert-copy.mjs'
       - 'scripts/fixtures/unresolved-activity-window-alerts-app.tsx'
       - 'scripts/regression-unresolved-activity-window-alerts-browser.mjs'
       - 'scripts/v139/apply.mjs'
@@ -37,8 +39,12 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Translated interface copy of the pending items (source)
+        run: node scripts/regression-unresolved-window-alert-copy.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
+      - name: Translated interface copy of the pending items (prepared)
+        run: node scripts/regression-unresolved-window-alert-copy.mjs
       - name: Build web
         run: npx vite build
       # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.

@@ -2,9 +2,10 @@
 // engine on synthetic AIMS text, split like the Home caller. Run after full prepare + web build.
 // An unresolved standby/reserve window (STANDBY_/RESERVE_WINDOW_UNRESOLVED) must appear as a
 // pending item ("dados insuficientes", collapsed details, the roster's own date), never as an
-// actionable/confirmed irregularity; a published station window raises nothing. Portuguese and
-// English: in English the item keeps the engine's Portuguese analysis marked lang="pt-BR" (the
-// existing fallback); no automatic translation is claimed. Screenshots in artifacts/.
+// actionable/confirmed irregularity; a published station window raises nothing. Portuguese keeps the
+// engine's own analysis; English shows the same analysis translated (title, description with the
+// roster date, details: not an irregularity, not 0 h, no inference), with no Portuguese left in the
+// item. Screenshots in artifacts/.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,19 +60,16 @@ try {
     // Rendered: pending section, collapsed details, real date, not among confirmed cards.
     const status = page.locator('.cc-alert-center section[role="status"]');
     await status.waitFor();
-    const items = status.locator('details');
+    const items = status.locator('details[data-alert-code$="_WINDOW_UNRESOLVED"]');
     const unresolvedItems = [];
-    for (let index = 0; index < await items.count(); index += 1) {
-      const text = (await items.nth(index).textContent()) || '';
-      if (/horários sem estação não permitem atribuir início e fim/.test(text)) unresolvedItems.push(items.nth(index));
-    }
+    for (let index = 0; index < await items.count(); index += 1) unresolvedItems.push(items.nth(index));
     assert.equal(unresolvedItems.length, 2, `${language}: two unresolved-window pending items`);
     for (const item of unresolvedItems) assert.equal(await item.evaluate(node => node.open), false, `${language}: details collapsed by default`);
     const cardsText = (await page.locator('.cc-alert-card').allTextContents()).join(' ');
     assert.doesNotMatch(cardsText, /sem janela comprovada|Sobreaviso acima|Reserva acima/, `${language}: not shown as a confirmed/actionable card`);
     const summaries = await Promise.all(unresolvedItems.map(item => item.locator('summary').textContent()));
     if (language === 'pt') assert.deepEqual(summaries.map(text => text.trim()).sort(), ['Reserva sem janela comprovada', 'Sobreaviso sem janela comprovada'], 'PT summaries are the engine titles');
-    else for (const text of summaries) assert.doesNotMatch(text, /sem janela|Sobreaviso|Reserva/, 'EN summary uses the interface label, not an untranslated title');
+    else assert.deepEqual(summaries.map(text => text.trim()).sort(), ['Reserve without a proven window', 'Standby without a proven window'], 'EN summaries are the translated titles, not a generic label');
     await page.locator('.cc-alert-center').screenshot({ path: path.join(output, `unresolved-${language}-${theme}-${width}-collapsed.png`) });
 
     // Expanded: the date of the roster, the engine's analysis kept in Portuguese and marked pt-BR.
@@ -80,12 +78,22 @@ try {
     const expanded = await Promise.all(unresolvedItems.map(item => item.evaluate(node => ({
       open: node.open,
       text: node.textContent,
-      ptBlocks: [...node.querySelectorAll('[lang="pt-BR"]')].map(block => block.textContent),
+      ptBlocks: [...node.querySelectorAll('[lang="pt-BR"]')].filter(block => !block.closest('section[aria-label], [data-alert-provenance]')).map(block => block.textContent),
+      // Roster provenance rows (date + published roster code) keep the roster's own text.
+      provenance: [...node.querySelectorAll('section[aria-label] [lang="pt-BR"], [data-alert-provenance]')].map(block => block.textContent.trim()),
     }))));
     for (const item of expanded) {
       assert.ok(item.open, 'details expand on click');
-      assert.ok(item.ptBlocks.some(text => /horários sem estação não permitem atribuir início e fim (do sobreaviso|da reserva)\./.test(text)), 'engine analysis kept and marked lang="pt-BR"');
-      assert.ok(item.ptBlocks.some(text => /não irregularidade confirmada nem 0 h/.test(text)), 'details say: not a confirmed irregularity, not 0 h');
+      if (language === 'pt') {
+        assert.ok(item.ptBlocks.some(text => /horários sem estação não permitem atribuir início e fim (do sobreaviso|da reserva)\./.test(text)), 'engine analysis kept');
+        assert.ok(item.ptBlocks.some(text => /não irregularidade confirmada nem 0 h/.test(text)), 'details say: not a confirmed irregularity, not 0 h');
+      } else {
+        assert.match(item.text, /times without stations do not allow assigning the start and end of the (standby|reserve)\./, 'EN analysis');
+        assert.match(item.text, /not a confirmed irregularity nor 0 h\. CrewCheck does not infer the start/, 'EN details: not an irregularity, not 0 h, no inference');
+        assert.deepEqual(item.ptBlocks, [], 'EN: nothing left in Portuguese inside the item (outside roster provenance)');
+        assert.ok(item.provenance.every(text => /^\d{2}\/\d{2}\/\d{4} · [A-Z0-9]+$/.test(text)), `EN: provenance is only the roster date and code (${item.provenance})`);
+        assert.doesNotMatch(item.text, /sem estação|sobreaviso|reserva|irregularidade|Pendência/i, 'EN: no Portuguese text');
+      }
     }
     assert.ok(expanded.some(item => /17\/08|17 Aug|Aug 17/.test(item.text)) && expanded.some(item => /20\/08|20 Aug|Aug 20/.test(item.text)), `${language}: the roster dates are shown`);
     if (language === 'en') {
@@ -101,4 +109,4 @@ try {
   }
 } finally { await browser.close(); server.close(); }
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ scope: 'Real AlertCenter + real parser/engine, synthetic AIMS text, shipping dist CSS, no external request.', results }, null, 2));
-console.log(`PASS unresolved activity window alerts (real AlertCenter, prepared engine): STANDBY/RESERVE_WINDOW_UNRESOLVED shown as pending (dados insuficientes), collapsed details, roster dates 17/08 and 20/08, never an actionable/confirmed card; published window raises nothing; EN keeps the original analysis marked pt-BR; ${results.length} views, no overflow, screenshots in artifacts/unresolved-activity-window-alerts.`);
+console.log(`PASS unresolved activity window alerts (real AlertCenter, prepared engine): STANDBY/RESERVE_WINDOW_UNRESOLVED shown as pending (dados insuficientes), collapsed details, roster dates 17/08 and 20/08, never an actionable/confirmed card; published window raises nothing; EN shows the translated title/analysis/details (not an irregularity, not 0 h, no inference) with only the roster provenance (date + code) kept; ${results.length} views, no overflow, screenshots in artifacts/unresolved-activity-window-alerts.`);

@@ -14,3 +14,34 @@ export function alertLocale(): string {
 export function alertHistoryDate(value: string): string {
   return new Intl.DateTimeFormat(alertLocale(), { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 }
+
+// Standby/reserve whose clocks could not be attributed (no station): the engine's analysis in each
+// interface language. Portuguese keeps the engine's own text; the date is the roster's civil date and
+// the meaning is the same everywhere: a reading to check, not an irregularity, not 0 h, not free time.
+const UNRESOLVED_WINDOW: Record<Exclude<CrewLanguage, 'pt'>, { standby: [string, string]; reserve: [string, string]; detail: string; describe: (date: string, what: string) => string }> = {
+  en: { standby: ['Standby without a proven window', 'the standby'], reserve: ['Reserve without a proven window', 'the reserve'],
+    describe: (date, what) => `${date}: times without stations do not allow assigning the start and end of ${what}.`,
+    detail: 'Reading pending, not a confirmed irregularity nor 0 h. CrewCheck does not infer the start, does not turn the next time into a published start and does not assume a call-out. Check the roster line.' },
+  es: { standby: ['Guardia sin ventana comprobada', 'la guardia'], reserve: ['Reserva sin ventana comprobada', 'la reserva'],
+    describe: (date, what) => `${date}: los horarios sin estación no permiten asignar el inicio y el fin de ${what}.`,
+    detail: 'Lectura pendiente, no es una irregularidad confirmada ni 0 h. CrewCheck no infiere el inicio, no convierte el horario siguiente en inicio publicado y no presume activación. Revise la línea de la programación.' },
+  fr: { standby: ['Astreinte sans fenêtre prouvée', 'l’astreinte'], reserve: ['Réserve sans fenêtre prouvée', 'la réserve'],
+    describe: (date, what) => `${date} : les horaires sans escale ne permettent pas d’attribuer le début et la fin de ${what}.`,
+    detail: 'Lecture en attente, ni irrégularité confirmée ni 0 h. CrewCheck ne déduit pas le début, ne transforme pas l’horaire suivant en début publié et ne présume pas d’activation. Vérifiez la ligne du planning.' },
+  it: { standby: ['Reperibilità senza finestra comprovata', 'della reperibilità'], reserve: ['Riserva senza finestra comprovata', 'della riserva'],
+    describe: (date, what) => `${date}: gli orari senza scalo non permettono di attribuire inizio e fine ${what}.`,
+    detail: 'Lettura in sospeso, non un’irregolarità confermata né 0 h. CrewCheck non deduce l’inizio, non trasforma l’orario successivo in inizio pubblicato e non presume attivazione. Controlla la riga del turno.' },
+  de: { standby: ['Bereitschaft ohne belegtes Zeitfenster', 'der Bereitschaft'], reserve: ['Reserve ohne belegtes Zeitfenster', 'der Reserve'],
+    describe: (date, what) => `${date}: Zeiten ohne Station erlauben keine Zuordnung von Beginn und Ende ${what}.`,
+    detail: 'Lesevorgang offen, keine bestätigte Unregelmäßigkeit und nicht 0 h. CrewCheck leitet den Beginn nicht ab, macht die folgende Zeit nicht zum veröffentlichten Beginn und unterstellt keine Aktivierung. Prüfen Sie die Dienstplanzeile.' },
+};
+/** Localized title/description/details of a pending (dados_insuficientes) alert the interface knows how
+ * to translate; null keeps the engine text (Portuguese, or a code without a translation). */
+export function pendingAlertCopy(alert: { code?: string; date?: string } | null | undefined, language: CrewLanguage, formatDate: (value?: string) => string): { title: string; description: string; details: string } | null {
+  if (language === 'pt' || !alert) return null;
+  const kind = alert.code === 'STANDBY_WINDOW_UNRESOLVED' ? 'standby' : alert.code === 'RESERVE_WINDOW_UNRESOLVED' ? 'reserve' : null;
+  if (!kind) return null;
+  const copy = UNRESOLVED_WINDOW[language];
+  const [title, what] = copy[kind];
+  return { title, description: copy.describe(formatDate(alert.date), what), details: copy.detail };
+}
