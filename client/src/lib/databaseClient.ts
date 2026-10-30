@@ -471,7 +471,7 @@ export interface StoredPeriodStats {
   gymAvoidDays: number;
   heavyDays: number;
   score: number;
-  intensityScore: number;
+  intensityScore: number | null;
   alertsCount: number;
   criticalAlertsCount: number;
 }
@@ -483,7 +483,7 @@ export interface StoredStatsBlock {
     firstPeriod: string | null;
     lastPeriod: string | null;
     avgScore: number;
-    avgIntensity: number;
+    avgIntensity: number | null;
     avgAlerts: number;
     avgCriticalAlerts: number;
     avgFlightSegments: number;
@@ -747,7 +747,8 @@ function getLocalRosterSummaries(limit: number, preserveRevisions = false): Save
     month: Number(item.roster.month) || null,
     sourceFileName: item.sourceFileName || null,
     score: Number(item.compliance?.score ?? 0),
-    intensityScore: Number(item.compliance?.loadAnalysis?.intensityScore ?? 0),
+    // null = indeterminate load (every measurable day pending), never a confirmed 0.
+    intensityScore: item.compliance?.loadAnalysis?.intensityScore === null ? null : Number(item.compliance?.loadAnalysis?.intensityScore ?? 0),
     alertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter(isActionableComplianceAlert).length : 0,
     criticalAlertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter((a: any) => a?.severity === 'error').length : 0,
     checksum: item.checksum,
@@ -839,7 +840,7 @@ function buildLocalStoredStats(): StoredStatsResponse {
       gymAvoidDays: gym.filter((g: any) => g.priority === 'avoid' || g.priority === 'low').length,
       heavyDays: compliance?.loadAnalysis?.hardestDays?.length || 0,
       score: Number(compliance?.score ?? 0),
-      intensityScore: Number(compliance?.loadAnalysis?.intensityScore ?? 0),
+      intensityScore: compliance?.loadAnalysis?.intensityScore === null ? null : Number(compliance?.loadAnalysis?.intensityScore ?? 0),
       alertsCount: alerts.length,
       criticalAlertsCount: alerts.filter((a: any) => a?.severity === 'error').length,
     };
@@ -860,13 +861,14 @@ function buildLocalStoredStats(): StoredStatsResponse {
 }
 
 function summarizePeriods(periods: StoredPeriodStats[]): StoredStatsBlock['summary'] {
-  const avg = (selector: (item: StoredPeriodStats) => number) => periods.length ? Math.round(periods.reduce((sum, item) => sum + selector(item), 0) / periods.length) : 0;
+  const avg = (selector: (item: StoredPeriodStats) => number, items = periods) => items.length ? Math.round(items.reduce((sum, item) => sum + selector(item), 0) / items.length) : 0;
   return {
     rostersCount: periods.length,
     firstPeriod: periods[0]?.period || null,
     lastPeriod: periods[periods.length - 1]?.period || null,
     avgScore: avg((p) => p.score),
-    avgIntensity: avg((p) => p.intensityScore),
+    // Periods with an indeterminate load stay out; none known -> null, not 0.
+    avgIntensity: periods.some((p) => p.intensityScore !== null) ? avg((p) => p.intensityScore ?? 0, periods.filter((p) => p.intensityScore !== null)) : null,
     avgAlerts: avg((p) => p.alertsCount),
     avgCriticalAlerts: avg((p) => p.criticalAlertsCount),
     avgFlightSegments: avg((p) => p.flightSegments),

@@ -2,7 +2,7 @@ import { isGroundLimitAlert, isGroundAlertIgnored, ignoreGroundAlert, restoreGro
 import { useEffect, useRef, useState } from 'react';
 import { alertAccount, alertIsReviewed, complianceAlertIdentity, readAlertReviews, saveAlertReview } from '../../lib/alertReviewStore';
 import { getSavedLanguage } from '../../lib/i18n';
-import { alertText, alertHistoryDate } from '../../lib/alertExperienceText';
+import { alertText, alertHistoryDate, pendingAlertCopy } from '../../lib/alertExperienceText';
 import { consumePendingNavigationContext, clearPendingNavigationContext } from '../../lib/navigationContext';
 import type { CrewRoster } from '../../lib/pdfParser';
 import './alert-center.css';
@@ -55,7 +55,7 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
     {targetValid && target?.alertOccurrence && !currentTarget && <p role="status">{copy.missing}</p>}
     {!roster.days?.length && <article className="cc-alert-card"><h2>{copy.noRoster}</h2><div className="cc-alert-actions"><button type="button" onClick={onImport}>{copy.import}</button><button type="button" onClick={onChoose}>{copy.choose}</button></div></article>}
     {roster.days?.length > 0 && !ready && <p role="status">{copy.pending}</p>}
-    {ready && pendingAnalysis.length > 0 && <section role="status"><p>{copy.pending}</p>{pendingItems.map(({ alert: pending, identity }) => <details key={identity.occurrence + identity.version} tabIndex={-1} ref={isTarget({ alert: pending, identity }) ? pendingTargetRef : undefined} open={isTarget({ alert: pending, identity }) || undefined} data-alert-selected={isTarget({ alert: pending, identity })}><summary>{originalLanguage ? pending.title || copy.details : copy.details}</summary><AlertDateSummary alert={pending}/><p lang="pt-BR">{pending.description}</p>{pending.details && <p lang="pt-BR">{pending.details}</p>}{pending.evidence && <p lang="pt-BR">{pending.evidence}</p>}<AlertDateEvidence alert={pending} roster={roster}/></details>)}</section>}
+    {ready && pendingAnalysis.length > 0 && <section role="status"><p>{copy.pending}</p>{pendingItems.map(({ alert: pending, identity }) => { const localized = pendingAlertCopy(pending, language, historyDay); return <details key={identity.occurrence + identity.version} tabIndex={-1} ref={isTarget({ alert: pending, identity }) ? pendingTargetRef : undefined} open={isTarget({ alert: pending, identity }) || undefined} data-alert-selected={isTarget({ alert: pending, identity })} data-alert-code={pending.code || undefined}><summary>{localized ? localized.title : originalLanguage ? pending.title || copy.details : copy.details}</summary><AlertDateSummary alert={pending}/>{localized ? <p>{localized.description}</p> : <p lang="pt-BR">{pending.description}</p>}{localized ? <p>{localized.details}</p> : pending.details && <p lang="pt-BR">{pending.details}</p>}{pending.evidence && <p lang="pt-BR" data-alert-provenance="roster">{pending.evidence}</p>}<AlertDateEvidence alert={pending} roster={roster}/></details>; })}</section>}
     {roster.days?.length > 0 && ready && !items.length && !pendingAnalysis.length && <p>{copy.noAlerts}</p>}
     {legacyPending.length > 0 && <article className="cc-alert-card" role="status"><p>{copy.legacyGroundNotice}</p><div className="cc-alert-actions"><button type="button" onClick={() => groundAction(() => applyLegacyGroundAlerts(alerts, roster, owner))}>{copy.applyLegacyGround}</button></div></article>}
     {items.filter(item => !isGroundAlertIgnored(item.identity)).map(renderItem)}

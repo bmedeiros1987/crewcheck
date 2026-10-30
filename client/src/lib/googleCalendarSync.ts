@@ -76,6 +76,7 @@ type GoogleCalendarApiEvent = {
   start?: { dateTime?: string; date?: string; timeZone?: string };
   end?: { dateTime?: string; date?: string; timeZone?: string };
   transparency?: 'opaque' | 'transparent';
+  status?: 'confirmed' | 'tentative';
   reminders?: { useDefault?: boolean; overrides?: { method: 'popup' | 'email'; minutes: number }[] };
   extendedProperties?: { private?: Record<string, string> };
 };
@@ -446,6 +447,9 @@ function blockToGoogleEvent(block: string, periodKey: string, index: number): Go
   const categories = getIcalValue(lines, 'CATEGORIES') || 'CrewCheck';
   const colorHex = getIcalValue(lines, 'COLOR') || '';
   const transparency = /TRANSP:TRANSPARENT/i.test(block) ? 'transparent' : 'opaque';
+  // A pending day marker (ICS STATUS:TENTATIVE) stays tentative and silent in Google: no default
+  // reminders and no confirmed status. Every other event keeps the previous conversion.
+  const tentative = /^STATUS:TENTATIVE$/im.test(block);
   const startLine = lines.find((line) => line.startsWith('DTSTART'));
   const endLine = lines.find((line) => line.startsWith('DTEND'));
   if (!startLine || !endLine) return null;
@@ -462,7 +466,8 @@ function blockToGoogleEvent(block: string, periodKey: string, index: number): Go
     end,
     colorId: googleColorIdFromCrewCheck(colorHex, categories),
     transparency,
-    reminders: alarms.length ? { useDefault: false, overrides: alarms.map((minutes) => ({ method: 'popup' as const, minutes })) } : { useDefault: true },
+    reminders: alarms.length ? { useDefault: false, overrides: alarms.map((minutes) => ({ method: 'popup' as const, minutes })) } : tentative ? { useDefault: false, overrides: [] } : { useDefault: true },
+    ...(tentative ? { status: 'tentative' as const } : {}),
     extendedProperties: {
       private: {
         crewcheck: 'true',

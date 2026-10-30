@@ -37,6 +37,8 @@ function seed({ owner }) {
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1');
   sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen', '1');
   localStorage.setItem('crewcheck_demo_mode_seen', '1');
+  // Portuguese texts are asserted below; English is covered by regression-financial-act-notice-app.mjs.
+  localStorage.setItem('crewcheck_language', 'pt');
   localStorage.setItem('crewcheck:financial-privacy:v2:' + owner, 'shown');
   const days = Array.from({ length: 31 }, (_, i) => ({ date: String(i + 1).padStart(2, '0') + '/10/2026', dayOfWeek: 'SYN', type: 'DO', pairingCode: 'DO', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null, base: 'GRU', rawText: 'SYNTHETIC QA ONLY' }));
   const leg = (flightNumber, origin, destination, departureTime, arrivalTime) => ({ flightNumber, origin, destination, departureTime, arrivalTime, workType: 'OP', duration: 120, aircraftType: 'SYN' });
@@ -76,7 +78,8 @@ try {
     await open();
     assert.equal(await saved(), null, 'opening the compiled app never enrolls its parsed airline/profile');
     const control = page.locator('[data-financial-act-context]');
-    assert.match(await control.innerText(), /Empresa e ACT ainda não confirmados/);
+    // Prepared Home caller: the October domestic items wait on the declaration, so the short notice shows.
+    assert.match(await control.innerText(), /Confirme seus dados para calcular as diárias\./);
     await control.getByText('Confirmar ou revisar aplicação financeira do ACT', { exact: true }).click();
     assert.equal(await control.getByLabel(/^Empregador/).count(), 1);
     assert.equal(await control.getByLabel(/^Perfil do ACT/).count(), 1);
