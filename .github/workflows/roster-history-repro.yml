@@ -22,6 +22,11 @@ on:
       - 'server/mysql-platform-adapter.mjs'
       - 'migrations/20260715_003_aiven_mysql_full_platform.sql'
       - 'docs/proposals/roster-revision-sync/**'
+      - 'scripts/regression-roster-active-swap-ui-browser.cjs'
+      - 'client/src/components/v1391/**'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - '.github/workflows/roster-history-repro.yml'
   workflow_dispatch:
 
@@ -87,3 +92,45 @@ jobs:
           CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
         run: node scripts/regression-roster-sync-current-path-counterexamples.mjs
+
+  roster-active-swap-ui:
+    name: Active roster swap on the compiled app (synthetic, offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Build web
+        run: npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/swap-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/swap-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Active swap characterization (window, segregated months, finance, calendar, FlightDeck)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/swap-browser/package.json
+        run: node scripts/regression-roster-active-swap-ui-browser.cjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roster-active-swap-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/roster-active-swap
+          if-no-files-found: warn
