@@ -16,8 +16,10 @@ import mysql from 'mysql2/promise';
 import { mysqlAdapter } from '../server/mysql-platform-adapter.mjs';
 import { moduleClosure } from './lib/qa-module-closure.mjs';
 
-const socketPath = '/tmp/crewcheck-notification-qa-socket/mysqld.sock';
+// Only a disposable UNIX socket: no DATABASE_URL, TCP, provider or credentials.
+const socketPath = String(process.env.CREWCHECK_QA_MYSQL_SOCKET || '');
 assert.equal(process.env.CREWCHECK_ROSTER_SYNC_QA, 'isolated-mysql', 'disposable MySQL only');
+assert.match(socketPath, /^\/tmp\/[\w.-]+\/mysqld\.sock$/);
 assert(fs.statSync(socketPath).isSocket());
 assert.match(fs.readFileSync('server/platform.mjs', 'utf8'), /async function syncRosterForContext/, 'run after node scripts/v139/apply.mjs (prepared sources)');
 assert.match(fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8'), /export async function openRosterDisplayWindow/, 'run after node scripts/v139/apply.mjs (prepared sources)');

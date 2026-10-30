@@ -16,6 +16,12 @@ on:
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-roster-history-context-repro.mjs'
       - 'scripts/regression-roster-revision-persistence-repro.mjs'
+      - 'scripts/regression-roster-sync-current-path-counterexamples.mjs'
+      - 'scripts/regression-roster-revision-sync-proposal.mjs'
+      - 'scripts/lib/qa-module-closure.mjs'
+      - 'server/mysql-platform-adapter.mjs'
+      - 'migrations/20260715_003_aiven_mysql_full_platform.sql'
+      - 'docs/proposals/roster-revision-sync/**'
       - '.github/workflows/roster-history-repro.yml'
   workflow_dispatch:
 
@@ -45,3 +51,39 @@ jobs:
         run: node scripts/regression-roster-history-context-repro.mjs
       - name: Revised roster persistence and allowance cycle (prepared sources)
         run: node scripts/regression-roster-revision-persistence-repro.mjs
+
+  roster-sync-disposable-mysql:
+    name: Roster sync counterexamples and revision proposal (disposable MySQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Start disposable MySQL without network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-roster-sync-qa-socket
+          docker run --detach --rm --name crewcheck-roster-sync-qa --network none --mount type=bind,source=/tmp/crewcheck-roster-sync-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_roster_revision_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-roster-sync-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-roster-sync-qa mysql --database=crewcheck_roster_revision_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-roster-sync-qa mysql --database=crewcheck_roster_revision_qa --execute='SELECT 1'
+          docker exec crewcheck-roster-sync-qa chmod 755 /var/run/mysqld
+      - name: Revision proposal (draft schema, reference protocol, device reconciliation)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-revision-sync-proposal.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Current path counterexamples (prepared client and handler, real SQL)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-sync-current-path-counterexamples.mjs
