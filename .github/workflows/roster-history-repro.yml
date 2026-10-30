@@ -1,0 +1,47 @@
+name: Roster history and revision reproduction
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/regulatoryHistory.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/compensationPolicy.ts'
+      - 'client/src/lib/financialForecastPeriods.ts'
+      - 'client/src/lib/nextFinancialPayment.ts'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'server/platform.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-roster-history-context-repro.mjs'
+      - 'scripts/regression-roster-revision-persistence-repro.mjs'
+      - '.github/workflows/roster-history-repro.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roster-history-repro-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  roster-history-repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Roster history context (prepared sources)
+        run: node scripts/regression-roster-history-context-repro.mjs
+      - name: Revised roster persistence and allowance cycle (prepared sources)
+        run: node scripts/regression-roster-revision-persistence-repro.mjs
