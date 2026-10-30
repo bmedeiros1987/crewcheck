@@ -6,7 +6,7 @@ const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/ht
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true});
 try{
  const session=await browser.newContext({viewport:{width:390,height:844}}),page=await session.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-act-a',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-token-a');localStorage.setItem('crewcheck:financial-privacy:v2:synthetic-act-a','hidden');localStorage.setItem('crewcheck:financial-privacy:v2:synthetic-act-b','hidden');});
+ await page.addInitScript(()=>{localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-act-a',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-token-a');localStorage.setItem('crewcheck:financial-privacy:v2:synthetic-act-a','hidden');localStorage.setItem('crewcheck:financial-privacy:v2:synthetic-act-b','hidden');});
  await page.goto('http://127.0.0.1:'+server.address().port);
  const control=page.locator('[data-financial-act-context]');
  const key='crewcheck_financial_act_applicability_v1:synthetic-act-a',saved=()=>page.evaluate(k=>localStorage.getItem(k),key);

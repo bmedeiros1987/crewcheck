@@ -81,6 +81,10 @@ const TEXT = {
   pt: { notice: 'Confirme seus dados para calcular as diárias.', review: 'Revisar dados', summary: 'Confirmar ou revisar aplicação financeira do ACT', error: 'Não foi possível ler seus dados de diárias neste aparelho.', dates: 'Datas pendentes neste período:' },
   en: { notice: 'Confirm your details to calculate allowances.', review: 'Review details', summary: 'Confirm or review the ACT financial application', error: 'Could not read your allowance details on this device.', dates: 'Pending dates in this period:' },
 };
+const OFFICIAL = /TAM Linhas Aéreas S\/A|LATAM Brasil|ABSA\/LATAM Cargo|\((Comissários|Pilotos|Lei 7\.064\/1982)\)/g;
+const PORTUGUESE = /\b(Confirme|Confirmar|Revisar|Datas|Declaração|declaração|Empresa|Não|Detalhes|Ação|Empregador|Perfil|Selecione|Declarar|Revogar|Comissários|Pilotos|Aplicar|Fim|Preparar|Histórico|período|aparelho|vínculo|Sem|abrange|titular)\b/;
+const ENGLISH_UI = /\b(Confirm|Review|Employer|Select|Declaration|Pending|Apply|Revoke|Prepare|Details|History)\b/;
+const EN_OPTIONS = ['Declare application for the period', 'Revoke from a date', 'Select explicitly', 'TAM Linhas Aéreas S/A — LATAM Brasil', 'Select explicitly', 'Cabin crew (Comissários)', 'Pilots (Pilotos)'];
 const PROMISE = /APZ|ledger|razão financeira|resolve(rá|m)? (todas|tudo)|all pending|resolves (all|every)/i;
 
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -131,8 +135,8 @@ try {
         const opened = await textOf(control);
         assert.ok(opened.includes(T.dates) && /20\/10/.test(opened), `${name}/${language}: dates of this period`);
         assert.deepEqual(await control.locator('[data-act-cause]').evaluateAll(nodes => nodes.map(node => node.dataset.actCause)), [state.cause], `${name}: cause`);
-        if (language === 'pt') assert.match(await textOf(control.locator('[aria-label="Pendências deste período"]')), state.causeText, `${name}: cause text`);
-        assert.doesNotMatch(await textOf(control.locator('[aria-label="Pendências deste período"]')), PROMISE, `${name}: no promise beyond the ACT reference`);
+        if (language === 'pt') assert.match(await textOf(control.locator('[data-act-pending-section]')), state.causeText, `${name}: cause text`);
+        assert.doesNotMatch(await textOf(control.locator('[data-act-pending-section]')), PROMISE, `${name}: no promise beyond the ACT reference`);
         // Pending is not zero: no amount for the waiting items, and the summary says pending.
         assert.doesNotMatch(await textOf(page.locator('.cc-per-diem-summary')), /R\$\s?0,00/, `${name}: pending is never R$ 0,00`);
       } else {
@@ -145,15 +149,24 @@ try {
         await page.waitForTimeout(200);
         assert.match(await textOf(page.locator('.cc-per-diem-items')), state.amount, `${name}: amount shown (${state.amount})`);
       }
+      // Every state: collapsed first, then the expanded panel (form, <select> options, help and history)
+      // entirely in the chosen language; official names stay as published.
+      if (!state.notice) await control.screenshot({ path: path.join(out, `${name}-${language}-collapsed.png`) });
+      if (!(await details.evaluate(node => node.open))) await details.locator(':scope > summary').click();
+      await page.waitForTimeout(150);
+      const all = await control.evaluate(node => [...node.querySelectorAll('*')].filter(n => !n.children.length || n.tagName === 'OPTION').map(n => n.textContent.trim()).filter(Boolean).join(' | '));
       if (language === 'en') {
-        // Visible interface text outside the marked Portuguese originals (closed details: summary only).
-        const own = await control.evaluate(node => { const texts = []; const walk = n => { if (n.nodeType === 3) { const v = n.nodeValue.trim(); if (v) texts.push(v); return; } if (n.nodeType !== 1 || n.getAttribute('lang') === 'pt-BR' || ['SCRIPT', 'STYLE', 'OPTION'].includes(n.tagName)) return; if (n.tagName === 'DETAILS' && !n.open) { const summary = n.querySelector(':scope > summary'); if (summary) walk(summary); return; } n.childNodes.forEach(walk); }; walk(node); return texts.join(' | '); });
-        assert.doesNotMatch(own, /\b(Confirme|Revisar|Datas|Declaração|Empresa|Não foi possível|Detalhes)\b/, `${name}/en: visible labels outside marked pt-BR text are English (${own})`);
+        assert.doesNotMatch(all.replace(OFFICIAL, ''), PORTUGUESE, `${name}/en: expanded panel fully English (${all.slice(0, 400)})`);
+        if (!state.error) assert.deepEqual(await control.locator('option').allTextContents(), EN_OPTIONS, `${name}/en: options in English, official names kept`);
+        assert.equal(await control.getAttribute('lang'), 'en');
+      } else {
+        assert.doesNotMatch(all, ENGLISH_UI, `${name}/pt: expanded panel without English interface text`);
+        assert.equal(await control.getAttribute('lang'), 'pt-BR');
       }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       assert(overflow <= 1, `${name}/${language}: no horizontal overflow (${overflow})`);
       await control.scrollIntoViewIfNeeded();
-      await page.locator('[data-financial-act-context]').screenshot({ path: path.join(out, `${name}-${language}.png`) });
+      await page.locator('[data-financial-act-context]').screenshot({ path: path.join(out, `${name}-${language}-expanded.png`) });
       results.push({ name, language, shown: shown.slice(0, 160) });
       await context.close();
     }
@@ -191,5 +204,5 @@ try {
   // Every /api call is answered locally (503); nothing reaches a server. No financial write is even attempted.
   assert.deepEqual(blocked.filter(request => request.method !== 'GET' && /financ|allowance|per-?diem|ledger/i.test(request.path)), [], 'no financial write attempted');
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ synthetic: true, results, blocked: blocked.length }, null, 2));
-  console.log(`PASS ACT notice on the compiled app (prepared Home caller, synthetic, offline): absent/revoked/expired/other-month -> short notice + "Revisar dados", collapsed details with this period's dates and cause, no promise beyond the ACT reference, pending never R$ 0,00; confirmed/manual/explicit zero -> discreet control only (109,44 / 120,00 / R$ 0,00); invalid or throwing storage -> short error; account switch keeps A's journal and shows B's own notice; PT and EN; 390 px, no overflow; ${results.length} views, screenshots in artifacts/financial-ui/act-notice.`);
+  console.log(`PASS ACT notice on the compiled app (prepared Home caller, synthetic, offline): absent/revoked/expired/other-month -> short notice + "Revisar dados", collapsed details with this period's dates and cause, no promise beyond the ACT reference, pending never R$ 0,00; confirmed/manual/explicit zero -> discreet control only (109,44 / 120,00 / R$ 0,00); invalid or throwing storage -> short error; account switch keeps A's journal and shows B's own notice; collapsed and expanded panel (options, help, history) entirely PT or EN, official names kept; 390 px, no overflow; ${results.length} views, screenshots in artifacts/financial-ui/act-notice.`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
