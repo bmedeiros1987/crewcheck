@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import mysql from 'mysql2/promise';
 import { mysqlAdapter } from '../server/mysql-platform-adapter.mjs';
 import { writeRosterRevision, listRosterCompetences, readCurrentRoster, rosterContentHash, crewKeyFor } from '../docs/proposals/roster-revision-sync/server-protocol.mjs';
-import { entryKey, entriesForAccount, recordLocalChange, planReconcile, adoptServer, applySendResult, resolveConflict } from '../docs/proposals/roster-revision-sync/client-reconcile.mjs';
+import { entryKey, entriesForAccount, newEntry, recordLocalChange, beginSend, planReconcile, adoptServer, applySendResult, resolveConflict } from '../docs/proposals/roster-revision-sync/client-reconcile.mjs';
 
 // Only a disposable UNIX socket: no DATABASE_URL, TCP, provider or credentials.
 const socketPath = String(process.env.CREWCHECK_QA_MYSQL_SOCKET || '');
@@ -46,6 +46,12 @@ const ids = (accountId, rosterKey, rosterKind = 'operated') => ({ accountId, cre
 const counts = async () => (await db.query('SELECT COUNT(*) AS n FROM crewcheck_roster_revisions')).rows[0].n;
 const current = async (email, rosterKey, rosterKind = 'operated') => readCurrentRoster(db, email, { crewKey, rosterKey, rosterKind });
 
+// Authoritative account→crew binding is a precondition the proposal does not implement; tests
+// inject a synthetic one. The PDF's printed crewId alone never proves identity.
+const accountA = 'qa-account-a@example.test', accountB = 'qa-account-b@example.test';
+const bindings = { [accountA]: 'ID:BP00000001', [accountB]: 'ID:BP00000002' };
+const write = request => writeRosterRevision(db, request, { resolveVerifiedCrewKey: async email => bindings[email] || null });
+
 // A device: its own store, account session and connectivity. sync() is the reconnect pass.
 function device(name, accountId, email) {
   return { name, accountId, email, online: true, store: { entries: {} }, view: {}, loseNextAck: false };
@@ -53,9 +59,9 @@ function device(name, accountId, email) {
 function changeLocally(dev, rosterKey, roster, { rosterKind = 'operated', operation = 'import' } = {}) {
   dev.store = recordLocalChange(dev.store, ids(dev.accountId, rosterKey, rosterKind), { operation, roster, contentHash: roster ? rosterContentHash(roster) : null, operationId: crypto.randomUUID() });
 }
-async function send(dev, entry) {
+async function send(dev, entry, request) {
   assert.equal(entry.accountId, dev.accountId, 'a device never sends another account\'s change');
-  const result = await writeRosterRevision(db, { email: dev.email, crewKey: entry.crewKey, rosterKey: entry.rosterKey, rosterKind: entry.rosterKind, operation: entry.pending.operation, baseGeneration: entry.pending.baseGeneration, operationId: entry.pending.operationId, roster: entry.pending.roster, parserVersion: 'qa-synthetic' });
+  const result = await write({ email: dev.email, crewKey: entry.crewKey, rosterKey: entry.rosterKey, rosterKind: entry.rosterKind, operation: request.operation, baseGeneration: request.baseGeneration, operationId: request.operationId, roster: request.roster, parserVersion: 'qa-synthetic' });
   if (dev.loseNextAck) { dev.loseNextAck = false; return { status: 0 }; }
   return result;
 }
@@ -65,21 +71,25 @@ async function sync(dev) {
   const keys = new Set([...entriesForAccount(dev.store, dev.accountId).map(entryKey), ...server.keys()]);
   for (const key of keys) {
     const listed = server.get(key) || null;
-    let entry = dev.store.entries[key] || { accountId: dev.accountId, crewKey: listed.crewKey, rosterKey: listed.rosterKey, rosterKind: listed.rosterKind, discarded: [] };
+    let entry = dev.store.entries[key] || newEntry({ accountId: dev.accountId, crewKey: listed.crewKey, rosterKey: listed.rosterKey, rosterKind: listed.rosterKind });
     let plan = planReconcile(entry, listed, { online: Boolean(listing), listingComplete: Boolean(listing?.complete) });
     if (plan.action === 'send') {
-      const result = await send(dev, entry);
-      if (!result.status) { dev.store.entries[key] = entry; dev.view[key] = entry.pending.roster; continue; }
-      entry = applySendResult(entry, result);
-      const fresh = (await listRosterCompetences(db, dev.email)).competences.find(item => entryKey({ accountId: dev.accountId, ...item }) === key) || null;
-      plan = planReconcile(entry, fresh, { online: true, listingComplete: true });
-      if (plan.action === 'adopt_server') { const now = await current(dev.email, entry.rosterKey, entry.rosterKind); entry = adoptServer(entry, now, now.roster); }
+      const started = beginSend(entry);
+      entry = started.entry;
+      if (started.request) {
+        const result = await send(dev, entry, started.request);
+        entry = applySendResult(entry, started.request, result);
+        if (!result.status) { dev.store.entries[key] = entry; dev.view[key] = entry.inflight.roster; continue; }
+        const fresh = (await listRosterCompetences(db, dev.email)).competences.find(item => entryKey({ accountId: dev.accountId, ...item }) === key) || null;
+        plan = planReconcile(entry, fresh, { online: true, listingComplete: true });
+        if (plan.action === 'adopt_server') { const now = await current(dev.email, entry.rosterKey, entry.rosterKind); entry = adoptServer(entry, now, now.roster); }
+      }
     } else if (plan.action === 'adopt_server') {
       const now = await current(dev.email, entry.rosterKey, entry.rosterKind);
       entry = adoptServer(entry, now, now.roster);
     }
     dev.store.entries[key] = entry;
-    dev.view[key] = plan.display === 'pending' ? (entry.pending || entry.conflict?.pending)?.roster ?? null
+    dev.view[key] = plan.display === 'pending' ? (entry.pending || entry.inflight || entry.conflict?.pending)?.roster ?? null
       : plan.display === 'synced' ? entry.synced?.roster ?? null
       : plan.display === 'server' ? (await current(dev.email, entry.rosterKey, entry.rosterKind)).roster
       : null;
@@ -89,7 +99,6 @@ const shown = (dev, rosterKey, rosterKind = 'operated') => dev.view[entryKey(ids
 const sameRoster = (a, b) => a && b && rosterContentHash(a) === rosterContentHash(b);
 const entryOf = (dev, rosterKey, rosterKind = 'operated') => dev.store.entries[entryKey(ids(dev.accountId, rosterKey, rosterKind))];
 
-const accountA = 'qa-account-a@example.test', accountB = 'qa-account-b@example.test';
 const passed = [];
 const run = async (name, fn) => { await resetSchema(); await fn(); passed.push(name); };
 
@@ -122,7 +131,7 @@ await run('two devices import on the same base at once: one accepted, the other 
   assert(entryOf(loser, '2026-10').conflict, 'the other import becomes an explicit conflict');
   assert(sameRoster(entryOf(loser, '2026-10').conflict.pending.roster, sameRoster(now.roster, octB) ? octC : octB), 'and its content is kept');
   assert(sameRoster(shown(loser, '2026-10'), now.roster), 'online the database is shown while the conflict waits for a choice');
-  loser.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(loser, '2026-10'), 'keep_local', crypto.randomUUID());
+  loser.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(loser, '2026-10'), 'keep_local', { operationId: crypto.randomUUID() });
   await sync(loser); await sync(winner);
   assert.equal((await current(accountA, '2026-10')).generation, 3);
   assert(sameRoster(shown(winner, '2026-10'), shown(loser, '2026-10')), 'both devices converge on the chosen revision');
@@ -131,8 +140,8 @@ await run('two devices import on the same base at once: one accepted, the other 
 await run('lost ACK and latency race: the retry is a replay, never a second write over a newer revision', async () => {
   const phone = device('phone', 'A', accountA), tablet = device('tablet', 'A', accountA);
   changeLocally(phone, '2026-10', octA); await sync(phone); await sync(tablet);
-  changeLocally(phone, '2026-10', octB); phone.loseNextAck = true; await sync(phone);
-  assert(entryOf(phone, '2026-10').pending, 'no response: the change stays pending with the same operation id');
+  changeLocally(phone, '2026-10', octB); const sentId = entryOf(phone, '2026-10').pending.operationId; phone.loseNextAck = true; await sync(phone);
+  assert.equal(entryOf(phone, '2026-10').inflight?.operationId, sentId, 'no response: the sent snapshot stays in flight with the same operation id');
   assert.equal((await current(accountA, '2026-10')).generation, 2, 'but the database did commit it');
   await sync(tablet); changeLocally(tablet, '2026-10', octC); await sync(tablet);
   assert.equal((await current(accountA, '2026-10')).generation, 3);
@@ -150,7 +159,7 @@ await run('reimport of the same content: no new generation; a stale base with th
   changeLocally(phone, '2026-10', octB); await sync(phone);
   assert.equal((await current(accountA, '2026-10')).generation, 2, 'same content on the current base is a no-op');
   const before = await counts();
-  const direct = await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 1, operationId: crypto.randomUUID(), roster: octB });
+  const direct = await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 1, operationId: crypto.randomUUID(), roster: octB });
   assert.equal(direct.status, 409, 'same hash with an old base is a conflict at the server');
   changeLocally(stale, '2026-10', octB); await sync(stale);
   assert.equal(await counts(), before, 'the device resolves "already equal" by adopting the database, without writing');
@@ -177,9 +186,9 @@ await run('tombstone: deletion advances the generation; a device that never saw 
   tablet.online = false; changeLocally(tablet, '2026-10', octB); tablet.online = true; await sync(tablet);
   assert(entryOf(tablet, '2026-10').conflict, 'edit based on the pre-delete generation: conflict, not resurrection');
   assert.equal(shown(tablet, '2026-10'), null, 'online the database says deleted');
-  const legacy = await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', roster: octA });
+  const legacy = await write({ email: accountA, crewKey, rosterKey: '2026-10', roster: octA });
   assert.equal(legacy.status, 428, 'a legacy client cannot resurrect it either');
-  tablet.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(tablet, '2026-10'), 'keep_local', crypto.randomUUID());
+  tablet.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(tablet, '2026-10'), 'keep_local', { operationId: crypto.randomUUID() });
   await sync(tablet);
   assert.deepEqual([(await current(accountA, '2026-10')).generation, (await current(accountA, '2026-10')).state], [3, 'live'], 'recreation only after an explicit choice on the tombstone generation');
   const reader = device('reader', 'A', accountA); await sync(reader);
@@ -189,20 +198,23 @@ await run('tombstone: deletion advances the generation; a device that never saw 
 await run('legacy client without revision token: creates an absent month only; never overwrites; retry is idempotent', async () => {
   const phone = device('phone', 'A', accountA);
   changeLocally(phone, '2026-10', octA); await sync(phone);
-  const overwrite = await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', roster: octD });
+  const overwrite = await write({ email: accountA, crewKey, rosterKey: '2026-10', roster: octD });
   assert.equal(overwrite.status, 428); assert(sameRoster((await current(accountA, '2026-10')).roster, octA), 'no blind overwrite');
-  const create = await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-12', roster: decZ });
+  const create = await write({ email: accountA, crewKey, rosterKey: '2026-12', roster: decZ });
   assert.equal(create.status, 200); assert.equal(create.generation, 1);
-  const retry = await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-12', roster: decZ });
+  const retry = await write({ email: accountA, crewKey, rosterKey: '2026-12', roster: decZ });
   assert.equal(retry.status, 200); assert.equal(retry.replay, true, 'deterministic legacy operation id: replay, not a second write');
   assert.equal((await current(accountA, '2026-12')).generation, 1);
 });
 
 await run('identity: crewId required and matching, never the name; accounts isolated; account switch keeps pending changes in their account', async () => {
   const unnamed = { ...octA, crewId: '' };
-  assert.equal((await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId: crypto.randomUUID(), roster: unnamed })).code, 'CREW_IDENTITY_REQUIRED');
-  assert.equal((await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId: crypto.randomUUID(), roster: { ...octA, crewId: 'BP00000002' } })).code, 'CREW_IDENTITY_MISMATCH');
+  assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId: crypto.randomUUID(), roster: unnamed })).code, 'CREW_IDENTITY_REQUIRED');
+  assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId: crypto.randomUUID(), roster: { ...octA, crewId: 'BP00000002' } })).code, 'CREW_IDENTITY_MISMATCH');
   assert.equal(crewKeyFor('000000'), null, 'placeholder ids are not identities');
+  assert.equal((await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId: crypto.randomUUID(), roster: octA })).code, 'CREW_IDENTITY_UNVERIFIED', 'without the authoritative binding nothing is written, whatever the PDF says');
+  assert.equal((await writeRosterRevision(db, { email: 'unbound@example.test', crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId: crypto.randomUUID(), roster: octA }, { resolveVerifiedCrewKey: async () => null })).code, 'CREW_IDENTITY_UNVERIFIED');
+  assert.equal((await write({ email: accountB, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId: crypto.randomUUID(), roster: octA })).code, 'CREW_IDENTITY_NOT_BOUND', 'a textual crewId of another crew member is refused for account B');
   const shared = device('shared', 'A', accountA);
   shared.online = false; changeLocally(shared, '2026-10', octB);
   // Logout + login as account B on the same device.
@@ -219,7 +231,7 @@ await run('incomplete PDF is refused before any write; the valid revision stays'
   const phone = device('phone', 'A', accountA);
   changeLocally(phone, '2026-10', octA); await sync(phone);
   const incomplete = { ...octB, days: octB.days.filter(day => day.date !== '15/10/2026') };
-  const result = await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 1, operationId: crypto.randomUUID(), roster: incomplete });
+  const result = await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 1, operationId: crypto.randomUUID(), roster: incomplete });
   assert.equal(result.code, 'ROSTER_INCOMPLETE');
   changeLocally(phone, '2026-10', incomplete); await sync(phone);
   assert.equal(entryOf(phone, '2026-10').conflict.rejected, 'ROSTER_INCOMPLETE', 'kept on the device as a rejected change, visible, not silently dropped');
@@ -232,6 +244,20 @@ await run('planned and operated revisions of the same month are independent', as
   changeLocally(phone, '2026-10', octC); await sync(phone);
   assert(sameRoster((await current(accountA, '2026-10', 'planned')).roster, octA), 'planned unchanged');
   assert.deepEqual([(await current(accountA, '2026-10', 'planned')).generation, (await current(accountA, '2026-10')).generation], [1, 2]);
+});
+
+await run('metadata-only revision (base, rank) is a new generation; operation id binds parser, schema and source', async () => {
+  const phone = device('phone', 'A', accountA);
+  changeLocally(phone, '2026-10', { ...octA, base: 'GRU', rank: 'CC' }); await sync(phone);
+  changeLocally(phone, '2026-10', { ...octA, base: 'BSB', rank: 'CC' }); await sync(phone);
+  changeLocally(phone, '2026-10', { ...octA, base: 'BSB', rank: 'CMS' }); await sync(phone);
+  const now = await current(accountA, '2026-10');
+  assert.deepEqual([now.generation, now.roster.base, now.roster.rank], [3, 'BSB', 'CMS'], 'base and rank changes are revisions, never "unchanged"');
+  const operationId = crypto.randomUUID();
+  assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 3, operationId, roster: octB, parserVersion: 'parser-1' })).status, 200);
+  assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 3, operationId, roster: octB, parserVersion: 'parser-2' })).code, 'OPERATION_ID_REUSED', 'same operation id with another parser version is not a replay');
+  assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 3, operationId, roster: octB, parserVersion: 'parser-1', sourceKind: 'telegram' })).code, 'OPERATION_ID_REUSED', 'nor with another source');
+  assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 3, operationId, roster: octB, parserVersion: 'parser-1' })).replay, true);
 });
 
 await run('clock skew: the same race gives the same result with device clocks in 1999 and 2099', async () => {
@@ -257,11 +283,11 @@ await run('clock skew: the same race gives the same result with device clocks in
 
 await run('operation id reuse with other content is refused; a duplicated send commits once', async () => {
   const operationId = crypto.randomUUID();
-  const sends = await Promise.all([1, 2].map(() => writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId, roster: octA })));
+  const sends = await Promise.all([1, 2].map(() => write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 0, operationId, roster: octA })));
   assert.deepEqual(sends.map(result => result.status), [200, 200]);
   assert.equal(sends.filter(result => result.replay).length, 1, 'second copy is a replay');
   assert.equal((await current(accountA, '2026-10')).generation, 1);
-  assert.equal((await writeRosterRevision(db, { email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 1, operationId, roster: octB })).code, 'OPERATION_ID_REUSED');
+  assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 1, operationId, roster: octB })).code, 'OPERATION_ID_REUSED');
 });
 
 await resetSchema();

@@ -10,7 +10,14 @@
 //    (hash igual nunca autoriza escrita);
 //  - exclusão também avança a geração (tombstone), então nada a ressuscita sem base atual;
 //  - cliente legado (sem base/operation id) só cria competência inexistente; nunca sobrescreve;
-//  - identidade = conta + crewId verificado (nunca nome) + competência + tipo planejada/operada;
+//  - identidade = conta + tripulante VINCULADO À CONTA por uma fonte autoritativa server-side
+//    (resolveVerifiedCrewKey, injetada) + competência + tipo planejada/operada. A matrícula escrita
+//    no PDF só precisa coincidir com esse vínculo; sozinha nunca prova identidade. A fonte
+//    autoritativa é PRÉ-CONDIÇÃO NÃO IMPLEMENTADA desta proposta: sem ela, nenhuma escrita;
+//  - o hash de conteúdo cobre o roster canônico inteiro (base, função, companhia, nome, totais,
+//    cobertura da fonte, todos os dias e trechos), após sanitização determinística e versionada;
+//    só o ruído declarado (rawText) fica fora. Limites são recusados, nunca truncados;
+//  - requestHash vincula ao operationId também versão do parser, do schema e a origem;
 //  - escala incompleta é recusada antes de qualquer escrita, preservando a versão válida.
 // Nenhuma decisão usa relógio (do cliente ou do servidor).
 import crypto from 'node:crypto';
@@ -33,9 +40,17 @@ export function crewKeyFor(crewId) {
   return id.length >= 3 && id.length <= 40 && !PLACEHOLDER_CREW_IDS.has(id) ? `ID:${id}` : null;
 }
 
+// Deterministic, versioned canonical form. Every property is semantically relevant except the
+// declared noise: rawText (free text extracted from the PDF, at any level). Nothing is truncated.
+export const CONTENT_HASH_VERSION = 'roster-content-v1';
+export const ROSTER_NOISE_KEYS = Object.freeze(['rawText']);
+export function canonicalRoster(value) {
+  if (Array.isArray(value)) return value.map(canonicalRoster);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).filter(key => !ROSTER_NOISE_KEYS.includes(key) && value[key] !== undefined).sort().map(key => [key, canonicalRoster(value[key])]));
+  return value;
+}
 export function rosterContentHash(roster) {
-  const days = (roster?.days || []).map(day => ({ ...day, rawText: undefined }));
-  return sha256(stable({ year: Number(roster?.year), month: Number(roster?.month), crewKey: crewKeyFor(roster?.crewId), days }));
+  return sha256(stable({ version: CONTENT_HASH_VERSION, schemaVersion: PROPOSAL_SCHEMA_VERSION, roster: canonicalRoster(roster) }));
 }
 
 // Refuses a roster that does not prove the whole competence: every civil day of the month must
@@ -43,9 +58,10 @@ export function rosterContentHash(roster) {
 export function rosterCompetenceIssue(roster, rosterKey, crewKey) {
   const key = ROSTER_KEY.exec(String(rosterKey || ''));
   if (!key) return 'ROSTER_KEY_INVALID';
-  const roleKey = crewKeyFor(roster?.crewId);
-  if (!roleKey) return 'CREW_IDENTITY_REQUIRED';
-  if (roleKey !== crewKey) return 'CREW_IDENTITY_MISMATCH';
+  const rosterCrewKey = crewKeyFor(roster?.crewId);
+  if (!rosterCrewKey) return 'CREW_IDENTITY_REQUIRED';
+  if (rosterCrewKey !== crewKey) return 'CREW_IDENTITY_MISMATCH';
+  if (!Array.isArray(roster?.days) || roster.days.length > 370 || roster.days.some(day => Array.isArray(day?.legs) && day.legs.length > 16)) return 'ROSTER_LIMIT_EXCEEDED';
   const year = Number(key[1]), month = Number(key[2]);
   if (Number(roster?.year) !== year || Number(roster?.month) !== month) return 'ROSTER_PERIOD_MISMATCH';
   const length = new Date(Date.UTC(year, month, 0)).getUTCDate(), seen = new Map();
@@ -68,10 +84,16 @@ function legacyOperationId(parts) {
 const outcome = (status, body) => ({ status, ...body });
 const competenceView = row => ({ generation: Number(row?.generation || 0), state: row?.state || 'absent', contentHash: row?.content_hash || null });
 
-export async function writeRosterRevision(db, request) {
+// resolveVerifiedCrewKey(email) -> 'ID:...' | null is the authoritative server-side binding of the
+// account to one crew member (not implemented in production; injected by tests). The crewKey in
+// the request and the crewId printed in the PDF must both match it.
+export async function writeRosterRevision(db, request, { resolveVerifiedCrewKey } = {}) {
   const email = String(request?.email || '').trim().toLowerCase();
   const { crewKey, rosterKey, rosterKind = 'operated', operation = 'import', roster = null, parserVersion = 'unknown', sourceKind = 'pdf_import' } = request || {};
   if (!email) return outcome(401, { code: 'AUTH_REQUIRED' });
+  const verifiedCrewKey = typeof resolveVerifiedCrewKey === 'function' ? await resolveVerifiedCrewKey(email) : null;
+  if (!verifiedCrewKey) return outcome(403, { code: 'CREW_IDENTITY_UNVERIFIED' });
+  if (verifiedCrewKey !== crewKey) return outcome(403, { code: 'CREW_IDENTITY_NOT_BOUND' });
   if (!KINDS.has(rosterKind) || !['import', 'delete'].includes(operation) || !ROSTER_KEY.test(String(rosterKey || '')) || !/^ID:[A-Z0-9]{3,40}$/.test(String(crewKey || ''))) return outcome(400, { code: 'REQUEST_INVALID' });
   const legacy = request.baseGeneration === undefined || request.baseGeneration === null || !request.operationId;
   if (legacy && operation !== 'import') return outcome(428, { code: 'REVISION_PRECONDITION_REQUIRED' });
@@ -83,7 +105,7 @@ export async function writeRosterRevision(db, request) {
   const contentHash = operation === 'import' ? rosterContentHash(roster) : null;
   const baseGeneration = legacy ? 0 : request.baseGeneration;
   const operationId = legacy ? legacyOperationId([email, crewKey, rosterKey, rosterKind, contentHash]) : String(request.operationId);
-  const requestHash = sha256(stable({ crewKey, rosterKey, rosterKind, operation, baseGeneration, contentHash }));
+  const requestHash = sha256(stable({ crewKey, rosterKey, rosterKind, operation, baseGeneration, contentHash, parserVersion: String(parserVersion), schemaVersion: PROPOSAL_SCHEMA_VERSION, sourceKind: legacy ? 'legacy_create' : sourceKind }));
   const where = [email, crewKey, rosterKey, rosterKind];
   const client = await db.connect();
   try {
@@ -108,7 +130,7 @@ export async function writeRosterRevision(db, request) {
     const generation = Number(current.generation) + 1, revisionId = crypto.randomUUID(), state = operation === 'import' ? 'live' : 'deleted';
     await client.query(`INSERT INTO crewcheck_roster_revisions(revision_id,owner_email,crew_key,roster_key,roster_kind,generation,base_generation,operation,content_hash,roster,parser_version,schema_version,source_kind,client_operation_id,request_hash)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-    [revisionId, email, crewKey, rosterKey, rosterKind, generation, baseGeneration, operation, contentHash, operation === 'import' ? JSON.stringify(roster) : null, String(parserVersion).slice(0, 40), PROPOSAL_SCHEMA_VERSION, legacy ? 'legacy_create' : sourceKind, operationId, requestHash]);
+    [revisionId, email, crewKey, rosterKey, rosterKind, generation, baseGeneration, operation, contentHash, operation === 'import' ? JSON.stringify(canonicalRoster(roster)) : null, String(parserVersion).slice(0, 40), PROPOSAL_SCHEMA_VERSION, legacy ? 'legacy_create' : sourceKind, operationId, requestHash]);
     const updated = await client.query('UPDATE crewcheck_roster_competences SET generation=$1,state=$2,current_revision_id=$3,content_hash=$4 WHERE owner_email=$5 AND crew_key=$6 AND roster_key=$7 AND roster_kind=$8 AND generation=$9',
       [generation, state, revisionId, contentHash, ...where, baseGeneration]);
     if (updated.rowCount !== 1) throw Object.assign(new Error('competence generation moved under lock'), { code: 'GENERATION_INVARIANT' });

@@ -3,7 +3,8 @@
 -- Só é executado em banco descartável pelo teste scripts/regression-roster-revision-sync-proposal.mjs.
 -- Uma migração real exige backup, revisão independente e aprovação específica.
 
--- Estado atual de cada competência: uma linha por conta + tripulante (ID verificado, nunca nome)
+-- Estado atual de cada competência: uma linha por conta + tripulante (chave ID: vinculada à conta por
+-- fonte autoritativa server-side — pré-condição não implementada; nunca o nome nem só a matrícula do PDF)
 -- + competência + tipo (planejada/operada). "generation" só cresce, inclusive na exclusão
 -- (tombstone), então nenhuma escrita baseada numa geração antiga é aceita depois de
 -- A→B→A, de exclusão/recriação ou de replay.

@@ -48,9 +48,15 @@ Pela orientação da revisão, a correção foi interrompida aqui em vez de enfr
 ### Identidade
 A chave é **conta + tripulante + competência + tipo**:
 - **conta:** o e-mail autenticado;
-- **tripulante:** `crew_key = ID:<crewId>` verificado. Nunca o nome, e IDs placeholder são recusados;
+- **tripulante:** `crew_key = ID:<crewId>`;
 - **competência:** `roster_key = AAAA-MM`;
 - **tipo:** `planned | operated`.
+
+**Pré-condição não implementada:** `crewKeyFor` só normaliza a sintaxe da matrícula e recusa placeholders; isso **não prova identidade**. A escrita exige um vínculo autoritativo, server-side, da conta a um único tripulante (`resolveVerifiedCrewKey(email)`, injetado). Sem esse vínculo, nenhuma escrita acontece (`403 CREW_IDENTITY_UNVERIFIED`). Ainda é preciso decidir a fonte: verificação pela empresa, documento conferido ou outra. Com o vínculo:
+- se a chave pedida for de outro tripulante: `403 CREW_IDENTITY_NOT_BOUND`;
+- se a matrícula impressa no PDF divergir: `422 CREW_IDENTITY_MISMATCH`.
+
+O nome nunca serve como identidade. Os testes usam um vínculo sintético.
 
 ### Geração monotônica
 `crewcheck_roster_competences.generation` só cresce, inclusive na exclusão (o estado vira `deleted`, um tombstone). Cada geração aceita vira uma linha imutável em `crewcheck_roster_revisions`, com:
@@ -60,10 +66,18 @@ A chave é **conta + tripulante + competência + tipo**:
 - `source_kind`;
 - `client_operation_id`.
 
+### Hash de conteúdo
+O hash é calculado sobre o **roster canônico inteiro**, depois de uma sanitização determinística e versionada (`CONTENT_HASH_VERSION`, `schema_version`):
+- chaves ordenadas;
+- `undefined` removido;
+- **só o ruído declarado (`rawText`, em qualquer nível) fica fora**.
+
+Por isso mudar apenas `base`, `rank`, companhia, nome, totais, cobertura da fonte, um dia ou um trecho gera uma revisão nova. Limites (370 dias, 16 trechos por dia) são recusados (`422 ROSTER_LIMIT_EXCEEDED`), nunca truncados.
+
 ### Escrita (`server-protocol.mjs`)
-1. **Validação.** O servidor confere o crewId, a competência e a completude do mês: todos os dias civis exatamente uma vez. Uma escala incompleta é recusada (`422`) antes de qualquer escrita, e a versão válida continua.
+1. **Validação.** O servidor confere o vínculo de identidade, a competência, os limites e a completude do mês: todos os dias civis exatamente uma vez. Uma escala incompleta é recusada (`422`) antes de qualquer escrita, e a versão válida continua.
 2. **Trava.** A linha da competência é travada com `FOR UPDATE`.
-3. **Replay.** Se o `client_operation_id` já existe, o servidor devolve o resultado gravado (replay) e não escreve de novo. O mesmo id com outro conteúdo recebe `422`.
+3. **Replay.** Se o `client_operation_id` já existe, o servidor devolve o resultado gravado (replay) e não escreve de novo. O `requestHash` vincula ao id a competência, a operação, a base, o conteúdo, a **versão do parser**, a **versão do schema** e a **origem**. O mesmo id com qualquer um desses diferente recebe `422 OPERATION_ID_REUSED`.
 4. **Conflito.** Se `baseGeneration` for diferente da geração atual, o servidor responde **409** com o estado atual. Isso vale inclusive para hash igual: hash nunca autoriza escrita.
 5. **No-op.** Base correta com conteúdo igual ao atual não gera nova geração.
 6. **Gravação.** Caso contrário, `generation+1`, uma nova linha de histórico e a atualização condicionada a `generation = base`.
@@ -77,18 +91,24 @@ A listagem é completa e inclui tombstones. Assim o aparelho distingue "excluíd
 
 ### Aparelho (`client-reconcile.mjs`, puro e sem relógio)
 Estados de cada competência no aparelho:
-- `synced`: a geração confirmada pelo banco;
-- `pending`: a mudança gravada **antes** do envio, com `baseGeneration` e `operationId`;
-- `conflict`: o banco mudou desde a base do pendente.
+- `synced`: a revisão confirmada pelo banco;
+- `inflight`: o **snapshot imutável** do que foi enviado, com `operationId`, base e conteúdo;
+- `pending`: a mudança local mais nova, ainda não enviada;
+- `conflict`;
+- `seen`: a maior geração já observada.
+
+**Correlação de envio.** Uma resposta só vale para o envio com o mesmo `operationId`, e o resultado se aplica **a esse snapshot**. Se uma mudança B surgir enquanto A está em voo, B fica encadeada atrás de A e recebe a base quando o ACK de A chega. B nunca é marcada como sincronizada nem descartada pelo ACK de A. ACKs duplicados, atrasados ou fora de ordem são ignorados. Sem resposta, o mesmo snapshot é reenviado com o mesmo `operationId`.
+
+**Monotonicidade.** Listagem, leitura ou ACK com geração menor que `seen` são obsoletos e ignorados. Nada rebaixa nem recria uma competência excluída numa geração posterior.
 
 Comportamento:
-- **Offline:** mostra o pendente ou o cache.
-- **Online:**
-  - mostra o banco;
-  - todo pendente é enviado com o mesmo `operationId`, e quem julga é o servidor (replay, 409 ou aceite);
-  - 409 com conteúdo igual ao atual: o aparelho adota o banco sem escrever;
-  - os demais 409 viram conflito explícito, que só fecha por escolha do usuário. "Manter a do banco" arquiva o pendente, que continua recuperável; "manter a minha" refaz a base na geração vista;
-  - cache com geração menor que a do banco adota o banco; tombstone esconde a competência.
+- **Offline:** mostra o pendente, o que está em voo ou o cache.
+- **Online:** mostra o banco. Todo pendente é enviado e o servidor julga.
+  - **409 com o mesmo conteúdo:** o aparelho adota o banco sem escrever.
+  - **Demais 409:** viram conflito explícito, guardando a mudança mais nova e as substituídas.
+  - **Conflito** só fecha por escolha do usuário:
+    - "manter a do banco" exige o snapshot do banco (com o roster) e o **adota**, então um cache offline antigo nunca reaparece; as mudanças locais são arquivadas e continuam recuperáveis;
+    - "manter a minha" refaz a base na maior geração vista.
 - **Troca de conta:** as entradas são por conta, e uma mudança nunca é enviada por outra conta.
 
 ### Cenários cobertos (MySQL descartável)
@@ -103,7 +123,21 @@ Comportamento:
 - PDF incompleto;
 - planejada vs operada;
 - relógios em 1999 e 2099 dando o mesmo resultado;
-- reuso de `operationId` e envio duplicado.
+- reuso de `operationId` e envio duplicado;
+- revisão só de metadados (`base`, `rank`);
+- `operationId` com outro parser ou outra origem.
+
+Complemento puro, sem banco: `scripts/regression-roster-revision-reconcile-interleavings.mjs` cobre:
+- A enviado → B nova → ACK(A);
+- ACKs duplicados ou invertidos;
+- leituras invertidas;
+- tombstone em geração posterior;
+- logout, troca de conta e envio abortado;
+- 409 preservando a mudança mais nova;
+- `keep_server` adotando o banco;
+- hash canônico.
+
+Cada defeito revisado é reintroduzido como mutante, e a suíte precisa falhar com cada um.
 
 ## O que falta decidir (dot e Bruno), antes de qualquer implementação real
 1. **Identidade sem crewId (PDF formato ticket).** A proposta recusa (`CREW_IDENTITY_REQUIRED`). A alternativa segura é a conta ter uma matrícula verificada única à qual o servidor vincula o PDF; o nome nunca serve.

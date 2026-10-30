@@ -18,6 +18,7 @@ on:
       - 'scripts/regression-roster-revision-persistence-repro.mjs'
       - 'scripts/regression-roster-sync-current-path-counterexamples.mjs'
       - 'scripts/regression-roster-revision-sync-proposal.mjs'
+      - 'scripts/regression-roster-revision-reconcile-interleavings.mjs'
       - 'scripts/lib/qa-module-closure.mjs'
       - 'server/mysql-platform-adapter.mjs'
       - 'migrations/20260715_003_aiven_mysql_full_platform.sql'
@@ -50,6 +51,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Revision proposal reconciliation interleavings and mutants (pure)
+        run: node scripts/regression-roster-revision-reconcile-interleavings.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Roster history context (prepared sources)
