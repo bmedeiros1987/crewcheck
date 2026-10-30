@@ -104,3 +104,19 @@ CREATE TABLE IF NOT EXISTS crewcheck_roster_backfill_quarantine (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (owner_email, legacy_row_id, legacy_fingerprint)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cerca de escrita para rollback fail-closed (desenho). NÃO existe "desligar a flag" que reabra a
+-- escrita legada cega:
+--   normal         novo protocolo ativo; o runtime legado não escreve;
+--   fenced_legacy  rollback parcial: o runtime legado só pode criar competência NUNCA gerenciada
+--                  (geração 0); nunca sobrescreve nem ressuscita tombstone; o novo protocolo segue CAS;
+--   read_only      rollback total: toda escrita é recusada; leitura e replay de recibos continuam.
+-- Trocar o modo trava a linha (exclusivo); cada escrita lê o modo com trava compartilhada na própria
+-- transação, então nenhuma escrita confirma depois de a troca concluir. Revisões, recibos e envios
+-- pendentes são preservados; voltar a normal exige relatório de divergências, sem resolução automática.
+CREATE TABLE IF NOT EXISTS crewcheck_roster_write_fence (
+  scope VARCHAR(32) NOT NULL,
+  mode ENUM('normal','fenced_legacy','read_only') NOT NULL,
+  fence_epoch BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (scope)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

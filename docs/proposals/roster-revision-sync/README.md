@@ -9,7 +9,7 @@
 > - o outbox real e durável no app (reload, logout, várias abas) e o contrato de ACK de PDF com #1039/#825;
 > - owners e coordenação;
 > - backup e restore;
-> - o rollback. Ele **não pode** reabrir escrita legada cega nem ressuscitar tombstones: precisa manter cerca/CAS de escrita ou modo só leitura, preservando revisões e pendentes até uma reconciliação explícita;
+> - o rollback. Ele **não pode** reabrir escrita legada cega nem ressuscitar tombstones. A proposta já tem uma cerca de escrita fail-closed (`read_only` / `fenced_legacy`) testada em MySQL descartável. Falta integrar o runtime legado à guarda e decidir operacionalmente quem troca o modo;
 > - no contrato de cliente legado, a proposta já cobre só criação, `428` com envio pendente e confirmação explícita, testados em MySQL descartável. Ainda faltam versão mínima do app e interface da confirmação.
 
 ## Requisito (Bruno, 30/10 00:40)
@@ -118,6 +118,21 @@ Por isso mudar apenas `base`, `rank`, companhia, nome, totais, cobertura da font
 - **Crash e retomada:** um crash entre linhas ou antes do `COMMIT` é retomado rodando de novo. As linhas já aplicadas fazem replay do recibo, e o estado final é o mesmo de uma execução limpa.
 - **Concorrência:** dois workers e escritas concorrentes de clientes mantêm uma única criação por competência.
 - **Testes:** `scripts/regression-roster-revision-backfill.mjs`, com 4 mutantes mortos por asserção.
+
+### Rollback fail-closed (cerca de escrita)
+- **Sem "desligar a flag".** A tabela `crewcheck_roster_write_fence` guarda o modo, e a ausência da linha equivale a `read_only` (fail-closed).
+- **`read_only`:**
+  - toda escrita é recusada (`503 WRITES_FENCED`), seja do novo protocolo, de cliente legado ou do runtime antigo;
+  - nenhum recibo é gravado, e o mesmo id pode ser enviado depois;
+  - leitura e replay de operações já decididas continuam;
+  - revisões, recibos e pendentes são preservados.
+- **`fenced_legacy`:**
+  - o runtime antigo, chamando `legacyRuntimeWriteGuard` dentro da própria transação, só cria mês **nunca gerenciado** (geração 0);
+  - nunca sobrescreve competência viva nem ressuscita tombstone;
+  - escritas do novo protocolo seguem com CAS.
+- **Troca de modo:** usa lock exclusivo, e cada escrita lê o modo com lock compartilhado. Assim nenhuma escrita confirma depois de a troca concluir.
+- **Volta a `normal`:** não resolve nada sozinha. `rollbackDivergenceReport` lista as divergências para decisão explícita.
+- **Testes:** `scripts/regression-roster-revision-rollback.mjs`, com 4 mutantes mortos por asserção.
 
 ### Leitura
 A listagem é completa e inclui tombstones. Assim o aparelho distingue "excluída na conta" de "nunca enviada" sem depender de ausência ou de `LIMIT`.

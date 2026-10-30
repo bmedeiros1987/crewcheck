@@ -160,6 +160,14 @@ async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, ope
       if (previous.request_hash !== requestHash) return outcome(422, { code: 'OPERATION_ID_REUSED' });
       return { ...storedResponse(previous.response), replay: true };
     }
+    // Write fence (rollback): read with a shared lock inside this transaction; a mode switch waits for
+    // in-flight writers and every later writer sees it. A fenced write is not a decision: nothing is
+    // recorded and the same operation id can be sent again once writes are allowed.
+    const fence = (await client.query("SELECT mode FROM crewcheck_roster_write_fence WHERE scope='global' LOCK IN SHARE MODE")).rows[0]?.mode || 'read_only';
+    if (fence === 'read_only') {
+      await client.query('ROLLBACK');
+      return outcome(503, { code: 'WRITES_FENCED', mode: fence });
+    }
     const decision = { generation: Number(current.generation) };
     // Receipt, revision, competence change and submission state commit together or not at all.
     const decide = async (outcomeName, response, revisionId = null) => {
@@ -278,4 +286,31 @@ export async function backfillLegacyRosters(db, { resolveVerifiedCrewKey, batchS
       if (afterRow) await afterRow(row, report);
     }
   }
+}
+
+// Rollback fence (proposal). Missing fence row means read_only: fail-closed by default.
+export async function setWriteMode(db, mode) {
+  if (!['normal', 'fenced_legacy', 'read_only'].includes(mode)) throw new Error('unknown write mode');
+  await db.query("INSERT INTO crewcheck_roster_write_fence(scope,mode,fence_epoch) VALUES('global',$1,1) ON DUPLICATE KEY UPDATE mode=VALUES(mode),fence_epoch=fence_epoch+1", [mode]);
+}
+
+// Guard the OLD runtime writer must call inside its own transaction while rolled back. It locks the
+// fence (shared) and every competence row of the account + month, and allows the legacy upsert only
+// in fenced_legacy mode and only when no competence was ever managed (generation 0): never an
+// overwrite of a live competence, never the resurrection of a tombstone.
+export async function legacyRuntimeWriteGuard(client, { email, rosterKey }) {
+  const fence = (await client.query("SELECT mode FROM crewcheck_roster_write_fence WHERE scope='global' LOCK IN SHARE MODE")).rows[0]?.mode || 'read_only';
+  if (fence !== 'fenced_legacy') return { allowed: false, code: fence === 'read_only' ? 'WRITES_FENCED' : 'NEW_PROTOCOL_ACTIVE' };
+  const managed = (await client.query('SELECT generation,state FROM crewcheck_roster_competences WHERE owner_email=$1 AND roster_key=$2 AND generation>0 FOR UPDATE', [String(email || '').trim().toLowerCase(), rosterKey])).rows;
+  if (managed.length) return { allowed: false, code: managed.some(row => row.state === 'deleted') ? 'TOMBSTONE_FENCED' : 'MANAGED_COMPETENCE_FENCED' };
+  return { allowed: true };
+}
+
+// Divergences between the legacy table and the new system after a rollback window. Report only:
+// nothing is resolved automatically when returning to normal.
+export async function rollbackDivergenceReport(db) {
+  const rows = (await db.query(`SELECT l.owner_email,l.roster_key,l.fingerprint,c.generation,c.state,c.content_hash
+    FROM crewcheck_platform_rosters l LEFT JOIN crewcheck_roster_competences c ON c.owner_email=l.owner_email AND c.roster_key=l.roster_key AND c.generation>0
+    ORDER BY l.owner_email,l.roster_key`)).rows;
+  return rows.filter(row => !row.generation || row.state === 'deleted').map(row => ({ ownerEmail: row.owner_email, rosterKey: row.roster_key, kind: row.generation ? 'legacy_row_on_tombstone' : 'legacy_only' }));
 }

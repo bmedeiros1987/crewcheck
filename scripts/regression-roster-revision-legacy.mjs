@@ -29,8 +29,10 @@ assert.equal((await db.query('SELECT DATABASE() AS name')).rows[0].name, 'crewch
 const protocolFile = 'docs/proposals/roster-revision-sync/server-protocol.mjs';
 const schema = fs.readFileSync('docs/proposals/roster-revision-sync/schema-draft.sql', 'utf8');
 async function resetSchema() {
-  for (const table of ['crewcheck_roster_legacy_submissions', 'crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences']) await db.query(`DROP TABLE IF EXISTS ${table}`);
+  for (const table of ['crewcheck_roster_write_fence', 'crewcheck_roster_legacy_submissions', 'crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences']) await db.query(`DROP TABLE IF EXISTS ${table}`);
   for (const statement of schema.split(/;\s*\n/).map(text => text.replace(/^\s*--.*$/gm, '').trim()).filter(Boolean)) await db.query(statement);
+  // The write fence is fail-closed (no row = read_only); these suites exercise normal operation.
+  await db.query("INSERT INTO crewcheck_roster_write_fence(scope,mode) VALUES('global','normal')");
 }
 
 const pad = value => String(value).padStart(2, '0');

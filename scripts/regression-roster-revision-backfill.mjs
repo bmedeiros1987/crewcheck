@@ -29,7 +29,7 @@ assert.equal((await db.query('SELECT DATABASE() AS name')).rows[0].name, 'crewch
 const protocolFile = 'docs/proposals/roster-revision-sync/server-protocol.mjs';
 const schema = fs.readFileSync('docs/proposals/roster-revision-sync/schema-draft.sql', 'utf8');
 const legacyDdl = fs.readFileSync('migrations/20260715_003_aiven_mysql_full_platform.sql', 'utf8').match(/CREATE TABLE IF NOT EXISTS crewcheck_platform_rosters \([\s\S]*?\) ENGINE=InnoDB[^;]*;/)[0];
-const NEW_TABLES = ['crewcheck_roster_backfill_quarantine', 'crewcheck_roster_legacy_submissions', 'crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences'];
+const NEW_TABLES = ['crewcheck_roster_write_fence', 'crewcheck_roster_backfill_quarantine', 'crewcheck_roster_legacy_submissions', 'crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences'];
 
 const pad = value => String(value).padStart(2, '0');
 function month(year, monthNumber, tag, crewId = 'BP00000001', skip = null) {
@@ -76,6 +76,8 @@ async function suite(P) {
     for (const table of [...NEW_TABLES, 'crewcheck_platform_rosters']) await db.query(`DROP TABLE IF EXISTS ${table}`);
     await db.query(legacyDdl);
     for (const statement of schema.split(/;\s*\n/).map(text => text.replace(/^\s*--.*$/gm, '').trim()).filter(Boolean)) await db.query(statement);
+  // The write fence is fail-closed (no row = read_only); these suites exercise normal operation.
+  await db.query("INSERT INTO crewcheck_roster_write_fence(scope,mode) VALUES('global','normal')");
     for (const row of legacyRows) {
       await db.query('INSERT INTO crewcheck_platform_rosters(id,owner_email,roster_key,roster,compliance,gym,source_name,fingerprint,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8,FALSE)',
         [row.id, row.owner, row.key, JSON.stringify(row.roster), '{}', '[]', 'sintetico.pdf', crypto.createHash('sha256').update(JSON.stringify(row.roster)).digest('hex')]);
