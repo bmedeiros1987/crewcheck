@@ -21,6 +21,7 @@ on:
       - 'scripts/regression-roster-revision-reconcile-interleavings.mjs'
       - 'scripts/regression-roster-revision-receipts.mjs'
       - 'scripts/regression-roster-revision-legacy.mjs'
+      - 'scripts/regression-roster-revision-backfill.mjs'
       - 'scripts/lib/qa-module-closure.mjs'
       - 'server/mysql-platform-adapter.mjs'
       - 'migrations/20260715_003_aiven_mysql_full_platform.sql'
@@ -100,6 +101,11 @@ jobs:
           CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
         run: node scripts/regression-roster-revision-legacy.mjs
+      - name: Revision proposal backfill rehearsal (synthetic rows and bindings; crash, resume, concurrency, mutants)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-revision-backfill.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Current path counterexamples (prepared client and handler, real SQL)

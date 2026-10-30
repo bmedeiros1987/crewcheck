@@ -4,7 +4,7 @@
 >
 > **Continuam bloqueados, sem desenho aprovado nem implementação:**
 > - a fonte autoritativa do vínculo conta→crewId; hoje o perfil não tem matrícula e o crewId vem do PDF;
-> - o backfill, que é só desenho futuro: `legacy_backfill` não existe no ENUM e faltam testes de crash, retomada, concorrência e do invariante de nunca sobrescrever geração > 0;
+> - o backfill. A proposta já tem um **ensaio** (`backfillLegacyRosters`) testado só com linhas e vínculos sintéticos em MySQL descartável: aditivo, idempotente, com quarentena, sem nunca sobrescrever geração > 0 nem tombstone, e com crash, retomada e concorrência cobertos. Rodar contra dados reais depende do vínculo autoritativo, de backup e restore e de aprovação;
 > - a escrita dupla, composta com a #1086;
 > - o outbox real e durável no app (reload, logout, várias abas) e o contrato de ACK de PDF com #1039/#825;
 > - owners e coordenação;
@@ -105,6 +105,19 @@ Por isso mudar apenas `base`, `rank`, companhia, nome, totais, cobertura da font
    - **o pendente só vira revisão por confirmação explícita** de um cliente com revisão. A confirmação usa a geração que o usuário viu e um `operationId` novo, sob o mesmo CAS de qualquer escrita. O conteúdo aplicado é o armazenado, nunca o do pedido; com base velha recebe 409 e continua pendente; cada envio é aplicado no máximo uma vez, inclusive com confirmações simultâneas;
    - **descartar** também é escolha explícita, e a linha é mantida com status `dismissed`;
    - o dado do cliente antigo continua no aparelho (`saveRosterAnalysis` cai no catch e devolve o local).
+
+### Ensaio de backfill (`backfillLegacyRosters`)
+- **Leitura:** as linhas de `crewcheck_platform_rosters` são lidas por cursor (conta, competência, id).
+- **Quarentena:** vai para `crewcheck_roster_backfill_quarantine`, de forma idempotente, toda linha:
+  - de conta sem vínculo autoritativo;
+  - com crewId ausente ou diferente do vínculo;
+  - com conteúdo recusado, por exemplo mês incompleto.
+
+  Nunca há chave por nome.
+- **Criação:** feita só por CAS sobre a geração 0, com id determinístico por linha e fingerprint, então só cria competência ausente. Geração > 0 (viva) e tombstone resultam em `skipped_existing`, nunca em sobrescrita ou ressurreição.
+- **Crash e retomada:** um crash entre linhas ou antes do `COMMIT` é retomado rodando de novo. As linhas já aplicadas fazem replay do recibo, e o estado final é o mesmo de uma execução limpa.
+- **Concorrência:** dois workers e escritas concorrentes de clientes mantêm uma única criação por competência.
+- **Testes:** `scripts/regression-roster-revision-backfill.mjs`, com 4 mutantes mortos por asserção.
 
 ### Leitura
 A listagem é completa e inclui tombstones. Assim o aparelho distingue "excluída na conta" de "nunca enviada" sem depender de ausência ou de `LIMIT`.

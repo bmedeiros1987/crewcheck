@@ -233,3 +233,49 @@ export async function dismissLegacySubmission(db, { email, submissionId }) {
   const result = await db.query("UPDATE crewcheck_roster_legacy_submissions SET status='dismissed' WHERE owner_email=$1 AND submission_id=$2 AND status='pending'", [String(email || '').trim().toLowerCase(), String(submissionId || '')]);
   return result.rowCount === 1 ? outcome(200, { dismissed: true }) : outcome(409, { code: 'SUBMISSION_NOT_PENDING' });
 }
+
+// Backfill rehearsal (proposal, never run against real data): additive and idempotent.
+// Reads legacy rows (crewcheck_platform_rosters) by keyset cursor and, for each row:
+//  - quarantines it when the account has no authoritative crew binding, the roster's crewId is
+//    missing or differs from the binding, or the content is refused (e.g. incomplete month);
+//  - otherwise creates the competence ONLY if absent: CAS on base generation 0 with a deterministic
+//    operation id per legacy row + fingerprint. A competence with generation > 0 (live or tombstone)
+//    is never overwritten or resurrected (409 → skipped_existing). A crash at any point is resumed
+//    by running again: applied rows replay their receipt (already_done), nothing is duplicated.
+export async function backfillLegacyRosters(db, { resolveVerifiedCrewKey, batchSize = 50, cursor = null, afterRow = null } = {}) {
+  const report = { created: 0, already_done: 0, skipped_existing: 0, quarantined: 0 };
+  let position = cursor;
+  for (;;) {
+    const limit = Math.max(1, Math.min(500, Math.trunc(Number(batchSize)) || 50));
+    const after = position ? 'WHERE (owner_email,roster_key,id) > ($1,$2,$3)' : '';
+    const rows = (await db.query(`SELECT id,owner_email,roster_key,roster,fingerprint FROM crewcheck_platform_rosters ${after} ORDER BY owner_email,roster_key,id LIMIT ${limit}`,
+      position ? [position.owner_email, position.roster_key, String(position.id)] : [])).rows;
+    if (!rows.length) return { report, cursor: position };
+    for (const row of rows) {
+      const email = String(row.owner_email || '').trim().toLowerCase();
+      const roster = typeof row.roster === 'string' ? JSON.parse(row.roster) : row.roster;
+      const binding = typeof resolveVerifiedCrewKey === 'function' ? await resolveVerifiedCrewKey(email) : null;
+      const rosterCrewKey = crewKeyFor(roster?.crewId);
+      const quarantine = async reason => {
+        await db.query('INSERT IGNORE INTO crewcheck_roster_backfill_quarantine(owner_email,legacy_row_id,legacy_fingerprint,reason) VALUES($1,$2,$3,$4)', [email, String(row.id), String(row.fingerprint), reason]);
+        report.quarantined += 1;
+      };
+      if (!binding) await quarantine('CREW_IDENTITY_UNVERIFIED');
+      else if (!rosterCrewKey) await quarantine('CREW_IDENTITY_REQUIRED');
+      else if (rosterCrewKey !== binding) await quarantine('CREW_IDENTITY_NOT_BOUND');
+      else {
+        const result = await writeRosterRevision(db, {
+          email, crewKey: binding, rosterKey: String(row.roster_key), rosterKind: 'operated', operation: 'import', roster,
+          baseGeneration: 0, operationId: legacyOperationId(['legacy_backfill', email, String(row.id), String(row.fingerprint)]),
+          sourceKind: 'legacy_backfill', parserVersion: 'legacy-row',
+        }, { resolveVerifiedCrewKey });
+        if (result.status === 200 && result.replay) report.already_done += 1;
+        else if (result.status === 200 && !result.unchanged) report.created += 1;
+        else if (result.status === 200 || result.status === 409) report.skipped_existing += 1;
+        else await quarantine(String(result.code || `HTTP_${result.status}`));
+      }
+      position = { owner_email: row.owner_email, roster_key: row.roster_key, id: row.id };
+      if (afterRow) await afterRow(row, report);
+    }
+  }
+}

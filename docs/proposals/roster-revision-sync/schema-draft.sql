@@ -92,3 +92,15 @@ CREATE TABLE IF NOT EXISTS crewcheck_roster_legacy_submissions (
   PRIMARY KEY (owner_email, submission_id),
   KEY crewcheck_roster_legacy_submission_status_idx (owner_email, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Ensaio de backfill (desenho, não aplicado): linhas legadas que não podem ser chaveadas com
+-- segurança (sem vínculo autoritativo da conta, matrícula ausente ou divergente, escala incompleta)
+-- ficam em quarentena, nunca são chaveadas por nome. Idempotente por (conta, linha, fingerprint).
+CREATE TABLE IF NOT EXISTS crewcheck_roster_backfill_quarantine (
+  owner_email VARCHAR(254) NOT NULL,
+  legacy_row_id VARCHAR(64) NOT NULL,
+  legacy_fingerprint CHAR(64) NOT NULL,
+  reason VARCHAR(64) NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (owner_email, legacy_row_id, legacy_fingerprint)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
