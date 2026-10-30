@@ -126,9 +126,12 @@ export interface LoadAnalysis {
   easiestDays: DayLoadAnalysis[];
   /** Every day, pending ones included (timeline). */
   days: DayLoadAnalysis[];
-  /** Dates whose activity window the parser could not attribute: left out of every aggregate. */
+  /** Every date with an activity window the parser could not attribute (any month): no timed
+   * recommendation and no aggregate uses that date. */
   pendingAvailabilityDates?: string[];
-  /** Set with pendingAvailabilityDates: aggregates cover known days only ('partial') or none ('indeterminate'). */
+  /** The pending dates of the roster's own month, the scope of the monthly aggregates. */
+  aggregatePendingDates?: string[];
+  /** Set with aggregatePendingDates: aggregates cover known days only ('partial') or none ('indeterminate'). */
   aggregateStatus?: 'partial' | 'indeterminate';
 }
 
@@ -2465,10 +2468,11 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     };
   });
 
-  // Unknown availability is not a light day: those dates stay in the timeline (loadDays) but out of
-  // every aggregate below (average load, hardest/easiest days), which are then explicitly partial.
-  const pendingAvailabilityDates = [...new Set(loadDays.filter(day => day.availabilityUnresolved).map(day => day.date))];
-  const days = loadDays.filter(day => !day.availabilityUnresolved);
+  // Unknown availability makes the whole date unmeasurable (not a light day): every item of that date
+  // stays in the timeline (loadDays) but out of every aggregate below (average load, hardest/easiest).
+  const pendingDateSet = new Set(loadDays.filter(day => day.availabilityUnresolved).map(day => day.date));
+  const pendingAvailabilityDates = [...pendingDateSet];
+  const days = loadDays.filter(day => !pendingDateSet.has(day.date));
 
   const workedDays = days.filter(day => !day.isDayOff || day.fatigueScore > 10);
   const averageScore = workedDays.length ? workedDays.reduce((sum, day) => sum + day.fatigueScore, 0) / workedDays.length : 0;
@@ -2481,7 +2485,16 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     .sort((a, b) => b.gymScore - a.gymScore || a.fatigueScore - b.fatigueScore)
     .slice(0, 8);
 
-  if (pendingAvailabilityDates.length) {
+  // The monthly aggregates are partial only for pending dates of the roster's own month; an unknown
+  // carry-in from another month still guards recommendations (pendingAvailabilityDates).
+  const competenceYear = Number(roster.year), competenceMonth = Number(roster.month);
+  const hasCompetence = Number.isInteger(competenceYear) && competenceYear > 0 && competenceMonth >= 1 && competenceMonth <= 12;
+  const aggregatePendingDates = pendingAvailabilityDates.filter((date) => {
+    if (!hasCompetence) return true;
+    const parsed = parseDate(date);
+    return parsed.getFullYear() === competenceYear && parsed.getMonth() + 1 === competenceMonth;
+  });
+  if (aggregatePendingDates.length) {
     // Nothing measurable left: no average of an empty set (it would read as 0/100, "excelente").
     const indeterminate = workedDays.length === 0;
     return {
@@ -2489,12 +2502,13 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
       recoveryScore: indeterminate ? null : recoveryScore,
       grade: indeterminate ? 'Indeterminada' : scaleGrade(intensityScore),
       summary: indeterminate
-        ? `Carga da escala indeterminada: disponibilidade pendente em ${pendingAvailabilityDates.join(', ')} e nenhum outro dia mensurável.`
-        : `${makeLoadSummary(intensityScore, hardestDays)} Resultado parcial: ${pendingAvailabilityDates.join(', ')} com disponibilidade pendente, fora do cálculo.`,
+        ? `Carga da escala indeterminada: disponibilidade pendente em ${aggregatePendingDates.join(', ')} e nenhum outro dia mensurável.`
+        : `${makeLoadSummary(intensityScore, hardestDays)} Resultado parcial: ${aggregatePendingDates.join(', ')} com disponibilidade pendente, fora do cálculo.`,
       hardestDays,
       easiestDays,
       days: loadDays,
       pendingAvailabilityDates,
+      aggregatePendingDates,
       aggregateStatus: indeterminate ? 'indeterminate' : 'partial',
     };
   }
@@ -2507,6 +2521,7 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     hardestDays,
     easiestDays,
     days: loadDays,
+    ...(pendingAvailabilityDates.length ? { pendingAvailabilityDates } : {}),
   };
 }
 

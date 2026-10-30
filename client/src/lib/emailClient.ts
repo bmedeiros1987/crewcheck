@@ -28,7 +28,7 @@ function actionableAlerts(compliance: ComplianceResult): any[] {
 // Unknown availability is out of the load index: say partial/indeterminate instead of a plain score.
 function loadIntensityLine(load: ComplianceResult['loadAnalysis'] | undefined): string {
   if (!load) return '- / 100';
-  const pending = load.pendingAvailabilityDates?.join(', ');
+  const pending = load.aggregatePendingDates?.join(', ');
   if (load.intensityScore === null) return `indeterminada (disponibilidade pendente em ${pending})`;
   return `${load.intensityScore} / 100${load.aggregateStatus === 'partial' ? ` (parcial: disponibilidade pendente em ${pending})` : ''}`;
 }

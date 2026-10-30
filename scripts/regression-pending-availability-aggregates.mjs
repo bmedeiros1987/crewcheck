@@ -1,8 +1,10 @@
 // A standby/reserve whose clocks have no station (availabilityUnresolved) is not a light day and not
 // free time. From the public parser, on RAW and on PREPARED sources (node scripts/v139/apply.mjs):
-//  - analyzeDayLoads keeps the day in the timeline but leaves it out of every aggregate; the result
-//    says so ('partial'), and with nothing measurable left it is 'indeterminate' (null score, grade
-//    "Indeterminada"), never 0/100 "Excelente" from an empty average;
+//  - analyzeDayLoads keeps every item in the timeline but leaves the whole pending DATE out of every
+//    aggregate (a published item on the same date included); the month says so ('partial'), and with
+//    nothing measurable left it is 'indeterminate' (null score, grade "Indeterminada"), never 0/100
+//    "Excelente" from an empty average; an unknown carry-in from another month guards
+//    recommendations (pendingAvailabilityDates) without making this month partial;
 //  - getGymRecommendations gives no timed suggestion on that date and does not take it as a light
 //    neighbour, so nothing reaches the PDF, the ICS file or the Google Calendar conversion;
 //  - consumers say partial/pending: compliance summary, PDF (timeline "pendente", gym note), e-mail
@@ -10,6 +12,8 @@
 //  - the ICS keeps the published activity as a tentative day marker (no invented time, no 24 h duty,
 //    not blocking, no alarm, only in modes that export duties, UID of the duty slot), and a published
 //    flight on the same date keeps its own report time (APZ);
+//  - the Google conversion keeps that marker tentative and silent (no default reminders), while
+//    ordinary events convert as before;
 //  - published station windows (control) are unchanged.
 // Synthetic AIMS text only. No network: fetch is a local double (Google/e-mail are never called for
 // real); the PDF runs against a recording jsPDF double. Mutants of the guards must fail by assertion.
@@ -132,6 +136,31 @@ async function suite(M) {
     assert.ok(!gym.some(item => ['16/08/2026', '17/08/2026'].includes(item.date)), `${name}: no gym suggestion on pending dates`);
   }
 
+  // Same date, unknown item + published item (synthetic CrewRoster): the whole date is unmeasurable.
+  {
+    const roster = M.parseAimsRoster(ROSTERS.mixedHsb);
+    const unknown17 = roster.days.find(day => day.date === '17/08/2026');
+    roster.days.push({ ...clone(unknown17), type: 'ASB', pairingCode: 'ASB', dutyReport: '06:00', dutyDebrief: '09:00', dutyReportSource: 'published', dutyDebriefSource: 'published', rawText: 'ASB BSB 06:00 BSB 09:00' });
+    const load = M.analyzeDayLoads(clone(roster)), gym = M.getGymRecommendations(clone(roster));
+    assert.equal(load.days.filter(day => day.date === '17/08/2026').length, 2, 'same date: both items stay in the timeline');
+    assert.ok(load.days.some(day => day.date === '17/08/2026' && day.type === 'ASB' && day.dutyStartTime === '06:00' && !day.availabilityUnresolved), 'same date: the published item keeps its times');
+    assert.ok(![...load.easiestDays, ...load.hardestDays].some(day => day.date === '17/08/2026'), 'same date: the pending date is out of every aggregate list, not only its unknown item');
+    assert.deepEqual([load.aggregateStatus, load.aggregatePendingDates], ['partial', ['17/08/2026']], 'same date: partial');
+    assert.ok(!gym.some(item => item.date === '17/08/2026'), 'same date: no gym suggestion');
+  }
+  // Carry-in from another month: guards recommendations, does not make this month's aggregates partial.
+  {
+    const roster = M.parseAimsRoster(header.replace('-16/08/2026 até18/08/2026', '-31/07/2026 até18/08/2026') + '31Jul Fri HSB 06:00 20:00\n' + flight16 + '17Aug Mon HSB BSB 06:00 BSB 20:00\n18Aug Tue DO\n');
+    roster.year = 2026; roster.month = 8;
+    assert.ok(roster.days.some(day => day.date === '31/07/2026' && day.dutyReportSource === 'unknown'), 'carry-in: unknown 31/07 parsed');
+    const load = M.analyzeDayLoads(clone(roster)), gym = M.getGymRecommendations(clone(roster)), compliance = M.analyzeCompliance(clone(roster), 'cabin');
+    assert.deepEqual(load.pendingAvailabilityDates, ['31/07/2026'], 'carry-in: global pending date kept');
+    assert.deepEqual([load.aggregateStatus, load.aggregatePendingDates, typeof load.intensityScore], [undefined, undefined, 'number'], 'carry-in: August aggregates not partial');
+    assert.doesNotMatch(`${load.summary} ${compliance.summary}`, /parcial|indeterminad/, 'carry-in: August summary not partial');
+    assert.ok(load.days.some(day => day.date === '31/07/2026' && day.availabilityUnresolved), 'carry-in: kept in the timeline');
+    assert.ok(!gym.some(item => item.date === '31/07/2026'), 'carry-in: no gym suggestion on the unknown date');
+  }
+
   // Control: published station window unchanged (no pending, timed suggestion and duty events).
   const control = run('published');
   assert.equal(control.load.pendingAvailabilityDates, undefined, 'control: nothing pending');
@@ -178,6 +207,11 @@ async function suite(M) {
   const google = M.__qaParseIcalEvents(M.generateICalendar(mixed.roster, mixed.gym, { mode: 'all' }), 'qa');
   const googleMarker = google.find(event => /horário pendente/.test(event.summary));
   assert.deepEqual([googleMarker?.start, googleMarker?.transparency], [{ date: '2026-08-17' }, 'transparent'], 'Google: all-day, transparent marker');
+  assert.deepEqual([googleMarker.status, googleMarker.reminders], ['tentative', { useDefault: false, overrides: [] }], 'Google: marker tentative and silent (no default reminders)');
+  const googleFlight = google.find(event => event.start?.dateTime?.startsWith('2026-08-16'));
+  assert.ok(googleFlight && googleFlight.status === undefined && googleFlight.reminders.useDefault === false && googleFlight.reminders.overrides.length > 0, 'Google: published flight keeps its own reminders, no tentative status');
+  const googleRest = google.find(event => event.start?.date === '2026-08-18');
+  assert.deepEqual([googleRest?.status, googleRest?.reminders], [undefined, { useDefault: true }], 'Google: ordinary all-day event unchanged');
   assert.ok(!M.__qaParseIcalEvents(M.generateICalendar(mixed.roster, mixed.gym, { mode: 'gym' }), 'qa').some(event => event.start?.dateTime?.startsWith('2026-08-17')), 'Google: no gym event on the pending date');
 
   // PDF (recording double): pending in the timeline, gym note, no suggestion on the pending date.
@@ -236,7 +270,11 @@ for (const note of NOTES) {
 // Mutants: each guard removed must be caught by an assertion.
 const engine = lib('complianceEngine.ts'), calendar = lib('calendarExport.ts'), pdfExport = lib('pdfExport.ts'), email = lib('emailClient.ts'), database = lib('databaseClient.ts');
 const MUTANTS = {
-  'aggregates include pending days': { [engine]: [['const days = loadDays.filter(day => !day.availabilityUnresolved);', 'const days = loadDays;']] },
+  'aggregates include pending days': { [engine]: [['const days = loadDays.filter(day => !pendingDateSet.has(day.date));', 'const days = loadDays;']] },
+  'pending filtered per item, not per date': { [engine]: [['const days = loadDays.filter(day => !pendingDateSet.has(day.date));', 'const days = loadDays.filter(day => !day.availabilityUnresolved);']] },
+  'carry-in makes the month partial': { [engine]: [['    if (!hasCompetence) return true;', '    return true;']] },
+  'Google marker uses default reminders': { [lib('googleCalendarSync.ts')]: [[' : tentative ? { useDefault: false, overrides: [] } : { useDefault: true },', ' : { useDefault: true },']] },
+  'Google marker not tentative': { [lib('googleCalendarSync.ts')]: [["    ...(tentative ? { status: 'tentative' as const } : {}),\n", '']] },
   'timeline drops pending days': { [engine]: [['      days: loadDays,\n      pendingAvailabilityDates,', '      days,\n      pendingAvailabilityDates,']] },
   'empty average reported as a score': { [engine]: [['const indeterminate = workedDays.length === 0;', 'const indeterminate = false;']] },
   'partial flag dropped': { [engine]: [["aggregateStatus: indeterminate ? 'indeterminate' : 'partial',", "aggregateStatus: indeterminate ? 'indeterminate' : undefined,"]] },

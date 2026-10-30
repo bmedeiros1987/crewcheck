@@ -370,7 +370,7 @@ export async function exportReport(
     text(doc, COLOR.muted);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
-    const note = doc.splitTextToSize(`Sem sugestão em ${pendingGymDates.join(', ')}: disponibilidade pendente (horários sem estação). ${compliance.loadAnalysis?.aggregateStatus === 'indeterminate' ? 'Carga da escala indeterminada.' : 'Indicadores de carga parciais.'}`, pageWidth - 28);
+    const note = doc.splitTextToSize(`Sem sugestão em ${pendingGymDates.join(', ')}: disponibilidade pendente (horários sem estação).${compliance.loadAnalysis?.aggregateStatus === 'indeterminate' ? ' Carga da escala indeterminada.' : compliance.loadAnalysis?.aggregateStatus === 'partial' ? ' Indicadores de carga parciais.' : ''}`, pageWidth - 28);
     doc.text(note, 14, y + 3);
     y += 3 + note.length * 4.2;
   }
