@@ -358,6 +358,18 @@ export function applyDocumentLanguage(): CrewLanguage {
 
 const staticUiTranslations: Partial<Record<CrewLanguage, Record<string, string>>> = {
   en: {
+    // Database status card (Settings, admin): same honesty as the Portuguese source, no promised resend.
+    'Banco conectado': 'Database connected', 'Banco conectado · modo resiliente': 'Database connected · resilient mode', 'Modo local protegido': 'Protected local mode',
+    'Aiven MySQL ativo': 'Aiven MySQL active', 'Histórico local ativo': 'Local history active', 'Fallback local ativo': 'Local fallback active',
+    'Sincronização liberada': 'Sync available', 'Sincronização pendente': 'Sync pending', 'Verificar conexão': 'Check connection', 'Verificando…': 'Checking…',
+    'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.': 'Database unavailable. Data on this device stays here; sync is pending.',
+    'Banco indisponível e sem login. Dados deste dispositivo ficam só aqui.': 'Database unavailable and not signed in. Data on this device stays only here.',
+    'Banco principal disponível. Faça login para sincronizar esta conta.': 'Main database available. Sign in to sync this account.',
+    'Login expirado. Histórico local ativo; entre novamente para sincronizar.': 'Session expired. Local history active; sign in again to sync.',
+    'Sincronização em nuvem indisponível. O histórico local continua ativo neste dispositivo.': 'Cloud sync unavailable. Local history stays active on this device.',
+    'Sincronização segura disponível para os módulos internos.': 'Secure sync available for internal modules.',
+    'Banco aguardando configuração.': 'Database awaiting configuration.',
+    'Banco principal': 'Main database', 'Verifique conexão e migration': 'Check connection and migration',
     'Saída': 'Depart', 'Resumo': 'Summary', 'Minha escala': 'My roster', 'Escala': 'Roster', 'Alertas': 'Alerts', 'Irregularidades': 'Irregularities', 'Conformidade': 'Compliance', 'Rotina': 'Routine', 'Carga da escala': 'Roster load', 'Histórico': 'History', 'Configurações': 'Settings', 'Manual': 'Manual', 'Nova escala': 'New roster', 'Carregar nova escala': 'Load new roster', 'Próximas programações': 'Upcoming schedule', 'A partir do dia vigente, sem voltar para o início do mês.': 'Starting from the current day, without going back to the beginning of the month.', 'Abrir escala': 'Open roster', 'Status': 'Status', 'Portão': 'Gate', 'Terminal': 'Terminal', 'Atualizado': 'Updated', 'Sem dados online': 'No live data', 'Dados do voo': 'Flight data', 'Treino': 'Workout', 'Estudo': 'Study', 'Folgas': 'Days off', 'Pernoites': 'Layovers', 'Eventos': 'Events', 'Perfil': 'Profile', 'Tema': 'Theme', 'Idioma': 'Language', 'Salvar perfil': 'Save profile', 'Trocar foto': 'Change photo', 'Remover foto': 'Remove photo', 'Importar PDF': 'Import PDF', 'Puxar escala agora': 'Fetch roster now', 'Abrir iFlight': 'Open iFlight', 'Mais funções': 'More features', 'Sair': 'Sign out', 'Privacidade e proteção de dados': 'Privacy and data protection', 'Banco de dados': 'Database', 'Salvar análise': 'Save analysis', 'Exportar ICS': 'Export ICS', 'Só voos': 'Flights only', 'Academia': 'Gym', 'E-mail': 'Email', 'Suporte': 'Support', 'Ajuda e atendimento': 'Help and support'
   },
   es: {

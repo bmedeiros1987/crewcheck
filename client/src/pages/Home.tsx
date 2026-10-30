@@ -116,6 +116,7 @@ import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routine
 import { sendRosterByEmail } from '@/lib/emailClient';
 import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, saveGoogleCalendarSettings, listGoogleCalendars, googleCalendarIntegrationDiagnostics, type GoogleCalendarOption, type GoogleCalendarSettings } from '@/lib/googleCalendarSync';
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
+import { DATABASE_STATUS_MESSAGES } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
@@ -3043,10 +3044,10 @@ function DatabaseConnectionCard({ admin }: { admin: boolean }) {
   const connected = Boolean(status?.connected);
   const degraded = Boolean(status?.degraded || status?.localOnly);
   return <section className={'cz-toolbox cz-database-status ' + (connected ? 'connected' : 'offline')}>
-    <header><span><Database/></span><div><h2>{connected ? degraded ? 'Banco conectado · modo resiliente' : 'Banco conectado' : 'Modo local protegido'}</h2><p>{status?.message || (connected ? 'Sincronização segura disponível para os módulos internos.' : 'Seus dados permanecem neste dispositivo e serão sincronizados quando a conexão voltar.')}</p></div></header>
+    <header><span><Database/></span><div><h2>{connected ? degraded ? 'Banco conectado · modo resiliente' : 'Banco conectado' : 'Modo local protegido'}</h2><p>{status?.message || (connected ? 'Sincronização segura disponível para os módulos internos.' : DATABASE_STATUS_MESSAGES.unavailable)}</p></div></header>
     <div className="cz-routine-strip">
       <span>{connected ? 'Aiven MySQL ativo' : 'Histórico local ativo'}</span>
-      <span>{connected ? degraded ? 'Fallback local ativo' : 'Sincronização liberada' : 'Fila de sincronização'}</span>
+      <span>{connected ? degraded ? 'Fallback local ativo' : 'Sincronização liberada' : 'Sincronização pendente'}</span>
       {admin && <span>{connected ? status?.migrationRequired ? `${status?.missingOptionalCount || 0} módulo(s) aguardando migration` : String(status?.database || 'Banco principal') : 'Verifique conexão e migration'}</span>}
     </div>
     <div className="cz-tool-actions"><button onClick={refresh} disabled={busy}><RotateCcw/> {busy ? 'Verificando…' : 'Verificar conexão'}</button></div>
