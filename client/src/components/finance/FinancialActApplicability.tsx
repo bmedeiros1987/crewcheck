@@ -3,19 +3,31 @@ import { useEffect, useState } from 'react';
 import { financialRateOwner, financialRateSession } from '@/lib/financialStatementLearning';
 import { financialActStorageKey, financialActTimeline, planFinancialActChange, readFinancialActApplicability, saveFinancialActApplicability, type FinancialActChange, type FinancialActSnapshot } from '@/lib/financialActApplicability';
 import { LATAM_ACT_FROM, LATAM_ACT_THROUGH } from '@/lib/latamAllowanceCatalog';
+import type { FinancialActPendingCause } from '@/lib/sharedAllowanceResolution';
 import { useFinancialPrivacy } from './FinancialPrivacy';
 
 const emptyForm = () => ({ employer: '', role: '', from: '2026-01-01', through: LATAM_ACT_THROUGH, coverage: false, active: true });
 const activeSession = () => { try { return financialRateSession(); } catch { return null; } };
-/** Applicability only: no personal amount, receipt, payroll or employer verification is saved. */
-export default function FinancialActApplicability() {
+const CAUSE_TEXT: Record<FinancialActPendingCause, string> = {
+  act_missing: 'Empresa e ACT não confirmados para estas datas.',
+  act_revoked: 'Aplicação do ACT revogada para estas datas.',
+  act_expired: 'Declaração do ACT fora do período destas datas.',
+  act_invalid: 'Declaração do ACT inválida neste aparelho.',
+  act_unavailable: 'Declaração do ACT indisponível neste aparelho.',
+};
+const shortDate = (iso: string) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+/** Applicability only: no personal amount, receipt, payroll or employer verification is saved.
+ * `pending` are the displayed period's items that wait on this declaration (from the forecast);
+ * the notice depends on them, not on whether any declaration event exists. */
+export default function FinancialActApplicability({ pending = [] }: { pending?: readonly { iso: string; actCause?: FinancialActPendingCause }[] }) {
   const privacy = useFinancialPrivacy(), currentSession = activeSession();
   const [form, setForm] = useState(emptyForm), [, refresh] = useState(0), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
+  const [open, setOpen] = useState(false);
   const [draftSession, setDraftSession] = useState(currentSession);
   const [preview, setPreview] = useState<{ snapshot: FinancialActSnapshot; change: FinancialActChange; timeline: ReturnType<typeof financialActTimeline> } | null>(null);
   useEffect(() => {
     const update = () => refresh(value => value + 1);
-    const reset = () => { setForm(emptyForm()); setDraftSession(activeSession()); setPreview(null); setMessage(''); setBusy(false); update(); };
+    const reset = () => { setForm(emptyForm()); setDraftSession(activeSession()); setPreview(null); setMessage(''); setBusy(false); setOpen(false); update(); };
     const storage = (event: StorageEvent) => {
       if (event.storageArea !== localStorage) return;
       if (event.key === null || event.key?.startsWith('crewcheck_auth_')) reset();
@@ -28,7 +40,12 @@ export default function FinancialActApplicability() {
   }, []);
   const snapshot = readFinancialActApplicability();
   if (!currentSession || snapshot.state === 'unauthenticated') return null;
-  if (!snapshot.history || !['ready', 'missing'].includes(snapshot.state)) return <section className="cz-toolbox" data-financial-act-context="unavailable"><h2>Aplicação financeira do ACT</h2><p role="status">Declaração local indisponível ou inválida. Os dados foram preservados; referências pessoais válidas continuam independentes.</p></section>;
+  if (!snapshot.history || !['ready', 'missing'].includes(snapshot.state)) return <section className="cz-toolbox cc-act-notice" data-financial-act-context="unavailable">
+    <p role="status"><strong>Não foi possível ler seus dados de diárias neste aparelho.</strong></p>
+    <details><summary>Detalhes</summary><p lang="pt-BR">Declaração local indisponível ou inválida. Os dados foram preservados; referências pessoais válidas continuam independentes.</p></details>
+  </section>;
+  const pendingDates = [...new Set(pending.map(item => item.iso).filter(Boolean))].sort();
+  const pendingCauses = [...new Set(pending.map(item => item.actCause).filter((cause): cause is FinancialActPendingCause => Boolean(cause)))];
   const current = draftSession === currentSession ? form : emptyForm();
   const shownPreview = preview?.snapshot.session === currentSession && preview.snapshot.raw === snapshot.raw && preview.snapshot.isCurrent() ? preview : null;
   const update = (change: Partial<ReturnType<typeof emptyForm>>) => { setForm({ ...current, ...change }); setDraftSession(currentSession); setPreview(null); setMessage(''); };
@@ -51,21 +68,30 @@ export default function FinancialActApplicability() {
     setMessage(saved ? 'Declaração financeira salva nesta conta e dispositivo. Nenhuma tarifa pessoal ou pagamento foi alterado.' : 'Não foi possível confirmar a gravação. Atualize a prévia e confira a sessão; dados anteriores não serão substituídos silenciosamente.');
     refresh(value => value + 1);
   };
-  return <section className="cz-toolbox" data-financial-act-context={snapshot.state}>
-    <h2>Referência compartilhada de diárias</h2>
-    <p>Confirme uma vez a aplicação do ACT ao período, sem digitar tarifas mês a mês. Declaração local do titular, não verificação pela empresa; não sincroniza automaticamente entre aparelhos.</p>
-    {snapshot.history.events.length === 0 && <p role="status">Empresa e ACT ainda não confirmados. Sem essa declaração, a tabela do ACT não é aplicada automaticamente às suas previsões.</p>}
-    <details><summary>Confirmar ou revisar aplicação financeira do ACT</summary>
+  const needsAction = pendingDates.length > 0;
+  return <section className={needsAction ? 'cz-toolbox cc-act-notice' : 'cc-act-discreet'} data-financial-act-context={snapshot.state} data-financial-act-pending={pendingDates.length}>
+    {needsAction && <>
+      <p role="status"><strong>Confirme seus dados para calcular as diárias.</strong></p>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(true)}>Revisar dados</button>
+    </>}
+    <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>Confirmar ou revisar aplicação financeira do ACT</summary>
+      {needsAction && <section aria-label="Pendências deste período">
+        {pendingCauses.map(cause => <p key={cause} data-act-cause={cause}>{CAUSE_TEXT[cause]}</p>)}
+        <p><span>Datas pendentes neste período:</span> {pendingDates.map(shortDate).join(', ')}</p>
+        <p>A confirmação libera só a referência do ACT; outras pendências continuam listadas.</p>
+      </section>}
+      <p lang="pt-BR">Confirme uma vez a aplicação do ACT ao período, sem digitar tarifas mês a mês. Declaração local do titular, não verificação pela empresa; não sincroniza automaticamente entre aparelhos.</p>
+      <p lang="pt-BR">Sem essa declaração, a tabela do ACT não é aplicada automaticamente às suas previsões. Valores manuais ou pessoais válidos continuam valendo sem ela.</p>
       <label>Ação<select value={current.active ? 'apply' : 'revoke'} disabled={busy} onChange={event => update({ active: event.target.value === 'apply' })}><option value="apply">Declarar aplicação no período</option><option value="revoke">Revogar a partir de uma data</option></select></label>
       {current.active && <>
         <label>Empregador<select value={current.employer} disabled={busy} onChange={event => update({ employer: event.target.value })}><option value="">Selecione explicitamente</option><option value="TAM_LINHAS_AEREAS_SA">TAM Linhas Aéreas S/A — LATAM Brasil</option></select></label>
         <label>Perfil do ACT<select value={current.role} disabled={busy} onChange={event => update({ role: event.target.value })}><option value="">Selecione explicitamente</option><option value="cabin">Comissários</option><option value="pilot">Pilotos</option></select></label>
-        <label><input type="checkbox" checked={current.coverage} disabled={busy} onChange={event => update({ coverage: event.target.checked })}/>Declaro que meu vínculo com TAM Linhas Aéreas S/A está abrangido pelo ACT selecionado no período, conforme cláusula 1.2, e não está na exclusão de trabalhadores regidos pela Lei 7.064/1982.</label>
-        <p>Não abrange automaticamente ABSA/LATAM Cargo, outros empregadores LATAM ou outras companhias. Base ou domicílio no exterior, por si só, não determina essa exclusão.</p>
+        <label lang="pt-BR"><input type="checkbox" checked={current.coverage} disabled={busy} onChange={event => update({ coverage: event.target.checked })}/>Declaro que meu vínculo com TAM Linhas Aéreas S/A está abrangido pelo ACT selecionado no período, conforme cláusula 1.2, e não está na exclusão de trabalhadores regidos pela Lei 7.064/1982.</label>
+        <p lang="pt-BR">Não abrange automaticamente ABSA/LATAM Cargo, outros empregadores LATAM ou outras companhias. Base ou domicílio no exterior, por si só, não determina essa exclusão.</p>
       </>}
       <label>{current.active ? 'Aplicar desde' : 'Revogar desde'}<input type="date" min={LATAM_ACT_FROM} max={LATAM_ACT_THROUGH} value={current.from} disabled={busy} onChange={event => update({ from: event.target.value })}/></label>
       <label>Fim da declaração<input type="date" min={current.from || LATAM_ACT_FROM} max={LATAM_ACT_THROUGH} value={current.through} disabled={busy} onChange={event => update({ through: event.target.value })}/></label>
-      <p>A revisão/revogação respeita a data escolhida e preserva o histórico. Uma declaração antiga não volta a valer após o término da mais recente. A referência nacional administrativa exige nova revisão em dezembro/2026.</p>
+      <p lang="pt-BR">A revisão/revogação respeita a data escolhida e preserva o histórico. Uma declaração antiga não volta a valer após o término da mais recente. A referência nacional administrativa exige nova revisão em dezembro/2026.</p>
       <button type="button" disabled={busy} onClick={prepare}>Preparar declaração sem gravar</button>
       {shownPreview && <section aria-label="Prévia da aplicação financeira"><h3>Confira a linha do tempo antes de salvar</h3>
         {shownPreview.timeline.map(interval => <p key={interval.from}>{interval.from} a {interval.through}: {privacy.text(interval.selection.state === 'applicable' ? `TAM — ${interval.selection.event.role === 'cabin' ? 'Comissários' : 'Pilotos'} — declaração do titular` : 'Sem aplicação compartilhada confirmada')}</p>)}

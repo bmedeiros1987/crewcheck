@@ -139,7 +139,7 @@ import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
 import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceReference';
 import FinancialActApplicability, { AllowanceMinimumReference } from '@/components/finance/FinancialActApplicability';
 import { readFinancialActApplicability, type FinancialActSnapshot } from '@/lib/financialActApplicability';
-import { resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
+import { resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type FinancialActPendingCause, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
 import type { AllowanceSlot } from '@/lib/latamAllowanceCatalog';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
@@ -3680,7 +3680,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const seen = new Set<string>();
   const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
   const pendingAirports = new Set<string>();
-  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' | 'source_coverage' | 'allowance_reference'; sourceIssueId?: string }> = aimsFlightSourceCoveragePending(roster, events);
+  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' | 'source_coverage' | 'allowance_reference'; sourceIssueId?: string; actCause?: FinancialActPendingCause }> = aimsFlightSourceCoveragePending(roster, events);
   const usedRateKeys = new Set<PerDiemRateKey>();
   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date, partial = false) => {
     const classification = resolveAllowanceOccurrenceGeography({ origin: event.origin, destination: event.destination, base: roster.base || '',
@@ -3698,7 +3698,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const rate = cfg.rates[classification.rateKey];
     const selected = cfg.resolveSlot(classification.rateKey, slot === 'breakfast' ? 'breakfast' : 'mainMeal');
     if (selected.kind === 'pending' || selected.value === null || !selected.currency) {
-      unclassifiedItems.push({ iso, airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason });
+      unclassifiedItems.push({ iso, airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason, ...(selected.actCause ? { actCause: selected.actCause } : {}) });
       if (selected.reference?.state === 'unresolved_scope' && selected.reference.publishedFloorMinor !== null && selected.reference.currency) {
         referenceInspections.push({ iso, currency: selected.reference.currency, publishedFloorMinor: selected.reference.publishedFloorMinor, reason: selected.reason });
       }
@@ -3873,7 +3873,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
       + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · Tarifa de táxi para o período pendente. ' + selected.reason });
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · Tarifa de táxi para o período pendente. ' + selected.reason, ...(selected.actCause ? { actCause: selected.actCause } : {}) });
     } else {
       rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
@@ -4166,7 +4166,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <p>Estimativa por moeda · sem confirmação de pagamento.</p>
     </section>
     </FinancialScreen>
-    <FinancialActApplicability/>
+    <FinancialActApplicability pending={forecast.monthlyUnclassifiedItems.filter(item => item.actCause && item.iso)}/>
     {nextPayment}
     <FinancialScreen names={['statement']}>
     <section className="cz-finance-grid cc-per-diem-summary" aria-label="Resumo da competência">
