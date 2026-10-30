@@ -40,6 +40,10 @@ export type CrewCheckWatchSnapshot = {
   currentRoute: string;
   gate: string;
   remoteStand: boolean;
+  /** Origin of the projected gate (manual, proven source or reported); '' when unknown. */
+  gateSource?: '' | 'manual' | 'radar' | 'reported';
+  /** Short provenance shown when the gate is tapped on the watch. */
+  gateNote?: string;
   boardingTime: string;
   eta: string;
   connection: string;
