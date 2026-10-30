@@ -5,6 +5,16 @@ import {createHash} from 'node:crypto';
 export const INTER_CSS = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap';
 const CSS_LIMIT = 32 * 1024;
 const EVENT_LIMIT = 128;
+const COLLECTION_TIMEOUT_MS = 1000;
+
+// Observe late rejection too, but never let late completion mutate evidence.
+async function collectWithinDeadline(read) {
+ let timer;
+ const result=Promise.resolve().then(read).then(value=>({value}),()=>({unavailable:true}));
+ try{return await Promise.race([result,new Promise(resolve=>{
+  timer=setTimeout(()=>resolve({unavailable:true,timeout:true}),COLLECTION_TIMEOUT_MS);
+ })]);}finally{clearTimeout(timer);}
+}
 
 // Never persist arbitrary external paths, queries, headers, cookies or page text.
 export function describeFontRequest(value) {
@@ -32,7 +42,9 @@ export function createFontDiagnostics(context, {output,width,theme,scale,browser
   const event={kind:'response',...description,status:response.status()};add(event);
   if(response.url()!==INTER_CSS)return;
   const task=(async()=>{try{
-   const body=await response.body(),captured=body.subarray(0,CSS_LIMIT);
+   const result=await collectWithinDeadline(()=>response.body());
+   if(result.unavailable){event.css=result;return;}
+   const body=result.value,captured=body.subarray(0,CSS_LIMIT);
    event.css={text:captured.toString('utf8'),capturedBytes:captured.length,totalBytes:body.length,truncated:body.length>CSS_LIMIT,sha256Captured:createHash('sha256').update(captured).digest('hex')};
   }catch{event.css={unavailable:true};}})();
   pending.add(task);void task.finally(()=>pending.delete(task));
@@ -45,7 +57,7 @@ export function createFontDiagnostics(context, {output,width,theme,scale,browser
    await Promise.allSettled([...pending]);
    const fonts=[];
    for(const page of context.pages()) {
-    try{fonts.push(await page.evaluate(()=>({faces:[...document.fonts].filter(face=>face.family.replace(/["']/g,'')==='Inter').map(face=>({family:'Inter',status:face.status,weight:face.weight}))})));}
+    try{const result=await collectWithinDeadline(()=>page.evaluate(()=>({faces:[...document.fonts].filter(face=>face.family.replace(/["']/g,'')==='Inter').map(face=>({family:'Inter',status:face.status,weight:face.weight}))})));fonts.push(result.unavailable?result:result.value);}
     catch{fonts.push({unavailable:true});}
    }
    await fs.mkdir(output,{recursive:true});

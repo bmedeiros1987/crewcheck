@@ -76,3 +76,48 @@ test('actual harness guard and mandatory Inter assertions retain original bytes 
  const diagnostics={save:async()=>{throw Error('synthetic disk failure');}};
  await assert.rejects(withFontDiagnostics(context,diagnostics,async()=>{throw original;}),error=>error===original);
  });
+
+test('never-resolving CSS and FontFaces are bounded, persisted and cannot hide the original error', {timeout:6000}, async()=>{
+ const output=await fs.mkdtemp(path.join(os.tmpdir(),'roster-font-diagnostics-'));
+ try{
+  const context=new Context();context.pages=()=>[{evaluate:()=>new Promise(()=>{})}];
+  const diagnostic=createFontDiagnostics(context,{output,width:1440,theme:'dark',scale:2,browserVersion:'synthetic-offline'});
+  const original=new Error('ORIGINAL');
+  await assert.rejects(withFontDiagnostics(context,diagnostic,async()=>{
+   context.emit('response',{url:()=>INTER_CSS,status:()=>200,body:()=>new Promise(()=>{})});
+   throw original;
+  }),error=>error===original);
+  assert.equal(context.closed,true);
+  const report=JSON.parse(await fs.readFile(path.join(output,'font-diagnostics-1440-dark-2.json'),'utf8'));
+  assert.deepEqual(report.events[0].css,{unavailable:true,timeout:true});
+  assert.deepEqual(report.fonts,[{unavailable:true,timeout:true}]);
+ }finally{await fs.rm(output,{recursive:true,force:true});}
+});
+
+test('late CSS/FontFaces completion and rejection do not mutate persisted timeout evidence', {timeout:6000}, async()=>{
+ const output=await fs.mkdtemp(path.join(os.tmpdir(),'roster-font-diagnostics-'));
+ try{
+  let resolveBody,rejectBody,resolveFaces;
+  const body=new Promise(resolve=>{resolveBody=resolve;});
+  const rejectedBody=new Promise((_,reject)=>{rejectBody=reject;});
+  const faces=new Promise(resolve=>{resolveFaces=resolve;});
+  const context=new Context();context.pages=()=>[{evaluate:()=>faces}];
+  const diagnostic=createFontDiagnostics(context,{output,width:320,theme:'light',scale:1,browserVersion:'synthetic-offline'});
+  await withFontDiagnostics(context,diagnostic,async()=>{
+   for(const pending of [body,rejectedBody])context.emit('response',{url:()=>INTER_CSS,status:()=>200,body:()=>pending});
+  });
+  const file=path.join(output,'font-diagnostics-320-light-1.json');
+  const persisted=await fs.readFile(file,'utf8'),before=JSON.parse(persisted);
+  resolveBody(Buffer.from('late synthetic CSS'));rejectBody(Error('late synthetic rejection'));
+  resolveFaces({faces:[{family:'Inter',status:'loaded',weight:'700'}]});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(context.closed,true);
+  assert.equal(await fs.readFile(file,'utf8'),persisted);
+  // Re-serialize the same diagnostic objects to expose any late mutation in memory.
+  await diagnostic.save();
+  const after=JSON.parse(await fs.readFile(file,'utf8'));
+  assert.deepEqual(after.events,before.events);
+  assert.deepEqual(before.events.map(event=>event.css),[{unavailable:true,timeout:true},{unavailable:true,timeout:true}]);
+  assert.deepEqual(before.fonts,[{unavailable:true,timeout:true}]);
+ }finally{await fs.rm(output,{recursive:true,force:true});}
+});
