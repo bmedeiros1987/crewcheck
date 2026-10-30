@@ -48,7 +48,7 @@ async function measure(page) {
       const fonts=[];
       for(const size of [100,200]) {
         await page.locator('#cc-text-size').selectOption(String(size));await settle(page);const m=await measure(page);
-        assert.equal(m.rows.length,5);assert.deepEqual(m.rows.map(r=>r.text),language==='pt-BR'?['FlightDeck','Escala','Saída','Alertas','Menu']:['FlightDeck','Roster','Saída','Alerts','Menu']);
+        assert.equal(m.rows.length,5);assert.deepEqual(m.rows.map(r=>r.text),language==='pt-BR'?['FlightDeck','Escala','Saída','Alertas','Menu']:['FlightDeck','Roster','Depart','Alerts','Menu']);
         for(const row of m.rows) {
           assert(row.button.width>=44&&row.button.height>=44&&row.hit,'Five usable navigation targets');
           assert(row.glyphs.every(g=>g.x>=row.button.x-1&&g.right<=row.button.right+1&&g.y>=row.button.y-1&&g.bottom<=row.button.bottom+1),`Whole label fits: ${JSON.stringify(row)}`);

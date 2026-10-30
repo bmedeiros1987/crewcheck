@@ -6,7 +6,8 @@ import { alertText, alertHistoryDate } from '../../lib/alertExperienceText';
 import { consumePendingNavigationContext, clearPendingNavigationContext } from '../../lib/navigationContext';
 import type { CrewRoster } from '../../lib/pdfParser';
 import './alert-center.css';
-import { AlertDateEvidence, alertRosterVersion } from './AlertDateEvidence';
+import { AlertDateEvidence, AlertDateSummary, alertRosterVersion } from './AlertDateEvidence';
+import { formatCivilDate, parseCivilDate } from '../../lib/alertDateRanges';
 import { alertRosterOwned } from '../../lib/alertRosterOwnership';
 
 export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysis = [] }: { alerts: any[]; roster: CrewRoster; onImport(): void; onChoose(): void; pendingAnalysis?: any[] }) {
@@ -15,7 +16,8 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
   const [target, setTarget] = useState(() => consumePendingNavigationContext('alerts'));
   const targetRef = useRef<HTMLElement>(null);
   const pendingTargetRef = useRef<HTMLDetailsElement>(null);
-  const copy = alertText(), owner = alertAccount(), originalLanguage = getSavedLanguage() === 'pt';
+  const language = getSavedLanguage(), copy = alertText(language), owner = alertAccount(), originalLanguage = language === 'pt';
+  const historyDay = (value?: string) => { const date = parseCivilDate(value); return date ? formatCivilDate(date, language, true) : value || ''; };
   const ready = alertRosterOwned(roster);
   const items = (ready ? alerts : []).map(alert => ({ alert, identity: complianceAlertIdentity(alert, roster) }));
   const history = readAlertReviews();
@@ -42,9 +44,9 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
   function renderItem(item: typeof items[number]) { const { alert, identity } = item; const disposition = history.find(row => row.occurrence === identity.occurrence && row.version === identity.version); const reviewed = disposition?.state === 'reviewed'; const ignored = isGroundAlertIgnored(identity); const selected = currentTarget?.identity.occurrence === identity.occurrence;
       return <article className="cc-alert-card" key={identity.occurrence + identity.version} tabIndex={-1} ref={selected ? targetRef : undefined} data-alert-occurrence={identity.occurrence} data-ground-ignored={ignored || undefined} data-alert-version={identity.version} data-alert-selected={selected}>
         <header><h2>{originalLanguage ? alert.title : copy.analysis}</h2><span>{ignored ? copy.ignoredGround : disposition?.state === 'dismissed' ? copy.dismissed : reviewed ? copy.reviewed : copy.review}</span></header>
-        {alert.date && <p><time>{alert.date}</time></p>}
+        <AlertDateSummary alert={alert}/>
         <p>{originalLanguage ? alert.description : copy.reviewHint}</p>
-        <details open={selected || undefined}><summary>{copy.details}</summary>{!originalLanguage && <div lang="pt-BR"><strong>{copy.original}: {alert.title}</strong><p>{alert.description}</p></div>}{alert.details && <p>{alert.details}</p>}{alert.evidence && <p>{alert.evidence}</p>}{alert.legalReference && <p>{alert.legalReference}</p>}<AlertDateEvidence alert={alert} roster={roster}/></details>
+        <details open={selected || undefined}><summary>{copy.details}</summary>{!originalLanguage && <div lang="pt-BR"><strong>{copy.original}: {alert.title}</strong><p>{alert.description}</p></div>}{alert.details && <p lang={originalLanguage ? undefined : 'pt-BR'}>{alert.details}</p>}{alert.evidence && <p lang={originalLanguage ? undefined : 'pt-BR'}>{alert.evidence}</p>}{alert.legalReference && <p lang={originalLanguage ? undefined : 'pt-BR'}>{alert.legalReference}</p>}<AlertDateEvidence alert={alert} roster={roster}/></details>
         <div className="cc-alert-actions">{isGroundLimitAlert(alert) && !ignored && <button type="button" onClick={() => groundAction(() => ignoreGroundAlert(alert, roster, owner))}>{copy.ignoreGround}</button>}{!ignored && <button type="button" disabled={reviewed || !owner} onClick={() => mark(item)}>{reviewed ? copy.reviewed : copy.mark}</button>}<button type="button" onClick={() => { clearPendingNavigationContext(); window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'regulation' })); }}>{copy.reference}</button></div>
       </article>;
   }
@@ -53,12 +55,12 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
     {targetValid && target?.alertOccurrence && !currentTarget && <p role="status">{copy.missing}</p>}
     {!roster.days?.length && <article className="cc-alert-card"><h2>{copy.noRoster}</h2><div className="cc-alert-actions"><button type="button" onClick={onImport}>{copy.import}</button><button type="button" onClick={onChoose}>{copy.choose}</button></div></article>}
     {roster.days?.length > 0 && !ready && <p role="status">{copy.pending}</p>}
-    {ready && pendingAnalysis.length > 0 && <section role="status"><p>{copy.pending}</p>{pendingItems.map(({ alert: pending, identity }) => <details key={identity.occurrence + identity.version} tabIndex={-1} ref={isTarget({ alert: pending, identity }) ? pendingTargetRef : undefined} open={isTarget({ alert: pending, identity }) || undefined} data-alert-selected={isTarget({ alert: pending, identity })}><summary>{originalLanguage ? pending.title || copy.details : copy.details}</summary><p lang="pt-BR">{pending.description}</p>{pending.details && <p lang="pt-BR">{pending.details}</p>}{pending.evidence && <p lang="pt-BR">{pending.evidence}</p>}<AlertDateEvidence alert={pending} roster={roster}/></details>)}</section>}
+    {ready && pendingAnalysis.length > 0 && <section role="status"><p>{copy.pending}</p>{pendingItems.map(({ alert: pending, identity }) => <details key={identity.occurrence + identity.version} tabIndex={-1} ref={isTarget({ alert: pending, identity }) ? pendingTargetRef : undefined} open={isTarget({ alert: pending, identity }) || undefined} data-alert-selected={isTarget({ alert: pending, identity })}><summary>{originalLanguage ? pending.title || copy.details : copy.details}</summary><AlertDateSummary alert={pending}/><p lang="pt-BR">{pending.description}</p>{pending.details && <p lang="pt-BR">{pending.details}</p>}{pending.evidence && <p lang="pt-BR">{pending.evidence}</p>}<AlertDateEvidence alert={pending} roster={roster}/></details>)}</section>}
     {roster.days?.length > 0 && ready && !items.length && !pendingAnalysis.length && <p>{copy.noAlerts}</p>}
     {legacyPending.length > 0 && <article className="cc-alert-card" role="status"><p>{copy.legacyGroundNotice}</p><div className="cc-alert-actions"><button type="button" onClick={() => groundAction(() => applyLegacyGroundAlerts(alerts, roster, owner))}>{copy.applyLegacyGround}</button></div></article>}
     {items.filter(item => !isGroundAlertIgnored(item.identity)).map(renderItem)}
     {ignoredItems.length > 0 && <section className="cc-alert-card cc-ground-ignored"><details open={ignoredItems.some(item => item === currentTarget) || undefined}><summary>{copy.ignoredGround} ({ignoredItems.length})</summary>{ignoredItems.map(renderItem)}</details><div className="cc-alert-actions"><button type="button" onClick={() => groundAction(() => restoreGroundAlerts(roster, owner))}>{copy.restoreGround}</button></div></section>}
     {status && <p role="status">{status}</p>}
-    {history.length > 0 && <details className="cc-alert-history"><summary>{copy.history} ({history.length})</summary>{history.slice().reverse().map(row => <article key={row.occurrence + row.version}><strong>{row.title}</strong><p>{row.date || ''} · {row.state === 'dismissed' ? copy.dismissed : copy.reviewed}</p><time dateTime={row.at}>{alertHistoryDate(row.at)}</time></article>)}</details>}
+    {history.length > 0 && <details className="cc-alert-history"><summary>{copy.history} ({history.length})</summary>{history.slice().reverse().map(row => <article key={row.occurrence + row.version}><strong>{row.title}</strong><p>{historyDay(row.date)}{row.date ? ' · ' : ''}{row.state === 'dismissed' ? copy.dismissed : copy.reviewed}</p><time dateTime={row.at}>{alertHistoryDate(row.at)}</time></article>)}</details>}
   </section>;
 }
