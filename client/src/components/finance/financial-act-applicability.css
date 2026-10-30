@@ -5,3 +5,8 @@
 [data-financial-act-context] button { min-height: 2.75rem; max-width: 100%; white-space: normal; margin: .4rem .5rem .4rem 0; }
 [data-financial-act-context] p, [data-allowance-minimum-reference] p { overflow-wrap: anywhere; }
 [data-allowance-minimum-reference] small { display: block; margin-block: .4rem; line-height: 1.5; }
+/* Discreet control once nothing in the period waits on the declaration; the notice stays short. */
+.cc-act-discreet { margin-block: .5rem; }
+.cc-act-discreet > details > summary { font-size: .9rem; opacity: .85; cursor: pointer; padding-block: .7rem; }
+.cc-act-notice > p[role="status"] { margin-block: 0 .4rem; }
+.cc-act-notice > details > summary { cursor: pointer; padding-block: .7rem; }
