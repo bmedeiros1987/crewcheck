@@ -250,6 +250,34 @@ export async function dismissLegacySubmission(db, { email, submissionId }) {
 //    operation id per legacy row + fingerprint. A competence with generation > 0 (live or tombstone)
 //    is never overwritten or resurrected (409 → skipped_existing). A crash at any point is resumed
 //    by running again: applied rows replay their receipt (already_done), nothing is duplicated.
+// Only those are decisions about a row. Anything else (write fence, 5xx, an unexpected code) is not:
+// the backfill PAUSES before that row — nothing quarantined, cursor left on the last row fully
+// processed — and returns { paused }, so resuming from the returned cursor processes it again.
+// afterRow(row, report, cursor) runs after each row is fully processed (to persist the cursor).
+const CONTENT_REFUSALS = new Set(['ROSTER_KEY_INVALID', 'CREW_IDENTITY_REQUIRED', 'CREW_IDENTITY_MISMATCH', 'ROSTER_LIMIT_EXCEEDED', 'ROSTER_PERIOD_MISMATCH', 'ROSTER_DAY_INVALID', 'ROSTER_INCOMPLETE']);
+const FENCE_SHARED = "SELECT mode FROM crewcheck_roster_write_fence WHERE scope='global' LOCK IN SHARE MODE";
+
+// Quarantine is a write too: fenced like any other (only in normal mode), in its own transaction.
+async function quarantineLegacyRow(db, { email, row, reason }) {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const mode = (await client.query(FENCE_SHARED)).rows[0]?.mode || 'read_only';
+    if (mode !== 'normal') {
+      await client.query('ROLLBACK');
+      return { code: 'WRITES_FENCED', status: 503, mode };
+    }
+    await client.query('INSERT IGNORE INTO crewcheck_roster_backfill_quarantine(owner_email,legacy_row_id,legacy_fingerprint,reason) VALUES($1,$2,$3,$4)', [email, String(row.id), String(row.fingerprint), reason]);
+    await client.query('COMMIT');
+    return null;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function backfillLegacyRosters(db, { resolveVerifiedCrewKey, batchSize = 50, cursor = null, afterRow = null } = {}) {
   const report = { created: 0, already_done: 0, skipped_existing: 0, quarantined: 0 };
   let position = cursor;
@@ -260,17 +288,20 @@ export async function backfillLegacyRosters(db, { resolveVerifiedCrewKey, batchS
       position ? [position.owner_email, position.roster_key, String(position.id)] : [])).rows;
     if (!rows.length) return { report, cursor: position };
     for (const row of rows) {
+      const pause = ({ code, status = null, mode = null }) => ({ report, cursor: position, paused: { code, status, mode, legacyRowId: String(row.id) } });
+      // Advisory (no lock): no row is started outside normal mode, e.g. during a rollback window. The
+      // authoritative fence is the shared lock inside each write and each quarantine.
+      const mode = (await db.query("SELECT mode FROM crewcheck_roster_write_fence WHERE scope='global'")).rows[0]?.mode || 'read_only';
+      if (mode !== 'normal') return pause({ code: 'WRITES_FENCED', status: 503, mode });
       const email = String(row.owner_email || '').trim().toLowerCase();
       const roster = typeof row.roster === 'string' ? JSON.parse(row.roster) : row.roster;
       const binding = typeof resolveVerifiedCrewKey === 'function' ? await resolveVerifiedCrewKey(email) : null;
       const rosterCrewKey = crewKeyFor(roster?.crewId);
-      const quarantine = async reason => {
-        await db.query('INSERT IGNORE INTO crewcheck_roster_backfill_quarantine(owner_email,legacy_row_id,legacy_fingerprint,reason) VALUES($1,$2,$3,$4)', [email, String(row.id), String(row.fingerprint), reason]);
-        report.quarantined += 1;
-      };
-      if (!binding) await quarantine('CREW_IDENTITY_UNVERIFIED');
-      else if (!rosterCrewKey) await quarantine('CREW_IDENTITY_REQUIRED');
-      else if (rosterCrewKey !== binding) await quarantine('CREW_IDENTITY_NOT_BOUND');
+      let refusal = null;
+      if (!binding) refusal = 'CREW_IDENTITY_UNVERIFIED';
+      else if (!rosterCrewKey) refusal = 'CREW_IDENTITY_REQUIRED';
+      else if (rosterCrewKey !== binding) refusal = 'CREW_IDENTITY_NOT_BOUND';
+      else if (!ROSTER_KEY.test(String(row.roster_key || ''))) refusal = 'ROSTER_KEY_INVALID';
       else {
         const result = await writeRosterRevision(db, {
           email, crewKey: binding, rosterKey: String(row.roster_key), rosterKind: 'operated', operation: 'import', roster,
@@ -279,11 +310,17 @@ export async function backfillLegacyRosters(db, { resolveVerifiedCrewKey, batchS
         }, { resolveVerifiedCrewKey });
         if (result.status === 200 && result.replay) report.already_done += 1;
         else if (result.status === 200 && !result.unchanged) report.created += 1;
-        else if (result.status === 200 || result.status === 409) report.skipped_existing += 1;
-        else await quarantine(String(result.code || `HTTP_${result.status}`));
+        else if (result.status === 200 || (result.status === 409 && result.code === 'ROSTER_REVISION_CONFLICT')) report.skipped_existing += 1;
+        else if (result.status === 422 && CONTENT_REFUSALS.has(result.code)) refusal = result.code;
+        else return pause({ code: String(result.code || `HTTP_${result.status}`), status: result.status, mode: result.mode ?? null });
+      }
+      if (refusal) {
+        const fenced = await quarantineLegacyRow(db, { email, row, reason: refusal });
+        if (fenced) return pause(fenced);
+        report.quarantined += 1;
       }
       position = { owner_email: row.owner_email, roster_key: row.roster_key, id: row.id };
-      if (afterRow) await afterRow(row, report);
+      if (afterRow) await afterRow(row, report, position);
     }
   }
 }
@@ -294,23 +331,72 @@ export async function setWriteMode(db, mode) {
   await db.query("INSERT INTO crewcheck_roster_write_fence(scope,mode,fence_epoch) VALUES('global',$1,1) ON DUPLICATE KEY UPDATE mode=VALUES(mode),fence_epoch=fence_epoch+1", [mode]);
 }
 
-// Guard the OLD runtime writer must call inside its own transaction while rolled back. It locks the
-// fence (shared) and every competence row of the account + month, and allows the legacy upsert only
-// in fenced_legacy mode and only when no competence was ever managed (generation 0): never an
-// overwrite of a live competence, never the resurrection of a tombstone.
+// Guard the OLD runtime writer must call inside its own transaction while rolled back, before ANY
+// write to the account + month in the legacy table. It locks the fence (shared), every competence row
+// and the legacy row of the account + month (FOR UPDATE; when absent, InnoDB's gap lock serialises
+// two creators), and allows the write only in fenced_legacy mode and only as a CREATION: no
+// competence ever managed (generation 0) AND no legacy row yet. So never an overwrite of a live
+// competence, never the resurrection of a tombstone, and never a blind upsert on a legacy row that was
+// not migrated (or was created earlier in the same window): those answer an error and change nothing.
 export async function legacyRuntimeWriteGuard(client, { email, rosterKey }) {
-  const fence = (await client.query("SELECT mode FROM crewcheck_roster_write_fence WHERE scope='global' LOCK IN SHARE MODE")).rows[0]?.mode || 'read_only';
+  const owner = String(email || '').trim().toLowerCase();
+  const fence = (await client.query(FENCE_SHARED)).rows[0]?.mode || 'read_only';
   if (fence !== 'fenced_legacy') return { allowed: false, code: fence === 'read_only' ? 'WRITES_FENCED' : 'NEW_PROTOCOL_ACTIVE' };
-  const managed = (await client.query('SELECT generation,state FROM crewcheck_roster_competences WHERE owner_email=$1 AND roster_key=$2 AND generation>0 FOR UPDATE', [String(email || '').trim().toLowerCase(), rosterKey])).rows;
+  const managed = (await client.query('SELECT generation,state FROM crewcheck_roster_competences WHERE owner_email=$1 AND roster_key=$2 AND generation>0 FOR UPDATE', [owner, rosterKey])).rows;
   if (managed.length) return { allowed: false, code: managed.some(row => row.state === 'deleted') ? 'TOMBSTONE_FENCED' : 'MANAGED_COMPETENCE_FENCED' };
+  const legacyRows = (await client.query('SELECT id FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 FOR UPDATE', [owner, rosterKey])).rows;
+  if (legacyRows.length) return { allowed: false, code: 'LEGACY_ROW_EXISTS_FENCED' };
   return { allowed: true };
 }
 
 // Divergences between the legacy table and the new system after a rollback window. Report only:
-// nothing is resolved automatically when returning to normal.
+// nothing is resolved automatically when returning to normal. Both directions are read (legacy rows
+// and every managed competence, MySQL has no FULL JOIN), and contents are compared with ONE hash
+// family: rosterContentHash (canonical, versioned) computed from the legacy roster and from the
+// competence's current revision. The legacy fingerprint (sha256 of the stored JSON text) is another
+// family and is never compared. When a comparison is not possible the month is reported as
+// 'indeterminate' with a reason, never as conformant. Kinds:
+//   legacy_only, canonical_only, legacy_row_on_tombstone, content_differs, indeterminate.
+// Not reported: same canonical content, and a tombstone with no legacy row.
+const parsedJson = value => {
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return undefined; }
+};
 export async function rollbackDivergenceReport(db) {
-  const rows = (await db.query(`SELECT l.owner_email,l.roster_key,l.fingerprint,c.generation,c.state,c.content_hash
-    FROM crewcheck_platform_rosters l LEFT JOIN crewcheck_roster_competences c ON c.owner_email=l.owner_email AND c.roster_key=l.roster_key AND c.generation>0
-    ORDER BY l.owner_email,l.roster_key`)).rows;
-  return rows.filter(row => !row.generation || row.state === 'deleted').map(row => ({ ownerEmail: row.owner_email, rosterKey: row.roster_key, kind: row.generation ? 'legacy_row_on_tombstone' : 'legacy_only' }));
+  const legacyRows = (await db.query('SELECT owner_email,roster_key,roster,fingerprint FROM crewcheck_platform_rosters ORDER BY owner_email,roster_key')).rows;
+  const competenceRows = (await db.query(`SELECT c.owner_email,c.crew_key,c.roster_key,c.roster_kind,c.generation,c.state,c.content_hash,r.roster
+    FROM crewcheck_roster_competences c LEFT JOIN crewcheck_roster_revisions r ON r.revision_id=c.current_revision_id
+    WHERE c.generation>0 ORDER BY c.owner_email,c.roster_key,c.crew_key,c.roster_kind`)).rows;
+  const groupOf = row => `${row.owner_email}\u0000${row.roster_key}`;
+  const legacyByGroup = new Map(legacyRows.map(row => [groupOf(row), row]));
+  const byGroup = new Map();
+  for (const row of competenceRows) byGroup.set(groupOf(row), [...(byGroup.get(groupOf(row)) || []), row]);
+  const divergences = [];
+  const report = (row, kind, { competence = null, reason = null } = {}) => divergences.push({ ownerEmail: row.owner_email, rosterKey: row.roster_key, kind, crewKey: competence?.crew_key ?? null, rosterKind: competence?.roster_kind ?? null, reason });
+  const indeterminate = (legacy, reason, { competence = null } = {}) => report(legacy, 'indeterminate', { competence, reason });
+  for (const legacy of legacyRows) {
+    const competences = byGroup.get(groupOf(legacy)) || [];
+    const live = competences.filter(row => row.state === 'live');
+    if (!competences.length) { report(legacy, 'legacy_only'); continue; }
+    if (!live.length) { report(legacy, 'legacy_row_on_tombstone', { competence: competences[0] }); continue; }
+    // The legacy table has one row per account + month, without crew or planned/operated: it maps to
+    // a competence only when the month has exactly one managed competence.
+    if (competences.length !== 1) { indeterminate(legacy, 'COMPETENCE_MAPPING_AMBIGUOUS'); continue; }
+    const competence = live[0];
+    const legacyRoster = parsedJson(legacy.roster);
+    if (!legacyRoster || typeof legacyRoster !== 'object' || Array.isArray(legacyRoster)) { indeterminate(legacy, 'LEGACY_ROSTER_UNREADABLE'); continue; }
+    const canonicalRosterValue = parsedJson(competence.roster);
+    if (!canonicalRosterValue || typeof canonicalRosterValue !== 'object') { indeterminate(legacy, 'CANONICAL_ROSTER_UNREADABLE', { competence }); continue; }
+    const canonicalHash = rosterContentHash(canonicalRosterValue);
+    if (canonicalHash !== competence.content_hash) { indeterminate(legacy, 'CANONICAL_CONTENT_HASH_MISMATCH', { competence }); continue; }
+    const legacyCrewKey = crewKeyFor(legacyRoster.crewId);
+    if (!legacyCrewKey) { indeterminate(legacy, 'LEGACY_CREW_IDENTITY_REQUIRED', { competence }); continue; }
+    if (legacyCrewKey !== competence.crew_key) { report(legacy, 'content_differs', { competence, reason: 'CREW_KEY_DIFFERS' }); continue; }
+    const legacyHash = rosterContentHash(legacyRoster);
+    if (legacyHash !== canonicalHash) report(legacy, 'content_differs', { competence });
+  }
+  for (const [group, competences] of byGroup) if (!legacyByGroup.has(group)) {
+    for (const competence of competences) if (competence.state === 'live') report(competence, 'canonical_only', { competence });
+  }
+  return divergences.sort((a, b) => [a.ownerEmail, a.rosterKey, a.kind, a.crewKey || '', a.rosterKind || ''].join('\u0000').localeCompare([b.ownerEmail, b.rosterKey, b.kind, b.crewKey || '', b.rosterKind || ''].join('\u0000')));
 }

@@ -4,12 +4,12 @@
 >
 > **Continuam bloqueados, sem desenho aprovado nem implementação:**
 > - a fonte autoritativa do vínculo conta→crewId; hoje o perfil não tem matrícula e o crewId vem do PDF;
-> - o backfill. A proposta já tem um **ensaio** (`backfillLegacyRosters`) testado só com linhas e vínculos sintéticos em MySQL descartável: aditivo, idempotente, com quarentena, sem nunca sobrescrever geração > 0 nem tombstone, e com crash, retomada e concorrência cobertos. Rodar contra dados reais depende do vínculo autoritativo, de backup e restore e de aprovação;
+> - o backfill. A proposta já tem um **ensaio** (`backfillLegacyRosters`) testado só com linhas e vínculos sintéticos em MySQL descartável: aditivo, idempotente, com quarentena, sem nunca sobrescrever geração > 0 nem tombstone, com crash, retomada e concorrência cobertos, e com pausa sem avançar o cursor quando a resposta é cerca ou erro transitório. Rodar contra dados reais depende do vínculo autoritativo, de backup e restore e de aprovação;
 > - a escrita dupla, composta com a #1086;
 > - o outbox real e durável no app (reload, logout, várias abas) e o contrato de ACK de PDF com #1039/#825;
 > - owners e coordenação;
 > - backup e restore;
-> - o rollback. Ele **não pode** reabrir escrita legada cega nem ressuscitar tombstones. A proposta já tem uma cerca de escrita fail-closed (`read_only` / `fenced_legacy`) testada em MySQL descartável. Falta integrar o runtime legado à guarda e decidir operacionalmente quem troca o modo;
+> - o rollback. Ele **não pode** reabrir escrita legada cega nem ressuscitar tombstones. A proposta já tem uma cerca de escrita fail-closed (`read_only` / `fenced_legacy`) testada em MySQL descartável, em que o runtime antigo só **cria** mês sem competência e sem linha legada, e um relatório de divergências nos dois sentidos, por conteúdo, que marca o que não consegue comparar como `indeterminate`. Falta integrar **todo** escritor legado à guarda (inclusive os que editam conteúdo de linha existente, que ficam recusados na janela) e decidir operacionalmente quem troca o modo;
 > - no contrato de cliente legado, a proposta já cobre só criação, `428` com envio pendente e confirmação explícita, testados em MySQL descartável. Ainda faltam versão mínima do app e interface da confirmação.
 
 ## Requisito (Bruno, 30/10 00:40)
@@ -111,13 +111,16 @@ Por isso mudar apenas `base`, `rank`, companhia, nome, totais, cobertura da font
 - **Quarentena:** vai para `crewcheck_roster_backfill_quarantine`, de forma idempotente, toda linha:
   - de conta sem vínculo autoritativo;
   - com crewId ausente ou diferente do vínculo;
-  - com conteúdo recusado, por exemplo mês incompleto.
+  - com chave de competência malformada;
+  - com conteúdo recusado, por exemplo mês incompleto (só os códigos de conteúdo de `rosterCompetenceIssue`).
 
-  Nunca há chave por nome.
+  Nunca há chave por nome. A quarentena também é escrita: só grava em modo `normal`, lendo a cerca com lock compartilhado na própria transação.
+- **Pausa (não é decisão):** qualquer outra resposta, como `503 WRITES_FENCED`, `403` porque a fonte de identidade falhou entre a checagem do backfill e a escrita, ou um código inesperado, **não** é decisão sobre a linha. O backfill para antes dela e devolve `{ paused: { code, status, mode, legacyRowId }, cursor }`, com o cursor na última linha totalmente processada. Ele não grava quarentena nem recibo e não avança o cursor, então retomar pelo cursor devolvido processa a linha pausada. Fora do modo `normal` (por exemplo, janela de rollback `fenced_legacy`), nenhuma linha começa: há uma pré-checagem consultiva, e a cerca real é o lock dentro de cada escrita e quarentena. Erros lançados (crash) propagam; `afterRow(row, report, cursor)` permite persistir o cursor de cada linha concluída.
 - **Criação:** feita só por CAS sobre a geração 0, com id determinístico por linha e fingerprint, então só cria competência ausente. Geração > 0 (viva) e tombstone resultam em `skipped_existing`, nunca em sobrescrita ou ressurreição.
 - **Crash e retomada:** um crash entre linhas ou antes do `COMMIT` é retomado rodando de novo. As linhas já aplicadas fazem replay do recibo, e o estado final é o mesmo de uma execução limpa.
 - **Concorrência:** dois workers e escritas concorrentes de clientes mantêm uma única criação por competência.
-- **Testes:** `scripts/regression-roster-revision-backfill.mjs`, com 4 mutantes mortos por asserção.
+- **Cerca → normal → retomada (+ crash):** a troca para `read_only` no meio pausa na linha seguinte; em `fenced_legacy` também pausa, sem nenhum recibo; ao voltar a `normal`, a retomada pelo cursor, um crash depois de uma linha e uma nova retomada pelo cursor persistido terminam no mesmo estado de uma execução limpa, sem pular linha. A corrida entre a pré-checagem e o lock (503 dentro da escrita, quarentena cercada) e a falha transitória de identidade também pausam.
+- **Testes:** `scripts/regression-roster-revision-backfill.mjs`, com 9 mutantes mortos por asserção, inclusive o comportamento de d401de4 (cerca/transitório em quarentena com cursor avançado), a pausa que devolve a linha pausada como cursor, a quarentena sem cerca, a chave malformada que travaria a execução e o início de linha durante a janela de rollback.
 
 ### Rollback fail-closed (cerca de escrita)
 - **Sem "desligar a flag".** A tabela `crewcheck_roster_write_fence` guarda o modo, e a ausência da linha equivale a `read_only` (fail-closed).
@@ -127,12 +130,23 @@ Por isso mudar apenas `base`, `rank`, companhia, nome, totais, cobertura da font
   - leitura e replay de operações já decididas continuam;
   - revisões, recibos e pendentes são preservados.
 - **`fenced_legacy`:**
-  - o runtime antigo, chamando `legacyRuntimeWriteGuard` dentro da própria transação, só cria mês **nunca gerenciado** (geração 0);
-  - nunca sobrescreve competência viva nem ressuscita tombstone;
+  - o runtime antigo, chamando `legacyRuntimeWriteGuard` dentro da própria transação antes de qualquer escrita na conta + mês, só **cria**: o mês não pode ter competência gerenciada (geração > 0) **nem** linha legada;
+  - a guarda trava a cerca (compartilhado), as competências e a linha legada (`FOR UPDATE`; na ausência, o gap lock do InnoDB serializa dois criadores);
+  - nunca sobrescreve competência viva, nunca ressuscita tombstone e nunca faz upsert cego sobre linha legada existente, migrada ou não, inclusive a criada na mesma janela (`LEGACY_ROW_EXISTS_FENCED`). O custo é que o cliente antigo recebe erro ao reenviar um mês que já existe; nada é sobrescrito;
   - escritas do novo protocolo seguem com CAS.
 - **Troca de modo:** usa lock exclusivo, e cada escrita lê o modo com lock compartilhado. Assim nenhuma escrita confirma depois de a troca concluir.
-- **Volta a `normal`:** não resolve nada sozinha. `rollbackDivergenceReport` lista as divergências para decisão explícita.
-- **Testes:** `scripts/regression-roster-revision-rollback.mjs`, com 4 mutantes mortos por asserção.
+- **Volta a `normal`:** não resolve nada sozinha. `rollbackDivergenceReport` lista as divergências para decisão explícita:
+  - lê os **dois sentidos**: linhas legadas e toda competência gerenciada, porque o MySQL não tem FULL JOIN;
+  - compara **conteúdo** com uma única família de hash, `rosterContentHash` (canônico e versionado), calculada a partir do roster legado e da revisão atual da competência. O `fingerprint` legado (sha256 do texto JSON gravado) é outra família e nunca é comparado;
+  - tipos: `legacy_only`, `canonical_only`, `legacy_row_on_tombstone`, `content_differs` (inclusive `CREW_KEY_DIFFERS`) e `indeterminate` com motivo (`LEGACY_ROSTER_UNREADABLE`, `CANONICAL_ROSTER_UNREADABLE`, `CANONICAL_CONTENT_HASH_MISMATCH`, `LEGACY_CREW_IDENTITY_REQUIRED`, `COMPETENCE_MAPPING_AMBIGUOUS`, que ocorre quando o mês tem mais de uma competência, já que a linha legada não tem tripulante nem planejada/operada);
+  - nunca considera conforme o que não conseguiu comparar. Ficam fora só os meses com o mesmo conteúdo canônico (mesmo com bytes, ordem de chaves e `rawText` diferentes) e o tombstone sem linha legada;
+  - lê tudo em memória: paginar é trabalho futuro, antes de qualquer uso real.
+- **Testes:** `scripts/regression-roster-revision-rollback.mjs`, com 9 mutantes mortos por asserção, inclusive:
+  - a guarda que ignora a linha legada existente (d401de4);
+  - o relatório que aceita viva+viva sem comparar conteúdo (filtro de d401de4);
+  - a comparação com o `fingerprint`;
+  - o relatório que parte só da tabela legada;
+  - o `indeterminate` tratado como conforme.
 
 ### Leitura
 A listagem é completa e inclui tombstones. Assim o aparelho distingue "excluída na conta" de "nunca enviada" sem depender de ausência ou de `LIMIT`.
