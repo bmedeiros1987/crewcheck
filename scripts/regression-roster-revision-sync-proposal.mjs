@@ -131,7 +131,7 @@ await run('two devices import on the same base at once: one accepted, the other 
   assert(entryOf(loser, '2026-10').conflict, 'the other import becomes an explicit conflict');
   assert(sameRoster(entryOf(loser, '2026-10').conflict.pending.roster, sameRoster(now.roster, octB) ? octC : octB), 'and its content is kept');
   assert(sameRoster(shown(loser, '2026-10'), now.roster), 'online the database is shown while the conflict waits for a choice');
-  loser.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(loser, '2026-10'), 'keep_local', { operationId: crypto.randomUUID() });
+  loser.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(loser, '2026-10'), 'keep_local', { operationId: crypto.randomUUID(), server: entryOf(loser, '2026-10').conflict.server });
   await sync(loser); await sync(winner);
   assert.equal((await current(accountA, '2026-10')).generation, 3);
   assert(sameRoster(shown(winner, '2026-10'), shown(loser, '2026-10')), 'both devices converge on the chosen revision');
@@ -188,7 +188,7 @@ await run('tombstone: deletion advances the generation; a device that never saw 
   assert.equal(shown(tablet, '2026-10'), null, 'online the database says deleted');
   const legacy = await write({ email: accountA, crewKey, rosterKey: '2026-10', roster: octA });
   assert.equal(legacy.status, 428, 'a legacy client cannot resurrect it either');
-  tablet.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(tablet, '2026-10'), 'keep_local', { operationId: crypto.randomUUID() });
+  tablet.store.entries[entryKey(ids('A', '2026-10'))] = resolveConflict(entryOf(tablet, '2026-10'), 'keep_local', { operationId: crypto.randomUUID(), server: entryOf(tablet, '2026-10').conflict.server });
   await sync(tablet);
   assert.deepEqual([(await current(accountA, '2026-10')).generation, (await current(accountA, '2026-10')).state], [3, 'live'], 'recreation only after an explicit choice on the tombstone generation');
   const reader = device('reader', 'A', accountA); await sync(reader);

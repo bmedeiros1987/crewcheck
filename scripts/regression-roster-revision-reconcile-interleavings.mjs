@@ -80,12 +80,30 @@ function suite(C, H) {
 
   // 7. keep_server adopts the database snapshot; the old offline cache never comes back.
   assert.throws(() => C.resolveConflict(conflicted, 'keep_server', { server: live(5, r5) }), /roster/);
+  assert.throws(() => C.resolveConflict(conflicted, 'keep_local', { operationId: 'op-x' }), /view the user saw/, 'a choice needs the view the user saw');
   const kept = C.resolveConflict(conflicted, 'keep_server', { server: live(5, r5), roster: r5 });
   assert.deepEqual([kept.synced.generation, kept.synced.roster], [5, r5], 'keep_server adopts the database snapshot');
   assert.equal(C.planReconcile(kept, null, { online: false, listingComplete: false }).display, 'synced');
   assert.deepEqual(kept.discarded.map(item => item.operationId).sort(), ['op-c', 'op-d'], 'archived, recoverable');
-  const local = C.resolveConflict(conflicted, 'keep_local', { operationId: 'op-e' });
+  const local = C.resolveConflict(conflicted, 'keep_local', { operationId: 'op-e', server: live(5, r5) });
   assert.deepEqual([local.pending.operationId, local.pending.baseGeneration, local.pending.contentHash], ['op-e', 5, hash(rB)]);
+
+  // 7b. A newer database state arrives while the conflict screen (generation 5) is open: a tombstone
+  // at generation 6. The choice made on the old screen is refused and nothing changes; the screen
+  // must be shown again with generation 6. The base is never raised to a generation the user did not see.
+  const tombstone = { generation: 6, state: 'deleted', contentHash: null };
+  assert.equal(C.planReconcile(conflicted, tombstone, { online: true, listingComplete: true }).action, 'adopt_server', 'a newer listing refreshes the open conflict');
+  const moved = C.adoptServer(conflicted, tombstone, null);
+  assert.deepEqual([moved.seen, moved.synced.deleted, moved.conflict.server.generation, moved.conflict.pending.operationId], [6, true, 6, 'op-d'], 'conflict stays open with the newer view');
+  let staleServer = null;
+  try { C.resolveConflict(moved, 'keep_server', { server: live(5, r5), roster: r5 }); } catch (error) { staleServer = error; }
+  assert.equal(staleServer?.code, 'CONFLICT_VIEW_STALE', 'keep_server on a stale view is refused, entry untouched');
+  let staleLocal = null;
+  try { C.resolveConflict(moved, 'keep_local', { operationId: 'op-h', server: live(5, r5) }); } catch (error) { staleLocal = error; }
+  assert.equal(staleLocal?.code, 'CONFLICT_VIEW_STALE', 'keep_local on a stale view is refused: no base raised to the unseen generation 6');
+  assert.deepEqual([moved.conflict.pending.operationId, moved.synced.generation], ['op-d', 6]);
+  const reconfirmed = C.resolveConflict(moved, 'keep_local', { operationId: 'op-h', server: tombstone });
+  assert.equal(reconfirmed.pending.baseGeneration, 6, 'only an explicit choice on the generation-6 screen bases the change on 6');
 
   // 8. 409 with the same content adopts the database (no write) and settles the chained change.
   store = change(synced1(), rA, 'op-f');
@@ -93,6 +111,22 @@ function suite(C, H) {
   store = change({ entries: { [key]: sendF.entry } }, rB, 'op-g');
   const equal = C.applySendResult(store.entries[key], sendF.request, { status: 409, current: live(7, rA) });
   assert.deepEqual([equal.synced.generation, equal.pending.operationId, equal.pending.baseGeneration], [7, 'op-g', 7]);
+
+  // 8b. Snapshots are deep and immutable: the caller mutating its own object after record,
+  // beginSend or adopt changes nothing recorded, sent or adopted.
+  const mutable = roster('LA7777');
+  store = change(synced1(), mutable, 'op-m');
+  mutable.days[0].legs[0].flightNumber = 'LA0BAD';
+  assert.equal(store.entries[key].pending.roster.days[0].legs[0].flightNumber, 'LA7777', 'recorded change is a copy');
+  const sendM = C.beginSend(store.entries[key]);
+  mutable.days[0].type = 'RES';
+  assert.deepEqual([sendM.request.roster.days[0].legs[0].flightNumber, sendM.request.roster.days[0].type], ['LA7777', 'FLIGHT'], 'in-flight snapshot unaffected');
+  assert.throws(() => { sendM.request.roster.days[0].legs[0].flightNumber = 'LA0BAD'; }, TypeError, 'in-flight snapshot is frozen to the leaves');
+  assert.equal(sendM.request.contentHash, hash(roster('LA7777')), 'content and hash still agree');
+  const adoptedRoster = roster('LA8888');
+  const adopted = C.adoptServer(C.newEntry(ids), live(9, adoptedRoster), adoptedRoster);
+  adoptedRoster.days[0].legs[0].flightNumber = 'LA0BAD';
+  assert.equal(adopted.synced.roster.days[0].legs[0].flightNumber, 'LA8888', 'adopted roster is a frozen copy');
 
   // 9. Canonical content hash.
   const base = roster('LA9999'), h = hash(base);
@@ -118,7 +152,10 @@ const mutants = [
   ['ACK applied to the current pending change', clientFile, 'const sent = entry.inflight;', 'const sent = entry.pending || entry.inflight;'],
   ['stale listing not ignored (downgrade)', clientFile, 'if (current.generation < (entry?.seen || 0))', 'if (false)'],
   ['older snapshot adopted (downgrade)', clientFile, 'if (!server || server.generation < (entry.seen || 0) || (entry.synced && server.generation < entry.synced.generation)) return entry;', 'if (!server) return entry;'],
-  ['keep_server without adopting the database snapshot', clientFile, "const adopted = adoptServer({ ...entry, conflict: undefined, synced: undefined }, seenServer, roster ?? null);", 'const adopted = { ...entry, conflict: undefined };'],
+  ['keep_server without adopting the database snapshot', clientFile, "const adopted = adoptServer({ ...entry, conflict: undefined }, server, roster ?? null);", 'const adopted = { ...entry, conflict: undefined };'],
+  ['shallow freeze of snapshots', clientFile, 'const freeze = value => deepFreeze(structuredClone(value));', 'const freeze = value => Object.freeze({ ...value });'],
+  ['stale conflict view accepted', clientFile, "if (server.generation < (entry.seen || 0)) throw", "if (false) throw"],
+  ['keep_local raises the base to an unseen generation', clientFile, "if (server.generation < (entry.seen || 0)) throw Object.assign(new Error('conflict view is stale; show the newer database state again'), { code: 'CONFLICT_VIEW_STALE', seen: entry.seen });", "if (choice !== 'keep_local' && server.generation < (entry.seen || 0)) throw Object.assign(new Error('stale'), { code: 'CONFLICT_VIEW_STALE' }); if (choice === 'keep_local') server = { ...server, generation: Math.max(server.generation, entry.seen || 0) };"],
   ['hash limited to year/month/crew/days', serverFile, 'roster: canonicalRoster(roster) }));', 'roster: canonicalRoster({ year: roster.year, month: roster.month, crewId: roster.crewId, days: roster.days }) }));'],
 ];
 const killed = [];

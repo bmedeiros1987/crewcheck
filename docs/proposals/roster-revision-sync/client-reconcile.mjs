@@ -6,18 +6,29 @@
 // o aparelho compara gerações confiáveis e reconcilia, sem apagar importação pendente não enviada.
 // Cada entrada é escopada por conta + tripulante (ID) + competência + tipo. Campos:
 //  - synced:   última revisão confirmada pelo banco (cache), com sua geração;
-//  - inflight: snapshot IMUTÁVEL do que foi enviado (operationId, base, conteúdo); só a resposta
-//              com o mesmo operationId o resolve, e o resultado vale para ESSE snapshot;
+//  - inflight: snapshot IMUTÁVEL (cópia profunda congelada) do que foi enviado (operationId, base,
+//              conteúdo); só a resposta com o mesmo operationId o resolve, e vale para ESSE snapshot;
 //  - pending:  mudança local mais nova ainda não enviada. Criada durante um envio, fica encadeada
 //              (after = operationId em voo) e recebe a base quando esse envio for confirmado;
-//  - conflict: o banco mudou desde a base; nada é descartado sem escolha explícita;
+//  - conflict: o banco mudou desde a base; nada é descartado sem escolha explícita. A escolha vale
+//              só para a visão do banco que o usuário viu: se o aparelho já observou geração maior,
+//              a escolha é recusada (CONFLICT_VIEW_STALE) e a tela precisa ser reconfirmada;
 //  - seen:     maior geração já observada (listagem, leitura ou ACK). Leitura ou ACK com geração
 //              menor é obsoleto e ignorado: nunca rebaixa nem recria uma competência excluída.
 // Nenhuma decisão usa createdAt, Date ou relógio do servidor.
 
 export const entryKey = ({ accountId, crewKey, rosterKey, rosterKind = 'operated' }) => `${accountId}|${crewKey}|${rosterKey}|${rosterKind}`;
 const identity = ({ accountId, crewKey, rosterKey, rosterKind = 'operated' }) => ({ accountId, crewKey, rosterKey, rosterKind });
-const freeze = value => Object.freeze({ ...value });
+// Defensive deep copy + recursive freeze: nothing the caller still holds can change a recorded,
+// in-flight or adopted snapshot.
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const key of Object.keys(value)) deepFreeze(value[key]);
+  }
+  return value;
+}
+const freeze = value => deepFreeze(structuredClone(value));
 
 export function entriesForAccount(store, accountId) {
   return Object.values(store.entries || {}).filter(entry => entry.accountId === accountId);
@@ -61,7 +72,7 @@ export function planReconcile(entry, server, { online, listingComplete }) {
   // A listing older than what this device has already seen is obsolete: ignore it entirely.
   if (current.generation < (entry?.seen || 0)) return { action: 'none', display: local, reason: 'stale_read' };
   const serverDisplay = current.state === 'live' ? 'server' : 'none';
-  if (entry?.conflict) return { action: 'none', display: serverDisplay, reason: 'conflict_open' };
+  if (entry?.conflict) return { action: current.generation > (entry.seen || 0) ? 'adopt_server' : 'none', display: serverDisplay, reason: 'conflict_open' };
   if (entry?.inflight || (entry?.pending && !entry.pending.after)) {
     const base = (entry.inflight || entry.pending).baseGeneration;
     const onBase = base === current.generation, deleting = (entry.inflight || entry.pending).operation === 'delete';
@@ -80,11 +91,16 @@ function settleChained(entry, operationId, generation) {
   return { ...entry, pending: freeze({ ...rest, baseGeneration: generation }) };
 }
 
-// Adopts a database snapshot only if it is not older than what the device has seen.
+// Adopts a database snapshot only if it is not older than what the device has seen. While a
+// conflict is open the snapshot also refreshes the conflict's server view (the choice made on an
+// older view is then refused), but never closes the conflict.
 export function adoptServer(entry, server, roster) {
   if (!server || server.generation < (entry.seen || 0) || (entry.synced && server.generation < entry.synced.generation)) return entry;
   const live = server.state === 'live';
-  return { ...entry, seen: Math.max(entry.seen || 0, server.generation), synced: freeze({ generation: server.generation, contentHash: live ? server.contentHash : null, deleted: !live, roster: live ? roster : null }) };
+  const view = freeze({ generation: server.generation, state: server.state, contentHash: live ? server.contentHash : null });
+  const next = { ...entry, seen: Math.max(entry.seen || 0, server.generation), synced: freeze({ generation: server.generation, contentHash: view.contentHash, deleted: !live, roster: live ? roster : null }) };
+  if (entry.conflict) next.conflict = { ...entry.conflict, server: view };
+  return next;
 }
 
 // Applies the server's answer to THE request it answers. An answer for another operationId (late,
@@ -112,26 +128,27 @@ export function applySendResult(entry, request, result) {
   // snapshot is kept as superseded history. Nothing is dropped.
   const latest = next.pending ? freeze({ ...next.pending, after: undefined, baseGeneration: sent.baseGeneration }) : sent;
   const seen = Math.max(next.seen || 0, result.current?.generation || 0);
-  return { ...next, pending: undefined, seen, conflict: { pending: latest, server: result.current || null, superseded: next.pending ? [sent] : [], ...(result.status === 409 ? {} : { rejected: result.code || `HTTP_${result.status}` }) } };
+  return { ...next, pending: undefined, seen, conflict: { pending: latest, server: result.current ? freeze(result.current) : null, superseded: next.pending ? [sent] : [], ...(result.status === 409 ? {} : { rejected: result.code || `HTTP_${result.status}` }) } };
 }
 
-// Only an explicit choice closes a conflict.
-//  keep_server: requires the database snapshot the user saw (with its roster) and adopts it, so an
-//               older offline cache is never shown again; the local change is archived, recoverable.
-//  keep_local:  re-bases the local change on the generation the user has just seen.
+// Only an explicit choice closes a conflict, and only for the database view the user actually saw
+// (`server`: { generation, state, contentHash }). If the device has since observed a later
+// generation, the choice is refused and the entry is left untouched: the screen must be shown again.
+//  keep_server: adopts that view (with its roster), so an older offline cache is never shown again;
+//               local changes are archived, recoverable;
+//  keep_local:  re-bases the local change on exactly the generation the user saw — never higher.
 export function resolveConflict(entry, choice, { operationId, server, roster } = {}) {
   if (!entry.conflict) return entry;
+  if (!server || !Number.isSafeInteger(server.generation)) throw Object.assign(new Error('the database view the user saw is required'), { code: 'CONFLICT_VIEW_REQUIRED' });
+  if (server.generation < (entry.seen || 0)) throw Object.assign(new Error('conflict view is stale; show the newer database state again'), { code: 'CONFLICT_VIEW_STALE', seen: entry.seen });
   const { pending, superseded = [] } = entry.conflict;
-  const seenServer = server || entry.conflict.server;
   if (choice === 'keep_server') {
-    if (!seenServer) throw new Error('keep_server needs the database snapshot');
-    if (seenServer.state === 'live' && roster === undefined) throw new Error('keep_server needs the database roster to adopt');
-    const adopted = adoptServer({ ...entry, conflict: undefined, synced: undefined }, seenServer, roster ?? null);
+    if (server.state === 'live' && roster === undefined) throw new Error('keep_server needs the database roster to adopt');
+    const adopted = adoptServer({ ...entry, conflict: undefined }, server, roster ?? null);
     return { ...adopted, discarded: [...(entry.discarded || []), ...superseded, pending] };
   }
   if (choice === 'keep_local') {
-    const base = Math.max(seenServer ? seenServer.generation : 0, entry.seen || 0);
-    return { ...entry, conflict: undefined, discarded: [...(entry.discarded || []), ...superseded], pending: freeze({ ...pending, after: undefined, operationId, baseGeneration: base }) };
+    return { ...entry, conflict: undefined, discarded: [...(entry.discarded || []), ...superseded], pending: freeze({ ...pending, after: undefined, operationId, baseGeneration: server.generation }) };
   }
   throw new Error('unknown conflict choice');
 }

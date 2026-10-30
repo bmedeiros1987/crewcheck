@@ -92,7 +92,7 @@ A listagem é completa e inclui tombstones. Assim o aparelho distingue "excluíd
 ### Aparelho (`client-reconcile.mjs`, puro e sem relógio)
 Estados de cada competência no aparelho:
 - `synced`: a revisão confirmada pelo banco;
-- `inflight`: o **snapshot imutável** do que foi enviado, com `operationId`, base e conteúdo;
+- `inflight`: o **snapshot imutável** do que foi enviado, com `operationId`, base e conteúdo. Todo snapshot (mudança registrada, envio, revisão adotada) é uma **cópia profunda congelada até as folhas**, então alterar o objeto original depois não muda o que foi registrado, enviado ou adotado;
 - `pending`: a mudança local mais nova, ainda não enviada;
 - `conflict`;
 - `seen`: a maior geração já observada.
@@ -106,9 +106,9 @@ Comportamento:
 - **Online:** mostra o banco. Todo pendente é enviado e o servidor julga.
   - **409 com o mesmo conteúdo:** o aparelho adota o banco sem escrever.
   - **Demais 409:** viram conflito explícito, guardando a mudança mais nova e as substituídas.
-  - **Conflito** só fecha por escolha do usuário:
-    - "manter a do banco" exige o snapshot do banco (com o roster) e o **adota**, então um cache offline antigo nunca reaparece; as mudanças locais são arquivadas e continuam recuperáveis;
-    - "manter a minha" refaz a base na maior geração vista.
+  - **Conflito** só fecha por escolha do usuário, e a escolha vale só para a **visão do banco que ele viu**. Se uma geração mais nova chegar com a tela aberta (por exemplo, uma exclusão), a tela é atualizada e a escolha feita sobre a visão antiga é recusada (`CONFLICT_VIEW_STALE`) sem alterar nada; o usuário precisa confirmar de novo:
+    - "manter a do banco" adota essa visão (com o roster), então um cache offline antigo nunca reaparece; as mudanças locais são arquivadas e continuam recuperáveis;
+    - "manter a minha" usa como base **exatamente** a geração vista, nunca uma maior que o usuário não viu.
 - **Troca de conta:** as entradas são por conta, e uma mudança nunca é enviada por outra conta.
 
 ### Cenários cobertos (MySQL descartável)
@@ -135,6 +135,8 @@ Complemento puro, sem banco: `scripts/regression-roster-revision-reconcile-inter
 - logout, troca de conta e envio abortado;
 - 409 preservando a mudança mais nova;
 - `keep_server` adotando o banco;
+- tela de conflito obsoleta (exclusão chegando com a tela aberta) recusada nos dois sentidos;
+- snapshots profundos e imutáveis após registro, envio e adoção;
 - hash canônico.
 
 Cada defeito revisado é reintroduzido como mutante, e a suíte precisa falhar com cada um.
