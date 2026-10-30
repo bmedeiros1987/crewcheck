@@ -10,7 +10,7 @@
 > - owners e coordenação;
 > - backup e restore;
 > - o rollback. Ele **não pode** reabrir escrita legada cega nem ressuscitar tombstones: precisa manter cerca/CAS de escrita ou modo só leitura, preservando revisões e pendentes até uma reconciliação explícita;
-> - o contrato de cliente legado: só criação ou `428`, ou pendente com confirmação. Escrita legada cega não é segura nem com arquivamento.
+> - no contrato de cliente legado, a proposta já cobre só criação, `428` com envio pendente e confirmação explícita, testados em MySQL descartável. Ainda faltam versão mínima do app e interface da confirmação.
 
 ## Requisito (Bruno, 30/10 00:40)
 
@@ -98,10 +98,13 @@ Por isso mudar apenas `base`, `rank`, companhia, nome, totais, cobertura da font
 4. **Conflito.** Se `baseGeneration` for diferente da geração atual, o servidor responde **409** com o estado atual. Isso vale inclusive para hash igual: hash nunca autoriza escrita.
 5. **No-op.** Base correta com conteúdo igual ao atual não gera nova geração.
 6. **Gravação.** Caso contrário, `generation+1`, uma nova linha de histórico e a atualização condicionada a `generation = base`.
-7. **Cliente legado** (sem base e sem `operationId`):
-   - pode apenas **criar** uma competência inexistente, com id de operação determinístico, então o reenvio é idempotente;
-   - recebe `428` se a competência já existir ou tiver sido excluída: nunca sobrescreve nem ressuscita;
-   - o dado dele continua no próprio aparelho.
+7. **Cliente legado** (sem base e sem `operationId`) nunca escreve às cegas:
+   - **competência ausente:** pode ser criada, com id de operação determinístico derivado de tudo o que o pedido vincula (conteúdo e versão do parser). O mesmo pedido reenviado é replay da resposta original, mesmo depois de uma exclusão, e nada é ressuscitado;
+   - **conteúdo idêntico ao atual:** no-op, sem escrita;
+   - **competência existente ou excluída:** `428 REVISION_PRECONDITION_REQUIRED`. O conteúdo fica como **envio pendente** (`crewcheck_roster_legacy_submissions`), gravado na mesma transação do recibo;
+   - **o pendente só vira revisão por confirmação explícita** de um cliente com revisão. A confirmação usa a geração que o usuário viu e um `operationId` novo, sob o mesmo CAS de qualquer escrita. O conteúdo aplicado é o armazenado, nunca o do pedido; com base velha recebe 409 e continua pendente; cada envio é aplicado no máximo uma vez, inclusive com confirmações simultâneas;
+   - **descartar** também é escolha explícita, e a linha é mantida com status `dismissed`;
+   - o dado do cliente antigo continua no aparelho (`saveRosterAnalysis` cai no catch e devolve o local).
 
 ### Leitura
 A listagem é completa e inclui tombstones. Assim o aparelho distingue "excluída na conta" de "nunca enviada" sem depender de ausência ou de `LIMIT`.

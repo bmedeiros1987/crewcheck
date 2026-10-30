@@ -27,7 +27,7 @@ assert.match(schema, /^-- PROPOSTA — NÃO APLICAR/);
 assert.equal(fs.readdirSync('migrations').some(name => fs.readFileSync(`migrations/${name}`, 'utf8').includes('crewcheck_roster_competences')), false, 'the draft is not a migration');
 
 async function resetSchema() {
-  for (const table of ['crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences']) await db.query(`DROP TABLE IF EXISTS ${table}`);
+  for (const table of ['crewcheck_roster_legacy_submissions', 'crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences']) await db.query(`DROP TABLE IF EXISTS ${table}`);
   for (const statement of schema.split(/;\s*\n/).map(text => text.replace(/^\s*--.*$/gm, '').trim()).filter(Boolean)) await db.query(statement);
 }
 

@@ -11,7 +11,9 @@
 //  - conteúdo igual ao atual com base correta é no-op; conteúdo igual com base velha é conflito
 //    (hash igual nunca autoriza escrita);
 //  - exclusão também avança a geração (tombstone), então nada a ressuscita sem base atual;
-//  - cliente legado (sem base/operation id) só cria competência inexistente; nunca sobrescreve;
+//  - cliente legado (sem base/operation id) só cria competência inexistente; conteúdo idêntico ao
+//    atual é no-op; sobre competência existente ou excluída recebe 428 e o envio fica PENDENTE
+//    (mesma transação), aplicado só por confirmação explícita com geração vista; nunca às cegas;
 //  - identidade = conta + tripulante VINCULADO À CONTA por uma fonte autoritativa server-side
 //    (resolveVerifiedCrewKey, injetada) + competência + tipo planejada/operada. A matrícula escrita
 //    no PDF só precisa coincidir com esse vínculo; sozinha nunca prova identidade. A fonte
@@ -28,6 +30,7 @@ export const PROPOSAL_SCHEMA_VERSION = 1;
 const ROSTER_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const KINDS = new Set(['planned', 'operated']);
+const SOURCE_KINDS = new Set(['pdf_import', 'telegram', 'legacy_confirmed', 'legacy_backfill']);
 const PLACEHOLDER_CREW_IDS = new Set(['000', '0000', '00000', '000000', 'UNKNOWN', 'NA', 'XXX']);
 
 const sha256 = value => crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -79,7 +82,7 @@ export function rosterCompetenceIssue(roster, rosterKey, crewKey) {
   return null;
 }
 
-function legacyOperationId(parts) {
+export function legacyOperationId(parts) {
   const hex = sha256(parts.join('|'));
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
@@ -91,15 +94,24 @@ const competenceView = row => ({ generation: Number(row?.generation || 0), state
 // the request and the crewId printed in the PDF must both match it.
 export async function writeRosterRevision(db, request, { resolveVerifiedCrewKey } = {}) {
   const email = String(request?.email || '').trim().toLowerCase();
-  const { crewKey, rosterKey, rosterKind = 'operated', operation = 'import', roster = null, parserVersion = 'unknown', sourceKind = 'pdf_import' } = request || {};
+  const { crewKey, rosterKey, rosterKind = 'operated', operation = 'import', parserVersion = 'unknown', sourceKind = 'pdf_import' } = request || {};
   if (!email) return outcome(401, { code: 'AUTH_REQUIRED' });
   const verifiedCrewKey = typeof resolveVerifiedCrewKey === 'function' ? await resolveVerifiedCrewKey(email) : null;
   if (!verifiedCrewKey) return outcome(403, { code: 'CREW_IDENTITY_UNVERIFIED' });
   if (verifiedCrewKey !== crewKey) return outcome(403, { code: 'CREW_IDENTITY_NOT_BOUND' });
   if (!KINDS.has(rosterKind) || !['import', 'delete'].includes(operation) || !ROSTER_KEY.test(String(rosterKey || '')) || !/^ID:[A-Z0-9]{3,40}$/.test(String(crewKey || ''))) return outcome(400, { code: 'REQUEST_INVALID' });
   const legacy = request.baseGeneration === undefined || request.baseGeneration === null || !request.operationId;
-  if (legacy && operation !== 'import') return outcome(428, { code: 'REVISION_PRECONDITION_REQUIRED' });
-  if (!legacy && (!Number.isSafeInteger(request.baseGeneration) || request.baseGeneration < 0 || !UUID.test(String(request.operationId)))) return outcome(400, { code: 'REQUEST_INVALID' });
+  if (legacy && (operation !== 'import' || request.confirmSubmissionId)) return outcome(428, { code: 'REVISION_PRECONDITION_REQUIRED' });
+  if (!legacy && (!Number.isSafeInteger(request.baseGeneration) || request.baseGeneration < 0 || !UUID.test(String(request.operationId)) || !SOURCE_KINDS.has(sourceKind))) return outcome(400, { code: 'REQUEST_INVALID' });
+  // Confirming a pending legacy submission: the content is the stored submission, never the request.
+  let roster = request?.roster ?? null, submissionId = null;
+  if (request.confirmSubmissionId) {
+    submissionId = String(request.confirmSubmissionId);
+    if (operation !== 'import' || sourceKind !== 'legacy_confirmed' || !UUID.test(submissionId)) return outcome(400, { code: 'REQUEST_INVALID' });
+    const stored = (await db.query('SELECT crew_key,roster_key,roster_kind,roster FROM crewcheck_roster_legacy_submissions WHERE owner_email=$1 AND submission_id=$2', [email, submissionId])).rows[0];
+    if (!stored || stored.crew_key !== crewKey || stored.roster_key !== rosterKey || stored.roster_kind !== rosterKind) return outcome(404, { code: 'SUBMISSION_NOT_FOUND' });
+    roster = typeof stored.roster === 'string' ? JSON.parse(stored.roster) : stored.roster;
+  } else if (sourceKind === 'legacy_confirmed') return outcome(400, { code: 'REQUEST_INVALID' });
   // A content refusal is decided under the lock and recorded like any other decision, so its
   // operation id stays bound to this request. Unauthenticated, unbound or malformed requests are
   // refused before any lock and record nothing (they cannot be keyed to a competence safely).
@@ -107,8 +119,9 @@ export async function writeRosterRevision(db, request, { resolveVerifiedCrewKey 
   const contentHash = operation === 'import' && !issue ? rosterContentHash(roster) : null;
   const baseGeneration = legacy ? 0 : request.baseGeneration;
   const requestDigest = issue ? sha256(stable(canonicalRoster(roster))) : contentHash;
-  const operationId = legacy ? legacyOperationId([email, crewKey, rosterKey, rosterKind, requestDigest]) : String(request.operationId);
-  const requestHash = sha256(stable({ crewKey, rosterKey, rosterKind, operation, baseGeneration, contentHash: requestDigest, parserVersion: String(parserVersion), schemaVersion: PROPOSAL_SCHEMA_VERSION, sourceKind: legacy ? 'legacy_create' : sourceKind }));
+  // A legacy id derives from everything the request hash binds, so distinct legacy requests never collide.
+  const operationId = legacy ? legacyOperationId([email, crewKey, rosterKey, rosterKind, requestDigest, String(parserVersion)]) : String(request.operationId);
+  const requestHash = sha256(stable({ crewKey, rosterKey, rosterKind, operation, baseGeneration, contentHash: requestDigest, parserVersion: String(parserVersion), schemaVersion: PROPOSAL_SCHEMA_VERSION, sourceKind: legacy ? 'legacy_create' : sourceKind, submissionId }));
   const where = [email, crewKey, rosterKey, rosterKind];
   // InnoDB may abort one of two transactions racing for the same competence (deadlock), and two
   // transactions deciding one operation id on DISTINCT competences collide on the receipt key
@@ -116,7 +129,7 @@ export async function writeRosterRevision(db, request, { resolveVerifiedCrewKey 
   // written by the winner decides (replay or OPERATION_ID_REUSED).
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, issue, contentHash, baseGeneration, operationId, requestHash });
+      return await writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, issue, contentHash, baseGeneration, operationId, requestHash, submissionId });
     } catch (error) {
       if (!['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT', 'ER_DUP_ENTRY'].includes(error?.code) || attempt >= 5) throw error;
     }
@@ -131,7 +144,7 @@ async function recordReceipt(connection, { email, operationId, requestHash, wher
   [email, operationId, requestHash, where[1], where[2], where[3], outcomeName, JSON.stringify(response), generation, revisionId]);
 }
 
-async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, issue, contentHash, baseGeneration, operationId, requestHash }) {
+async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, issue, contentHash, baseGeneration, operationId, requestHash, submissionId }) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -148,16 +161,31 @@ async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, ope
       return { ...storedResponse(previous.response), replay: true };
     }
     const decision = { generation: Number(current.generation) };
-    // Receipt, revision and competence change commit together or not at all.
+    // Receipt, revision, competence change and submission state commit together or not at all.
     const decide = async (outcomeName, response, revisionId = null) => {
+      if (submissionId && ['applied', 'unchanged'].includes(outcomeName)) {
+        await client.query("UPDATE crewcheck_roster_legacy_submissions SET status='confirmed',resolved_operation_id=$1 WHERE owner_email=$2 AND submission_id=$3 AND status='pending'", [operationId, email, submissionId]);
+      }
       await recordReceipt(client, { email, operationId, requestHash, where, outcomeName, response, generation: decision.generation, revisionId });
       await client.query('COMMIT');
       return response;
     };
     if (issue) return await decide('rejected', outcome(422, { code: issue }));
+    if (submissionId) {
+      // Locked after the competence (same order everywhere): only a still-pending submission can be confirmed.
+      const pending = (await client.query('SELECT status FROM crewcheck_roster_legacy_submissions WHERE owner_email=$1 AND submission_id=$2 FOR UPDATE', [email, submissionId])).rows[0];
+      if (pending?.status !== 'pending') return await decide('rejected', outcome(409, { code: 'SUBMISSION_NOT_PENDING', current: competenceView(current) }));
+    }
+    const sameAsCurrent = operation === 'import' && current.state === 'live' && current.content_hash === contentHash;
     const moved = Number(current.generation) !== baseGeneration;
-    const conflict = outcome(legacy ? 428 : 409, { code: legacy ? 'REVISION_PRECONDITION_REQUIRED' : 'ROSTER_REVISION_CONFLICT', current: competenceView(current) });
-    if (moved) return await decide(legacy ? 'rejected' : 'conflict', conflict);
+    if (legacy && moved && !sameAsCurrent) {
+      // Existing or deleted competence: the legacy content is kept as a pending submission, never applied.
+      await client.query(`INSERT IGNORE INTO crewcheck_roster_legacy_submissions(owner_email,submission_id,crew_key,roster_key,roster_kind,content_hash,roster,generation_observed)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [email, operationId, crewKey, rosterKey, rosterKind, contentHash, JSON.stringify(canonicalRoster(roster)), Number(current.generation)]);
+      return await decide('rejected', outcome(428, { code: 'REVISION_PRECONDITION_REQUIRED', pendingSubmissionId: operationId, current: competenceView(current) }));
+    }
+    const conflict = outcome(409, { code: 'ROSTER_REVISION_CONFLICT', current: competenceView(current) });
+    if (moved && !legacy) return await decide('conflict', conflict);
     const noop = (operation === 'import' && current.state === 'live' && current.content_hash === contentHash) || (operation === 'delete' && current.state !== 'live');
     const unchanged = outcome(200, { unchanged: true, generation: Number(current.generation), current: competenceView(current) });
     if (noop) return await decide('unchanged', unchanged);
@@ -192,4 +220,16 @@ export async function readCurrentRoster(db, email, { crewKey, rosterKey, rosterK
   if (!row) return { generation: 0, state: 'absent', contentHash: null, roster: null };
   const roster = typeof row.roster === 'string' ? JSON.parse(row.roster) : row.roster;
   return { ...competenceView(row), roster: row.state === 'live' ? roster : null };
+}
+
+// Pending legacy submissions of the account (what an up-to-date client shows for an explicit choice).
+export async function listLegacySubmissions(db, email) {
+  const rows = (await db.query("SELECT submission_id,crew_key,roster_key,roster_kind,content_hash,generation_observed FROM crewcheck_roster_legacy_submissions WHERE owner_email=$1 AND status='pending' ORDER BY roster_key,submission_id", [String(email || '').trim().toLowerCase()])).rows;
+  return rows.map(row => ({ submissionId: row.submission_id, crewKey: row.crew_key, rosterKey: row.roster_key, rosterKind: row.roster_kind, contentHash: row.content_hash, generationObserved: Number(row.generation_observed) }));
+}
+
+// Explicit dismissal keeps the row (status 'dismissed'); only a pending submission can be dismissed.
+export async function dismissLegacySubmission(db, { email, submissionId }) {
+  const result = await db.query("UPDATE crewcheck_roster_legacy_submissions SET status='dismissed' WHERE owner_email=$1 AND submission_id=$2 AND status='pending'", [String(email || '').trim().toLowerCase(), String(submissionId || '')]);
+  return result.rowCount === 1 ? outcome(200, { dismissed: true }) : outcome(409, { code: 'SUBMISSION_NOT_PENDING' });
 }

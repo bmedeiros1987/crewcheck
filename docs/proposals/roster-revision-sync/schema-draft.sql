@@ -37,8 +37,9 @@ CREATE TABLE IF NOT EXISTS crewcheck_roster_revisions (
   roster JSON NULL,
   parser_version VARCHAR(40) NOT NULL,
   schema_version SMALLINT UNSIGNED NOT NULL,
-  -- 'legacy_backfill' NÃO existe ainda: backfill é desenho futuro, não testado.
-  source_kind ENUM('pdf_import','telegram','legacy_create') NOT NULL,
+  -- legacy_confirmed: envio legado aplicado só após confirmação explícita com geração vista.
+  -- legacy_backfill: ensaio de backfill aditivo (só cria competência ausente); ainda desenho.
+  source_kind ENUM('pdf_import','telegram','legacy_create','legacy_confirmed','legacy_backfill') NOT NULL,
   client_operation_id CHAR(36) NOT NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (revision_id),
@@ -69,4 +70,25 @@ CREATE TABLE IF NOT EXISTS crewcheck_roster_operation_receipts (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (owner_email, client_operation_id),
   KEY crewcheck_roster_receipt_competence_idx (owner_email, crew_key, roster_key, roster_kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Envio de cliente legado (sem base/operation id) sobre competência que já existe ou foi excluída:
+-- NUNCA é aplicado às cegas. Fica pendente, gravado na mesma transação do recibo (428), e só vira
+-- revisão quando um cliente com revisão o confirma explicitamente com a geração que viu e um
+-- operation id novo (mesmo CAS de qualquer escrita). Descartar também é escolha explícita.
+-- submission_id = operation id determinístico do pedido legado (conta, tripulante, competência, conteúdo).
+CREATE TABLE IF NOT EXISTS crewcheck_roster_legacy_submissions (
+  owner_email VARCHAR(254) NOT NULL,
+  submission_id CHAR(36) NOT NULL,
+  crew_key VARCHAR(48) NOT NULL,
+  roster_key CHAR(7) NOT NULL,
+  roster_kind ENUM('planned','operated') NOT NULL,
+  content_hash CHAR(64) NOT NULL,
+  roster JSON NOT NULL,
+  generation_observed BIGINT UNSIGNED NOT NULL,
+  status ENUM('pending','confirmed','dismissed') NOT NULL DEFAULT 'pending',
+  resolved_operation_id CHAR(36) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (owner_email, submission_id),
+  KEY crewcheck_roster_legacy_submission_status_idx (owner_email, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

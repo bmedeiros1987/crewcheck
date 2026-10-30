@@ -30,7 +30,7 @@ const protocolFile = 'docs/proposals/roster-revision-sync/server-protocol.mjs';
 const schema = fs.readFileSync('docs/proposals/roster-revision-sync/schema-draft.sql', 'utf8');
 
 async function resetSchema() {
-  for (const table of ['crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences']) await db.query(`DROP TABLE IF EXISTS ${table}`);
+  for (const table of ['crewcheck_roster_legacy_submissions', 'crewcheck_roster_operation_receipts', 'crewcheck_roster_revisions', 'crewcheck_roster_competences']) await db.query(`DROP TABLE IF EXISTS ${table}`);
   for (const statement of schema.split(/;\s*\n/).map(text => text.replace(/^\s*--.*$/gm, '').trim()).filter(Boolean)) await db.query(statement);
 }
 
@@ -192,7 +192,7 @@ const source = fs.readFileSync(protocolFile, 'utf8');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'receipt-mutants-'));
 const mutants = [
   ['no-op not recorded (ROLLBACK + 200)', "if (noop) return await decide('unchanged', unchanged);", "if (noop) { await client.query('ROLLBACK'); return unchanged; }"],
-  ['conflict not recorded', "if (moved) return await decide(legacy ? 'rejected' : 'conflict', conflict);", "if (moved) { await client.query('ROLLBACK'); return conflict; }"],
+  ['conflict not recorded', "if (moved && !legacy) return await decide('conflict', conflict);", "if (moved && !legacy) { await client.query('ROLLBACK'); return conflict; }"],
   ['replay answers with the current state', 'return { ...storedResponse(previous.response), replay: true };', 'return outcome(200, { replay: true, generation: Number(current.generation), current: competenceView(current) });'],
   ['request hash not compared on replay', 'if (previous.request_hash !== requestHash)', 'if (false)'],
   ['receipt written outside the transaction', 'await recordReceipt(client, {', 'await recordReceipt(db, {'],
