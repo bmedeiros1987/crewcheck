@@ -6,6 +6,7 @@ import { build } from 'esbuild';
 import * as policy from '../shared/gate-query-day.mjs';
 import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import { customGateSourceUpdate } from '../server/gate-source-update.mjs';
+import { selectAeroDataBoxOccurrence } from '../server/aerodatabox-occurrence.mjs';
 import { prepareConciergeCanonicalBridge } from './p1-concierge-journey/bridge.mjs';
 // Synthetic flights/accounts only. No provider, Telegram, network or real data.
 globalThis.fetch = () => { throw Error('External network forbidden'); };
@@ -116,7 +117,7 @@ const leg = { flightNumber: 'LA100', origin: 'GRU', destination: 'REC', departur
 const roster = { year: 2032, month: 10, base: 'GRU', days: [{ date: '14/10/2032', type: 'VOO', dutyReport: '08:00', dutyDebrief: '11:30', legs: [leg] }] };
 const scope = vm.createContext({ ...policy, ...radarEvidence, Date: FixedDate, buildCanonicalRosterEvents, gateQueryDay: (x, t) => policy.gateQueryDay(x, t ?? now), URL, setTimeout, clearTimeout, process: { env: { CREWCHECK_RADAR_TIMEOUT_MS: '800' } },
   envAny: keys => keys.find(key => envs.has(key)) ? (keys.includes('CREWCHECK_FLIGHT_STATUS_URL') ? 'https://fixture.invalid/{flight}' : 'OFFLINE_ONLY') : '',
-  providerAvailable: keys => true, markProvider: () => {}, customGateSourceUpdate: payload => customGateSourceUpdate(payload, now),
+  providerAvailable: keys => true, markProvider: () => {}, customGateSourceUpdate: payload => customGateSourceUpdate(payload, now), selectAeroDataBoxOccurrence,
   jsonFetch: async url => { const host = new URL(url).hostname; const key = host.includes('aerodatabox') ? 'aerodatabox' : host.includes('airlabs') ? 'airlabs' : 'custom'; return { response: { ok: key in bodies }, payload: structuredClone(bodies[key] ?? null) }; },
   providerFlightAware: async () => null, providerAviationstack: async () => null,
   ciriumRadarInjectionEnabled: () => false, defaultCiriumRadarOptions: () => undefined, ciriumRadarProjection: () => ({}), configuredProviders: () => [],

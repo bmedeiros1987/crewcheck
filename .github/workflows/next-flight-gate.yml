@@ -7,6 +7,8 @@ on:
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server.mjs'
       - 'server/gate-source-update.mjs'
+      - 'server/aerodatabox-occurrence.mjs'
+      - 'scripts/regression-aerodatabox-occurrence.mjs'
       - 'shared/radar-field-evidence.mjs'
       - 'scripts/regression-radar-field-evidence.mjs'
       - 'client/src/lib/manualGateNotices.ts'
@@ -62,6 +64,7 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-aerodatabox-occurrence.mjs
           node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
@@ -91,6 +94,7 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-aerodatabox-occurrence.mjs
           node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs

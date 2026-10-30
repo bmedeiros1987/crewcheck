@@ -3,6 +3,7 @@ import { configureRadarPaidSources } from './server/radar-paid-sources.mjs';
 import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
+import { selectAeroDataBoxOccurrence } from './server/aerodatabox-occurrence.mjs';
 import { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS, retainAgreeingRadarGateProof } from './shared/radar-field-evidence.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
@@ -289,9 +290,10 @@ async function providerAeroDataBox(ctx, timeoutMs) {
     markProvider('aerodatabox', false);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
   }
-  const row = Array.isArray(payload) ? payload[0] : Array.isArray(payload?.items) ? payload.items[0] : payload;
+  const row = selectAeroDataBoxOccurrence(payload, ctx.gateQueryEvidence);
   if (!row) {
-    markProvider('aerodatabox', false);
+    // A valid response without this exact occurrence is not a provider failure:
+    // backing off here would skip AeroDataBox for every other flight.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('aerodatabox', true);
