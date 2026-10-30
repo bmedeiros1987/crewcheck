@@ -218,7 +218,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/financial-ui/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Verify local ACT applicability and minimum-reference UI (synthetic)
-        timeout-minutes: 3
+        timeout-minutes: 6
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: |
@@ -227,8 +227,18 @@ jobs:
           node scripts/regression-financial-act-applicability-browser.mjs || component_status=$?
           app_status=0
           node scripts/regression-financial-act-applicability-app.mjs || app_status=$?
+          notice_status=0
+          node scripts/regression-financial-act-notice-app.mjs || notice_status=$?
           test "$component_status" -eq 0
           test "$app_status" -eq 0
+          test "$notice_status" -eq 0
+      - name: Save synthetic ACT notice screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: act-notice-synthetic
+          path: artifacts/financial-ui/
+          if-no-files-found: ignore
       - name: Verify fixed financial mask and account preference (synthetic)
         timeout-minutes: 3
         env:

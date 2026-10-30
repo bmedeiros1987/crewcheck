@@ -112,16 +112,27 @@ export interface DayLoadAnalysis {
   gymScore: number;
   reasons: string[];
   blockedWindows?: Array<{ startTime: string; endTime: string; isNextDay?: boolean; label: string; source: 'duty' | 'flight' | 'standby' | 'reserve' | 'training' | 'raw' }>;
+  /** The day has an activity whose window the parser could not attribute: availability unknown, not free. */
+  availabilityUnresolved?: boolean;
 }
 
 export interface LoadAnalysis {
-  intensityScore: number;
-  recoveryScore: number;
-  grade: 'Excelente' | 'Boa' | 'Moderada' | 'Pesada' | 'Muito pesada';
+  /** null when every measurable day has a pending availability window (nothing to average). */
+  intensityScore: number | null;
+  recoveryScore: number | null;
+  grade: 'Excelente' | 'Boa' | 'Moderada' | 'Pesada' | 'Muito pesada' | 'Indeterminada';
   summary: string;
   hardestDays: DayLoadAnalysis[];
   easiestDays: DayLoadAnalysis[];
+  /** Every day, pending ones included (timeline). */
   days: DayLoadAnalysis[];
+  /** Every date with an activity window the parser could not attribute (any month): no timed
+   * recommendation and no aggregate uses that date. */
+  pendingAvailabilityDates?: string[];
+  /** The pending dates of the roster's own month, the scope of the monthly aggregates. */
+  aggregatePendingDates?: string[];
+  /** Set with aggregatePendingDates: aggregates cover known days only ('partial') or none ('indeterminate'). */
+  aggregateStatus?: 'partial' | 'indeterminate';
 }
 
 export interface ComplianceResult {
@@ -457,6 +468,9 @@ function getDayBlockingWindows(day: RosterDay): BlockingWindow[] {
     pushUniqueWindow(windows, makeBlockingWindow(firstLeg.departureTime, lastLeg.arrivalTime, 'voo', 'flight', Boolean(day.isNextDay || lastLeg.isNextDay)));
   }
 
+  // A window the parser left unresolved (provenance 'unknown') is never rebuilt from rawText:
+  // that would turn the ambiguous first clock into a start for limits, day loads and routine.
+  if (activityWindowUnresolved(day)) return windows;
   const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.toUpperCase();
   const rawTimes = Array.from(raw.matchAll(/\b(\d{1,2}:\d{2})(?:\s*\(\+1\)|\(\+1\))?/g)).map((match) => {
     const token = match[0].replace(/\s+/g, '');
@@ -1427,6 +1441,28 @@ function getStandbyWindowForCompliance(day: RosterDay): BlockingWindow | null {
   return null;
 }
 
+// The parser could not attribute a station-less window (clocks present, provenance 'unknown').
+// That is not a 0 h activity: it is pending evidence, reported like ROLLING_28D_DATA_GAP (never a
+// silent "conforme"), and no standby/reserve limit is evaluated on an invented window.
+function activityWindowUnresolved(day: RosterDay): boolean {
+  return (!day.dutyReport || !day.dutyDebrief) && (day.dutyReportSource === 'unknown' || day.dutyDebriefSource === 'unknown');
+}
+
+function unresolvedActivityWindowAlert(day: RosterDay, label: 'Sobreaviso' | 'Reserva', code: string, legalReference: string): Omit<ComplianceAlert, 'id'> {
+  return {
+    severity: 'warning',
+    title: `${label} sem janela comprovada`,
+    description: `${day.date}: os horários sem estação não permitem atribuir início e fim ${label === 'Reserva' ? 'da reserva' : 'do sobreaviso'}.`,
+    details: 'Pendência de leitura, não irregularidade confirmada nem 0 h. O CrewCheck não infere o início, não promove o horário seguinte a início publicado e não presume acionamento. Confira a linha da escala.',
+    confidence: 'baixa',
+    classification: 'dados_insuficientes',
+    code,
+    actionable: false,
+    legalReference,
+    date: day.date,
+  };
+}
+
 function getReserveWindowForCompliance(day: RosterDay): BlockingWindow | null {
   const reserve = getDayBlockingWindows(day).find(item => item.source === 'reserve');
   if (reserve) return reserve;
@@ -1886,6 +1922,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
           date: day.date,
         });
       }
+      if (activityWindowUnresolved(day)) pushAlert(alerts, unresolvedActivityWindowAlert(day, 'Sobreaviso', 'STANDBY_WINDOW_UNRESOLVED', actRules.standby.legalReference));
       addStandbyActivationDutyLimitAlerts(alerts, day, roster, actRules);
     }
 
@@ -1913,6 +1950,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
           date: day.date,
         });
       }
+      if (activityWindowUnresolved(day)) pushAlert(alerts, unresolvedActivityWindowAlert(day, 'Reserva', 'RESERVE_WINDOW_UNRESOLVED', actRules.reserve.legalReference));
       addReserveActivationDutyLimitAlerts(alerts, day, actRules, legalProfile);
     }
 
@@ -2275,12 +2313,12 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   // nem é contada como irregularidade acionável. Assim não produzimos um falso "conforme".
   const overallStatus = errorCount > 0 ? 'violation' : (warningCount > 0 || incompleteDataCount > 0) ? 'warning' : 'compliant';
   const summary = errorCount > 0
-    ? `Foram encontradas ${errorCount} irregularidade(s) e ${warningCount} ponto(s) de atenção. Escala classificada como ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100 de puxada).`
+    ? `Foram encontradas ${errorCount} irregularidade(s) e ${warningCount} ponto(s) de atenção. Escala classificada como ${describeLoadIntensity(loadAnalysis)}.`
     : warningCount > 0
-      ? `Sem irregularidade crítica automática, mas com ${warningCount} ponto(s) de atenção. Escala ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100 de puxada).`
+      ? `Sem irregularidade crítica automática, mas com ${warningCount} ponto(s) de atenção. Escala ${describeLoadIntensity(loadAnalysis)}.`
       : incompleteDataCount > 0
-        ? `Sem irregularidade automática confirmada, porém ${incompleteDataCount} verificação(ões) ficaram incompletas por falta de histórico ou origem dos dados. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`
-        : `A escala não apresentou alertas nos parâmetros automáticos. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`;
+        ? `Sem irregularidade automática confirmada, porém ${incompleteDataCount} verificação(ões) ficaram incompletas por falta de histórico ou origem dos dados. Intensidade ${describeLoadIntensity(loadAnalysis, '')}.`
+        : `A escala não apresentou alertas nos parâmetros automáticos. Intensidade ${describeLoadIntensity(loadAnalysis, '')}.`;
 
   return {
     engineVersion: COMPLIANCE_ENGINE_VERSION,
@@ -2307,7 +2345,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
   const sortedDays = sortDays(roster.days);
   const pendingRoleDates = new Set(pendingFlightRoleDates(roster));
-  const days: DayLoadAnalysis[] = sortedDays.map((day, index) => {
+  const loadDays: DayLoadAnalysis[] = sortedDays.map((day, index) => {
     const previousWorkedDay = [...sortedDays.slice(0, index)]
       .reverse()
       .find(item => isActiveDuty(item) && Boolean(item.dutyDebrief) && shouldEvaluateMinimumRest(item, day));
@@ -2426,8 +2464,15 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
       gymScore,
       reasons: reasons.length ? reasons.slice(0, 5) : ['sem atividade relevante identificada'],
       blockedWindows: getDayBlockingWindows(day),
+      ...(activityWindowUnresolved(day) ? { availabilityUnresolved: true } : {}),
     };
   });
+
+  // Unknown availability makes the whole date unmeasurable (not a light day): every item of that date
+  // stays in the timeline (loadDays) but out of every aggregate below (average load, hardest/easiest).
+  const pendingDateSet = new Set(loadDays.filter(day => day.availabilityUnresolved).map(day => day.date));
+  const pendingAvailabilityDates = [...pendingDateSet];
+  const days = loadDays.filter(day => !pendingDateSet.has(day.date));
 
   const workedDays = days.filter(day => !day.isDayOff || day.fatigueScore > 10);
   const averageScore = workedDays.length ? workedDays.reduce((sum, day) => sum + day.fatigueScore, 0) / workedDays.length : 0;
@@ -2440,6 +2485,34 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     .sort((a, b) => b.gymScore - a.gymScore || a.fatigueScore - b.fatigueScore)
     .slice(0, 8);
 
+  // The monthly aggregates are partial only for pending dates of the roster's own month; an unknown
+  // carry-in from another month still guards recommendations (pendingAvailabilityDates).
+  const competenceYear = Number(roster.year), competenceMonth = Number(roster.month);
+  const hasCompetence = Number.isInteger(competenceYear) && competenceYear > 0 && competenceMonth >= 1 && competenceMonth <= 12;
+  const aggregatePendingDates = pendingAvailabilityDates.filter((date) => {
+    if (!hasCompetence) return true;
+    const parsed = parseDate(date);
+    return parsed.getFullYear() === competenceYear && parsed.getMonth() + 1 === competenceMonth;
+  });
+  if (aggregatePendingDates.length) {
+    // Nothing measurable left: no average of an empty set (it would read as 0/100, "excelente").
+    const indeterminate = workedDays.length === 0;
+    return {
+      intensityScore: indeterminate ? null : intensityScore,
+      recoveryScore: indeterminate ? null : recoveryScore,
+      grade: indeterminate ? 'Indeterminada' : scaleGrade(intensityScore),
+      summary: indeterminate
+        ? `Carga da escala indeterminada: disponibilidade pendente em ${aggregatePendingDates.join(', ')} e nenhum outro dia mensurável.`
+        : `${makeLoadSummary(intensityScore, hardestDays)} Resultado parcial: ${aggregatePendingDates.join(', ')} com disponibilidade pendente, fora do cálculo.`,
+      hardestDays,
+      easiestDays,
+      days: loadDays,
+      pendingAvailabilityDates,
+      aggregatePendingDates,
+      aggregateStatus: indeterminate ? 'indeterminate' : 'partial',
+    };
+  }
+
   return {
     intensityScore,
     recoveryScore,
@@ -2447,20 +2520,31 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     summary: makeLoadSummary(intensityScore, hardestDays),
     hardestDays,
     easiestDays,
-    days,
+    days: loadDays,
+    ...(pendingAvailabilityDates.length ? { pendingAvailabilityDates } : {}),
   };
+}
+
+/** "moderada (52/100 de puxada, parcial)" / "indeterminada (disponibilidade pendente)". */
+export function describeLoadIntensity(loadAnalysis: LoadAnalysis, unit = ' de puxada'): string {
+  if (loadAnalysis.intensityScore === null) return `${loadAnalysis.grade.toLowerCase()} (disponibilidade pendente)`;
+  const partial = loadAnalysis.aggregateStatus === 'partial' ? ', parcial' : '';
+  return `${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100${unit}${partial})`;
 }
 
 export function getGymRecommendations(roster: CrewRoster, _roleSelection: CrewRoleSelection = 'auto'): GymRecommendation[] {
   const load = analyzeDayLoads(roster);
   const chronological = [...load.days].sort((a, b) => parseDate(a.date).getTime() - parseDate(b.date).getTime());
+  // Unknown availability is never free time: no timed recommendation on that date (it would reach the
+  // PDF and the ICS/Google Calendar exports), and an unknown neighbour is not taken as a light day.
+  const pendingDates = new Set(load.pendingAvailabilityDates || []);
 
   return chronological.map((day, index): GymRecommendation => {
     const dayNumber = Number(day.date.split('/')[0]);
     const previous = chronological[index - 1] || null;
     const next = chronological[index + 1] || null;
-    const previousHeavy = Boolean(previous && previous.fatigueScore >= 70);
-    const nextHeavy = Boolean(next && next.fatigueScore >= 70);
+    const previousHeavy = Boolean(previous && (previous.fatigueScore >= 70 || pendingDates.has(previous.date)));
+    const nextHeavy = Boolean(next && (next.fatigueScore >= 70 || pendingDates.has(next.date)));
     const previousNight = Boolean(previous?.isNightDuty || previous?.isLateFinish);
     const nextEarly = Boolean(next?.isEarlyStart || (next?.restBefore !== null && next?.restBefore !== undefined && next.restBefore < 14));
     const recoveryAfterHardDuty = previousHeavy || previousNight || (day.restBefore !== null && day.restBefore < 16);
@@ -2578,7 +2662,7 @@ export function getGymRecommendations(roster: CrewRoster, _roleSelection: CrewRo
       duration: shortRecovery ? '20–25min' : '30min',
       reason: `Evitar treino pesado (${day.fatigueScore}/100). Priorize sono, hidratação, mobilidade, alongamento e caminhada leve. Motivos: ${day.reasons.join(', ')}.`,
     });
-  });
+  }).filter(recommendation => !pendingDates.has(recommendation.date));
 }
 
 function makeGymRecommendation(

@@ -3,9 +3,12 @@ import { financialActAt, type FinancialActSnapshot } from './financialActApplica
 import { resolveLatamAllowanceReference, validAllowanceDay, type AllowanceCategory, type AllowanceCurrency, type AllowanceSlot, type LatamAllowanceReference } from './latamAllowanceCatalog';
 
 export type OwnedAllowanceValue = { value: number; source: 'learned' | 'personal_reference' | 'manual'; description: string; version: string };
+/** Why a slot waits on the owner's ACT declaration (absent on any other pending cause). */
+export type FinancialActPendingCause = 'act_missing' | 'act_revoked' | 'act_expired' | 'act_invalid' | 'act_unavailable';
 export type ResolvedAllowanceSlot = {
   kind: 'forecast' | 'reference' | 'pending'; value: number | null; currency: AllowanceCurrency | null;
   source: string; version: string; reason: string; reference: LatamAllowanceReference | null;
+  actCause?: FinancialActPendingCause;
 };
 /** Caller supplies already validated, category-specific account values. No rate
  * adoption or currency-only foreign-rate promotion takes place here. */
@@ -29,12 +32,17 @@ export function resolveSharedAllowanceSlot(args: {
   const selection = context.history && ['ready', 'missing'].includes(context.state) && context.ownerId === context.history.ownerId && context.isCurrent()
     ? financialActAt(context.history, args.date) : null;
   if (!selection || selection.state !== 'applicable') {
-    const reason = context.state === 'invalid' ? 'Declaração financeira de ACT inválida; dados preservados para revisão.'
-      : context.state === 'unavailable' ? 'Declaração financeira de ACT indisponível neste dispositivo; dados preservados.'
-      : selection?.state === 'revoked' ? 'Aplicação financeira do ACT revogada para esta data.'
-      : selection?.state === 'expired' ? 'Declaração financeira de ACT fora do período confirmado.'
+    const actCause: FinancialActPendingCause = context.state === 'invalid' ? 'act_invalid'
+      : context.state === 'unavailable' ? 'act_unavailable'
+      : selection?.state === 'revoked' ? 'act_revoked'
+      : selection?.state === 'expired' ? 'act_expired'
+      : 'act_missing';
+    const reason = actCause === 'act_invalid' ? 'Declaração financeira de ACT inválida; dados preservados para revisão.'
+      : actCause === 'act_unavailable' ? 'Declaração financeira de ACT indisponível neste dispositivo; dados preservados.'
+      : actCause === 'act_revoked' ? 'Aplicação financeira do ACT revogada para esta data.'
+      : actCause === 'act_expired' ? 'Declaração financeira de ACT fora do período confirmado.'
       : 'Empresa e ACT não confirmados para esta data. Confirme a aplicação financeira uma vez para o período.';
-    return pending(reason);
+    return { ...pending(reason), actCause };
   }
   const reference = resolveLatamAllowanceReference({ role: selection.event.role, category: args.category, slot: args.slot, date: args.date });
   if (reference.amountMinor === null || !reference.calculableReference) return pending(reference.reason, reference);
