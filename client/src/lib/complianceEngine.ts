@@ -112,6 +112,8 @@ export interface DayLoadAnalysis {
   gymScore: number;
   reasons: string[];
   blockedWindows?: Array<{ startTime: string; endTime: string; isNextDay?: boolean; label: string; source: 'duty' | 'flight' | 'standby' | 'reserve' | 'training' | 'raw' }>;
+  /** The day has an activity whose window the parser could not attribute: availability unknown, not free. */
+  availabilityUnresolved?: boolean;
 }
 
 export interface LoadAnalysis {
@@ -457,6 +459,9 @@ function getDayBlockingWindows(day: RosterDay): BlockingWindow[] {
     pushUniqueWindow(windows, makeBlockingWindow(firstLeg.departureTime, lastLeg.arrivalTime, 'voo', 'flight', Boolean(day.isNextDay || lastLeg.isNextDay)));
   }
 
+  // A window the parser left unresolved (provenance 'unknown') is never rebuilt from rawText:
+  // that would turn the ambiguous first clock into a start for limits, day loads and routine.
+  if (activityWindowUnresolved(day)) return windows;
   const raw = `${day.rawText || ''} ${day.pairingCode || ''}`.toUpperCase();
   const rawTimes = Array.from(raw.matchAll(/\b(\d{1,2}:\d{2})(?:\s*\(\+1\)|\(\+1\))?/g)).map((match) => {
     const token = match[0].replace(/\s+/g, '');
@@ -2450,6 +2455,7 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
       gymScore,
       reasons: reasons.length ? reasons.slice(0, 5) : ['sem atividade relevante identificada'],
       blockedWindows: getDayBlockingWindows(day),
+      ...(activityWindowUnresolved(day) ? { availabilityUnresolved: true } : {}),
     };
   });
 

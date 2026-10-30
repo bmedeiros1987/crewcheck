@@ -12,6 +12,7 @@ on:
       - 'client/src/lib/databaseClient.ts'
       - 'client/src/lib/aimsParser.ts'
       - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/routinePlanner.ts'
       - 'scripts/regression-p0-presentation-boundary-leak.mjs'
       - 'scripts/regression-aims-activity-before-flight-parity.mjs'
       - 'scripts/regression-aims-ambiguous-activity-clocks.mjs'

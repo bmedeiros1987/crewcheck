@@ -9,7 +9,9 @@
 //    APZ; no activation is invented (the anonymized official corpus: "não inferir acionamento");
 //  - regulation: pending evidence (classification 'dados_insuficientes', actionable false), never a
 //    silent 0 h or "compliant", and no standby/reserve limit on an invented window;
-//  - finance: no known hours/amount (pending), never 0; presentation shows "—".
+//  - finance: no known hours/amount (pending), never 0; presentation shows "—";
+//  - day loads/routine: the window is not rebuilt from rawText and the day is marked availability
+//    unknown; routine never offers a "safe" slot there (published windows and free days unchanged).
 // Synthetic text only. Runs on raw and prepared sources (node scripts/v139/apply.mjs). Mutants must
 // fail by assertion.
 import assert from 'node:assert/strict';
@@ -19,7 +21,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
-const PARSER = 'client/src/lib/aimsParser.ts', ENGINE = 'client/src/lib/complianceEngine.ts';
+const PARSER = 'client/src/lib/aimsParser.ts', ENGINE = 'client/src/lib/complianceEngine.ts', PLANNER = 'client/src/lib/routinePlanner.ts';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aims-ambiguous-clocks-'));
 let serial = 0;
 const EXPOSE = '\nexport { parseAimsHumanBlock, parseAimsVisualColumnDays };\n';
@@ -35,10 +37,10 @@ async function load(sources = {}) {
   }
   const out = path.join(dir, `bundle-${serial += 1}.mjs`);
   try {
-    await build({ stdin: { contents: `export { parseAimsRoster, parseAimsHumanBlock, parseAimsVisualColumnDays } from './client/src/lib/aimsParser.ts'; export { buildCanonicalRosterEvents, normalizeRosterDays } from './client/src/lib/canonicalRoster.ts'; export { analyzeCompliance } from './client/src/lib/complianceEngine.ts'; export { assessSalaryActivities } from './client/src/lib/salaryActivityEvidence.ts'; export { rosterCardPresentation } from './client/src/lib/rosterPresentation.ts';`, resolveDir: process.cwd(), loader: 'ts' },
+    await build({ stdin: { contents: `export { parseAimsRoster, parseAimsHumanBlock, parseAimsVisualColumnDays } from './client/src/lib/aimsParser.ts'; export { buildCanonicalRosterEvents, normalizeRosterDays } from './client/src/lib/canonicalRoster.ts'; export { analyzeCompliance } from './client/src/lib/complianceEngine.ts'; export { assessSalaryActivities } from './client/src/lib/salaryActivityEvidence.ts'; export { rosterCardPresentation } from './client/src/lib/rosterPresentation.ts'; export { analyzeDayLoads } from './client/src/lib/complianceEngine.ts'; export { buildRoutineSuggestions, defaultRoutineActivities } from './client/src/lib/routinePlanner.ts';`, resolveDir: process.cwd(), loader: 'ts' },
       bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'silent', alias: { '@': path.resolve('client/src'), '@shared': path.resolve('shared') },
       plugins: [{ name: 'variants', setup(b) {
-        b.onResolve({ filter: /(aimsParser|complianceEngine)(\.ts)?$/ }, args => {
+        b.onResolve({ filter: /(aimsParser|complianceEngine|routinePlanner)(\.ts)?$/ }, args => {
           const target = path.resolve(args.resolveDir, args.path.replace(/^@\//, `${path.resolve('client/src')}/`)).replace(/(\.ts)?$/, '.ts');
           const real = Object.keys(names).find(file => path.resolve(file) === target);
           return real ? { path: names[real] } : undefined;
@@ -116,12 +118,40 @@ async function suite(P) {
   assert.ok(!codes(reserveResult).some(code => /^Reserva (acima|abaixo)/.test(code)), 'no reserve limit evaluated on an invented window');
   assert.ok(!codes(compliance(parse('17Aug Mon HSB BSB 06:00 BSB 09:00'))).includes('STANDBY_WINDOW_UNRESOLVED'), 'a published window raises no pending item');
 
+  // Day loads + routine (the only routine caller: Home → analyzeDayLoads → buildRoutineSuggestions).
+  // An unresolved window is never rebuilt from rawText (no 06:00/20:00 as start/end/blocked window)
+  // and its day is "availability unknown", never a free day with a "safe" recommendation.
+  const routineDates = roster => new Set(P.buildRoutineSuggestions(P.analyzeDayLoads(JSON.parse(JSON.stringify(roster))).days, P.defaultRoutineActivities()).map(item => item.date));
+  const syntheticDay = (type, rawText) => ({ date: '17/08/2026', dayOfWeek: 'Seg', type, pairingCode: type, rawText, dutyReport: null, dutyDebrief: null, dutyReportSource: 'unknown', dutyDebriefSource: 'unknown', legs: [], dutyHours: null, flyingHours: 0, isNextDay: false, hotel: null });
+  const unresolvedRosters = [
+    ['public HSB isolated', isolated],
+    ['public HSB + flight', mixed],
+    ['public ASB + flight', parse('17Aug Mon ASB 06:00 20:00 LA 3730 20:25 21:15 BSB FOR 23:55')],
+    ['synthetic ASB with rawText', { ...isolated, days: [syntheticDay('ASB', 'ASB 06:00 20:00')] }],
+    ['synthetic RES with rawText', { ...isolated, days: [syntheticDay('ASB', 'RES 06:00 20:00')] }],
+    ['synthetic HSB with rawText', { ...isolated, days: [syntheticDay('HSB', 'HSB 06:00 09:00')] }],
+  ];
+  for (const [label, roster] of unresolvedRosters) {
+    const load = P.analyzeDayLoads(JSON.parse(JSON.stringify(roster))).days.find(item => item.date === '17/08/2026' && /HSB|ASB/.test(item.type));
+    assert.deepEqual([load.dutyStartTime, load.dutyEndTime, load.availabilityUnresolved], [null, null, true], `${label}: day load keeps the window unknown`);
+    assert.ok(!(load.blockedWindows || []).some(item => item.source === 'standby' || item.source === 'reserve' || item.source === 'raw'), `${label}: no activity window rebuilt from rawText`);
+    assert.ok(!routineDates(roster).has('17/08/2026'), `${label}: no routine/rest/meal slot offered on an unknown-availability date`);
+  }
+  // Counterproof (preserved): a published window is still blocked and the day keeps routine slots outside it.
+  const publishedLoad = P.analyzeDayLoads(parse('17Aug Mon HSB BSB 06:00 BSB 09:00')).days.find(item => item.date === '17/08/2026');
+  assert.deepEqual([publishedLoad.dutyStartTime, publishedLoad.dutyEndTime, publishedLoad.availabilityUnresolved], ['06:00', '09:00', undefined], 'published standby window unchanged');
+  // Routine contract on genuinely synthetic day loads (no parser): unknown blocks, a free day does not.
+  const syntheticLoad = (extra = {}) => ({ date: '18/08/2026', dayOfWeek: 'Ter', type: 'HSB', label: 'Sobreaviso', fatigueScore: 10, loadLabel: 'Leve', dutyHours: 0, flightHours: 0, dutyStartTime: null, dutyEndTime: null, isDutyNextDay: false, sectors: 0, restBefore: 24, restAfter: 24, isNightDuty: false, isEarlyStart: false, isLateFinish: false, isDayOff: false, gymScore: 90, reasons: ['sintético'], blockedWindows: [], ...extra });
+  const activities = P.defaultRoutineActivities();
+  assert.equal(P.buildRoutineSuggestions([syntheticLoad({ availabilityUnresolved: true })], activities).length, 0, 'synthetic unknown-availability day: no safe recommendation');
+  assert.ok(P.buildRoutineSuggestions([syntheticLoad({ type: 'DO', label: 'Folga', isDayOff: true })], activities).length > 0, 'synthetic free day: recommendations preserved');
+
   // Finance: unknown is pending, never 0.
   const salary = P.assessSalaryActivities([{ id: 'standby-1', kind: 'standby', day: day(isolated, 'HSB') }], () => 3, 10);
   assert.deepEqual([salary.rows[0].timeKnown, salary.rows[0].hours, salary.complete, Number.isNaN(salary.amount)], [false, null, false, true], 'standby pay pending, not zero');
 }
 
-const parserSource = fs.readFileSync(PARSER, 'utf8'), engineSource = fs.readFileSync(ENGINE, 'utf8');
+const parserSource = fs.readFileSync(PARSER, 'utf8'), engineSource = fs.readFileSync(ENGINE, 'utf8'), plannerSource = fs.readFileSync(PLANNER, 'utf8');
 await suite(await load());
 
 const mutants = [
@@ -131,11 +161,14 @@ const mutants = [
   ['ASB/RES reader without the guard', PARSER, "  if (!published && bareActivityStartIsAmbiguous(ownLines)) return unresolvedActivityWindow('ASB');\n", ''],
   ['ground/visual window without the guard', PARSER, "  if (bareActivityStartIsAmbiguous(tokens)) return { start: null, end: null, startSource: 'unknown', endSource: 'unknown' };\n", ''],
   ['compliance treats the unresolved reserve as silent 0 h', ENGINE, "      if (activityWindowUnresolved(day)) pushAlert(alerts, unresolvedActivityWindowAlert(day, 'Reserva', 'RESERVE_WINDOW_UNRESOLVED', actRules.reserve.legalReference));\n", ''],
+  ['day loads rebuild the unknown window from rawText', ENGINE, "  if (activityWindowUnresolved(day)) return windows;\n", ''],
+  ['day loads do not propagate unknown availability', ENGINE, "      ...(activityWindowUnresolved(day) ? { availabilityUnresolved: true } : {}),\n", ''],
+  ['routine treats unknown availability as a free date', PLANNER, "    .filter((item) => !unresolvedDates.has(item.date))\n", ''],
   ['compliance treats the unresolved standby as silent 0 h', ENGINE, "      if (activityWindowUnresolved(day)) pushAlert(alerts, unresolvedActivityWindowAlert(day, 'Sobreaviso', 'STANDBY_WINDOW_UNRESOLVED', actRules.standby.legalReference));\n", ''],
 ];
 const killed = [];
 for (const [name, file, from, to] of mutants) {
-  const source = file === PARSER ? parserSource : engineSource;
+  const source = file === PARSER ? parserSource : file === PLANNER ? plannerSource : engineSource;
   assert(source.includes(from), `mutant anchor present: ${name}`);
   let failure = null;
   try { await suite(await load({ [file]: source.replace(from, to) })); } catch (error) { failure = error; }
@@ -144,4 +177,4 @@ for (const [name, file, from, to] of mutants) {
   killed.push(`${name} → "${failure.message.split('\n')[0]}"`);
 }
 const prepared = /\|MCK\|/.test(parserSource);
-console.log(`PASS ambiguous bare activity clocks (${prepared ? 'prepared' : 'raw'} sources): HSB/HSBE/ASB/ground with an ambiguous bare start stay unresolved (no 06:00 inference, no 09:00 promotion, raw kept); station and unambiguous windows unchanged; standby before a flight stays separate and the flight keeps APZ 09:25 with no activation invented; canonical/presentation show no invented clock; regulation reports pending evidence (never silent 0 h/compliant, no limit on an invented window); finance pending, not zero; ${killed.length} mutants killed:\n  ${killed.join('\n  ')}`);
+console.log(`PASS ambiguous bare activity clocks (${prepared ? 'prepared' : 'raw'} sources): HSB/HSBE/ASB/ground with an ambiguous bare start stay unresolved (no 06:00 inference, no 09:00 promotion, raw kept); station and unambiguous windows unchanged; standby before a flight stays separate and the flight keeps APZ 09:25 with no activation invented; canonical/presentation show no invented clock; regulation reports pending evidence (never silent 0 h/compliant, no limit on an invented window); day loads never rebuild the window from rawText and routine offers no safe slot on an unknown-availability day (published windows and free days preserved); finance pending, not zero; ${killed.length} mutants killed:\n  ${killed.join('\n  ')}`);
