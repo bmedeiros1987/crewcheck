@@ -260,6 +260,19 @@ await run('metadata-only revision (base, rank) is a new generation; operation id
   assert.equal((await write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: 3, operationId, roster: octB, parserVersion: 'parser-1' })).replay, true);
 });
 
+await run('concurrent writers on one competence: one accepted per base, the rest explicit 409, never a lock error', async () => {
+  let base = 0;
+  for (let round = 0; round < 25; round += 1) {
+    const results = await Promise.allSettled([0, 1, 2, 3].map(writer => write({ email: accountA, crewKey, rosterKey: '2026-10', baseGeneration: base, operationId: crypto.randomUUID(), roster: month(2026, 10, { 23: flight(`LA${round}${writer}`) }) })));
+    assert.deepEqual(results.filter(result => result.status === 'rejected').map(result => result.reason?.code), [], `round ${round}: no deadlock or lock error escapes`);
+    const statuses = results.map(result => result.value.status).sort();
+    assert.deepEqual(statuses, [200, 409, 409, 409], `round ${round}: exactly one write per base`);
+    base += 1;
+  }
+  assert.equal((await current(accountA, '2026-10')).generation, 25);
+  assert.equal(await counts(), 25, 'one history row per accepted write');
+});
+
 await run('clock skew: the same race gives the same result with device clocks in 1999 and 2099', async () => {
   const RealDate = globalThis.Date, outcomes = [];
   try {

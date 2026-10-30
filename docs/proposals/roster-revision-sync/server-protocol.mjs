@@ -107,10 +107,24 @@ export async function writeRosterRevision(db, request, { resolveVerifiedCrewKey 
   const operationId = legacy ? legacyOperationId([email, crewKey, rosterKey, rosterKind, contentHash]) : String(request.operationId);
   const requestHash = sha256(stable({ crewKey, rosterKey, rosterKind, operation, baseGeneration, contentHash, parserVersion: String(parserVersion), schemaVersion: PROPOSAL_SCHEMA_VERSION, sourceKind: legacy ? 'legacy_create' : sourceKind }));
   const where = [email, crewKey, rosterKey, rosterKind];
+  // InnoDB may abort one of two transactions racing for the same competence (deadlock); the whole
+  // transaction rolled back, so it is retried as a unit. The replay check keeps retries idempotent.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, contentHash, baseGeneration, operationId, requestHash });
+    } catch (error) {
+      if (!['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'].includes(error?.code) || attempt >= 5) throw error;
+    }
+  }
+}
+
+async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, contentHash, baseGeneration, operationId, requestHash }) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    await client.query('INSERT IGNORE INTO crewcheck_roster_competences(owner_email,crew_key,roster_key,roster_kind) VALUES($1,$2,$3,$4)', where);
+    // First lock is exclusive (insert or no-op update): no shared lock to upgrade, so concurrent
+    // writers of one competence queue instead of deadlocking.
+    await client.query('INSERT INTO crewcheck_roster_competences(owner_email,crew_key,roster_key,roster_kind) VALUES($1,$2,$3,$4) ON DUPLICATE KEY UPDATE generation=generation', where);
     const current = (await client.query('SELECT generation,state,content_hash FROM crewcheck_roster_competences WHERE owner_email=$1 AND crew_key=$2 AND roster_key=$3 AND roster_kind=$4 FOR UPDATE', where)).rows[0];
     // Replay is checked under the competence lock, so a duplicated send cannot race itself.
     const previous = (await client.query('SELECT generation,request_hash,crew_key,roster_key,roster_kind FROM crewcheck_roster_revisions WHERE owner_email=$1 AND client_operation_id=$2', [email, operationId])).rows[0];
