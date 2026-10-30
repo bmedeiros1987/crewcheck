@@ -15,7 +15,7 @@ const { JSDOM } = createRequire(process.env.CREWCHECK_QA_JSDOM_PACKAGE || import
 
 const component = path.resolve('client/src/components/finance/FinancialActApplicability.tsx');
 async function bundle(overrides = []) {
-  return (await build({ stdin: { contents: `import React from 'react';import {act} from 'react-dom/test-utils';import {createRoot} from 'react-dom/client';import Control from './client/src/components/finance/FinancialActApplicability';window.act=act;let root;window.mount=pending=>{root?.unmount();const host=document.getElementById('root');root=createRoot(host);root.render(<Control pending={pending}/>);};`, resolveDir: process.cwd(), loader: 'tsx' },
+  return (await build({ stdin: { contents: `import React from 'react';import {act} from 'react-dom/test-utils';import {createRoot} from 'react-dom/client';import Control,{AllowanceMinimumReference} from './client/src/components/finance/FinancialActApplicability';window.act=act;let root;window.mount=pending=>{root?.unmount();const host=document.getElementById('root');root=createRoot(host);root.render(<Control pending={pending}/>);};window.mountMinimum=()=>{root?.unmount();const host=document.getElementById('root');root=createRoot(host);root.render(<AllowanceMinimumReference rows={[{iso:'2026-10-20',label:'Almoço',currency:'USD',value:28.7,source:'Fonte sintética do piso publicado'},{iso:'2026-10-20',label:'Jantar',currency:'USD',value:31.7,source:'Fonte sintética do piso publicado'}]} totals={{USD:60.4}} inspections={[{iso:'2026-10-21',currency:'GBP',publishedFloorMinor:2400,reason:'Escopo sintético pendente'}]}/>);};`, resolveDir: process.cwd(), loader: 'tsx' },
     bundle: true, write: false, outfile: '/tmp/financial-act-notice-dom.js', format: 'iife', jsx: 'automatic', tsconfig: 'tsconfig.json',
     plugins: [{ name: 'mutant', setup(b) { b.onLoad({ filter: /FinancialActApplicability\.tsx$/ }, args => {
       let contents = fs.readFileSync(args.path, 'utf8');
@@ -97,6 +97,55 @@ async function suite(code) {
     assert.match(panel_().textContent, /Confirme seus dados para calcular as diárias\./, 'live switch to PT');
     assert.doesNotMatch(fullText(), ENGLISH_UI, 'PT: no English interface text after the switch');
     assert.equal(panel_().getAttribute('lang'), 'pt-BR');
+    // English beyond the initial form: the pending dates, preview, save and validation messages and
+    // history follow the language (dates formatted per language, same days); a live switch after
+    // saving re-renders the saved message and history in Portuguese.
+    w.localStorage.setItem('crewcheck_language', 'en'); w.localStorage.removeItem(key);
+    await mount([{ iso: '2026-10-20', actCause: 'act_missing' }]);
+    const click = async text => { const button = [...panel_().querySelectorAll('button')].find(node => node.textContent === text); assert.ok(button, `button ${text}`); await w.act(async () => button.click()); };
+    await click('Review details');
+    assert.match(panel_().textContent, /Pending dates in this period: 20 Oct/, 'EN pending date format');
+    await click('Prepare declaration without saving');
+    assert.match(panel_().textContent, /Select employer and profile, confirm the coverage and check the ACT validity dates\./, 'EN validation message');
+    const selects = () => panel_().querySelectorAll('select');
+    const choose = async (index, value) => { await w.act(async () => { const el = selects()[index]; el.value = value; el.dispatchEvent(new w.Event('change', { bubbles: true })); }); };
+    await choose(1, 'TAM_LINHAS_AEREAS_SA'); await choose(2, 'cabin');
+    await w.act(async () => panel_().querySelector('input[type=checkbox]').click());
+    await click('Prepare declaration without saving');
+    const preview = panel_().querySelector('[data-act-preview]');
+    assert.ok(preview, 'EN preview');
+    assert.match(preview.textContent, /1 Jan 2026 to 30 Nov 2027: TAM — Cabin crew \(Comissários\) — account holder’s declaration/, 'EN preview with formatted dates and role');
+    assert.doesNotMatch(preview.textContent.replace(OFFICIAL, ''), PORTUGUESE, 'EN preview fully English');
+    await click('Confirm and save the declaration in this account');
+    assert.match(panel_().textContent, /Financial declaration saved in this account and device\./, 'EN save message');
+    assert.equal(JSON.parse(w.localStorage.getItem(key)).events[0].role, 'cabin', 'saved declaration unchanged by language');
+    await mount([]);
+    const history = [...panel_().querySelectorAll('details details')].find(node => /Declaration history/.test(node.textContent));
+    assert.ok(history, 'EN history'); await w.act(async () => { history.open = true; });
+    assert.match(history.textContent, /1 Jan 2026 to 30 Nov 2027: ACT Cabin crew \(Comissários\)/, 'EN history dates and role');
+    await w.act(async () => { w.localStorage.setItem('crewcheck_language', 'pt'); w.dispatchEvent(new w.CustomEvent('crewcheck:language-change', { detail: { language: 'pt' } })); });
+    assert.match(panel_().textContent, /01\/01\/2026 a 30\/11\/2027: ACT Comissários/, 'PT history after the switch');
+    assert.doesNotMatch(fullText(), ENGLISH_UI, 'PT after the switch: no English left');
+
+    // ACT minimum reference: labels, dates and currency follow the language; amounts unchanged.
+    w.localStorage.setItem('crewcheck_language', 'en');
+    await w.act(async () => w.mountMinimum());
+    const minimum = () => w.document.querySelector('[data-allowance-minimum-reference]');
+    for (const node of minimum().querySelectorAll('details')) await w.act(async () => { node.open = true; });
+    const enMinimum = minimum().textContent;
+    assert.match(enMinimum, /20 Oct 2026 · Lunch · US\$28\.70/, 'EN minimum row: date, label, currency format');
+    assert.match(enMinimum, /20 Oct 2026 · Dinner · US\$31\.70/);
+    assert.match(enMinimum, /Minimum reference subtotal: US\$60\.40/);
+    assert.match(enMinimum, /21 Oct 2026 · printed floor for the full meal £24\.00/);
+    const enOwn = [...minimum().querySelectorAll('*')].filter(node => !node.children.length && !node.closest('[lang="pt-BR"]')).map(node => node.textContent).join(' | ');
+    assert.doesNotMatch(enOwn, PORTUGUESE, 'EN minimum reference: interface fully English (engine sources marked pt-BR)');
+    assert.doesNotMatch(enOwn, /Almoço|Jantar|Ceia|piso|Subtotal da/, 'EN minimum reference: no Portuguese label');
+    await w.act(async () => { w.localStorage.setItem('crewcheck_language', 'pt'); w.dispatchEvent(new w.CustomEvent('crewcheck:language-change', { detail: { language: 'pt' } })); });
+    const ptMinimum = minimum().textContent;
+    assert.match(ptMinimum, /20\/10\/2026 · Almoço · US\$\s?28,70/, 'PT minimum row after the switch');
+    assert.match(ptMinimum, /Subtotal da referência mínima: US\$\s?60,40/);
+    assert.doesNotMatch(ptMinimum, /Lunch|Dinner|Minimum reference|printed floor/, 'PT minimum reference: no English left');
+
     // Error state in English.
     w.localStorage.setItem('crewcheck_language', 'en'); w.localStorage.setItem(key, '{corrupt');
     await mount(pending);
@@ -107,6 +156,9 @@ async function suite(code) {
 
 await suite(await bundle());
 const MUTANTS = {
+  'EN meal label left in Portuguese': [["const label = (value: string) => lang === 'pt-BR' ? value : ALLOWANCE_LABELS_EN[value] || value;", "const label = (value: string) => value;"]],
+  'currency fixed to pt-BR': [["value.toLocaleString(lang === 'pt-BR' ? 'pt-BR' : 'en-GB', { style: 'currency', currency })", "value.toLocaleString('pt-BR', { style: 'currency', currency })"]],
+  'preview dates left in ISO': [["{longDay(interval.from)} {t.to} {longDay(interval.through)}:", "{interval.from} {t.to} {interval.through}:"]],
   'previous rule: notice only without declaration events': [['const needsAction = pendingDates.length > 0;', 'const needsAction = snapshot.history.events.length === 0;']],
   'details open by default': [['const [open, setOpen] = useState(false);', 'const [open, setOpen] = useState(true);']],
   'notice ignores the period': [['const needsAction = pendingDates.length > 0;', 'const needsAction = true;']],

@@ -50,7 +50,7 @@ const STATES = {
   invalid: { error: true, journal: () => '{corrupt' },
 };
 
-function seed({ owner, other, language, journalRaw, manual, throwOnJournal }) {
+function seed({ owner, other, language, journalRaw, manual, throwOnJournal, international }) {
   const NativeDate = Date, instant = Date.parse('2026-10-18T15:00:00Z');
   globalThis.Date = class extends NativeDate { constructor(...args) { super(...(args.length ? args : [instant])); } static now() { return instant; } };
   if (throwOnJournal) {
@@ -67,6 +67,8 @@ function seed({ owner, other, language, journalRaw, manual, throwOnJournal }) {
   const days = Array.from({ length: 31 }, (_, i) => ({ date: String(i + 1).padStart(2, '0') + '/10/2026', dayOfWeek: 'SYN', type: 'DO', pairingCode: 'DO', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null, base: 'GRU', rawText: 'SYNTHETIC QA ONLY' }));
   const leg = (flightNumber, origin, destination, departureTime, arrivalTime) => ({ flightNumber, origin, destination, departureTime, arrivalTime, workType: 'OP', duration: 120, aircraftType: 'SYN' });
   days[19] = { ...days[19], type: 'FLIGHT', pairingCode: 'SYN-DOM', dutyReport: '08:00', dutyDebrief: '17:00', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYN1001', 'GRU', 'BSB', '10:00', '12:00'), leg('SYN1002', 'BSB', 'GRU', '14:00', '16:00')], dutyHours: 9, flyingHours: 4 };
+  // Optional international day (synthetic JFK leg) so the ACT minimum reference has rows.
+  if (international) days[22] = { ...days[22], type: 'FLIGHT', pairingCode: 'SYN-INT', base: 'JFK', dutyReport: '11:00', dutyDebrief: '21:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNUSD', 'JFK', 'GRU', '13:00', '21:00')], dutyHours: 10.5, flyingHours: 8 };
   const roster = { crewName: 'SYNTHETIC ACT', crewId: 'SYNTHETIC', base: 'GRU', rank: 'CC', airline: 'LA', month: 10, year: 2026, days, rawText: 'SYNTHETIC — NO REAL ROSTER' };
   for (const id of [owner, other]) {
     localStorage.setItem('crewcheck_roster_choice_v1_' + id, JSON.stringify({ owner: id, roster, selection: 'explicit', cacheSchema: 'p0-operational-date-anchor-v2', sourceFileName: 'Synthetic ACT only' }));
@@ -133,7 +135,7 @@ try {
         await control.getByRole('button', { name: T.review, exact: true }).click();
         assert.equal(await details.evaluate(node => node.open), true, `${name}/${language}: review opens the details`);
         const opened = await textOf(control);
-        assert.ok(opened.includes(T.dates) && /20\/10/.test(opened), `${name}/${language}: dates of this period`);
+        assert.ok(opened.includes(T.dates) && (language === 'en' ? /20 Oct/ : /20\/10/).test(opened), `${name}/${language}: dates of this period`);
         assert.deepEqual(await control.locator('[data-act-cause]').evaluateAll(nodes => nodes.map(node => node.dataset.actCause)), [state.cause], `${name}: cause`);
         if (language === 'pt') assert.match(await textOf(control.locator('[data-act-pending-section]')), state.causeText, `${name}: cause text`);
         assert.doesNotMatch(await textOf(control.locator('[data-act-pending-section]')), PROMISE, `${name}: no promise beyond the ACT reference`);
@@ -180,6 +182,36 @@ try {
       results.push({ name: 'storageError', language });
       await context.close();
     }
+    // ACT minimum reference on the Statement screen (confirmed declaration + synthetic JFK day):
+    // labels, dates and currency in the selected language, same amounts; collapsed and expanded.
+    {
+      const { context, page } = await openApp(language, { journalRaw: STATES.confirmed.journal(OWNER_A), international: true });
+      // Visible navigation in the selected language (static translator: Extrato -> Statement); same handler.
+      const statementLabel = language === 'en' ? 'Statement' : 'Extrato';
+      assert.equal(await page.getByRole('button', { name: language === 'en' ? 'Extrato' : 'Statement', exact: true }).count(), 0, `${language}: no navigation label in the other language`);
+      await page.getByRole('button', { name: statementLabel, exact: true }).first().click();
+      await page.waitForFunction(() => document.querySelector('.cc-payment-overview')?.dataset.financialScreen === 'statement');
+      await page.waitForFunction(label => document.querySelector('[data-financial-screen-heading]')?.textContent?.trim() === label, statementLabel);
+      const minimum = page.locator('[data-allowance-minimum-reference]');
+      await minimum.waitFor();
+      assert.equal(await minimum.getAttribute('lang'), language === 'en' ? 'en' : 'pt-BR');
+      await minimum.screenshot({ path: path.join(out, `minimum-${language}-collapsed.png`) });
+      for (const summary of await minimum.locator('details > summary').all()) await summary.click();
+      await page.waitForTimeout(150);
+      const text = await textOf(minimum);
+      const own = await minimum.evaluate(node => [...node.querySelectorAll('*')].filter(n => !n.children.length && !n.closest('[lang="pt-BR"]')).map(n => n.textContent.trim()).filter(Boolean).join(' | '));
+      if (language === 'en') {
+        assert.match(text, /\d{1,2} Oct 2026 · (Lunch|Dinner|Supper|Breakfast) · US\$\d+\.\d{2}/, `minimum/en: date, label and currency in English (${text.slice(0, 300)})`);
+        assert.doesNotMatch(own, PORTUGUESE, `minimum/en: interface English (${own.slice(0, 300)})`);
+        assert.doesNotMatch(own, /Almoço|Jantar|Ceia|Café/, 'minimum/en: no Portuguese meal label');
+      } else {
+        assert.match(text, /\d{2}\/10\/2026 · (Almoço|Jantar|Ceia|Café) · US\$\s?\d+,\d{2}/, `minimum/pt: Portuguese row (${text.slice(0, 300)})`);
+        assert.doesNotMatch(own, ENGLISH_UI, 'minimum/pt: no English interface');
+      }
+      await minimum.screenshot({ path: path.join(out, `minimum-${language}-expanded.png`) });
+      results.push({ name: 'minimumReference', language });
+      await context.close();
+    }
     // Account switch: A confirmed (discreet), then B signs in: B sees its own notice, A's journal untouched.
     {
       const raw = STATES.confirmed.journal(OWNER_A);
@@ -204,5 +236,5 @@ try {
   // Every /api call is answered locally (503); nothing reaches a server. No financial write is even attempted.
   assert.deepEqual(blocked.filter(request => request.method !== 'GET' && /financ|allowance|per-?diem|ledger/i.test(request.path)), [], 'no financial write attempted');
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ synthetic: true, results, blocked: blocked.length }, null, 2));
-  console.log(`PASS ACT notice on the compiled app (prepared Home caller, synthetic, offline): absent/revoked/expired/other-month -> short notice + "Revisar dados", collapsed details with this period's dates and cause, no promise beyond the ACT reference, pending never R$ 0,00; confirmed/manual/explicit zero -> discreet control only (109,44 / 120,00 / R$ 0,00); invalid or throwing storage -> short error; account switch keeps A's journal and shows B's own notice; collapsed and expanded panel (options, help, history) entirely PT or EN, official names kept; 390 px, no overflow; ${results.length} views, screenshots in artifacts/financial-ui/act-notice.`);
+  console.log(`PASS ACT notice on the compiled app (prepared Home caller, synthetic, offline): absent/revoked/expired/other-month -> short notice + "Revisar dados", collapsed details with this period's dates and cause, no promise beyond the ACT reference, pending never R$ 0,00; confirmed/manual/explicit zero -> discreet control only (109,44 / 120,00 / R$ 0,00); invalid or throwing storage -> short error; account switch keeps A's journal and shows B's own notice; collapsed and expanded panel (options, help, history) and the ACT minimum reference (labels, dates, currency) entirely PT or EN, official names kept; 390 px, no overflow; ${results.length} views, screenshots in artifacts/financial-ui/act-notice.`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

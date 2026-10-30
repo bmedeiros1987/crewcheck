@@ -99,13 +99,24 @@ function useActCopy(): Copy {
   }, []);
   return copyFor();
 }
-const shortDate = (iso: string) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+// Calendar days (YYYY-MM-DD) shown in the selected language; the day itself never shifts (UTC noon).
+const dayOf = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return y && m && d ? new Date(Date.UTC(y, m - 1, d, 12)) : null; };
+const formatDay = (iso: string, lang: string, withYear: boolean) => {
+  const day = dayOf(iso);
+  if (!day) return iso;
+  return lang === 'pt-BR'
+    ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', ...(withYear ? { year: 'numeric' } : {}) }).format(day)
+    : new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}) }).format(day);
+};
+// Meal/taxi labels come from the allowance calculator in Portuguese; the amount and the slot stay as calculated.
+const ALLOWANCE_LABELS_EN: Record<string, string> = { 'Café': 'Breakfast', 'Almoço': 'Lunch', 'Jantar': 'Dinner', 'Ceia': 'Supper', 'Táxi': 'Taxi' };
 /** Applicability only: no personal amount, receipt, payroll or employer verification is saved.
  * `pending` are the displayed period's items that wait on this declaration (from the forecast);
  * the notice depends on them, not on whether any declaration event exists. */
 export default function FinancialActApplicability({ pending = [] }: { pending?: readonly { iso: string; actCause?: FinancialActPendingCause }[] }) {
   const privacy = useFinancialPrivacy(), currentSession = activeSession(), t = useActCopy();
   const lang = t === COPY.pt ? 'pt-BR' : 'en';
+  const longDay = (iso: string) => formatDay(iso, lang, true);
   const [form, setForm] = useState(emptyForm), [, refresh] = useState(0), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const [open, setOpen] = useState(false);
   const [draftSession, setDraftSession] = useState(currentSession);
@@ -165,7 +176,7 @@ export default function FinancialActApplicability({ pending = [] }: { pending?: 
     <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>{t.summary}</summary>
       {needsAction && <section aria-label={t.pendingLabel} data-act-pending-section="true">
         {pendingCauses.map(cause => <p key={cause} data-act-cause={cause}>{t.causes[cause]}</p>)}
-        <p><span>{t.pendingDates}</span> {pendingDates.map(shortDate).join(', ')}</p>
+        <p><span>{t.pendingDates}</span> {pendingDates.map(iso => formatDay(iso, lang, false)).join(', ')}</p>
         <p>{t.onlyAct}</p>
       </section>}
       <p>{t.intro}</p>
@@ -182,11 +193,11 @@ export default function FinancialActApplicability({ pending = [] }: { pending?: 
       <p>{t.history}</p>
       <button type="button" disabled={busy} onClick={prepare}>{t.prepare}</button>
       {shownPreview && <section aria-label={t.previewLabel} data-act-preview="true"><h3>{t.previewTitle}</h3>
-        {shownPreview.timeline.map(interval => <p key={interval.from}>{interval.from} {t.to} {interval.through}: {privacy.text(interval.selection.state === 'applicable' ? `TAM — ${roleName(interval.selection.event.role)} — ${t.ownerDeclaration}` : t.noShared)}</p>)}
+        {shownPreview.timeline.map(interval => <p key={interval.from}>{longDay(interval.from)} {t.to} {longDay(interval.through)}: {privacy.text(interval.selection.state === 'applicable' ? `TAM — ${roleName(interval.selection.event.role)} — ${t.ownerDeclaration}` : t.noShared)}</p>)}
         <button type="button" disabled={busy} onClick={() => void save()}>{t.confirm}</button>
         <button type="button" disabled={busy} onClick={() => setPreview(null)}>{t.cancel}</button>
       </section>}
-      {snapshot.history.events.length > 0 && <details><summary>{t.historyTitle}</summary>{financialActTimeline(snapshot.history).map(interval => <p key={interval.from}>{interval.from} {t.to} {interval.through}: {privacy.text(interval.selection.state === 'applicable' ? `ACT ${roleName(interval.selection.event.role)}` : t.noSharedShort)}</p>)}</details>}
+      {snapshot.history.events.length > 0 && <details><summary>{t.historyTitle}</summary>{financialActTimeline(snapshot.history).map(interval => <p key={interval.from}>{longDay(interval.from)} {t.to} {longDay(interval.through)}: {privacy.text(interval.selection.state === 'applicable' ? `ACT ${roleName(interval.selection.event.role)}` : t.noSharedShort)}</p>)}</details>}
     </details>
     {messageText && <p role="status">{messageText}</p>}
   </section>;
@@ -199,12 +210,15 @@ export function AllowanceMinimumReference({ rows, totals, inspections }: {
 }) {
   const privacy = useFinancialPrivacy(), t = useActCopy();
   if (!rows.length && !inspections.length) return null;
-  const money = (value: number, currency: string) => privacy.amount(value.toLocaleString('pt-BR', { style: 'currency', currency }));
-  return <section className="cz-toolbox" data-allowance-minimum-reference>
+  const lang = t === COPY.pt ? 'pt-BR' : 'en';
+  // Same amount and currency; only the number format follows the selected language.
+  const money = (value: number, currency: string) => privacy.amount(value.toLocaleString(lang === 'pt-BR' ? 'pt-BR' : 'en-GB', { style: 'currency', currency }));
+  const label = (value: string) => lang === 'pt-BR' ? value : ALLOWANCE_LABELS_EN[value] || value;
+  return <section className="cz-toolbox" data-allowance-minimum-reference data-i18n-skip="true" lang={lang}>
     <h2>{t.minimumTitle}</h2>
     <p>{t.minimumIntro}</p>
     {Object.entries(totals).map(([currency, value]) => <p key={currency}>{t.minimumSubtotal} {money(value, currency)}</p>)}
-    <details><summary>{t.minimumItems}</summary>{rows.map((row, index) => <p key={row.iso + ':' + index}>{row.iso} · {row.label} · {money(row.value, row.currency)}<small lang="pt-BR">{privacy.text(row.source)}</small></p>)}</details>
-    {inspections.length > 0 && <details><summary>{t.minimumPending}</summary>{inspections.map((item, index) => <p key={item.iso + ':' + index}>{item.iso} · {t.minimumFloor} {money(item.publishedFloorMinor / 100, item.currency)}<small lang="pt-BR">{privacy.text(item.reason)}</small></p>)}</details>}
+    <details><summary>{t.minimumItems}</summary>{rows.map((row, index) => <p key={row.iso + ':' + index}>{formatDay(row.iso, lang, true)} · <span lang={lang === 'pt-BR' || ALLOWANCE_LABELS_EN[row.label] ? lang : 'pt-BR'}>{label(row.label)}</span> · {money(row.value, row.currency)}<small lang="pt-BR">{privacy.text(row.source)}</small></p>)}</details>
+    {inspections.length > 0 && <details><summary>{t.minimumPending}</summary>{inspections.map((item, index) => <p key={item.iso + ':' + index}>{formatDay(item.iso, lang, true)} · {t.minimumFloor} {money(item.publishedFloorMinor / 100, item.currency)}<small lang="pt-BR">{privacy.text(item.reason)}</small></p>)}</details>}
   </section>;
 }
