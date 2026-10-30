@@ -5,7 +5,9 @@
 //  - toda escrita nomeia a geração que substitui (baseGeneration) e um client_operation_id
 //    gravado no aparelho antes do envio;
 //  - a linha da competência é travada (FOR UPDATE); geração diferente da base => 409 explícito;
-//  - o mesmo operation id reenviado (ACK incerto) devolve o resultado gravado, sem nova escrita;
+//  - toda decisão tomada sob a trava (aplicada, sem mudança, conflito, recusa) grava UM recibo do
+//    operation id, na mesma transação da revisão e da competência; o reenvio (ACK incerto) devolve
+//    a resposta ORIGINAL do recibo, nunca o estado atual; o mesmo id com outro pedido é recusado;
 //  - conteúdo igual ao atual com base correta é no-op; conteúdo igual com base velha é conflito
 //    (hash igual nunca autoriza escrita);
 //  - exclusão também avança a geração (tombstone), então nada a ressuscita sem base atual;
@@ -98,27 +100,38 @@ export async function writeRosterRevision(db, request, { resolveVerifiedCrewKey 
   const legacy = request.baseGeneration === undefined || request.baseGeneration === null || !request.operationId;
   if (legacy && operation !== 'import') return outcome(428, { code: 'REVISION_PRECONDITION_REQUIRED' });
   if (!legacy && (!Number.isSafeInteger(request.baseGeneration) || request.baseGeneration < 0 || !UUID.test(String(request.operationId)))) return outcome(400, { code: 'REQUEST_INVALID' });
-  if (operation === 'import') {
-    const issue = rosterCompetenceIssue(roster, rosterKey, crewKey);
-    if (issue) return outcome(422, { code: issue });
-  }
-  const contentHash = operation === 'import' ? rosterContentHash(roster) : null;
+  // A content refusal is decided under the lock and recorded like any other decision, so its
+  // operation id stays bound to this request. Unauthenticated, unbound or malformed requests are
+  // refused before any lock and record nothing (they cannot be keyed to a competence safely).
+  const issue = operation === 'import' ? rosterCompetenceIssue(roster, rosterKey, crewKey) : null;
+  const contentHash = operation === 'import' && !issue ? rosterContentHash(roster) : null;
   const baseGeneration = legacy ? 0 : request.baseGeneration;
-  const operationId = legacy ? legacyOperationId([email, crewKey, rosterKey, rosterKind, contentHash]) : String(request.operationId);
-  const requestHash = sha256(stable({ crewKey, rosterKey, rosterKind, operation, baseGeneration, contentHash, parserVersion: String(parserVersion), schemaVersion: PROPOSAL_SCHEMA_VERSION, sourceKind: legacy ? 'legacy_create' : sourceKind }));
+  const requestDigest = issue ? sha256(stable(canonicalRoster(roster))) : contentHash;
+  const operationId = legacy ? legacyOperationId([email, crewKey, rosterKey, rosterKind, requestDigest]) : String(request.operationId);
+  const requestHash = sha256(stable({ crewKey, rosterKey, rosterKind, operation, baseGeneration, contentHash: requestDigest, parserVersion: String(parserVersion), schemaVersion: PROPOSAL_SCHEMA_VERSION, sourceKind: legacy ? 'legacy_create' : sourceKind }));
   const where = [email, crewKey, rosterKey, rosterKind];
-  // InnoDB may abort one of two transactions racing for the same competence (deadlock); the whole
-  // transaction rolled back, so it is retried as a unit. The replay check keeps retries idempotent.
+  // InnoDB may abort one of two transactions racing for the same competence (deadlock), and two
+  // transactions deciding one operation id on DISTINCT competences collide on the receipt key
+  // (duplicate). The whole transaction rolled back, so it is retried as a unit; on retry the receipt
+  // written by the winner decides (replay or OPERATION_ID_REUSED).
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, contentHash, baseGeneration, operationId, requestHash });
+      return await writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, issue, contentHash, baseGeneration, operationId, requestHash });
     } catch (error) {
-      if (!['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'].includes(error?.code) || attempt >= 5) throw error;
+      if (!['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT', 'ER_DUP_ENTRY'].includes(error?.code) || attempt >= 5) throw error;
     }
   }
 }
 
-async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, contentHash, baseGeneration, operationId, requestHash }) {
+const storedResponse = value => (typeof value === 'string' ? JSON.parse(value) : value);
+
+async function recordReceipt(connection, { email, operationId, requestHash, where, outcomeName, response, generation, revisionId = null }) {
+  await connection.query(`INSERT INTO crewcheck_roster_operation_receipts(owner_email,client_operation_id,request_hash,crew_key,roster_key,roster_kind,outcome,response,generation_at_decision,revision_id)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+  [email, operationId, requestHash, where[1], where[2], where[3], outcomeName, JSON.stringify(response), generation, revisionId]);
+}
+
+async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, operation, roster, parserVersion, sourceKind, legacy, issue, contentHash, baseGeneration, operationId, requestHash }) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -126,33 +139,39 @@ async function writeOnce(db, { email, where, crewKey, rosterKey, rosterKind, ope
     // writers of one competence queue instead of deadlocking.
     await client.query('INSERT INTO crewcheck_roster_competences(owner_email,crew_key,roster_key,roster_kind) VALUES($1,$2,$3,$4) ON DUPLICATE KEY UPDATE generation=generation', where);
     const current = (await client.query('SELECT generation,state,content_hash FROM crewcheck_roster_competences WHERE owner_email=$1 AND crew_key=$2 AND roster_key=$3 AND roster_kind=$4 FOR UPDATE', where)).rows[0];
-    // Replay is checked under the competence lock, so a duplicated send cannot race itself.
-    const previous = (await client.query('SELECT generation,request_hash,crew_key,roster_key,roster_kind FROM crewcheck_roster_revisions WHERE owner_email=$1 AND client_operation_id=$2', [email, operationId])).rows[0];
+    // Replay authority is the receipt, read after the competence lock (the snapshot starts here, so
+    // a receipt committed by the previous lock holder is visible).
+    const previous = (await client.query('SELECT request_hash,response FROM crewcheck_roster_operation_receipts WHERE owner_email=$1 AND client_operation_id=$2', [email, operationId])).rows[0];
     if (previous) {
       await client.query('ROLLBACK');
       if (previous.request_hash !== requestHash) return outcome(422, { code: 'OPERATION_ID_REUSED' });
-      return outcome(200, { replay: true, generation: Number(previous.generation), current: competenceView(current) });
+      return { ...storedResponse(previous.response), replay: true };
     }
-    if (Number(current.generation) !== baseGeneration) {
-      await client.query('ROLLBACK');
-      return outcome(legacy ? 428 : 409, { code: legacy ? 'REVISION_PRECONDITION_REQUIRED' : 'ROSTER_REVISION_CONFLICT', current: competenceView(current) });
-    }
-    if ((operation === 'import' && current.state === 'live' && current.content_hash === contentHash) || (operation === 'delete' && current.state !== 'live')) {
-      await client.query('ROLLBACK');
-      return outcome(200, { unchanged: true, generation: Number(current.generation), current: competenceView(current) });
-    }
+    const decision = { generation: Number(current.generation) };
+    // Receipt, revision and competence change commit together or not at all.
+    const decide = async (outcomeName, response, revisionId = null) => {
+      await recordReceipt(client, { email, operationId, requestHash, where, outcomeName, response, generation: decision.generation, revisionId });
+      await client.query('COMMIT');
+      return response;
+    };
+    if (issue) return await decide('rejected', outcome(422, { code: issue }));
+    const moved = Number(current.generation) !== baseGeneration;
+    const conflict = outcome(legacy ? 428 : 409, { code: legacy ? 'REVISION_PRECONDITION_REQUIRED' : 'ROSTER_REVISION_CONFLICT', current: competenceView(current) });
+    if (moved) return await decide(legacy ? 'rejected' : 'conflict', conflict);
+    const noop = (operation === 'import' && current.state === 'live' && current.content_hash === contentHash) || (operation === 'delete' && current.state !== 'live');
+    const unchanged = outcome(200, { unchanged: true, generation: Number(current.generation), current: competenceView(current) });
+    if (noop) return await decide('unchanged', unchanged);
     const generation = Number(current.generation) + 1, revisionId = crypto.randomUUID(), state = operation === 'import' ? 'live' : 'deleted';
-    await client.query(`INSERT INTO crewcheck_roster_revisions(revision_id,owner_email,crew_key,roster_key,roster_kind,generation,base_generation,operation,content_hash,roster,parser_version,schema_version,source_kind,client_operation_id,request_hash)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-    [revisionId, email, crewKey, rosterKey, rosterKind, generation, baseGeneration, operation, contentHash, operation === 'import' ? JSON.stringify(canonicalRoster(roster)) : null, String(parserVersion).slice(0, 40), PROPOSAL_SCHEMA_VERSION, legacy ? 'legacy_create' : sourceKind, operationId, requestHash]);
+    await client.query(`INSERT INTO crewcheck_roster_revisions(revision_id,owner_email,crew_key,roster_key,roster_kind,generation,base_generation,operation,content_hash,roster,parser_version,schema_version,source_kind,client_operation_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+    [revisionId, email, crewKey, rosterKey, rosterKind, generation, baseGeneration, operation, contentHash, operation === 'import' ? JSON.stringify(canonicalRoster(roster)) : null, String(parserVersion).slice(0, 40), PROPOSAL_SCHEMA_VERSION, legacy ? 'legacy_create' : sourceKind, operationId]);
     const updated = await client.query('UPDATE crewcheck_roster_competences SET generation=$1,state=$2,current_revision_id=$3,content_hash=$4 WHERE owner_email=$5 AND crew_key=$6 AND roster_key=$7 AND roster_kind=$8 AND generation=$9',
       [generation, state, revisionId, contentHash, ...where, baseGeneration]);
     if (updated.rowCount !== 1) throw Object.assign(new Error('competence generation moved under lock'), { code: 'GENERATION_INVARIANT' });
-    await client.query('COMMIT');
-    return outcome(200, { generation, revisionId, current: { generation, state, contentHash } });
+    decision.generation = generation;
+    return await decide('applied', outcome(200, { generation, revisionId, current: { generation, state, contentHash } }), revisionId);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    if (error?.code === 'ER_DUP_ENTRY') return outcome(422, { code: 'OPERATION_ID_REUSED' });
     throw error;
   } finally {
     client.release();

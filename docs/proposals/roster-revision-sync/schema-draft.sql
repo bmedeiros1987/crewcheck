@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS crewcheck_roster_competences (
   PRIMARY KEY (owner_email, crew_key, roster_key, roster_kind)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Histórico imutável: cada geração aceita (importação ou exclusão) vira uma linha.
--- client_operation_id torna o reenvio após ACK incerto idempotente sem depender de hash.
+-- Histórico imutável: cada geração aceita (importação ou exclusão que muda o estado) vira uma linha.
+-- Só mudança real entra aqui; no-op, conflito e recusa não criam revisão.
 CREATE TABLE IF NOT EXISTS crewcheck_roster_revisions (
   revision_id CHAR(36) NOT NULL,
   owner_email VARCHAR(254) NOT NULL,
@@ -37,12 +37,36 @@ CREATE TABLE IF NOT EXISTS crewcheck_roster_revisions (
   roster JSON NULL,
   parser_version VARCHAR(40) NOT NULL,
   schema_version SMALLINT UNSIGNED NOT NULL,
+  -- 'legacy_backfill' NÃO existe ainda: backfill é desenho futuro, não testado.
   source_kind ENUM('pdf_import','telegram','legacy_create') NOT NULL,
   client_operation_id CHAR(36) NOT NULL,
-  request_hash CHAR(64) NOT NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (revision_id),
   UNIQUE KEY crewcheck_roster_revision_operation_uq (owner_email, client_operation_id),
   UNIQUE KEY crewcheck_roster_revision_generation_uq (owner_email, crew_key, roster_key, roster_kind, generation),
   KEY crewcheck_roster_revision_competence_idx (owner_email, crew_key, roster_key, roster_kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Recibo de operação: UMA linha por client_operation_id decidido sob a trava da competência, para
+-- TODO resultado (aplicada, sem mudança, conflito, recusa), gravada na MESMA transação da revisão e
+-- da competência. É a única autoridade de replay: o reenvio do mesmo id devolve a resposta ORIGINAL
+-- gravada em `response` (nunca o estado atual como ACK antigo); o mesmo id com outro request_hash
+-- é recusado (OPERATION_ID_REUSED).
+-- Retenção fail-closed: nenhum expurgo existe. Um expurgo futuro exige fencing server-side (por
+-- exemplo, época monotônica incluída na requisição e recusa de épocas anteriores à mais antiga
+-- retida); sem isso, apagar recibos permitiria reaplicar um id antigo como novo.
+CREATE TABLE IF NOT EXISTS crewcheck_roster_operation_receipts (
+  owner_email VARCHAR(254) NOT NULL,
+  client_operation_id CHAR(36) NOT NULL,
+  request_hash CHAR(64) NOT NULL,
+  crew_key VARCHAR(48) NOT NULL,
+  roster_key CHAR(7) NOT NULL,
+  roster_kind ENUM('planned','operated') NOT NULL,
+  outcome ENUM('applied','unchanged','conflict','rejected') NOT NULL,
+  response JSON NOT NULL,
+  generation_at_decision BIGINT UNSIGNED NOT NULL,
+  revision_id CHAR(36) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (owner_email, client_operation_id),
+  KEY crewcheck_roster_receipt_competence_idx (owner_email, crew_key, roster_key, roster_kind)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,6 +1,16 @@
 # Proposta: revisão monotônica da escala por competência
 
-> **Status: rascunho para revisão. Nada aqui roda em produção.** Não há migração, mudança de runtime nem dado real. O DDL (`schema-draft.sql`) fica fora de `migrations/` de propósito. O protocolo e a reconciliação são implementações de referência, exercitadas só contra MySQL descartável pelo teste `scripts/regression-roster-revision-sync-proposal.mjs`.
+> **Status: rascunho para revisão. Nada aqui roda em produção.** Não há migração, mudança de runtime nem dado real. O DDL (`schema-draft.sql`) fica fora de `migrations/` de propósito. O protocolo e a reconciliação são implementações de referência, exercitadas só contra MySQL descartável e em testes puros.
+>
+> **Continuam bloqueados, sem desenho aprovado nem implementação:**
+> - a fonte autoritativa do vínculo conta→crewId; hoje o perfil não tem matrícula e o crewId vem do PDF;
+> - o backfill, que é só desenho futuro: `legacy_backfill` não existe no ENUM e faltam testes de crash, retomada, concorrência e do invariante de nunca sobrescrever geração > 0;
+> - a escrita dupla, composta com a #1086;
+> - o outbox real e durável no app (reload, logout, várias abas) e o contrato de ACK de PDF com #1039/#825;
+> - owners e coordenação;
+> - backup e restore;
+> - o rollback. Ele **não pode** reabrir escrita legada cega nem ressuscitar tombstones: precisa manter cerca/CAS de escrita ou modo só leitura, preservando revisões e pendentes até uma reconciliação explícita;
+> - o contrato de cliente legado: só criação ou `428`, ou pendente com confirmação. Escrita legada cega não é segura nem com arquivamento.
 
 ## Requisito (Bruno, 30/10 00:40)
 
@@ -77,7 +87,14 @@ Por isso mudar apenas `base`, `rank`, companhia, nome, totais, cobertura da font
 ### Escrita (`server-protocol.mjs`)
 1. **Validação.** O servidor confere o vínculo de identidade, a competência, os limites e a completude do mês: todos os dias civis exatamente uma vez. Uma escala incompleta é recusada (`422`) antes de qualquer escrita, e a versão válida continua.
 2. **Trava.** A linha da competência é travada com `FOR UPDATE`.
-3. **Replay.** Se o `client_operation_id` já existe, o servidor devolve o resultado gravado (replay) e não escreve de novo. O `requestHash` vincula ao id a competência, a operação, a base, o conteúdo, a **versão do parser**, a **versão do schema** e a **origem**. O mesmo id com qualquer um desses diferente recebe `422 OPERATION_ID_REUSED`.
+3. **Recibo de operação e replay.** Toda decisão tomada sob a trava da competência grava **um recibo** do `client_operation_id`, na **mesma transação** da revisão e da competência. Vale para aplicada, sem mudança (no-op), conflito e recusa de conteúdo.
+   - O recibo guarda o `requestHash`, o resultado e a **resposta original**.
+   - O reenvio do mesmo id (ACK incerto) devolve essa resposta original marcada como replay, **nunca o estado atual como ACK antigo**.
+   - O mesmo id com qualquer diferença no pedido recebe `422 OPERATION_ID_REUSED`. O pedido inclui competência, operação, base, conteúdo, parser, schema e origem.
+   - Pedidos não autenticados, sem vínculo ou malformados são recusados antes da trava e não gravam recibo, porque não dá para associá-los a uma competência com segurança.
+   - O mesmo id disputado em competências distintas colide na chave do recibo. A transação perdedora é refeita, e o recibo do vencedor decide.
+   - Revisões guardam só mudança real, ou seja, quando a geração avança.
+   - **Retenção fail-closed:** não existe expurgo de recibos. Um expurgo futuro exige um fencing no servidor, por exemplo uma época monotônica com recusa de épocas antigas. Sem isso, apagar um recibo permitiria reaplicar um id antigo como novo.
 4. **Conflito.** Se `baseGeneration` for diferente da geração atual, o servidor responde **409** com o estado atual. Isso vale inclusive para hash igual: hash nunca autoriza escrita.
 5. **No-op.** Base correta com conteúdo igual ao atual não gera nova geração.
 6. **Gravação.** Caso contrário, `generation+1`, uma nova linha de histórico e a atualização condicionada a `generation = base`.
@@ -127,6 +144,16 @@ Comportamento:
 - revisão só de metadados (`base`, `rank`);
 - `operationId` com outro parser ou outra origem.
 
+`scripts/regression-roster-revision-receipts.mjs` (MySQL descartável) cobre:
+- reuso do id após no-op, exclusão sem efeito, conflito e recusa;
+- replay da resposta original depois que a competência avançou;
+- cópias simultâneas do mesmo id na mesma competência e em competências distintas;
+- falha injetada antes do `COMMIT` e dentro da transação, sem persistir nada;
+- ids determinísticos de cliente legado;
+- ausência de caminho de expurgo.
+
+Cinco mutantes, cada um reintroduzindo um defeito, morrem por asserção, inclusive o no-op com `ROLLBACK` e 200.
+
 Complemento puro, sem banco: `scripts/regression-roster-revision-reconcile-interleavings.mjs` cobre:
 - A enviado → B nova → ACK(A);
 - ACKs duplicados ou invertidos;
@@ -144,10 +171,10 @@ Cada defeito revisado é reintroduzido como mutante, e a suíte precisa falhar c
 ## O que falta decidir (dot e Bruno), antes de qualquer implementação real
 1. **Identidade sem crewId (PDF formato ticket).** A proposta recusa (`CREW_IDENTITY_REQUIRED`). A alternativa segura é a conta ter uma matrícula verificada única à qual o servidor vincula o PDF; o nome nunca serve.
 2. **Planejada vs operada.** É preciso definir o que o PDF importado representa em cada caso. Hoje a planejada existe só no aparelho.
-3. **Transição.**
-   - backfill de `crewcheck_platform_rosters` para geração 1, colocando em quarentena as linhas sem crewId;
-   - escrita dupla na tabela atual durante a migração, para os leitores antigos (Telegram, compartilhamento, relógio);
-   - prazo para clientes legados;
-   - política de `428` para eles.
+3. **Transição.** Tudo aqui está bloqueado; ver o status no topo.
+   - backfill é desenho futuro: só criar onde não há competência, nunca sobrescrever geração > 0, quarentena das linhas sem vínculo verificado, e testes de crash, retomada e concorrência;
+   - escrita dupla na mesma transação e trava, composta com a #1086, para os leitores antigos (Telegram, compartilhamento, relógio);
+   - cliente legado: só criação ou `428`, ou pendente com confirmação; nunca escrita cega;
+   - rollback com cerca/CAS ou modo só leitura, sem reabrir escrita legada cega nem ressuscitar tombstones.
 4. **Interface do conflito.** Texto curto que mostre "do dia X ao dia Y" de diferença, em linha com o pedido de não encher de texto.
 5. **Banco real.** Backup, revisão independente, aprovação específica e janela. Nada disso foi feito nem solicitado.
