@@ -25,6 +25,14 @@ function actionableAlerts(compliance: ComplianceResult): any[] {
   });
 }
 
+// Unknown availability is out of the load index: say partial/indeterminate instead of a plain score.
+function loadIntensityLine(load: ComplianceResult['loadAnalysis'] | undefined): string {
+  if (!load) return '- / 100';
+  const pending = load.pendingAvailabilityDates?.join(', ');
+  if (load.intensityScore === null) return `indeterminada (disponibilidade pendente em ${pending})`;
+  return `${load.intensityScore} / 100${load.aggregateStatus === 'partial' ? ` (parcial: disponibilidade pendente em ${pending})` : ''}`;
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -66,7 +74,7 @@ export async function sendRosterByEmail(args: {
     `Conformidade: ${args.compliance.score}/100`,
     `Irregularidades: ${critical}`,
     `Pontos de atenção: ${warnings}`,
-    `Escala puxada: ${args.compliance.loadAnalysis?.intensityScore ?? '-'} / 100`,
+    `Escala puxada: ${loadIntensityLine(args.compliance.loadAnalysis)}`,
     '',
     'Resumo:',
     args.compliance.summary,

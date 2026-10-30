@@ -13,9 +13,14 @@ on:
       - 'client/src/lib/aimsParser.ts'
       - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/routinePlanner.ts'
+      - 'client/src/lib/calendarExport.ts'
+      - 'client/src/lib/pdfExport.ts'
+      - 'client/src/lib/emailClient.ts'
+      - 'client/src/lib/googleCalendarSync.ts'
       - 'scripts/regression-p0-presentation-boundary-leak.mjs'
       - 'scripts/regression-aims-activity-before-flight-parity.mjs'
       - 'scripts/regression-aims-ambiguous-activity-clocks.mjs'
+      - 'scripts/regression-pending-availability-aggregates.mjs'
       - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/lib/official-roster-corpus-validator.mjs'
       - '.github/workflows/automatic-roster-audit-pipeline.yml'
@@ -75,6 +80,8 @@ jobs:
         run: node scripts/regression-p0-presentation-boundary-leak.mjs
       - name: Ambiguous bare activity clocks stay unresolved (source)
         run: node scripts/regression-aims-ambiguous-activity-clocks.mjs
+      - name: Pending availability out of aggregates, gym and exports (source)
+        run: node scripts/regression-pending-availability-aggregates.mjs
       - name: Activity before flight parity, conservative bare-clock filter (source)
         run: node scripts/regression-aims-activity-before-flight-parity.mjs
       - name: Source 168h boundary parity
@@ -115,6 +122,7 @@ jobs:
           set -euo pipefail
           node scripts/regression-p0-presentation-boundary-leak.mjs
           node scripts/regression-aims-ambiguous-activity-clocks.mjs
+          node scripts/regression-pending-availability-aggregates.mjs
       - name: Prepared 168h and timezone contracts
         run: |
           set -euo pipefail
