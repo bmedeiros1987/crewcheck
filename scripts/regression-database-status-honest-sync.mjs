@@ -106,10 +106,13 @@ const card = home.slice(home.indexOf('function DatabaseConnectionCard('), home.i
 assert.match(card, /: DATABASE_STATUS_MESSAGES\.unavailable\)/, 'card fallback uses the same honest message');
 assert.match(card, /'Sincronização pendente'/);
 assert.doesNotMatch(card, PROMISE, 'card copy promises nothing');
+// Portuguese source without English words mixed in (the admin migration chips included).
+assert.doesNotMatch(card, /aguardando migration|conexão e migration/, 'Portuguese card copy says "migração"');
+assert.match(card, /<>\{status\?\.missingOptionalCount \|\| 0\} módulo\(s\) aguardando migração<\/>/, 'the count is its own text node, so the fixed part is translatable');
 const i18n = fs.readFileSync('client/src/lib/i18n.ts', 'utf8');
 const enTable = i18n.slice(i18n.indexOf('const staticUiTranslations'), i18n.indexOf('  es: {', i18n.indexOf('const staticUiTranslations')));
 const literals = [...card.matchAll(/'([^'{}]*[A-Za-zÀ-ú][^'{}]*)'/g)].map(match => match[1]).filter(text => !/^(cz-|cc-|connected|offline)/.test(text) && !text.startsWith(' ') && !/^[a-z-]+$/.test(text));
-const required = [...new Set([...literals, 'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.', 'Banco indisponível e sem login. Dados deste dispositivo ficam só aqui.', 'Banco principal disponível. Faça login para sincronizar esta conta.', 'Login expirado. Histórico local ativo; entre novamente para sincronizar.', 'Banco aguardando configuração.'])];
+const required = [...new Set([...literals, 'módulo(s) aguardando migração', 'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.', 'Banco indisponível e sem login. Dados deste dispositivo ficam só aqui.', 'Banco principal disponível. Faça login para sincronizar esta conta.', 'Login expirado. Histórico local ativo; entre novamente para sincronizar.', 'Banco aguardando configuração.'])];
 for (const text of required) {
   const entry = new RegExp(`'${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}': '([^']+)'`).exec(enTable);
   assert(entry, `English translation present for: ${text}`);

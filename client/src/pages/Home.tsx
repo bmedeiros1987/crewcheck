@@ -3048,7 +3048,7 @@ function DatabaseConnectionCard({ admin }: { admin: boolean }) {
     <div className="cz-routine-strip">
       <span>{connected ? 'Aiven MySQL ativo' : 'Histórico local ativo'}</span>
       <span>{connected ? degraded ? 'Fallback local ativo' : 'Sincronização liberada' : 'Sincronização pendente'}</span>
-      {admin && <span>{connected ? status?.migrationRequired ? `${status?.missingOptionalCount || 0} módulo(s) aguardando migration` : String(status?.database || 'Banco principal') : 'Verifique conexão e migration'}</span>}
+      {admin && <span>{connected ? status?.migrationRequired ? <>{status?.missingOptionalCount || 0} módulo(s) aguardando migração</> : String(status?.database || 'Banco principal') : 'Verifique conexão e migração'}</span>}
     </div>
     <div className="cz-tool-actions"><button onClick={refresh} disabled={busy}><RotateCcw/> {busy ? 'Verificando…' : 'Verificar conexão'}</button></div>
   </section>;

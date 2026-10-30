@@ -2,7 +2,8 @@
 // session, every API intercepted (no network). The card must not promise a later/automatic sync,
 // because no resend exists: database down shows "Dados deste dispositivo continuam aqui;
 // sincronização pendente." and the label "Sincronização pendente"; remote success shows the
-// connected state; English follows the language choice; 320 px without horizontal overflow.
+// connected state; English follows the language choice; the admin migration chips are localized
+// (PT "migração", EN through the static translator); 320 px without horizontal overflow.
 // Screenshots go to artifacts/database-status.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),vm=require('node:vm'),ts=require('typescript');
 const {createRequire}=require('node:module');const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
@@ -15,11 +16,16 @@ const scope=vm.createContext({guardStaticHtml:require('../server/static-html-gua
 const PROMISE=/(ser[áa]o?|será) sincronizad|sincroniza(ção|r) (ser[áa] )?retomad|quando (a conexão|o banco) voltar|sincronizará|fila de sincroniza|tentad[ao] novamente|will (be )?sync|automatic(ally)? (re)?(send|sync)|sync queue/i;
 const scenarios={
  down:{language:'pt',health:{status:200,body:{ok:false,configured:true,connected:false}},db:{status:503,body:{ok:false,code:'DATABASE_OFFLINE'}},
-  expect:{title:'Modo local protegido',message:'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.',labels:['Histórico local ativo','Sincronização pendente']}},
+  expect:{title:'Modo local protegido',message:'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.',labels:['Histórico local ativo','Sincronização pendente','Verifique conexão e migração']}},
  downEnglish:{language:'en',health:{status:200,body:{ok:false,configured:true,connected:false}},db:{status:503,body:{ok:false,code:'DATABASE_OFFLINE'}},
-  expect:{title:'Protected local mode',message:'Database unavailable. Data on this device stays here; sync is pending.',labels:['Local history active','Sync pending']}},
+  expect:{title:'Protected local mode',message:'Database unavailable. Data on this device stays here; sync is pending.',labels:['Local history active','Sync pending','Check connection and migration']}},
  connected:{language:'pt',health:{status:200,body:{ok:true,configured:true,connected:true,coreReady:true}},db:{status:200,body:{ok:true,database:'qa_sintetico'}},
   expect:{title:'Banco conectado',message:'Sincronização segura disponível para os módulos internos.',labels:['Aiven MySQL ativo','Sincronização liberada']}},
+ // Admin chip while optional modules wait for a migration (no migration is run; the state is synthetic).
+ migration:{language:'pt',health:{status:200,body:{ok:true,configured:true,connected:true,coreReady:true}},db:{status:200,body:{ok:true,database:'qa_sintetico',migrationRequired:true,missingOptionalCount:3}},
+  expect:{title:'Banco conectado',message:'Sincronização segura disponível para os módulos internos.',labels:['Aiven MySQL ativo','3 módulo(s) aguardando migração']}},
+ migrationEnglish:{language:'en',health:{status:200,body:{ok:true,configured:true,connected:true,coreReady:true}},db:{status:200,body:{ok:true,database:'qa_sintetico',migrationRequired:true,missingOptionalCount:3}},
+  expect:{title:'Database connected',message:'Secure sync available for internal modules.',labels:['Aiven MySQL active','3 module(s) awaiting migration']}},
 };
 function seed({language}){
  localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'database-status-qa',name:'SYNTHETIC ADMIN QA',email:'qa-admin@example.test',role:'admin'}));localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
@@ -50,11 +56,13 @@ const text=async locator=>(await locator.textContent()||'').replace(/\s+/g,' ').
   assert.equal(await text(card.locator('header p')),scenario.expect.message,`${name}: message`);
   for(const label of scenario.expect.labels)assert(all.includes(label),`${name}: label ${label} in "${all}"`);
   assert.doesNotMatch(all,PROMISE,`${name}: no promise of a later or automatic sync`);
+  if(scenario.language==='pt')assert.doesNotMatch(all,/\bmigration\b/i,`${name}: Portuguese card without English words`);
+  else assert.doesNotMatch(all,/migração|aguardando|módulo/i,`${name}: English card without Portuguese words`);
   const overflow=await page.evaluate(()=>{const el=document.querySelector('.cz-database-status');return{card:el.scrollWidth-el.clientWidth,page:document.documentElement.scrollWidth-window.innerWidth};});
   assert(overflow.card<=1&&overflow.page<=1,`${name}: no horizontal overflow at 320 px ${JSON.stringify(overflow)}`);
   assert.deepEqual(errors,[],`${name}: no page errors`);assert(external.every(url=>/^https:\/\/fonts\.(googleapis|gstatic)\.com\//.test(url)),`${name}: only web fonts were attempted, and aborted: ${external}`);
   results[name]=all;await context.close();
  }}finally{await browser.close();server.close();}
  fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(results,null,1));
- console.log('PASS database status card (compiled app, synthetic admin, APIs intercepted): database down shows the honest copy and "Sincronização pendente" with no promised sync; English follows the language; remote success shows the connected state; 320 px without overflow; screenshots in artifacts/database-status.');
+ console.log('PASS database status card (compiled app, synthetic admin, APIs intercepted): database down shows the honest copy and "Sincronização pendente" with no promised sync; English follows the language; remote success shows the connected state; admin migration chips say "migração" ("3 módulo(s) aguardando migração" / "3 module(s) awaiting migration") with no language mix; 320 px without overflow; screenshots in artifacts/database-status.');
 })().catch(error=>{console.error(error);process.exit(1);});
