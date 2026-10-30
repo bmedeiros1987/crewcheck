@@ -1443,7 +1443,7 @@ function unresolvedActivityWindowAlert(day: RosterDay, label: 'Sobreaviso' | 'Re
   return {
     severity: 'warning',
     title: `${label} sem janela comprovada`,
-    description: `${day.date}: os horários sem estação não permitem atribuir início e fim do ${label.toLowerCase()}.`,
+    description: `${day.date}: os horários sem estação não permitem atribuir início e fim ${label === 'Reserva' ? 'da reserva' : 'do sobreaviso'}.`,
     details: 'Pendência de leitura, não irregularidade confirmada nem 0 h. O CrewCheck não infere o início, não promove o horário seguinte a início publicado e não presume acionamento. Confira a linha da escala.',
     confidence: 'baixa',
     classification: 'dados_insuficientes',
