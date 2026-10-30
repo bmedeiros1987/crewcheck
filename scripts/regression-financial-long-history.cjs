@@ -10,7 +10,7 @@ const A='synthetic@example.invalid',B='synthetic-b@example.invalid';
 try{for(const width of [390,1440]){
  let delay=100,historyReads=0;const errors=[];
  const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
- await context.addInitScript({content:'('+seed+')('+JSON.stringify({unknown:false,unknownAddition:false,futureForeign:true})+');'});
+ await context.addInitScript({content:'('+seed+')('+JSON.stringify({unknown:false,unknownAddition:false,futureForeign:true,language:'pt'})+');'});
  await context.route('**/*',async route=>{const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();
   if(url.pathname.startsWith('/api/platform/finance/')&&req.method()!=='GET')writes++;
   if(url.pathname==='/api/platform/finance/history'){
