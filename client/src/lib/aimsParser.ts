@@ -2550,6 +2550,7 @@ function collectDutyWindow(lines: string[]): { start: string | null; end: string
   }
   if (stationTimes.length >= 2) return { start: stationTimes[0], end: stationTimes[stationTimes.length - 1], startSource: 'published', endSource: 'published' };
 
+  if (bareActivityStartIsAmbiguous(tokens)) return { start: null, end: null, startSource: 'unknown', endSource: 'unknown' };
   const times = collectTimes(tokens).filter(time => !looksLikeDuration(time));
   if (!times.length) return { start: null, end: null, startSource: 'absent', endSource: 'absent' };
   const start = times[0];
@@ -2578,6 +2579,21 @@ function collectAllClockTokens(lines: string[]): string[] {
     }
   }
   return output;
+}
+
+// Station-less ("bare") activity clocks have no provenance of their own. The only candidate start is
+// the first clock after the code; when it matches the legacy duration list it may be a duration
+// column or the start, and nothing in the text proves which. The window is then unresolved: no clock
+// is inferred as start (no 06:00) and no later clock is promoted to the published start (no 09:00).
+// Sources are 'unknown' because clocks exist but cannot be attributed; rawText keeps every original
+// clock, and a station/time window ("HSB BSB 06:00 BSB 09:00") is never affected.
+function bareActivityStartIsAmbiguous(tokens: string[]): boolean {
+  const first = tokens.join(' ').match(/\b([01]?\d|2[0-3]):[0-5]\d(?:\(\+1\))?\b/)?.[0];
+  return Boolean(first) && looksLikeDuration(normalizeSimpleTime(first!));
+}
+
+function unresolvedActivityWindow(type: ParsedDay['type'], pairingCode = ''): ParsedDay {
+  return { type, pairingCode, dutyReport: null, dutyDebrief: null, dutyReportSource: 'unknown', dutyDebriefSource: 'unknown', legs: [], dutyHours: null, flyingHours: 0, isNextDay: false, hotel: null };
 }
 
 function normalizeSimpleTime(time: string): string {
@@ -2680,6 +2696,7 @@ function parseStandby(lines: string[], type: 'HSB' | 'HSBE'): ParsedDay {
   // Quando HSB e ASB aparecem no mesmo dia, a reserva não pode herdar horário do sobreaviso.
   const ownLines = sliceOwnActivityLines(lines, type);
   const published = aimsActivityStationWindow(ownLines, 0);
+  if (!published && bareActivityStartIsAmbiguous(ownLines)) return unresolvedActivityWindow(type);
   const times = published ? [published.report, published.release] : collectAllClockTokens(ownLines);
   const uniqueTimes = Array.from(new Set(times));
 
@@ -2777,6 +2794,7 @@ function parseASB(lines: string[]): ParsedDay {
   // CrewCheck é considerar 6h de reserva a partir do início.
   const ownLines = sliceOwnActivityLines(lines, 'ASB');
   const published = aimsActivityStationWindow(ownLines, 0);
+  if (!published && bareActivityStartIsAmbiguous(ownLines)) return unresolvedActivityWindow('ASB');
   const times = published ? [published.report, published.release] : collectAllClockTokens(ownLines);
   const uniqueTimes = Array.from(new Set(times));
 

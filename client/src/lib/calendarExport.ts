@@ -289,6 +289,22 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
         color: calendarColorForDay(day),
       });
     }
+
+    // Published standby/reserve whose clocks could not be attributed (no station): kept as a tentative
+    // day marker, never an invented start/end, a 24 h duty or blocked time. Same UID as the timed duty
+    // event would have, so a later export with confirmed times updates it.
+    if (shouldExportDuties(cfg.mode) && hasUnresolvedActivityWindow(day)) {
+      ical += buildAllDayEvent({
+        uid: `${uidBase}-duty-${dayIndex}`,
+        now,
+        date: day.date,
+        summary: `${getDutySummary(day)} · horário pendente`,
+        description: 'Marcador do dia, não jornada de 24 h nem horário confirmado: os horários publicados sem estação não permitem atribuir início e fim. Programação publicada no mesmo dia mantém seus horários. Confira a escala oficial.',
+        categories: 'CrewCheck,Duty,Pending',
+        color: calendarColorForDay(day),
+        pending: true,
+      });
+    }
   });
 
   if (shouldExportGym(cfg.mode) && gymRecommendations?.length) {
@@ -395,11 +411,14 @@ function buildAllDayEvent(args: {
   description: string;
   categories: string;
   color?: string;
+  /** Unconfirmed availability: tentative, neither confirmed busy nor declared free. */
+  pending?: boolean;
 }): string {
   const start = formatDateForIcal(args.date);
   const end = formatDateForIcal(args.date, 1);
   const colorLine = args.color ? `COLOR:${args.color}\nX-APPLE-CALENDAR-COLOR:${args.color}\n` : '';
-  return `BEGIN:VEVENT\nUID:${args.uid}\nDTSTAMP:${args.now}\n${colorLine}DTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${escapeIcal(args.summary)}\nDESCRIPTION:${escapeIcal(args.description)}\nCATEGORIES:${escapeIcal(args.categories)}\nSTATUS:CONFIRMED\nTRANSP:TRANSPARENT\nX-MICROSOFT-CDO-BUSYSTATUS:FREE\nEND:VEVENT\n`;
+  const availability = args.pending ? 'STATUS:TENTATIVE\nTRANSP:TRANSPARENT\nX-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE' : 'STATUS:CONFIRMED\nTRANSP:TRANSPARENT\nX-MICROSOFT-CDO-BUSYSTATUS:FREE';
+  return `BEGIN:VEVENT\nUID:${args.uid}\nDTSTAMP:${args.now}\n${colorLine}DTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${escapeIcal(args.summary)}\nDESCRIPTION:${escapeIcal(args.description)}\nCATEGORIES:${escapeIcal(args.categories)}\n${availability}\nEND:VEVENT\n`;
 }
 
 function buildPairingDescription(roster: CrewRoster, day: RosterDay, endNextDay: boolean): string {
@@ -584,6 +603,10 @@ function shouldExportDetailedLegs(mode: CalendarExportMode, style?: CalendarExpo
 
 function shouldExportCheckin(mode: CalendarExportMode, style?: CalendarExportOptions['calendarStyle']): boolean {
   return style === 'legacy-detailed' && (mode === 'all' || mode === 'flights' || mode === 'duties');
+}
+
+function hasUnresolvedActivityWindow(day: RosterDay): boolean {
+  return (!day.dutyReport || !day.dutyDebrief) && (day.dutyReportSource === 'unknown' || day.dutyDebriefSource === 'unknown') && !day.legs?.length;
 }
 
 function shouldExportDuties(mode: CalendarExportMode): boolean {
