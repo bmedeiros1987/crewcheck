@@ -148,6 +148,26 @@ async function suite(M) {
     assert.deepEqual([load.aggregateStatus, load.aggregatePendingDates], ['partial', ['17/08/2026']], 'same date: partial');
     assert.ok(!gym.some(item => item.date === '17/08/2026'), 'same date: no gym suggestion');
   }
+  // Same date, pending HSB + published flight: daily availability is unknown, so the day's total load
+  // cannot be graded (only day worked -> 'Indeterminada'); the flight itself is untouched: same
+  // timeline values, report time (APZ), flight/duty hours and regulatory flight-hour total as the
+  // same roster without the pending HSB.
+  {
+    const roster = M.parseAimsRoster(ROSTERS.sameDateFlight);
+    const withoutPending = { ...clone(roster), days: clone(roster).days.filter(day => !(day.date === '17/08/2026' && day.dutyReportSource === 'unknown')) };
+    assert.equal(withoutPending.days.length, roster.days.length - 1, 'counterpart roster without the pending HSB');
+    const load = M.analyzeDayLoads(clone(roster)), loadKnown = M.analyzeDayLoads(clone(withoutPending));
+    assert.deepEqual([load.intensityScore, load.grade, load.aggregateStatus], [null, 'Indeterminada', 'indeterminate'], 'same-date flight: wellbeing load indeterminate, never "Boa"');
+    assert.equal(typeof loadKnown.intensityScore, 'number', 'counterpart: measurable');
+    const flight = days => days.find(day => day.date === '17/08/2026' && day.type === 'VOO');
+    const pick = day => day && { flightHours: day.flightHours, dutyHours: day.dutyHours, dutyStartTime: day.dutyStartTime, dutyEndTime: day.dutyEndTime, sectors: day.sectors, isDutyNextDay: day.isDutyNextDay };
+    assert.ok(flight(load.days), 'same-date flight: kept in the timeline');
+    assert.deepEqual(pick(flight(load.days)), pick(flight(loadKnown.days)), 'same-date flight: timeline values unchanged');
+    const rosterFlight = roster.days.find(day => day.date === '17/08/2026' && day.type === 'VOO');
+    assert.deepEqual([rosterFlight.dutyReport, rosterFlight.dutyReportSource], ['09:25', 'published'], 'same-date flight: published APZ kept');
+    const compliance = M.analyzeCompliance(clone(roster), 'cabin'), complianceKnown = M.analyzeCompliance(clone(withoutPending), 'cabin');
+    assert.equal(compliance.metrics.totalFlightHours, complianceKnown.metrics.totalFlightHours, 'same-date flight: flight-hour total unchanged');
+  }
   // Carry-in from another month: guards recommendations, does not make this month's aggregates partial.
   {
     const roster = M.parseAimsRoster(header.replace('-16/08/2026 até18/08/2026', '-31/07/2026 até18/08/2026') + '31Jul Fri HSB 06:00 20:00\n' + flight16 + '17Aug Mon HSB BSB 06:00 BSB 20:00\n18Aug Tue DO\n');
@@ -252,6 +272,18 @@ async function suite(M) {
 }
 
 await suite(await load());
+
+// Finance never reads the wellbeing load: the allowance calculator and the financial libraries do not
+// consume analyzeDayLoads/loadAnalysis, so an indeterminate load cannot change hours or amounts there.
+{
+  const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+  const start = home.indexOf('function calculatePerDiem('), end = home.indexOf('\n}\n', start);
+  assert.ok(start > 0 && end > start, 'calculatePerDiem found');
+  assert.doesNotMatch(home.slice(start, end), /analyzeDayLoads|loadAnalysis/, 'allowance calculator independent of the load indicator');
+  for (const file of fs.readdirSync('client/src/lib').filter(name => /^(financial|compensation|salary|payroll).*\.ts$/.test(name))) {
+    assert.doesNotMatch(fs.readFileSync(path.join('client/src/lib', file), 'utf8'), /analyzeDayLoads|loadAnalysis/, `${file} independent of the load indicator`);
+  }
+}
 
 // Home report card (the shipped caller) and its English through the static translator.
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
