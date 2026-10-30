@@ -1427,6 +1427,28 @@ function getStandbyWindowForCompliance(day: RosterDay): BlockingWindow | null {
   return null;
 }
 
+// The parser could not attribute a station-less window (clocks present, provenance 'unknown').
+// That is not a 0 h activity: it is pending evidence, reported like ROLLING_28D_DATA_GAP (never a
+// silent "conforme"), and no standby/reserve limit is evaluated on an invented window.
+function activityWindowUnresolved(day: RosterDay): boolean {
+  return (!day.dutyReport || !day.dutyDebrief) && (day.dutyReportSource === 'unknown' || day.dutyDebriefSource === 'unknown');
+}
+
+function unresolvedActivityWindowAlert(day: RosterDay, label: 'Sobreaviso' | 'Reserva', code: string, legalReference: string): Omit<ComplianceAlert, 'id'> {
+  return {
+    severity: 'warning',
+    title: `${label} sem janela comprovada`,
+    description: `${day.date}: os horários sem estação não permitem atribuir início e fim do ${label.toLowerCase()}.`,
+    details: 'Pendência de leitura, não irregularidade confirmada nem 0 h. O CrewCheck não infere o início, não promove o horário seguinte a início publicado e não presume acionamento. Confira a linha da escala.',
+    confidence: 'baixa',
+    classification: 'dados_insuficientes',
+    code,
+    actionable: false,
+    legalReference,
+    date: day.date,
+  };
+}
+
 function getReserveWindowForCompliance(day: RosterDay): BlockingWindow | null {
   const reserve = getDayBlockingWindows(day).find(item => item.source === 'reserve');
   if (reserve) return reserve;
@@ -1886,6 +1908,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
           date: day.date,
         });
       }
+      if (activityWindowUnresolved(day)) pushAlert(alerts, unresolvedActivityWindowAlert(day, 'Sobreaviso', 'STANDBY_WINDOW_UNRESOLVED', actRules.standby.legalReference));
       addStandbyActivationDutyLimitAlerts(alerts, day, roster, actRules);
     }
 
@@ -1913,6 +1936,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
           date: day.date,
         });
       }
+      if (activityWindowUnresolved(day)) pushAlert(alerts, unresolvedActivityWindowAlert(day, 'Reserva', 'RESERVE_WINDOW_UNRESOLVED', actRules.reserve.legalReference));
       addReserveActivationDutyLimitAlerts(alerts, day, actRules, legalProfile);
     }
 

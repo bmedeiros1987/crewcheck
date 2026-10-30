@@ -10,6 +10,11 @@ on:
       - 'scripts/regression-official-roster-corpus-privacy.mjs'
       - 'scripts/regression-p0-530-nominal-day-authority.mjs'
       - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'scripts/regression-p0-presentation-boundary-leak.mjs'
+      - 'scripts/regression-aims-activity-before-flight-parity.mjs'
+      - 'scripts/regression-aims-ambiguous-activity-clocks.mjs'
       - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/lib/official-roster-corpus-validator.mjs'
       - '.github/workflows/automatic-roster-audit-pipeline.yml'
@@ -67,6 +72,10 @@ jobs:
         run: node scripts/regression-p1-server-510-aims-duty-segmentation.mjs
       - name: Published presentation boundary oracle
         run: node scripts/regression-p0-presentation-boundary-leak.mjs
+      - name: Ambiguous bare activity clocks stay unresolved (source)
+        run: node scripts/regression-aims-ambiguous-activity-clocks.mjs
+      - name: Activity before flight parity, conservative bare-clock filter (source)
+        run: node scripts/regression-aims-activity-before-flight-parity.mjs
       - name: Source 168h boundary parity
         run: node scripts/regression-p0-530-night-168h-boundary-alignment.mjs
       - name: Source stay physical association
@@ -100,6 +109,11 @@ jobs:
       - run: npm ci
       - name: Prepare canonical runtime
         run: node scripts/v139/apply.mjs
+      - name: Prepared presentation boundary and ambiguous activity clocks
+        run: |
+          set -euo pipefail
+          node scripts/regression-p0-presentation-boundary-leak.mjs
+          node scripts/regression-aims-ambiguous-activity-clocks.mjs
       - name: Prepared 168h and timezone contracts
         run: |
           set -euo pipefail
