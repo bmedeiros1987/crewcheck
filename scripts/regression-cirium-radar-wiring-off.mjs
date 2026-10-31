@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import ts from 'typescript';
 import {resolveOwnedGatePublication} from '../server/radar-publication-authority.mjs';
 import os from 'node:os';
 import path from 'node:path';
@@ -49,9 +48,14 @@ assert.equal(await injection.runCiriumRadarInjection(poison, { enabled: false, s
 assert.deepEqual(injection.ciriumRadarRegistration(), { key: 'cirium-sky', available: false, state: 'disabled' });
 
 const platformSource=fs.readFileSync('server/platform.mjs','utf8');
-const platformAst=ts.createSourceFile('platform.mjs',platformSource,99,true,ts.ScriptKind.JS);
-const ownedLoader=platformAst.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='loadOwnedPlatformRoster');
-assert.ok(ownedLoader,'use the actual authenticated loader, not an absent VM binding');
+// Delimit the actual exported loader by its unique neighboring declaration.
+// This raw lifecycle intentionally has no node_modules: extraction uses only Node.
+const loaderStart='export async function loadOwnedPlatformRoster(';
+const loaderEnd='\n\nconst APP_VERSION = ';
+assert.equal(platformSource.split(loaderStart).length,2,'unique actual owned loader');
+assert.equal(platformSource.split(loaderEnd).length,2,'unique following platform declaration');
+const ownedLoader=platformSource.slice(platformSource.indexOf(loaderStart),platformSource.indexOf(loaderEnd)).trim().replace(/^export /,'');
+assert.ok(ownedLoader.startsWith('async function loadOwnedPlatformRoster(')&&ownedLoader.endsWith('}'),'complete actual loader body');
 function harness(text, forbidLegacy = false, overrides = {}) {
   const counters = { provider: 0, auth: 0, load: 0, apply: 0, save: 0, env: 0, fetch: 0 };
   const platformReads={jwt:0,db:0};
@@ -79,7 +83,7 @@ function harness(text, forbidLegacy = false, overrides = {}) {
     async conciergeSaveSnapshotAsync() { counters.save++; } };
   const scope = text.slice(text.indexOf('function sendJson('), text.indexOf('function mapsServerKey('));
   assert.ok(scope.includes('async function handleRadar('));
-  vm.createContext(sandbox); vm.runInContext(ownedLoader.getText(platformAst).replace(/^export\s+/,''),sandbox); vm.runInContext(scope, sandbox);
+  vm.createContext(sandbox); vm.runInContext(ownedLoader,sandbox); vm.runInContext(scope, sandbox);
   vm.runInContext(`for (const name of ['providerFlightAware','providerCustom','providerAviationstack','providerAirLabs','providerAeroDataBox']) {
     globalThis[name] = async () => { legacyHit(); return name === 'providerCustom' ? legacyRow : null; };
   }`, Object.assign(sandbox, { legacyHit() { counters.provider++; if (forbidLegacy) throw Error('Synthetic path reached fallback'); },
