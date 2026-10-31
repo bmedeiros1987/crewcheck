@@ -17,6 +17,11 @@ on:
       - 'client/src/lib/databaseClient.ts'
       - 'scripts/regression-home-crossmonth-continuity.cjs'
       - 'scripts/regression-home-owned-radar-browser.cjs'
+      - 'scripts/lib/owned-radar-supervisor.cjs'
+      - 'scripts/regression-owned-radar-supervisor.cjs'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/authClient.ts'
+      - 'shared/gate-query-day.mjs'
       - 'scripts/fixtures/owned-radar-http.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
@@ -38,6 +43,7 @@ jobs:
       - name: Verify raw TypeScript and shared contract before preparation
         run: |
           node scripts/regression-roster-list-session.mjs
+          node scripts/regression-owned-radar-supervisor.cjs
           npx tsc --noEmit
           node scripts/regression-quick-roster-care-source.mjs --record "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-p1-303-schedule-classification-counts.mjs
@@ -48,6 +54,7 @@ jobs:
         run: |
           node scripts/regression-quick-roster-care-source.mjs --compare "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-home-continuity-contract.mjs
+          node scripts/regression-owned-radar-supervisor.cjs
           node scripts/regression-home-history-session.mjs
           node scripts/regression-saved-roster-retry-session.mjs
           node scripts/regression-roster-list-session.mjs

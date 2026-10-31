@@ -2,12 +2,13 @@ const fs = require('node:fs'), path = require('node:path'), http = require('node
 const { createRequire } = require('node:module');
 const { chromium } = createRequire(path.resolve(process.env.MENU_PLAYWRIGHT_PACKAGE || 'package.json'))('playwright');
 const {spawnSync}=require('node:child_process');
+const {acceptsOwnedRadarResult}=require('./lib/owned-radar-supervisor.cjs');
 if(process.argv[2]!=='--worker'){
  const results=[];for(const [zone,mutation]of [...['UTC','America/Sao_Paulo','Pacific/Auckland'].map(z=>[z,'']),...['gate','date','provider'].map(m=>['UTC',m])]){
   const evidence=path.resolve(process.env.OWNED_RADAR_EVIDENCE_DIR||'artifacts/home-owned-radar',zone.replaceAll('/','_')+(mutation?'-mutant-'+mutation:''));
   const child=spawnSync(process.execPath,[__filename,'--worker'],{cwd:process.cwd(),encoding:'utf8',timeout:120000,maxBuffer:2*1024*1024,env:{...process.env,OWNED_RADAR_ZONE:zone,OWNED_RADAR_MUTATION:mutation,CONTINUITY_EVIDENCE_DIR:evidence}});
   const text=(child.stdout||'')+(child.stderr||'');fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,'run.log'),text);
-  const passed=mutation?child.status!==0&&/ORACLE_(GATE|OCCURRENCE|PROVIDER)/.test(text):child.status===0;
+  const passed=acceptsOwnedRadarResult(child,mutation);
   results.push({zone,mutation:mutation||null,exit:child.status,signal:child.signal,passed});
   assert(passed,JSON.stringify(results.at(-1))+'\n'+text);console.log('PASS owned Radar '+zone+' '+(mutation?'mutant rejected:'+mutation:'positive'));
  }
@@ -18,7 +19,7 @@ fs.mkdirSync(out, { recursive: true });
 function pdf(month, flights) { const tag = month === 10 ? 'Oct' : 'Nov', last = month === 10 ? 31 : 30; const lines = ['SYNTHETIC CONTINUITY QA', `Tripulante: TESTE SINTETICO BP: 900001 Base: BSB 01/${month}/2026`, 'TESTE SINTETICO | 900001 | A320 | BSB | CCM']; for (let d = 1; d <= last; d++) {
     lines.push(`${String(d).padStart(2, '0')}-${tag}-2026 ${flights[d] ? 'VOO' : 'DO'}`);
     if (flights[d])
-        lines.push(`${flights[d]} ${month === 11 ? 'GRU 08:00 BSB' : 'BSB 08:00 GRU'} 09:00 OP`);
+        lines.push(`${flights[d]} ${month === 11 ? 'GRU 08:00 BSB' : 'BSB 08:00 AJU'} 09:00 OP`);
 } const content = lines.map((s, i) => `BT /F1 10 Tf 35 ${800 - i * 19} Td (${s}) Tj ET`).join('\n'); const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`]; let text = '%PDF-1.4\n', offsets = [0]; objects.forEach((s, i) => { offsets.push(Buffer.byteLength(text)); text += `${i + 1} 0 obj\n${s}\nendobj\n`; }); const start = Buffer.byteLength(text); text += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n` + offsets.slice(1).map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('') + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`; const file = out + '/' + month + '.pdf'; fs.writeFileSync(file, text); return file; }
 const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA4774' }), 11: pdf(11, { 1: 'LA8201', 2: 'LA8202', 3: 'LA8203' }) };
 (async () => {
@@ -130,7 +131,7 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA4774' }), 11: pdf(11, { 1: 
         assert(accepted.every(x=>x.queryKinds.includes('owned-history')&&x.providerCalls===1),'ORACLE_AUTHORITY: real owned SQL history/admission required');
         for(const {result:{status,payload}} of accepted){
           assert.equal(status,200,'ORACLE_HTTP');assert.equal(payload.flight,'LA4774','ORACLE_FLIGHT');
-          assert.equal(payload.origin,'BSB','ORACLE_ORIGIN');assert.equal(payload.destination,'GRU','ORACLE_DESTINATION');
+          assert.equal(payload.origin,'BSB','ORACLE_ORIGIN');assert.equal(payload.destination,'AJU','ORACLE_DESTINATION');
           assert.equal(payload.scheduledDepartureUtc,'2026-10-31T11:00:00.000Z','ORACLE_OCCURRENCE');
           assert.equal(payload.gate,'18','ORACLE_GATE');assert.equal(payload.provider,'custom','ORACLE_PROVIDER');
           assert.equal(payload.sourceReceivedAt,Date.parse('2026-10-31T09:00:00Z'),'ORACLE_RECEIPT');
@@ -139,13 +140,13 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA4774' }), 11: pdf(11, { 1: 
           assert.equal(payload.exportedToConcierge,false,'ORACLE_NO_SNAPSHOT_WRITE');
         }
         assert.equal(consumers.homeGate.flight,'LA4774','ORACLE_HOME_FLIGHT');
-        assert.match(consumers.homeGate.route,/^BSB\s*→\s*GRU$/,'ORACLE_HOME_ROUTE');
+        assert.match(consumers.homeGate.route,/^BSB\s*→\s*AJU$/,'ORACLE_HOME_ROUTE');
         assert.equal(consumers.homeGate.gate,'18','ORACLE_HOME_GATE');
         assert.equal(consumers.homeGate.source,'Portão informado por Fonte própria · a confirmar','ORACLE_HOME_REPORTED');
         assert.equal(consumers.homeGate.operational,false,'ORACLE_HOME_NOT_OPERATIONAL');
         const article=p.locator('.cz-radar-screen > article').first();
         assert.equal(await article.locator(':scope > h2').innerText(),'LA4774','ORACLE_DOM_FLIGHT');
-        assert.equal(await article.locator(':scope > p').innerText(),'BSB → GRU','ORACLE_DOM_ROUTE');
+        assert.equal(await article.locator(':scope > p').innerText(),'BSB → AJU','ORACLE_DOM_ROUTE');
         assert.equal(await article.locator(':scope > strong').innerText(),'Portão: 18 · A confirmar','ORACLE_DOM_GATE');
         assert.equal(await article.locator(':scope > span').first().innerText(),'Escala 31/10/2026 (BRT) · Origem 31/10/2026 (America/Sao_Paulo)','ORACLE_DOM_DATE');
         assert.equal(await article.getByText('Status: Não confirmado',{exact:true}).count(),1,'ORACLE_DOM_STATUS');
