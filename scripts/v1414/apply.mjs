@@ -1,14 +1,19 @@
 import fs from 'node:fs';
+import { runtimeContract, homeContract, replaceFunction, functionSpan, homeFunctionSpan, replaceHomeLiteral, replaceVersion, ensureTelegramLink } from './prepared-delivery.mjs';
+
+// Validate every input before either write. A rejected Home must not leave the server changed.
+const homePath = 'client/src/pages/Home.tsx';
+const homeSource = fs.existsSync(homePath) ? fs.readFileSync(homePath, 'utf8') : null;
+const homeState = homeSource === null ? null : homeContract(homeSource);
+const runtimeSource = fs.existsSync('server/telegram-fast-ack.mjs') ? fs.readFileSync('server/telegram-fast-ack.mjs', 'utf8') : null;
+const runtimeState = runtimeSource === null ? null : runtimeContract(runtimeSource);
 
 const runtimePath = 'server/telegram-fast-ack.mjs';
-if (fs.existsSync(runtimePath)) {
-  let source = fs.readFileSync(runtimePath, 'utf8');
+if (runtimeState && !runtimeState.modern) {
+  let source = runtimeSource;
 
-  source = source.replace(
-    "import { sendTelegram, callTelegram } from './v139/delivery.mjs';",
-    "import { sendTelegram, callTelegram, telegramLink } from './v139/delivery.mjs';"
-  );
-  source = source.replace(/const RUNTIME_VERSION = '[^']+';/, "const RUNTIME_VERSION = '14.1.4-telegram-alarm-hardening';");
+  source = ensureTelegramLink(source);
+  source = replaceVersion(source);
 
   const delivery = `async function deliverJob(job) {
   const raw = String(job.channel || 'telegram').toLowerCase().trim();
@@ -48,13 +53,7 @@ if (fs.existsSync(runtimePath)) {
   };
 }
 `;
-  // Preserve helpers added between deliverJob and runSchedulerCycle by newer
-  // releases (notably the v14.1.7 commute monitor). The previous expression
-  // consumed that entire interval and left an orphaned function call at runtime.
-  source = source.replace(
-    /async function deliverJob\(job\) \{[\s\S]*?\n\}\n(?=\n(?:function commuteRouteKey|async function runSchedulerCycle))/,
-    delivery.trimEnd()
-  );
+  source = replaceFunction(source, functionSpan(source, 'deliverJob'), delivery, true);
 
   if (source.includes('summary.commute = await runCommuteMonitorCycle(db);') && !source.includes('async function runCommuteMonitorCycle(db)')) {
     throw new Error('[v1414] Monitor de deslocamento ficou sem implementação após atualizar deliverJob.');
@@ -102,17 +101,17 @@ if (fs.existsSync(runtimePath)) {
   return sendJson(res, 200, { ok: true, scheduledAt: scheduledAt.toISOString(), channel, jobKey, message: 'Despertador agendado no servidor.' });
 }
 `;
-  source = source.replace(/async function scheduleJob\(req, res\) \{[\s\S]*?\n\}\n\nasync function listJobs/, `${schedule}\nasync function listJobs`);
+  // Parse the exact declaration again after the delivery span changes offsets.
+  source = replaceFunction(source, functionSpan(source, 'scheduleJob'), schedule);
 
   fs.writeFileSync(runtimePath, source, 'utf8');
   console.log('[v1414] Telegram e Despertador Inteligente endurecidos; combinações completas habilitadas.');
 }
 
-const homePath = 'client/src/pages/Home.tsx';
-if (fs.existsSync(homePath)) {
-  let source = fs.readFileSync(homePath, 'utf8');
+if (homeState && !homeState.modern) {
+  let source = homeSource;
 
-  source = source.replace(/function wakeupChannelLabel\(channel: string\): string \{[\s\S]*?\n\}/, `function wakeupChannelLabel(channel: string): string {
+  source = replaceFunction(source, homeFunctionSpan(source, 'wakeupChannelLabel'), `function wakeupChannelLabel(channel: string): string {
   const value = String(channel || '').toLowerCase();
   const labels: Record<string, string> = {
     telegram: 'Mensagem no Telegram',
@@ -127,18 +126,18 @@ if (fs.existsSync(homePath)) {
   return labels[value] || 'Despertador Inteligente';
 }`);
 
-  source = source.replace(
+  source = replaceHomeLiteral(source,
     '<option value="telegram">Somente Telegram</option><option value="telegram-call">Ligação via Telegram</option><option value="phone-call">Ligação telefônica Premium</option><option value="both">Ligação telefônica + Telegram</option>',
     '<option value="telegram">Somente Telegram</option><option value="telegram-call">Somente ligação via Telegram</option><option value="phone-call">Somente ligação VoIP</option><option value="telegram+telegram-call">Telegram + ligação via Telegram</option><option value="telegram+phone-call">Telegram + ligação VoIP</option><option value="telegram-call+phone-call">Ligação via Telegram + ligação VoIP</option><option value="telegram+telegram-call+phone-call">Todos os canais</option>'
   );
 
-  source = source.replace(/function serverChannel\(\) \{[\s\S]*?\n  \}/, `function serverChannel() {
+  source = replaceFunction(source, homeFunctionSpan(source, 'serverChannel'), `function serverChannel() {
     if (channel === 'ligacao') return 'phone-call';
     if (channel === 'ambos' || channel === 'both') return 'telegram+phone-call';
     return channel;
   }`);
 
-  source = source.replace(
+  source = replaceHomeLiteral(source,
     "(channel === 'phone-call' || channel === 'both')",
     "(channel.includes('phone-call'))"
   );

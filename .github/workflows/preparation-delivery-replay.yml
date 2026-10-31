@@ -1,0 +1,29 @@
+name: Notification delivery preparation safeguard
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+      - 'server/telegram-fast-ack.mjs'
+      - 'client/src/pages/Home.tsx'
+      - '.github/workflows/preparation-delivery-replay.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepared-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: test ! -e node_modules/typescript/package.json
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-v1414-prepared-delivery.mjs
