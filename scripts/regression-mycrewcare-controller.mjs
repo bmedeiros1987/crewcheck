@@ -175,7 +175,50 @@ test('restart: a fresh controller restores the account cache without opening the
   assert.equal(snap.hasCachedData, true);
   assert.equal(snap.connected, false);
   assert.equal(fake.calls.open, 1, 'restore did not touch the provider');
-  assert.equal(restarted.hotel(`stay-${c.accountId}`).dataState, 'fresh');
+  assert.equal(snap.live, false, 'restoration cannot revalidate the provider session');
+  assert.equal(restarted.hotel(`stay-${c.accountId}`).dataState, 'cached');
+  assert.equal(restarted.pickup(`stay-${c.accountId}`, { allowCached: false }), null);
+});
+
+test('refresh subscribers never receive live or fresh-only facts while verification is pending', async () => {
+  const fake = fakeBridge();
+  const c = ctx();
+  const id = stayFor(c).id;
+  const controller = make(fake);
+  await controller.bind(c, [stayFor(c)]);
+  controller.setAutomatic(true);
+  assert.equal(await controller.refresh({ userInitiated: true }), true);
+  assert.equal(controller.getSnapshot().live, true);
+  const open = fake.bridge.openMyCrewCareV3;
+  let finish;
+  fake.bridge.openMyCrewCareV3 = payload => { finish = () => open(payload); return true; };
+  const seen = [];
+  const unsubscribe = controller.subscribe(() => seen.push({
+    snapshot: controller.getSnapshot(),
+    hotel: controller.hotel(id),
+    pickup: controller.pickup(id),
+    freshHotel: controller.hotel(id, { allowCached: false }),
+    freshPickup: controller.pickup(id, { allowCached: false }),
+  }));
+  const refresh = controller.refresh({ userInitiated: true });
+  try {
+    assert.equal(seen.length, 1);
+    const during = seen[0];
+    assert.equal(during.snapshot.status, 'syncing');
+    assert.equal(during.snapshot.busy, true);
+    assert.equal(during.snapshot.connected, false);
+    assert.equal(during.snapshot.live, false);
+    assert.equal(during.hotel.dataState, 'cached');
+    assert.equal(during.pickup.dataState, 'cached');
+    assert.equal(during.freshHotel, null);
+    assert.equal(during.freshPickup, null);
+    assert.equal(controller.getSnapshot().live, false);
+  } finally { finish(); }
+  assert.equal(await refresh, true);
+  assert.equal(controller.getSnapshot().live, true);
+  assert.equal(controller.hotel(id, { allowCached: false }).dataState, 'fresh');
+  assert.equal(controller.pickup(id, { allowCached: false }).dataState, 'fresh');
+  unsubscribe();
 });
 
 test('account switch: previous account data is unreachable and its cache is not read for the new one', async () => {
