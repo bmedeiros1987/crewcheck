@@ -1,0 +1,27 @@
+name: Telegram preparation route safeguard
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/v1396/**'
+      - 'scripts/v14346/telegram-dispatch.mjs'
+      - 'scripts/regression-v1396-telegram-replay.mjs'
+      - 'server.mjs'
+      - '.github/workflows/preparation-telegram-replay.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  route-safeguard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: test ! -e node_modules/typescript/package.json
+      - run: node scripts/regression-v1396-telegram-replay.mjs
