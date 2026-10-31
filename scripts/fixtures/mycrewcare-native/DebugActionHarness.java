@@ -10,12 +10,13 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
  static class Screen {
   final CrewCheckMyCrewCareDebugActivity activity=new CrewCheckMyCrewCareDebugActivity();
   android.widget.EditText employee,user;android.widget.CheckBox consent;android.widget.Button prepare,start,cancel;android.widget.TextView status;
-  Screen(){android.os.Handler.runMain(activity::create);var layout=(android.widget.LinearLayout)activity.content;
-   employee=(android.widget.EditText)layout.children.get(1);user=(android.widget.EditText)layout.children.get(2);consent=(android.widget.CheckBox)layout.children.get(3);prepare=(android.widget.Button)layout.children.get(4);start=(android.widget.Button)layout.children.get(5);cancel=(android.widget.Button)layout.children.get(6);status=(android.widget.TextView)layout.children.get(7);
+  Screen(){android.os.Handler.runMain(activity::create);var scroll=(android.widget.ScrollView)activity.content;check(scroll.fillViewport,"whole debug screen scrollable, including controls/results");var layout=(android.widget.LinearLayout)scroll.children.get(0);
+   employee=(android.widget.EditText)layout.children.get(2);user=(android.widget.EditText)layout.children.get(4);consent=(android.widget.CheckBox)layout.children.get(5);prepare=(android.widget.Button)layout.children.get(6);start=(android.widget.Button)layout.children.get(7);cancel=(android.widget.Button)layout.children.get(8);status=(android.widget.TextView)layout.children.get(9);check(status.focusable&&status.textSize==16,"focus and scaled text; no line cap");
+   check(((android.widget.TextView)layout.children.get(1)).text.contains("Sua matrícula no MyCrewCare")&&((android.widget.TextView)layout.children.get(3)).text.contains("Seu usuário ou e-mail")&&((android.widget.TextView)layout.children.get(3)).text.contains("não é senha"),"persistent visible personal identity labels, no fixture fields");
    check(!employee.save&&!user.save&&!consent.save&&layout.autofill==8,"identity/consent not restored or autofilled");}
   void ready(){employee.setText("900000001");user.setText("synthetic.crew@example.invalid");consent.setChecked(true);}
   void prepare(){android.os.Handler.runMain(prepare::click);android.os.Handler.drain();}
-  void click(){prepare();var layout=(android.widget.LinearLayout)activity.content;for(var child:new ArrayList<>(layout.children))if(child instanceof android.webkit.WebView){var v=(android.webkit.WebView)child;android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));}android.os.Handler.runMain(start::click);android.os.Handler.drain();}
+  void click(){prepare();var scroll=(android.widget.ScrollView)activity.content;check(scroll.fillViewport,"whole debug screen scrollable, including controls/results");var layout=(android.widget.LinearLayout)scroll.children.get(0);for(var child:new ArrayList<>(layout.children))if(child instanceof android.webkit.WebView){var v=(android.webkit.WebView)child;android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));}android.os.Handler.runMain(start::click);android.os.Handler.drain();}
   void close(){android.os.Handler.runMain(activity::destroy);android.os.Handler.drain();}
  }
  static ObservedRequest request(Screen s) {
@@ -26,7 +27,7 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
  static void extract(){var v=view();android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));android.os.Handler.drain();}
  static void deliver(Screen s){ObservedRequest r=request(s);var v=view();extract();android.os.Handler.runMain(()->v.value.onReceiveValue(q(envelope(r))));android.os.Handler.drain();}
  static void to(Screen s,String phase){while(!request(s).kind.equals(phase))deliver(s);}
- static void clean(){CrewCheckMyCrewCareProfile.supported=true;CrewCheckMyCrewCareProfile.defer=false;CrewCheckMyCrewCareProfile.clearError=null;CrewCheckMyCrewCareProfile.pending.clear();CrewCheckMyCrewCareSecureStore.clearError=null;android.os.Handler.delayed.clear();}
+ static void clean(){CrewCheckMyCrewCareProfile.cleanupHook=null;CrewCheckMyCrewCareProfile.supported=true;CrewCheckMyCrewCareProfile.defer=false;CrewCheckMyCrewCareProfile.clearError=null;CrewCheckMyCrewCareProfile.pending.clear();CrewCheckMyCrewCareSecureStore.clearError=null;android.os.Handler.delayed.clear();}
  public static void main(String[] args){try {
   android.content.res.AssetManager.source=args[0];asset=Files.readString(Path.of(args[0]));
   Screen initial=new Screen();int before=android.webkit.WebView.instances.size();initial.click();check(android.webkit.WebView.instances.size()==before&&initial.status.text.contains("autorização"),"no navigation without consent");count++;
@@ -35,7 +36,8 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
   clean();CrewCheckMyCrewCareProfile.supported=false;Screen unsupported=new Screen();unsupported.ready();unsupported.click();check(android.webkit.WebView.instances.size()==before&&unsupported.status.text.contains("indisponível")&&!unsupported.consent.checked,"unsupported has no fallback, consent consumed");unsupported.close();count++;
   clean();Screen full=new Screen();full.ready();full.click();check(!full.prepare.enabled&&!full.consent.checked,"single-flight consumes consent");full.click();check(request(full).kind.equals("profile-before"),"double click cannot replace attempt");count++;
   for(int i=0;i<4;i++)deliver(full);
-  check(full.status.text.contains("Contrato observado válido")&&full.status.text.contains("não validados")&&full.status.text.contains("Perfil de teste limpo")&&full.prepare.enabled&&!full.status.text.contains("Synthetic")&&view().destroyed,"only bounded summary after validated cleanup");count++;
+  check(full.status.text.contains("Contrato observado válido")&&full.status.text.contains("não validados")&&full.status.text.contains("Perfil de teste limpo")&&full.prepare.enabled&&full.status.text.contains("Synthetic Harbor Hotel")&&full.status.text.contains("Synthetic Airport Shuttle")&&full.status.text.contains("07:05")&&view().destroyed,"only validated own reservation preview after verified cleanup");count++;
+  android.os.Handler.runMain(()->full.cancel.click());check(!full.status.text.contains("Synthetic")&&full.status.text.contains("apagada"),"disconnect clears completed preview");
   int after=android.webkit.WebView.instances.size();full.click();check(android.webkit.WebView.instances.size()==after,"retry needs new consent");full.close();count++;
   for(String phase:List.of("profile-before","cards","detail","profile-after"))for(String how:List.of("cancel","stop","destroy","timeout")) {
    clean();Screen s=new Screen();s.ready();s.click();to(s,phase);var v=view();extract();var late=v.value;ObservedRequest r=request(s);
@@ -47,10 +49,10 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    clean();Screen s=new Screen();s.ready();s.click();to(s,phase);var v=view();
    if(bad.equals("http"))android.os.Handler.runMain(()->v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0]))));
    else {ObservedRequest r=request(s);extract();android.os.Handler.runMain(()->v.value.onReceiveValue(q(envelope(r).replace(r.scope.accountId,"foreign"))));}
-   android.os.Handler.drain();check(v.destroyed&&s.status.text.contains("Não validado")&&!s.status.text.contains("Contrato observado válido"),"failure never becomes operational success "+phase+bad);s.close();count++;
+   android.os.Handler.drain();check(v.destroyed&&s.status.text.contains("Não validado")&&!s.status.text.contains("Contrato observado válido")&&!s.status.text.contains("Synthetic"),"failure never becomes operational success "+phase+bad);s.close();count++;
   }
   clean();CrewCheckMyCrewCareProfile.defer=true;Screen delayed=new Screen();delayed.ready();delayed.click();for(int i=0;i<4;i++)deliver(delayed);
-  check(!delayed.prepare.enabled&&delayed.status.text.contains("ainda não concluído")&&!delayed.status.text.contains("Contrato observado válido"),"cleanup pending is not success");
+  check(!delayed.prepare.enabled&&delayed.status.text.contains("ainda não concluído")&&!delayed.status.text.contains("Contrato observado válido")&&!delayed.status.text.contains("Synthetic"),"cleanup pending is not success");
   CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(false,"profile-clear-failed");android.os.Handler.tick();check(!delayed.prepare.enabled&&delayed.status.text.contains("não confirmada"),"cleanup failure blocks retry and success");delayed.close();count++;
   for(String mode:List.of("pending-success","pending-timeout","profile-throw","cache-throw")) {
    clean();CrewCheckMyCrewCareProfile.defer=mode.startsWith("pending");
@@ -58,11 +60,11 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    if(mode.equals("cache-throw"))CrewCheckMyCrewCareSecureStore.clearError=new IllegalStateException("synthetic");
    Screen s=new Screen();s.ready();s.click();for(int i=0;i<4;i++)deliver(s);
    if(mode.equals("pending-success")){check(!s.status.text.contains("Contrato observado válido"),"pending cleanup does not publish valid result");CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(true,"ok");android.os.Handler.tick();check(s.prepare.enabled&&s.status.text.contains("Contrato observado válido"),"only confirmed delayed cleanup permits result/retry");}
-   else {if(mode.equals("pending-timeout"))for(int i=0;i<300;i++)android.os.Handler.tick();check(!s.prepare.enabled&&s.status.text.contains("não confirmada")&&!s.status.text.contains("Contrato observado válido"),"cleanup failures/timeout block result "+mode);}
+   else {if(mode.equals("pending-timeout"))for(int i=0;i<300;i++)android.os.Handler.tick();check(!s.prepare.enabled&&s.status.text.contains("não confirmada")&&!s.status.text.contains("Contrato observado válido")&&!s.status.text.contains("Synthetic"),"cleanup failures/timeout block result "+mode);}
    s.close();count++;
   }
   clean();Screen login=new Screen();login.ready();int loginIndex=android.webkit.WebView.instances.size();login.prepare();var visible=view();
-  check(((android.widget.LinearLayout)login.activity.content).children.contains(visible)&&visible.settings.js&&visible.script==null&&visible.value==null&&!login.start.enabled,"visible official login page without native script/form extraction or early read");
+  check(((android.widget.LinearLayout)((android.widget.ScrollView)login.activity.content).children.get(0)).children.contains(visible)&&visible.settings.js&&visible.script==null&&visible.value==null&&!login.start.enabled,"visible official login page without native script/form extraction or early read");
   String official="https://api2.apicrewcare.com/Main/Login.aspx?ReturnUrl=%2fLATAM%2fmytravel.aspx";
   android.os.Handler.runMain(()->{check(!visible.client.shouldOverrideUrlLoading(visible,new android.webkit.WebResourceRequest(official,true)),"observed login target allowed");visible.url=official;visible.client.onPageStarted(visible,official,null);visible.client.onPageFinished(visible,official);check(!login.start.enabled,"login URL not authentication");check(!visible.client.shouldOverrideUrlLoading(visible,new android.webkit.WebResourceRequest(official,true,"POST")),"user browser form POST allowed only observed login target");check(visible.client.shouldInterceptRequest(visible,new android.webkit.WebResourceRequest("https://api2.apicrewcare.com/Content/site.css",false))==null,"same exact portal origin GET resources");visible.url="https://api2.apicrewcare.com/LATAM/mytravel.aspx";visible.client.onPageStarted(visible,visible.url,null);visible.client.onPageFinished(visible,visible.url);login.start.click();});android.os.Handler.drain();
   check(visible.destroyed&&CrewCheckMyCrewCareProfile.createdAccounts.get(loginIndex).equals(request(login).scope.accountId)&&CrewCheckMyCrewCareProfile.createdAccounts.get(loginIndex+1).equals(request(login).scope.accountId),"login and real source share exact profile/account; visible view stopped before acquisition");
@@ -104,6 +106,62 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    android.widget.TextView.hook=null;android.webkit.WebView.stopHook=null;android.webkit.WebView.destroyHook=null;
    check(v.destroyed&&android.webkit.WebView.instances.size()==viewsBefore&&!s.status.text.contains("Contrato observado válido")&&s.status.text.contains("não confirmado"),"causal handoff invalidation prevents acquisition "+boundary+event);s.close();count++;
   }
-  check(count==81,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  clean();Screen storageOnly=new Screen();storageOnly.ready();storageOnly.prepare();var loginPage=view();loginPage.sessionStorage.put("synthetic-session-only","not-a-credential");
+  android.os.Handler.runMain(()->{loginPage.client.onPageFinished(loginPage,loginPage.url);storageOnly.start.click();});android.os.Handler.drain();var reader=view();
+  check(loginPage.destroyed&&reader!=loginPage&&reader.sessionStorage.isEmpty(),"fresh page cannot pretend to inherit login sessionStorage");
+  extract();android.os.Handler.runMain(()->reader.value.onReceiveValue("null"));android.os.Handler.drain();
+  check(storageOnly.status.text.contains("Não validado")&&!storageOnly.status.text.contains("Synthetic")&&storageOnly.status.text.contains("Perfil de teste limpo"),"sessionStorage-only authentication fails closed with cleanup; no session copied or own reservations claimed");storageOnly.close();count++;
+  for(String action:List.of("cancel","stop"))for(String outcome:List.of("ok","failure","timeout")) {
+   clean();CrewCheckMyCrewCareProfile.defer=true;Screen s=new Screen();s.ready();s.click();for(int i=0;i<4;i++)deliver(s);
+   check(s.status.text.contains("ainda não concluído")&&!s.status.text.contains("Synthetic"),"preview unpublished during cleanup");
+   android.os.Handler.runMain(()->{if(action.equals("cancel")){s.cancel.click();s.cancel.click();}else s.activity.stop();});android.os.Handler.drain();
+   if(action.equals("stop")){Method resume=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("onStart");resume.setAccessible(true);android.os.Handler.runMain(()->{try{resume.invoke(s.activity);}catch(Exception e){throw new AssertionError(e);}});}
+   if(outcome.equals("timeout")){for(int i=0;i<300;i++)android.os.Handler.tick();}
+   else {CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(outcome.equals("ok"),outcome.equals("ok")?"ok":"profile-clear-failed");android.os.Handler.tick();}
+   check(!s.status.text.contains("Synthetic")&&!s.status.text.contains("Contrato observado válido"),"revoked preview never returns after cleanup: "+action+outcome);
+   check(outcome.equals("ok")?s.prepare.enabled&&s.status.text.contains("Perfil de teste limpo"):!s.prepare.enabled&&s.status.text.contains("não confirmada"),"cleanup completion/errors remain authoritative after preview revocation: "+action+outcome);s.close();count++;
+  }
+  for(String state:List.of("Planned","Cancelled","UNRECOGNIZED")) {
+   clean();Screen s=new Screen();s.ready();s.click();
+   for(int i=0;i<4;i++){ObservedRequest r=request(s);var page=view();extract();String body=envelope(r).replace("Planned",state);android.os.Handler.runMain(()->page.value.onReceiveValue(q(body)));android.os.Handler.drain();}
+   check(s.status.text.contains("Estado recebido: "+state),"raw reservation state never omitted: "+state);
+   check(s.status.text.contains(state.equals("Planned")?"PLANEJADA — não equivale":state.equals("Cancelled")?"CANCELADA — hotel e pickup":"ESTADO DESCONHECIDO — não tratar"),"state-specific reservation/pickup warning: "+state);s.close();count++;
+  }
+  clean();Screen multiple=new Screen();multiple.ready();multiple.click();to(multiple,"detail");ObservedScope context=request(multiple).scope;
+  List<Map<String,String>> rows=new ArrayList<>();for(String state:List.of("Planned","Cancelled","UNRECOGNIZED")){var row=new LinkedHashMap<>(ObservedAcquisitionHarness.page(request(multiple)).rows.get(0));row.put("confirmationRaw",state);row.put("hotelName","Synthetic "+state+" Hotel");rows.add(row);}
+  Constructor<ObservedResult> resultConstructor=ObservedResult.class.getDeclaredConstructor(ObservedScope.class,List.class);resultConstructor.setAccessible(true);Method preview=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("reservationPreview",ObservedResult.class);preview.setAccessible(true);String formatted=(String)preview.invoke(multiple.activity,resultConstructor.newInstance(context,rows));
+  check(formatted.contains("Synthetic Planned Hotel")&&formatted.contains("Synthetic Cancelled Hotel")&&formatted.contains("Synthetic UNRECOGNIZED Hotel")&&formatted.contains("CANCELADA")&&formatted.contains("ESTADO DESCONHECIDO")&&formatted.contains("PLANEJADA"),"multiple reservations retain each raw state and warning independently");multiple.close();count++;
+  for(String action:List.of("cancel","stop-resume")) {
+   clean();Screen s=new Screen();s.ready();s.click();for(int i=0;i<3;i++)deliver(s);
+   CrewCheckMyCrewCareProfile.cleanupHook=()->{CrewCheckMyCrewCareProfile.cleanupHook=null;if(action.equals("cancel"))s.cancel.click();else{ s.activity.stop();try{Method resume=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("onStart");resume.setAccessible(true);resume.invoke(s.activity);}catch(Exception e){throw new AssertionError(e);}}};
+   deliver(s);check(!s.status.text.contains("Synthetic")&&!s.status.text.contains("Contrato observado válido")&&s.status.text.contains("Perfil de teste limpo"),"native cleanup reentrancy cannot recapture revoked preview authority: "+action);s.close();count++;
+  }
+  for(String outcome:List.of("failure","timeout"))for(String action:List.of("cancel","stop")) {
+   clean();CrewCheckMyCrewCareProfile.defer=true;Screen s=new Screen();s.ready();s.click();for(int i=0;i<4;i++)deliver(s);
+   if(outcome.equals("failure")){CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(false,"profile-clear-failed");android.os.Handler.tick();}else for(int i=0;i<300;i++)android.os.Handler.tick();
+   check(s.status.text.contains("não confirmada")&&!s.prepare.enabled,"cleanup reached terminal failure before UI revocation: "+outcome);String failure=s.status.text;int clears=CrewCheckMyCrewCareProfile.clearCalls,timers=android.os.Handler.delayed.size();
+   android.os.Handler.runMain(()->{if(action.equals("cancel")){s.cancel.click();s.cancel.click();}else s.activity.stop();});android.os.Handler.drain();
+   check(s.status.text.equals(failure)&&!s.status.text.contains("pendente")&&!s.status.text.contains("Synthetic")&&!s.prepare.enabled&&clears==CrewCheckMyCrewCareProfile.clearCalls&&timers==android.os.Handler.delayed.size(),"terminal cleanup failure remains visible, no restart/polling/retry after "+outcome+action);s.close();count++;
+  }
+  for(String kind:List.of("ROUTE","ORIGIN","METHOD","RESOURCE-ORIGIN","RESOURCE-METHOD","FRAME","NETWORK","HTTP","TLS","RENDERER","DOWNLOAD")) {
+   clean();Screen s=new Screen();s.ready();s.prepare();var v=view();int readers=android.webkit.WebView.instances.size();String unverified="https://unverified.invalid/login?private=do-not-display";
+   android.os.Handler.runMain(()->{
+    if(kind.equals("ROUTE"))v.client.onPageStarted(v,"https://api2.apicrewcare.com/unverified?private=do-not-display",null);
+    if(kind.equals("ORIGIN"))v.client.onPageStarted(v,unverified,null);
+    if(kind.equals("METHOD"))v.client.shouldOverrideUrlLoading(v,new android.webkit.WebResourceRequest(v.url,true,"POST"));
+    if(kind.equals("RESOURCE-ORIGIN"))v.client.shouldInterceptRequest(v,new android.webkit.WebResourceRequest(unverified,false));
+    if(kind.equals("RESOURCE-METHOD"))v.client.shouldInterceptRequest(v,new android.webkit.WebResourceRequest(v.url,false,"POST"));
+    if(kind.equals("FRAME"))v.client.shouldOverrideUrlLoading(v,new android.webkit.WebResourceRequest(v.url,false));
+    if(kind.equals("NETWORK"))v.client.onReceivedError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceError());
+    if(kind.equals("HTTP"))v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));
+    if(kind.equals("TLS"))v.client.onReceivedSslError(v,new android.webkit.SslErrorHandler(),new android.net.http.SslError());
+    if(kind.equals("RENDERER"))v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());
+    if(kind.equals("DOWNLOAD"))v.download.onDownloadStart(unverified,"","","",1);
+   });android.os.Handler.drain();check(s.status.text.contains("[MCC-"+kind+"]")&&s.status.text.contains("Perfil de teste limpo")&&!s.status.text.contains("do-not-display")&&!s.status.text.contains("unverified.invalid")&&!s.status.text.contains("synthetic.crew")&&!s.start.enabled&&v.destroyed&&android.webkit.WebView.instances.size()==readers,"typed safe diagnostic, cleanup and no acquisition: "+kind);check(s.employee.hint.contains("Digite sua matrícula")&&s.user.hint.contains("não o nome completo"),"personal identity labels, no technical fixture configuration");s.close();count++;
+  }
+  clean();Screen first=new Screen();first.ready();first.prepare();var v=view();android.os.Handler.runMain(()->{v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());});android.os.Handler.drain();check(first.status.text.contains("[MCC-HTTP]")&&!first.status.text.contains("[MCC-RENDERER]"),"first causal failure owns diagnostic; later events do not overwrite it");first.close();count++;
+  clean();CrewCheckMyCrewCareProfile.defer=true;Screen diagnosticCleanup=new Screen();diagnosticCleanup.ready();diagnosticCleanup.prepare();var failedPage=view();android.os.Handler.runMain(()->failedPage.client.onReceivedHttpError(failedPage,new android.webkit.WebResourceRequest(failedPage.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0]))));android.os.Handler.drain();
+  check(diagnosticCleanup.status.text.contains("ainda não concluído")&&diagnosticCleanup.status.text.contains("[MCC-HTTP]"),"safe first event visible while cleanup pending");CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(false,"profile-clear-failed");android.os.Handler.tick();check(diagnosticCleanup.status.text.contains("não confirmada")&&diagnosticCleanup.status.text.contains("[MCC-HTTP]")&&!diagnosticCleanup.prepare.enabled,"cleanup error remains authoritative and retains safe first event");diagnosticCleanup.close();count++;
+  check(count==111,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }
