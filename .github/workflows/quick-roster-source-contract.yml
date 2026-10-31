@@ -12,6 +12,7 @@ on:
       - 'scripts/roster-startup/**'
       - 'scripts/regression-home-continuity-contract.mjs'
       - 'scripts/regression-home-history-session.mjs'
+      - 'scripts/regression-saved-roster-retry-session.mjs'
       - 'scripts/regression-home-crossmonth-continuity.cjs'
       - 'scripts/regression-p0-multichannel-roster-gate.mjs'
       - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
@@ -40,6 +41,7 @@ jobs:
           node scripts/regression-quick-roster-care-source.mjs --compare "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-home-continuity-contract.mjs
           node scripts/regression-home-history-session.mjs
+          node scripts/regression-saved-roster-retry-session.mjs
           node scripts/regression-p0-multichannel-roster-gate.mjs
           node scripts/regression-p0-530-adjacent-month-retention.mjs
           node scripts/regression-p2-530-adjacent-fallback-finance.mjs

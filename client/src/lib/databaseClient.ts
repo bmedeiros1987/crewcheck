@@ -2,6 +2,7 @@ import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
 import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { authFetch, getStoredUser, getToken } from './authClient';
+import { captureAuthSession as captureRosterReadSession } from './authClient';
 
 export interface DatabaseStatus {
   ok: boolean;
@@ -211,6 +212,10 @@ function assertExpectedRosterCrew(roster: CrewRoster, expected?: Pick<SavedRoste
 }
 
 export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSummary, 'year' | 'month' | 'crewId' | 'crewName'>): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
+  const session = captureRosterReadSession();
+  const assertReadSession = () => {
+    if (!session.isCurrent()) throw Object.assign(new Error('A sessão mudou durante a leitura da escala.'), { code: 'STALE_SESSION' });
+  };
   const local = findLocalRoster(id, expected);
   if (id.startsWith('local-') || id.startsWith('offline-')) {
     if (local) {
@@ -239,14 +244,17 @@ export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSum
 
   let lastError: unknown = null;
   for (const endpoint of attempts) {
+    assertReadSession();
     try {
       const payload = await jsonFetch<{ ok: boolean; data: { roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] } }>(endpoint);
+      assertReadSession();
       if (payload?.data?.roster?.days?.length) {
         assertExpectedRosterPeriod(payload.data.roster, expected);
         assertExpectedRosterCrew(payload.data.roster, expected);
         return payload.data;
       }
     } catch (error) {
+      assertReadSession();
       if ((error as any)?.code === 'ROSTER_PERIOD_MISMATCH') throw error;
       // An identity mismatch is a wrong-crew answer, never a reason to keep trying
       // the next endpoint and fall back to whatever the device happens to hold.
@@ -255,6 +263,7 @@ export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSum
     }
   }
 
+  assertReadSession();
   if (local) {
     assertExpectedRosterPeriod(local.roster, expected);
     assertExpectedRosterCrew(local.roster, expected);
