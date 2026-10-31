@@ -422,22 +422,25 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
   const authorityCurrent = () => { const user=telegramRequestUser(req,{email:url.searchParams.get('email') || '',name:url.searchParams.get('name') || '',conciergeKey:url.searchParams.get('conciergeKey') || ''}); return telegramAppRequestAllowed(user) && conciergeSafeKey(user.email) === email && user.authenticated === radarUser.authenticated && user.accessKeyHash === radarUser.accessKeyHash; };
   const profile = { email, name: radarUser.name || '', authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
+  const occurrenceRequest = { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' };
   const loadAuthority = async () => {
-    if (!email) return null;
+    if (!email || !authorityCurrent()) return null;
     const snapshot = await conciergeLoadSnapshot(profile);
+    if (!authorityCurrent()) return null;
     if (snapshot?.roster) {
       if (!conciergeAccessMatches(profile, snapshot) || conciergeSafeKey(snapshot.email || snapshot.key || '') !== email || (snapshot.key && conciergeSafeKey(snapshot.key) !== email)) return null;
-      return { kind:'concierge', snapshot, roster:snapshot.roster, id:'', revision:'' };
+      if (authority?.kind === 'concierge' || findPublishedGateOccurrence(snapshot.roster, occurrenceRequest, buildCanonicalRosterEvents(snapshot.roster)))
+        return { kind:'concierge', snapshot, roster:snapshot.roster, id:'', revision:'' };
     }
-    if (!profile.authenticated) return null;
-    const active = await loadOwnedPlatformRoster(req, email);
-    return active ? { ...active, kind:'platform', snapshot:null } : null;
+    if (!profile.authenticated || !authorityCurrent()) return null;
+    const publication = await loadOwnedPlatformRoster(req, email, occurrenceRequest, buildCanonicalRosterEvents);
+    return authorityCurrent() && publication ? { ...publication, kind:'platform', snapshot:null } : null;
   };
   let authority;
   try { authority = await loadAuthority(); }
   catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
   ctx.gateQueryEvidence = authority
-    ? findPublishedGateOccurrence(authority.roster, { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' }, buildCanonicalRosterEvents(authority.roster)) : null;
+    ? findPublishedGateOccurrence(authority.roster, occurrenceRequest, buildCanonicalRosterEvents(authority.roster)) : null;
   if (!authorityCurrent()) return sendJson(res,200,{...gateQuerySuppressed({reason:'account-unverified'}),exportedToConcierge:false});
   const queryDecision = gateQueryDay(ctx.gateQueryEvidence);
   if (!queryDecision.allowed) return sendJson(res, 200, { ...gateQuerySuppressed(queryDecision), exportedToConcierge: false });
@@ -454,6 +457,8 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
     ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
   }
+  if (authority.kind === 'platform' && !await ctx.radarReadAdmission())
+    return sendJson(res, 200, { ...gateQuerySuppressed({reason: authorityCurrent() && gateQueryDay(ctx.gateQueryEvidence).allowed ? 'response-occurrence-changed' : 'response-context-expired'}), exportedToConcierge:false });
   const payload = await runRadarRace(ctx, origin, destination);
   if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
   if (payload.querySuppressed || (payload.provider === 'cirium-sky' && payload.radarRouting !== 'cirium-flightaware-v1')) return sendJson(res, 200, { ...payload, exportedToConcierge: false });
@@ -461,9 +466,9 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   let currentAuthority;
   try { currentAuthority = await loadAuthority(); }
   catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
-  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed || !currentAuthority)
+  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed)
     return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
-  if (currentAuthority.kind !== authority.kind || currentAuthority.id !== authority.id || currentAuthority.revision !== authority.revision)
+  if (!currentAuthority || currentAuthority.kind !== authority.kind || currentAuthority.id !== authority.id || currentAuthority.revision !== authority.revision)
     return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
   const info = findPublishedGateLeg(currentAuthority.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(currentAuthority.roster));
   if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});

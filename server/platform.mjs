@@ -1,3 +1,4 @@
+import {resolveOwnedGatePublication} from './radar-publication-authority.mjs';
 import { PLATFORM_PLAN_IDS as PLAN_IDS, readPlatformEntitlement } from './platform-entitlement.mjs';
 import { asaasEnvelope, receiveAsaasEvent, asaasInboxSummary } from './asaas-webhook-inbox.mjs';
 import {createFinancialFxHandler,FINANCIAL_FX_PATH} from './financial-fx.mjs';
@@ -16,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
 
 /** Read-only Radar source: token identity owns the active publication, never URL email. */
-export async function loadOwnedPlatformRoster(req, expectedEmail) {
+export async function loadOwnedPlatformRoster(req, expectedEmail, occurrence, canonical) {
   const token = verifyJwt(requestToken(req));
   const email = safeEmail(token?.email);
   if (token?.aud === 'crewcheck-visitor' || token?.role === 'visitor')
@@ -25,6 +26,12 @@ export async function loadOwnedPlatformRoster(req, expectedEmail) {
     throw Object.assign(new Error('Sessão não confirmada.'), { status:401, code:'AUTH_REQUIRED' });
   const db = await pool();
   if (!db) throw Object.assign(new Error('Publicação indisponível.'), { status:503, code:'DATABASE_OFFLINE' });
+  if (occurrence !== undefined) {
+    const result = await db.query('SELECT id,owner_email,roster_key,roster,updated_at,active FROM crewcheck_platform_rosters WHERE owner_email=$1 ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 73', [email]);
+    if (result.rows.some(row => safeEmail(row.owner_email) !== email))
+      throw Object.assign(new Error('Publicação de outra conta.'), { status:403, code:'ROSTER_OWNER_MISMATCH' });
+    return resolveOwnedGatePublication(result.rows, email, occurrence, canonical);
+  }
   const result = await db.query('SELECT id,owner_email,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 1', [email]);
   const row = result.rows[0];
   if (!row) return null;

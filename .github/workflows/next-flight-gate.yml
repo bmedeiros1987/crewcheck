@@ -19,6 +19,8 @@ on:
       - 'shared/timezone-choice.mjs'
       - 'shared/airport-timezones.mjs'
       - 'server/platform.mjs'
+      - 'server/radar-publication-authority.mjs'
+      - 'scripts/regression-radar-owned-history.mjs'
       - 'server/v1403/premium-helpers.snippet'
       - 'client/src/lib/radarAvailability.ts'
       - 'client/src/lib/authClient.ts'
@@ -71,6 +73,9 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
           node scripts/regression-radar-cpv-timezone.mjs
           node scripts/regression-radar-authority-followup.mjs
+          TZ=UTC node scripts/regression-radar-owned-history.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-owned-history.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-owned-history.mjs
           TZ=UTC node scripts/regression-gate-query-day.mjs
           TZ=UTC node scripts/regression-gate-query-binding.mjs
           TZ=UTC node scripts/regression-gate-query-proof.mjs
@@ -100,6 +105,9 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
           node scripts/regression-radar-cpv-timezone.mjs
           node scripts/regression-radar-authority-followup.mjs
+          TZ=UTC node scripts/regression-radar-owned-history.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-owned-history.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-owned-history.mjs
           TZ=UTC node scripts/regression-gate-query-day.mjs
           TZ=UTC node scripts/regression-gate-query-binding.mjs
           TZ=UTC node scripts/regression-gate-query-proof.mjs
