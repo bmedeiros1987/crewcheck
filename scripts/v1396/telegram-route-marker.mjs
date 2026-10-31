@@ -1,8 +1,9 @@
-import ts from 'typescript';
+import { parse } from '@babel/parser';
+// Already locked through production @vitejs/plugin-react; gate omits dev deps.
 
 // Compare executable syntax, not text that may occur in comments or strings.
 // Only a direct statement of the single real dispatcher can satisfy the guard.
-const expected = ts.createSourceFile('expected.js', `async function processTelegramUpdate(update = {}) {
+const expected = parse(`async function processTelegramUpdate(update = {}) {
   if (chatId && message?.location) {
     const locationDecision = crewcheckLiveLocationDecision(message, Boolean(update?.edited_message));
     if (!locationDecision.process) return true;
@@ -10,24 +11,25 @@ const expected = ts.createSourceFile('expected.js', `async function processTeleg
     const auxiliaryHandled = await handleV139Telegram(update, sendTelegramMessage, { silentLocation: true });
     if (snapshotHandled || auxiliaryHandled) return true;
   }
-}`, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const printer = ts.createPrinter({ removeComments: true });
-const print = (node, file) => printer.printNode(ts.EmitHint.Unspecified, node, file);
-const expectedBlock = print(expected.statements[0].body.statements[0], expected);
+}`, { sourceType: 'module' });
+// Ignore source positions, comments and original spelling; retain AST structure.
+const metadata = new Set(['start', 'end', 'loc', 'extra', 'leadingComments', 'innerComments', 'trailingComments']);
+const shape = node => JSON.stringify(node, (key, value) => metadata.has(key) ? undefined : value);
+const expectedBlock = shape(expected.program.body[0].body.body[0]);
 
 export function hasCanonicalTelegramLocationRoute(source) {
-  const file = ts.createSourceFile('server.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  if (file.parseDiagnostics.length) return false;
-  const functions = file.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'processTelegramUpdate');
+  // Parse/load errors propagate and fail preparation; no fallback recognizer.
+  const file = parse(source, { sourceType: 'module' });
+  const functions = file.program.body.filter(node => node.type === 'FunctionDeclaration' && node.id?.name === 'processTelegramUpdate');
   if (functions.length !== 1) return false;
   const fn = functions[0];
-  if (!fn.body || fn.asteriskToken || !fn.modifiers?.some(node => node.kind === ts.SyntaxKind.AsyncKeyword)) return false;
-  const parameter = fn.parameters[0];
-  if (fn.parameters.length !== 1 || !ts.isIdentifier(parameter.name) || parameter.name.text !== 'update'
-    || !parameter.initializer || !ts.isObjectLiteralExpression(parameter.initializer) || parameter.initializer.properties.length) return false;
-  for (const node of fn.body.statements) {
-    if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) return false;
-    if (ts.isIfStatement(node) && print(node, file) === expectedBlock) return true;
+  if (!fn.body || fn.generator || !fn.async) return false;
+  const parameter = fn.params[0];
+  if (fn.params.length !== 1 || parameter.type !== 'AssignmentPattern' || parameter.left.type !== 'Identifier' || parameter.left.name !== 'update'
+    || parameter.right.type !== 'ObjectExpression' || parameter.right.properties.length) return false;
+  for (const node of fn.body.body) {
+    if (node.type === 'ReturnStatement' || node.type === 'ThrowStatement') return false;
+    if (node.type === 'IfStatement' && shape(node) === expectedBlock) return true;
   }
   return false;
 }

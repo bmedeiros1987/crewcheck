@@ -64,7 +64,7 @@ try {
   for (const [name, server] of negatives) {
     const result = run(server);
     if (result.status === 0) acceptedNegatives.push(name);
-    else assert.match(result.stderr, /nenhum marcador compatível/, name);
+    else assert.match(result.stderr, /nenhum marcador compatível|code: 'BABEL_PARSER_SYNTAX_ERROR'/, name);
   }
   assert.deepEqual(acceptedNegatives, [], 'non-executable/incomplete routes must be rejected');
 } finally { fs.rmSync(temp, { recursive: true, force: true }); }

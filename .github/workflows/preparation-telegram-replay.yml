@@ -2,6 +2,8 @@ name: Telegram preparation route safeguard
 on:
   pull_request:
     paths:
+      - 'package.json'
+      - 'package-lock.json'
       - 'scripts/v1396/**'
       - 'scripts/v14346/telegram-dispatch.mjs'
       - 'scripts/regression-v1396-telegram-replay.mjs'
@@ -20,5 +22,6 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --omit=dev
+      - run: test ! -e node_modules/typescript/package.json
       - run: node scripts/regression-v1396-telegram-replay.mjs
