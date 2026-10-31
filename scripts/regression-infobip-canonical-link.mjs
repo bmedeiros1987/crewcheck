@@ -1,8 +1,9 @@
+import {schemaResult} from './fixtures/whatsapp-link-identity-sql.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { createInfobipInboundReceiver } from '../server/infobip-whatsapp-candidate.mjs';
-import { completeCanonicalWhatsAppLink } from '../server/whatsapp-link-proof.mjs';
+import { completeCanonicalWhatsAppLink, canonicalWhatsAppChallengeKey } from '../server/whatsapp-link-proof.mjs';
 import { infobipCanonicalLinkDestination, infobipCanonicalLinkStatus } from '../server/infobip-whatsapp-link-policy.mjs';
 import { INFOBIP_SINGLE_TEST_APPROVAL } from '../server/infobip-whatsapp-single-test.mjs';
 
@@ -39,20 +40,25 @@ assert.equal(expiredStatus.canonicalVerified,true,'saved identity and temporary 
 assert.equal(expiredStatus.testWindow,'expired');assert.equal(expiredStatus.linkStartAvailable,false);
 assert.equal((await inspect(verifiedRow,{environment:{}})).canonicalVerified,false);
 assert.equal((await inspect(null)).recorded,false);
-const state = { pending: new Map(), links: new Map(), claims: new Map(), transactions: 0, enqueued: 0, failCommit: false };
+const state = { pending: new Map(), fences: new Map(), links: new Map(), claims: new Map(), transactions: 0, enqueued: 0, failCommit: false };
 const phoneHash = hash(recipient), codeHash = code => hash('crewcheck-whatsapp-link|' + code);
 let tail = Promise.resolve();
 const store = { transaction: run => {
   const result = tail.then(async () => {
     state.transactions++;
-    const pending = structuredClone(state.pending), links = structuredClone(state.links), claims = structuredClone(state.claims);
+    const pending = structuredClone(state.pending), fences=structuredClone(state.fences), links = structuredClone(state.links), claims = structuredClone(state.claims);
     const c = { query: async (sql, args) => {
+      const schema=schemaResult(sql);if(schema)return schema;
       if (sql.startsWith('SELECT email FROM crewcheck_whatsapp_link_codes')) {
         const value = pending.get(args[0]); return [[value && value.expiresAt > now ? { email: value.email } : null].filter(Boolean)];
       }
+      if(sql.startsWith('SELECT payload'))return [[fences.has(args[0])?{payload:fences.get(args[0])}:null].filter(Boolean)];
+      if(sql.startsWith('DELETE FROM crewcheck_telegram_state')){fences.delete(args[0]);return [{affectedRows:1}];}
+      if(sql.startsWith('SELECT phone_hash'))return [[...links.entries()].filter(([,v])=>v.email===args[0]).map(([phone_hash,v])=>({phone_hash,linked_at:v.linked_at,updated_at:v.updated_at}))];
+      if(sql.startsWith('SELECT email,phone_hash'))return [[...links.entries()].filter(([k,v])=>v.email===args[0]||k===args[1]).map(([phone_hash,v])=>({...v,phone_hash}))];
       if (sql.startsWith('SELECT public_id')) return [[{ public_id: 'synthetic-owner' }]];
       if (sql.startsWith('SELECT email,revoked_at')) return [[links.get(args[0])].filter(Boolean)];
-      if (sql.startsWith('INSERT INTO crewcheck_whatsapp_links')) { links.set(args[1], { email: args[0], revoked_at: null, consent_concierge: 1, consent_alerts: 0 }); return [{ affectedRows: 1 }]; }
+      if (sql.startsWith('INSERT INTO crewcheck_whatsapp_links')) { links.set(args[1], { email: args[0], linked_at:'2032-01-01 00:00:00.000',updated_at:'2032-01-01 00:00:00.000',revoked_at: null, consent_concierge: 1, consent_alerts: 0 }); return [{ affectedRows: 1 }]; }
       if (sql.startsWith('DELETE FROM crewcheck_whatsapp_link_codes')) { for (const [key, value] of pending) if (value.email === args[0]) pending.delete(key); return [{ affectedRows: 1 }]; }
       assert.fail('Unexpected canonical SQL');
     } };
@@ -63,16 +69,17 @@ const store = { transaction: run => {
       finishClaim: async () => {}, enqueue: async () => { state.enqueued++; assert.fail('Link handshake must not enqueue a paid confirmation'); },
     });
     if (state.failCommit) throw new Error('SYNTHETIC_ROLLBACK');
-    Object.assign(state, { pending, links, claims }); return value;
+    Object.assign(state, { pending, fences, links, claims }); return value;
   }); tail = result.catch(() => {}); return result;
 } };
+const seedChallenge=(code,row)=>{state.pending.set(codeHash(code),row);state.fences.set(canonicalWhatsAppChallengeKey('synthetic-owner'),JSON.stringify({version:1,codeHash:codeHash(code)}));};
 const receive = () => createInfobipInboundReceiver({ sender, authentication: { mode: 'hmac-sha256', secretKey: secret }, store, now: () => now, queueLinkConfirmation: false,
   acceptEvent: event => event.recipient === recipient && /^\d{6}$/.test(event.text) });
 const packet = (id, code, overrides = {}) => {
   const rawBody = Buffer.from(JSON.stringify({ results: [{ from: recipient, to: sender, integrationType: 'WHATSAPP', messageId: id, receivedAt: new Date(now).toISOString(), message: { type: 'TEXT', text: code }, ...overrides }] }));
   return { method: 'POST', rawBody, rawHeaders: ['X-Hub-Signature', 'SHA256=' + createHmac('sha256', secret).update(rawBody).digest('hex')] };
 };
-state.pending.set(codeHash('123456'), { email: 'synthetic@example.invalid', expiresAt: now + 600000 });
+seedChallenge('123456', { email: 'synthetic@example.invalid', expiresAt: now + 600000 });
 const badAuth = packet('bad-auth', '123456'); badAuth.rawHeaders[1] = 'SHA256=' + '0'.repeat(64);
 assert.equal((await receive()(badAuth)).status, 401); assert.equal(state.transactions, 0);
 assert.equal((await receive()(packet('other', '123456', { from: '12025550102' }))).denied, 1); assert.equal(state.transactions, 0);
@@ -85,9 +92,9 @@ assert.equal(results.reduce((n, value) => n + value.linked, 0), 1);
 assert.equal(results.reduce((n, value) => n + value.duplicates, 0), 7);
 assert.equal(state.pending.size, 0); assert.equal(state.links.get(phoneHash).consent_alerts, 0); assert.equal(state.enqueued, 0);
 assert.equal((await receive()(packet('one', '123456'))).duplicates, 1, 'receiver restart uses the existing durable claim');
-state.pending.set(codeHash('222222'), { email: 'other@example.invalid', expiresAt: now + 600000 });
+seedChallenge('222222', { email: 'other@example.invalid', expiresAt: now + 600000 });
 assert.equal((await receive()(packet('cross-account', '222222'))).denied, 1); assert.equal(state.links.get(phoneHash).email, 'synthetic@example.invalid');
-state.pending.set(codeHash('333333'), { email: 'synthetic@example.invalid', expiresAt: now - 1 });
+seedChallenge('333333', { email: 'synthetic@example.invalid', expiresAt: now - 1 });
 assert.equal((await receive()(packet('expired', '333333'))).denied, 1);
 assert.equal((await receive()(packet('old-retry', '222222', { receivedAt: new Date(now - 9 * 86400000).toISOString() }))).denied, 1);
 assert.equal(state.enqueued, 0);
@@ -101,14 +108,14 @@ const startSource=whatsappSource.slice(whatsappSource.indexOf('async function ha
 const businessSource=whatsappSource.slice(whatsappSource.indexOf('function businessNumber('),whatsappSource.indexOf('\n}',whatsappSource.indexOf('function businessNumber('))+2);
 let starts=0,selectedEnvironment=mixedEnvironment;
 const legacyNumber=new Function('envAny',`return (${businessSource});`)(keys=>keys.map(key=>selectedEnvironment[key]).find(Boolean)||'');
-const startIdentity={email:'synthetic-start@example.invalid',db:{async query(sql,args){
+const startIdentity={email:'synthetic-start@example.invalid',profile:{public_id:'synthetic-start-owner'},db:{async query(sql,args){
  starts++;assert(sql.startsWith('DELETE FROM crewcheck_whatsapp_link_codes')||sql.trim().startsWith('INSERT INTO crewcheck_whatsapp_link_codes'));
  assert.equal(args[0],startIdentity.email);return [{affectedRows:1}];
 }}};
-const startHandler=new Function('sendJson','requireIdentity','readJsonBody','infobipCanonicalLinkDestination','normalizePhone','businessNumber','ensureWhatsAppTables','auditSecret','crypto','linkCodeHash','LINK_TTL_MINUTES',`return (${startSource});`)(
+const startHandler=new Function('sendJson','requireExistingIdentity','readJsonBody','infobipCanonicalLinkDestination','normalizePhone','businessNumber','ensureWhatsAppTables','auditSecret','crypto','linkCodeHash','LINK_TTL_MINUTES','createInfobipSqlBudget','startCanonicalWhatsAppChallenge',`return (${startSource});`)(
  (_res,status,payload)=>({status,payload}),async req=>req.identity,async req=>req.body,
  ()=>infobipCanonicalLinkDestination(selectedEnvironment,now),value=>String(value||'').replace(/\D/g,''),legacyNumber,
- async db=>db,()=>secret,{randomInt:()=>123456},hash,10);
+ async db=>db,()=>secret,{randomInt:()=>123456},hash,10,db=>run=>run(db),async (_db,args)=>{starts++;assert.equal(args.email,startIdentity.email);assert.equal(args.publicId,startIdentity.profile.public_id);});
 const startRequest=body=>({method:'POST',identity:startIdentity,body:{consentConcierge:true,...body}});
 const infobipStart=await startHandler(startRequest({provider:'infobip',number:'12025550999'}),{});
 assert.equal(infobipStart.status,200);assert.equal(infobipStart.payload.openUrl,`https://wa.me/${sender}?text=123456`);
@@ -127,13 +134,13 @@ assert.equal(await startHandler({...startRequest({provider:'infobip'}),identity:
 
 const statusSource = whatsappSource.slice(whatsappSource.indexOf('async function handleLinkStatus('), whatsappSource.indexOf('\nasync function handleUnlink('));
 let reads = 0, broken = false;
-const identity = { email: 'synthetic@example.invalid', db: { query: async (sql, args) => {
+const identity = { email: 'synthetic@example.invalid', profile:{public_id:'synthetic-owner'}, db: { query: async (sql, args) => {
   reads++; assert(sql.trim().startsWith('SELECT ')); assert.deepEqual(args, [identity.email]);
   if (broken) throw Error('SYNTHETIC_PRIVATE_DATABASE_ERROR');
   return [[{ phone_last4: '0101', consent_concierge: '0', consent_alerts: 0, linked_at: '2032-01-01' }]];
 } } };
-const statusHandler = new Function('sendJson', 'requireIdentity', 'ensureWhatsAppTables', `return (${statusSource});`)(
-  (_res, status, payload) => ({ status, payload }), async req => req.identity, () => assert.fail('status cannot initialize tables'));
+const statusHandler = new Function('sendJson', 'requireExistingIdentity', 'ensureWhatsAppTables','createInfobipSqlBudget','lockCanonicalWhatsAppOwner', `return (${statusSource});`)(
+  (_res, status, payload) => ({ status, payload }), async req => req.identity, () => assert.fail('status cannot initialize tables'),db=>run=>run(db),async()=>{});
 assert.equal(await statusHandler({ method: 'GET', identity: null }, {}), undefined); assert.equal(reads, 0);
 const status = await statusHandler({ method: 'GET', identity }, {});
 assert.equal(status.status, 200); assert.equal(status.payload.linked, true); assert.equal(status.payload.last4, '0101'); assert.equal(status.payload.consentConcierge, false);
@@ -143,12 +150,12 @@ assert.equal((await statusHandler({ method: 'GET', identity }, {})).status, 503)
 // The old account/last-four read may be true while the current canonical index
 // rejects the same display. Execute both actual handler branches with SELECTs.
 let row={...verifiedRow,phone_hash:hash('synthetic-other-number'),consent_concierge:1,consent_alerts:0};
-const scopedIdentity={email:'fixture-status@example.invalid',db:{async query(sql,args){
+const scopedIdentity={email:'fixture-status@example.invalid',profile:{public_id:'synthetic-owner'},db:{async query(sql,args){
  assert(sql.trim().startsWith('SELECT '));assert.deepEqual(args,[scopedIdentity.email]);
  return [sql.includes('crewcheck_platform_profiles')?[{public_id:'synthetic-owner'}]:[row]];
 }}};
-const scopedHandler=new Function('sendJson','requireIdentity','infobipCanonicalLinkStatus','privateHash',`return (${statusSource});`)(
- (_res,status,payload)=>({status,payload}),async req=>req.identity,(link,options)=>infobipCanonicalLinkStatus(link,{...options,environment,now}),hash);
+const scopedHandler=new Function('sendJson','requireExistingIdentity','infobipCanonicalLinkStatus','privateHash','createInfobipSqlBudget','lockCanonicalWhatsAppOwner',`return (${statusSource});`)(
+ (_res,status,payload)=>({status,payload}),async req=>req.identity,(link,options)=>infobipCanonicalLinkStatus(link,{...options,environment,now}),hash,db=>run=>run(db),async()=>{});
 assert.equal((await scopedHandler({method:'GET',identity:scopedIdentity},{})).payload.linked,true);
 const statusUrl=new URL('https://synthetic.invalid/api/whatsapp/link/status?provider=infobip');
 const unconfirmed=await scopedHandler({method:'GET',identity:scopedIdentity},{},statusUrl);

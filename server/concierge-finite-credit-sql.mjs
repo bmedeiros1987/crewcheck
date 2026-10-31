@@ -1,4 +1,6 @@
-import {finiteReservePolicy,finiteReserveManifest} from './concierge-finite-reserve-off.mjs';
+import {createHmac} from 'node:crypto';
+import {finiteReservePolicy,finiteReserveManifest,finiteCohortPolicy,finiteCohortMemberId,finiteCohortTariffKey,
+ finiteCohortTariffValid,finiteCohortAccountValid,finiteCohortAuthorityValid,finiteCohortState} from './concierge-finite-reserve-off.mjs';
 import {createLockedPromotionalGrantReader,promotionalGrantManifest} from './concierge-promotional-credit-sql.mjs';
 import {sharedCreditKey} from './concierge-shared-credit-candidate.mjs';
 
@@ -56,5 +58,29 @@ export function createFiniteCreditSqlResolver({finiteReserve,grant,linkHashKey,n
    recorded.validUntil!==t.validUntil||current<recorded.verifiedAt||current>=recorded.validUntil||
    recorded.unitMicroUsd!==t.observedUnitMicroUsd||recorded.setupMicroUsd!==t.setupMicroUsd||recorded.markupMicroUsd!==t.markupMicroUsd)return null;
   return {...identity.context,quote:{...recorded,channel:'whatsapp',sessionUntil:j.receivedAt+24*3600000}};
+ };
+}
+
+// A cohort resolver is bound to exactly one approved member. It never falls
+// back to the v1 tariff slot or derives membership from an incoming job.
+export function createFiniteCohortSqlResolver(input,memberId,{linkHashKey,now=Date.now}={}){
+ const p=finiteCohortPolicy(input),m=p.members.find(member=>finiteCohortMemberId(p,member)===memberId);
+ if(!m||typeof now!=='function'||typeof linkHashKey!=='string'||linkHashKey.length<32||
+  createHmac('sha256',linkHashKey).update(m.recipient).digest('hex')!==m.recipientHash)fail();
+ const readGrant=createLockedPromotionalGrantReader({programId:p.programId,approvalId:m.grant.approvalId,
+  ownerAccountKey:m.ownerAccountKey,sender:p.sender,recipient:m.recipient,linkHashKey,
+  expectedGrantManifest:m.grantManifest,expectedValidFrom:m.grant.validFrom,expectedValidUntil:m.grant.validUntil,now});
+ return async(c,j)=>{
+  const started=now();if(!int(started)||started<p.validFrom||started>=p.validUntil||c?.signal?.aborted)return null;
+  const identity=await readGrant(c,j);if(!identity||identity.receipt.amountMicroUsd!==m.totalMicroUsd||
+   createHmac('sha256',linkHashKey).update(identity.context.bindingStamp).digest('hex')!==m.bindingHash)return null;
+  const tariff=await lock(c,finiteCohortTariffKey(p,m));
+  const global=await lock(c,sharedCreditKey('global',[p.programId,period(p.validFrom)]));
+  const authority=await lock(c,sharedCreditKey('finite-reserve-authorization',[p.approvalId]));
+  const at=now(),row=finiteCohortState(p,global,at)?.get(memberId);
+  if(!int(at)||at<started||at<identity.at||at<j.receivedAt||at-j.receivedAt>900000||c.signal?.aborted||
+   !row||!finiteCohortAccountValid(m,identity.account,row.usedMicroUsd,at)||!finiteCohortAuthorityValid(p,authority)||
+   !finiteCohortTariffValid(p,m,tariff,at))return null;
+  return {...identity.context,quote:{...tariff,channel:'whatsapp',sessionUntil:j.receivedAt+86400000}};
  };
 }
