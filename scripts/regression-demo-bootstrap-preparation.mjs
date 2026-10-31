@@ -33,7 +33,7 @@ assert.throws(()=>repairOwnedDemoFallback(duplicated),/Duplicate demo fallback/,
 // Execute the complete startup apply script on an old prepared tree, twice.
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'demo-startup-repair-'));
 try{
- const files=['client/src/lib/databaseClient.ts','client/src/main.tsx','scripts/roster-startup/bootstrap-regression.mjs','scripts/regression-p0-530-adjacent-month-retention.mjs','scripts/regression-p2-530-adjacent-fallback-finance.mjs','scripts/regression-p0-multichannel-roster-gate.mjs','scripts/regression-p0-roster-date-integrity.mjs','scripts/regression-p2-738-vacation-work-first.mjs','scripts/regression-departure-positioning-terminal.mjs','scripts/regression-v14-3-39-history-chronological-ui.mjs'];
+ const files=['client/src/lib/databaseClient.ts','client/src/components/v1391/RosterLaunchView.tsx','client/src/main.tsx','scripts/roster-startup/bootstrap-regression.mjs','scripts/regression-p0-530-adjacent-month-retention.mjs','scripts/regression-p2-530-adjacent-fallback-finance.mjs','scripts/regression-p0-multichannel-roster-gate.mjs','scripts/regression-p0-roster-date-integrity.mjs','scripts/regression-p2-738-vacation-work-first.mjs','scripts/regression-departure-positioning-terminal.mjs','scripts/regression-v14-3-39-history-chronological-ui.mjs'];
  for(const file of files){fs.mkdirSync(path.dirname(path.join(temp,file)),{recursive:true});fs.copyFileSync(file,path.join(temp,file));}
  fs.mkdirSync(path.join(temp,'client/src/pages'),{recursive:true});fs.mkdirSync(path.join(temp,'client/src/styles'),{recursive:true});
  const target=path.join(temp,'client/src/pages/Home.tsx');fs.writeFileSync(target,legacy);

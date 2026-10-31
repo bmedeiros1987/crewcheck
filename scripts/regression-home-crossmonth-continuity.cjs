@@ -6,7 +6,7 @@ fs.mkdirSync(out, { recursive: true });
 function pdf(month, flights) { const tag = month === 10 ? 'Oct' : 'Nov', last = month === 10 ? 31 : 30; const lines = ['SYNTHETIC CONTINUITY QA', `Tripulante: TESTE SINTETICO BP: 900001 Base: BSB 01/${month}/2026`, 'TESTE SINTETICO | 900001 | A320 | BSB | CCM']; for (let d = 1; d <= last; d++) {
     lines.push(`${String(d).padStart(2, '0')}-${tag}-2026 ${flights[d] ? 'VOO' : 'DO'}`);
     if (flights[d])
-        lines.push(`${flights[d]} BSB 08:00 GRU 09:00 OP`);
+        lines.push(`${flights[d]} ${month === 11 ? 'GRU 08:00 BSB' : 'BSB 08:00 GRU'} 09:00 OP`);
 } const content = lines.map((s, i) => `BT /F1 10 Tf 35 ${800 - i * 19} Td (${s}) Tj ET`).join('\n'); const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`]; let text = '%PDF-1.4\n', offsets = [0]; objects.forEach((s, i) => { offsets.push(Buffer.byteLength(text)); text += `${i + 1} 0 obj\n${s}\nendobj\n`; }); const start = Buffer.byteLength(text); text += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n` + offsets.slice(1).map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('') + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`; const file = out + '/' + month + '.pdf'; fs.writeFileSync(file, text); return file; }
 const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 'LA8201', 2: 'LA8202', 3: 'LA8203' }) };
 (async () => {
@@ -17,7 +17,7 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const origin = 'http://127.0.0.1:' + server.address().port, browser = await chromium.launch({ headless: true });
     const store = new Map(), requests = [], snapshots = [];
-    let active = null;
+    let active = null, holdNextHistory = false, heldHistory = null;
     try {
         const c = await browser.newContext({ viewport: { width: 1100, height: 900 }, timezoneId: 'UTC', serviceWorkers: 'block' });
         await c.route('**/*', r => {
@@ -26,7 +26,14 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
                 return r.abort();
             if (!u.pathname.startsWith('/api/'))
                 return r.continue();
-            requests.push({ path: u.pathname, method: req.method() });
+            requests.push({ path: u.pathname, method: req.method(), account: req.headers().authorization === 'Bearer synthetic-local-only' ? 'A' : req.headers().authorization === 'Bearer synthetic-other' ? 'B' : 'none' });
+            const authenticatedB = req.headers().authorization === 'Bearer synthetic-other';
+            if (authenticatedB && u.pathname === '/api/auth/me')
+                return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,user:{id:'continuity-other',email:'other@example.invalid',role:'user'}})});
+            if (authenticatedB && u.pathname.startsWith('/api/rosters')) {
+                const body = u.pathname === '/api/rosters' ? {ok:true,rosters:[]} : u.pathname === '/api/rosters/active' ? {ok:true,roster:null} : {ok:false,code:'SYNTHETIC_NOT_FOUND'};
+                return r.fulfill({status:body.ok?200:404,contentType:'application/json',body:JSON.stringify(body)});
+            }
             if (u.pathname.startsWith('/api/rosters') && req.headers().authorization !== 'Bearer synthetic-local-only')
                 return r.fulfill({ status: 401, contentType: 'application/json', body: '{"ok":false}' });
             const reply = body => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -41,6 +48,11 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
                 active = id;
                 return reply({ ok: true, roster: summary });
             }
+            if (u.pathname === '/api/rosters' && req.method() === 'GET' && holdNextHistory) {
+                holdNextHistory = false;
+                const payload = structuredClone({ok:true,rosters:[...store.values()].map(s=>({...s.summary,isActive:false}))});
+                return new Promise(resolve => { heldHistory = {release: () => reply(payload).then(resolve, resolve)}; });
+            }
             if (u.pathname === '/api/rosters' && req.method() === 'GET')
                 return reply({ ok: true, rosters: [...store.values()].map(s => s.summary) });
             if (u.pathname === '/api/rosters/active' && active)
@@ -51,8 +63,9 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
             }
             return r.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false,"code":"SYNTHETIC_UNRELATED_API_UNAVAILABLE"}' });
         });
-        await c.addInitScript(() => { if (!localStorage.getItem('crewcheck_auth_user'))
-            localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'continuity-qa', email: 'continuity@example.invalid', name: 'SYNTHETIC QA', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-local-only'); localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1'); localStorage.setItem('crewcheck_demo_mode_seen', '1'); sessionStorage.setItem('crewcheck_initial_view', 'import'); });
+        await c.addInitScript(() => { if (!localStorage.getItem('crewcheck_auth_user')) {
+            localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'continuity-qa', email: 'continuity@example.invalid', name: 'SYNTHETIC QA', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-local-only'); }
+            localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1'); localStorage.setItem('crewcheck_demo_mode_seen', '1'); sessionStorage.setItem('crewcheck_initial_view', 'import'); });
         const p = await c.newPage();
         p.setDefaultTimeout(20000);
         await p.clock.setFixedTime(new Date('2026-10-26T12:00:00Z'));
@@ -75,6 +88,13 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
             await snapshot('after-' + month);
         }
         const consumers = {};
+        // Restart while November is STILL active: October must not depend on a
+        // later October reimport. The init script must preserve the actual owner/token.
+        await p.reload(); await p.locator('.cz-app').waitFor();
+        await p.waitForTimeout(1500);
+        assert.equal(active, 'synthetic-2026-11');
+        assert.equal(await p.evaluate(() => JSON.parse(sessionStorage.getItem('crewcheck_roster')).roster.month), 11);
+        consumers.restartWithNovemberActive = {month:11,remoteActive:active,verifiedBeforeOctoberReimport:true};
         await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })));
         await p.waitForTimeout(1500);
         consumers.home = await p.locator('body').innerText();
@@ -84,11 +104,60 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
         consumers.homeOct31 = await p.locator('.cc-home-roster-list').innerText();
         assert.match(consumers.homeOct30, /LA8130/, 'HOME must retain October 30 after November activation');
         assert.match(consumers.homeOct31, /LA8131/, 'HOME must retain October 31 after November activation');
+        await p.locator('.cc-next-gate-summary').click();
+        await p.getByRole('button', {name:'Abrir Radar e informar dados',exact:true}).click();
+        await p.waitForTimeout(1000);
+        consumers.historicalRadar = await p.locator('body').innerText();
+        assert.match(consumers.historicalRadar,/LA8130/,'Radar must resolve the chosen historical flight');
+        assert.doesNotMatch(consumers.historicalRadar,/LA8201/,'Radar must never substitute the active-month flight');
+        const october = store.get('synthetic-2026-10');
+        const localHistory = await p.evaluate(()=>localStorage.getItem('crewcheck_local_history_v11_continuity-qa'));
+        store.delete('synthetic-2026-10');
+        await p.evaluate(()=>{const key='crewcheck_local_history_v11_continuity-qa';localStorage.setItem(key,JSON.stringify(JSON.parse(localStorage.getItem(key)).filter(item=>item.roster.month!==10)));window.dispatchEvent(new Event('crewcheck:roster-history-updated'));});
+        await p.waitForTimeout(1000);
+        consumers.missingContext = await p.locator('body').innerText();
+        assert.match(consumers.missingContext,/Nenhum voo selecionado/,'lost historical identity must fail closed');
+        assert.doesNotMatch(consumers.missingContext,/LA8201/);
+        await p.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));
+        await p.getByRole('button',{name:'sexta-feira, 30 de outubro de 2026',exact:true}).click();
+        consumers.missingHomeDay = await p.locator('.cc-home-roster-list').innerText();
+        assert.match(consumers.missingHomeDay,/Sem atividades informadas/);
+        assert.doesNotMatch(consumers.missingHomeDay,/Folga|0h00|infração|irregularidade/i,'gap is not published rest, zero or an infringement');
+        store.set('synthetic-2026-10',october);
+        await p.evaluate(value=>{localStorage.setItem('crewcheck_local_history_v11_continuity-qa',value);window.dispatchEvent(new Event('crewcheck:roster-history-updated'));},localHistory);
+        await p.waitForTimeout(1000);
         consumers.regulatory = await p.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith('crewcheck_regulatory_history_snapshot_')).map(k => [k, JSON.parse(localStorage.getItem(k))])));
         const regulatory = Object.values(consumers.regulatory).find(v => v.previousRosterId === 'synthetic-2026-10');
         assert.ok(regulatory, 'real regulatory consumer must load authenticated October carry-in');
         assert.equal(regulatory.compliance.metrics.maxFlightHoursRolling28Days, 5);
         assert.equal(regulatory.compliance.metrics.totalFlightHours, 3);
+        // Classic HOME actions must carry the October program, not November's
+        // current publication. Distinct routes prove Weather receives its event.
+        await p.clock.setFixedTime(new Date('2026-10-30T10:00:00Z'));
+        await p.evaluate(() => { localStorage.setItem('crewcheck:home-layout:v1:continuity-qa',JSON.stringify({version:1,mode:'standard',order:['summary','next','limits','finance','smart'],visible:['summary','next','limits']})); window.dispatchEvent(new Event('crewcheck:personalization')); });
+        await p.locator('.cc-flydeck-actions').getByRole('button',{name:'Meteorologia',exact:true}).click();
+        await p.locator('.cc-weather-flight-window').waitFor();
+        consumers.historicalWeather = await p.locator('.cc-weather-flight-window').innerText();
+        assert.match(consumers.historicalWeather,/BSB 08:00 → GRU 09:00/);
+        await p.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));
+        await p.locator('.cc-flydeck-actions').getByRole('button',{name:'Planejar saída',exact:true}).click();
+        await p.waitForTimeout(1000);
+        consumers.historicalDeparture = await p.locator('body').innerText();
+        assert.match(consumers.historicalDeparture,/LA8130/);
+        assert.doesNotMatch(consumers.historicalDeparture,/LA8201/);
+        await p.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'})));
+        const displayOptions=p.locator('details.cc-roster-view-options');
+        if(!await displayOptions.evaluate(e=>e.open)) await displayOptions.locator(':scope > summary').click();
+        await p.getByRole('combobox',{name:'Formato da escala',exact:true}).selectOption('cards');
+        await p.getByRole('button',{name:'Mês completo',exact:true}).click();
+        await p.getByRole('combobox',{name:'Mês',exact:true}).selectOption('2026-10');
+        await p.locator('[data-roster-iso="2026-10-30"]').getByRole('button',{name:'Saída Inteligente',exact:true}).click();
+        await p.waitForTimeout(1000);
+        consumers.rosterDeparture = await p.locator('body').innerText();
+        assert.match(consumers.rosterDeparture,/LA8130/);
+        assert.doesNotMatch(consumers.rosterDeparture,/LA8201/);
+        await p.clock.setFixedTime(new Date('2026-10-26T12:00:00Z'));
+        await p.evaluate(() => { localStorage.removeItem('crewcheck:home-layout:v1:continuity-qa'); window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})); });
         await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' })));
         await p.waitForTimeout(1500);
         consumers.financeInitial = await p.locator('body').innerText();
@@ -149,14 +218,31 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
         await p.getByRole('button', { name: 'domingo, 1 de novembro de 2026', exact: true }).click();
         consumers.novemberPreserved = await p.locator('.cc-home-roster-list').innerText();
         assert.match(consumers.novemberPreserved, /LA8201/);
+        // Keep A's real history request pending across the account transition.
+        holdNextHistory = true;
+        await p.evaluate(()=>window.dispatchEvent(new Event('crewcheck:roster-history-updated')));
+        for(let i=0;i<50&&!heldHistory;i++) await p.waitForTimeout(100);
+        assert.ok(heldHistory,'real history refresh must reach the delayed synthetic endpoint');
         // Owner B has no rosters; the synthetic API must not return A's data to B.
         await p.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'continuity-other', email: 'other@example.invalid', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-other'); window.dispatchEvent(new StorageEvent('storage', { key: 'crewcheck_auth_user' })); });
         await p.waitForTimeout(1500);
+        const beforeLate = requests.length;
+        await heldHistory.release(); await p.waitForTimeout(1000);
+        consumers.lateRequests = requests.slice(beforeLate);
+        fs.writeFileSync(out+'/late-requests.json',JSON.stringify(consumers.lateRequests,null,2));
+        assert.deepEqual(consumers.lateRequests,[],'late A history must not initiate any follow-up API request under B');
         consumers.otherOwner = await p.locator('body').innerText();
         assert.doesNotMatch(consumers.otherOwner, /LA8139|LA8131|LA8201/);
+        await p.reload(); await p.locator('.cz-app').waitFor(); await p.waitForTimeout(1500);
+        assert.deepEqual(await p.evaluate(()=>({owner:JSON.parse(localStorage.getItem('crewcheck_auth_user')).id,token:localStorage.getItem('crewcheck_auth_token')})),{owner:'continuity-other',token:'synthetic-other'},'reload fixture must preserve B credentials');
+        consumers.bReload = {owner:'continuity-other',tokenPreserved:true};
+        assert.doesNotMatch(await p.locator('body').innerText(),/LA8139|LA8131|LA8201/);
         const denied = await p.evaluate(async () => { const r = await fetch('/api/rosters?manager=1', { headers: { authorization: 'Bearer synthetic-other' } }); return { status: r.status, body: await r.text() }; });
-        assert.equal(denied.status, 401);
+        assert.equal(denied.status, 200);
+        assert.deepEqual(JSON.parse(denied.body),{ok:true,rosters:[]},'valid B sees only its own empty inventory');
         assert.doesNotMatch(denied.body, /LA813|LA820|synthetic-2026/);
+        const deniedDetail = await p.evaluate(async()=>{const r=await fetch('/api/rosters/synthetic-2026-10',{headers:{authorization:'Bearer synthetic-other'}});return {status:r.status,body:await r.text()};});
+        assert.equal(deniedDetail.status,404);assert.doesNotMatch(deniedDetail.body,/LA813|LA820|synthetic-2026/);
         assert.equal(requests.filter(x => x.method === 'DELETE').length, 0, 'consumer lookups must not delete history');
         fs.writeFileSync(out + '/consumers.json', JSON.stringify(consumers, null, 2));
         fs.writeFileSync(out + '/results.json', JSON.stringify({ target, clocks: ['2026-10-26T12:00:00Z', '2026-10-26T12:00:10Z', '2026-10-31T12:00:00Z'], transport: 'synthetic roster endpoints available, unrelated APIs503; no real DB', snapshots, requests, deletes: requests.filter(x => x.method === 'DELETE') }, null, 2));
