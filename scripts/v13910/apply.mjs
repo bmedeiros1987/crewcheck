@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { hasModernHomeTheme } from './theme-home-marker.mjs';
 
 const VERSION = '14.0.0';
 const VERSION_CODE = '140000';
@@ -123,7 +124,7 @@ if (icon.readUInt32BE(16) !== 512 || icon.readUInt32BE(20) !== 512) throw new Er
 const home = read(homePath);
 const cabinChief = read('client/src/components/premium/CabinChiefAssistant.tsx');
 const premiumCss = read('client/src/components/v1400/premium-system.css');
-if (!home.includes('CabinChiefAssistant') || !home.includes("crewcheck_theme_mode', 'auto'")) throw new Error(`v${VERSION}: restauração de relatórios ou tema automático ausente`);
+if (!home.includes('CabinChiefAssistant') || (!home.includes("crewcheck_theme_mode', 'auto'") && !hasModernHomeTheme(home))) throw new Error(`v${VERSION}: restauração de relatórios ou tema automático ausente`);
 if (!cabinChief.includes('maas') || !cabinChief.includes('wchr') || !cabinChief.includes('WATER_LEVELS')) throw new Error(`v${VERSION}: módulo histórico de cabine incompleto`);
 if (!premiumCss.includes('--cc-violet') || !premiumCss.includes('.crewcheck-chief-page')) throw new Error(`v${VERSION}: Design System Premium incompleto`);
 
