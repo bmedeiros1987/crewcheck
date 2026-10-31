@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { repairOwnedDemoFallback } from './demo-fallback.mjs';
 // Preserve the live JSX (including the shared review prop) inside the existing
 // startup/currency boundary. Only the two supported canonical spellings match.
 function guardFinancialRoute(source, view, mode, component) {
@@ -143,7 +144,7 @@ if (!home.includes(marker)) {
 // Repair a prior preparation that carried the startup marker but missed a
 // newly extended live route; a second application is byte-for-byte stable.
 const currentHome = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
-const financialHome = guardFinancialRoute(guardFinancialRoute(currentHome, 'perdiem', 'allowance', 'PerDiemView'), 'salary', 'salary', 'SalaryReliableView');
+const financialHome = repairOwnedDemoFallback(guardFinancialRoute(guardFinancialRoute(currentHome, 'perdiem', 'allowance', 'PerDiemView'), 'salary', 'salary', 'SalaryReliableView'));
 if (financialHome !== currentHome) fs.writeFileSync('client/src/pages/Home.tsx', financialHome);
 
 let database = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');

@@ -64,6 +64,8 @@ on:
       - 'client/src/lib/rosterPublication*.ts'
       - 'client/src/lib/rosterStartup.ts'
       - 'scripts/roster-startup/**'
+      - 'scripts/regression-demo-bootstrap-*'
+      - 'scripts/v1432/apply.mjs'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
       - 'scripts/regression-publication-import-flow.cjs'
       - 'scripts/regression-roster-publication-review.mjs'
@@ -188,6 +190,11 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-roster-legend-browser.mjs
+      - name: Verify owner choice never becomes demo during offline bootstrap
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          DEMO_BOOTSTRAP_OUTPUT: artifacts/demo-bootstrap
+        run: node scripts/regression-demo-bootstrap-offline.cjs
       - name: Verify quick roster card presentation with synthetic events
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -231,6 +238,7 @@ jobs:
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
             artifacts/roster-legend
+            artifacts/demo-bootstrap
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
             artifacts/menu-density
