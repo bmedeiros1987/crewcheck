@@ -54,25 +54,33 @@ syntheticPDF('partial', ['LA1234'], true);
     const b = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}), args: ['--no-sandbox'] });
     const results = [];
     try {
-        const c = await b.newContext({ viewport: { width: 1100, height: 900 }, serviceWorkers: 'block' });
+        const c = await b.newContext({ viewport: { width: 1100, height: 900 }, timezoneId: 'UTC', serviceWorkers: 'block' });
         const requests = [];
         let remotePayload = null, activeRequests = 0;
         const parsedRosters = {};
         await c.route('**/*', r => { const u = new URL(r.request().url()); if (u.origin !== origin)
             return r.abort(); if (u.pathname.startsWith('/api/')) {
             requests.push(u.pathname);
-            if (u.pathname === '/api/rosters/active' && remotePayload) {
+            // Only the synthetic B credential can read B's remote publication. Never log headers.
+            const authenticatedB = r.request().method() === 'GET' && r.request().headers().authorization === 'Bearer synthetic-not-valid-outside-local-QA-publication-QA-B';
+            // Reload uses the real latest-import bootstrap, not a demo roster.
+            if (remotePayload && authenticatedB && u.pathname === '/api/rosters' && u.searchParams.get('manager') === '1')
+                return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,rosters:[{...remotePayload.roster,sourceFileName:'synthetic-authenticated.pdf',createdAt:'2026-10-01T12:00:00Z'}]})});
+            if (remotePayload && authenticatedB && u.pathname === '/api/rosters/synthetic-remote-publication')
+                return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(remotePayload)});
+            if (u.pathname === '/api/rosters/active' && remotePayload && authenticatedB) {
                 activeRequests++;
                 return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(remotePayload) });
             }
             return r.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false,"items":[],"data":[],"enabled":false}' });
         } return r.continue(); });
         await c.addInitScript(() => { if (!localStorage.getItem('crewcheck_auth_user'))
-            localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'publication-QA-A', name: 'TESTE SINTETICO', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-not-valid-outside-local-QA'); localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1'); localStorage.setItem('crewcheck_demo_mode_seen', '1'); sessionStorage.setItem('crewcheck_demo_active', '1'); sessionStorage.setItem('crewcheck_initial_view', 'import'); });
+            localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'publication-QA-A', name: 'TESTE SINTETICO', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-not-valid-outside-local-QA-' + JSON.parse(localStorage.getItem('crewcheck_auth_user')).id); localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1'); localStorage.setItem('crewcheck_demo_mode_seen', '1'); sessionStorage.setItem('crewcheck_initial_view', 'import'); });
         const p = await c.newPage();
         p.setDefaultTimeout(15000);
         const errors = [];
         p.on('pageerror', e => errors.push(e.message));
+        await p.clock.setFixedTime(new Date('2026-10-31T12:00:00Z'));
         await p.goto(origin + '/app');
         const read = () => p.evaluate(() => { const u = JSON.parse(localStorage.getItem('crewcheck_auth_user')); return JSON.parse(localStorage.getItem('crewcheck:publication-review:v1:' + u.id) || 'null'); });
         const ui = async () => {
@@ -85,6 +93,7 @@ syntheticPDF('partial', ['LA1234'], true);
             await p.getByRole('link', { name: 'Alterações', exact: true }).click();
             await p.getByRole('heading', { name: 'Alterações', exact: true }).waitFor().catch(async error=>{console.error((await p.locator('body').innerText()).slice(-2500));throw error;});
             await p.getByRole('combobox', { name: 'Filtro financeiro', exact: true }).selectOption('month');
+            assert.equal(await p.getByRole('combobox',{name:'Competência de referência',exact:true}).inputValue(),'2026-10','history must use the PDF competence, never a demo month');
             const history = p.locator('.cc-financial-changes');
             await history.waitFor();
             const disclosure = history.locator('details').filter({has: p.locator('summary', {hasText:'diferenças a conferir'})});
@@ -133,7 +142,7 @@ syntheticPDF('partial', ['LA1234'], true);
         assert.equal(JSON.stringify(await read()), stable);
         results.push({ name: 'selection-reload', unchanged: true });
         const a = await read();
-        await p.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'publication-QA-B', name: 'OUTRA CONTA', role: 'user' })); window.dispatchEvent(new StorageEvent('storage', { key: 'crewcheck_auth_user' })); });
+        await p.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'publication-QA-B', name: 'OUTRA CONTA', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-not-valid-outside-local-QA-publication-QA-B'); window.dispatchEvent(new StorageEvent('storage', { key: 'crewcheck_auth_user' })); });
         assert.equal(await read(), null);
         await p.waitForFunction(() => !document.querySelector('.cc-financial-changes')?.textContent.includes('LA1236'));
         assert.doesNotMatch(await p.locator('body').innerText(), /LA1236/, 'previous owner publication must not remain visible');
@@ -146,6 +155,17 @@ syntheticPDF('partial', ['LA1234'], true);
         results.push({ name: 'multiple-accounts', isolated: true });
         // Exercise authenticated active-roster refresh with a body produced by the real PDF import.
         remotePayload = { ok: true, roster: { id: 'synthetic-remote-publication', month: 10, year: 2026, isActive: true }, data: { roster: structuredClone(parsedRosters.first), compliance: null, gym: [] } };
+        // A's credentials must not receive B's list, body or active payload, even after B enables it.
+        const denied = await p.evaluate(async () => {
+            const answers = [];
+            for (const url of ['/api/rosters?limit=72&manager=1', '/api/rosters/synthetic-remote-publication', '/api/rosters/active']) {
+                const response = await fetch(url, {headers:{authorization:'Bearer synthetic-not-valid-outside-local-QA-publication-QA-A'}});
+                const body = await response.text();
+                answers.push({status:response.status, leaked:body.includes('synthetic-remote-publication') || body.includes('LA1234')});
+            }
+            return answers;
+        });
+        assert.deepEqual(denied, Array.from({length:3}, () => ({status:503,leaked:false})), 'A must not read B remote fixtures');
         console.log('Starting authenticated refresh',s.version);
         const previousVersion = s.version;
         await p.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -171,6 +191,18 @@ syntheticPDF('partial', ['LA1234'], true);
         const changedText = await ui();
         assert.match(changedText, /Não vista/);
         results.push({ name: 'new-version-known-flight-change', history: s.history, unknown: s.unknown, ui: changedText });
+        // After the link's reload, inspect the actual roster DOM, not session cache or history.
+        await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', {detail:'roster'})));
+        await openView(p);
+        await p.getByRole('combobox', {name:'Formato da escala',exact:true}).selectOption('aims');
+        const refreshedFlight = p.locator('.cc-aims-document .cc-doc-overview').getByRole('button', {name:/LA1234, dia 2026-10-10/});
+        await refreshedFlight.waitFor();
+        assert.equal(await refreshedFlight.count(), 1, 'the selected roster renders the unique imported flight/date');
+        const renderedFlight = await refreshedFlight.innerText();
+        assert.match(renderedFlight, /08:10[\s\S]*09:00/, 'the selected roster renders the authenticated changed departure');
+        results.push({name:'rendered-refreshed-roster',flight:'LA1234',date:'2026-10-10',ui:renderedFlight,wrongOwnerDenied:denied});
+        await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', {detail:'perdiem'})));
+        await p.getByRole('heading', {name:'Alterações',exact:true}).waitFor();
         const change = s.history.find(x => x.kind === 'changed' && x.after.code === 'LA1234');
         assert.equal(change.seen, false, 'opening Alterações alone does not mark a change seen');
         const article = p.locator('.cc-financial-changes article').filter({has: p.getByRole('button', {name:/LA1234/})});
