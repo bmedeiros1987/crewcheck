@@ -58,7 +58,7 @@ final class ComplicationText {
         if (!snapshot.boardingTime.isBlank()) longText.append(" · ").append(snapshot.boardingTime);
 
         return gateRendering(
-                "P" + snapshot.gate.replaceAll("\\s+", ""),
+                snapshot.gate.replaceAll("\\s+", ""),
                 longText.toString(),
                 "Portão " + snapshot.gate + "."
         );
