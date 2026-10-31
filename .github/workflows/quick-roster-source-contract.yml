@@ -13,6 +13,8 @@ on:
       - 'scripts/regression-home-continuity-contract.mjs'
       - 'scripts/regression-home-history-session.mjs'
       - 'scripts/regression-saved-roster-retry-session.mjs'
+      - 'scripts/regression-roster-list-session.mjs'
+      - 'client/src/lib/databaseClient.ts'
       - 'scripts/regression-home-crossmonth-continuity.cjs'
       - 'scripts/regression-p0-multichannel-roster-gate.mjs'
       - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
@@ -30,6 +32,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Verify raw TypeScript and shared contract before preparation
         run: |
+          node scripts/regression-roster-list-session.mjs
           npx tsc --noEmit
           node scripts/regression-quick-roster-care-source.mjs --record "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-p1-303-schedule-classification-counts.mjs
@@ -42,6 +45,7 @@ jobs:
           node scripts/regression-home-continuity-contract.mjs
           node scripts/regression-home-history-session.mjs
           node scripts/regression-saved-roster-retry-session.mjs
+          node scripts/regression-roster-list-session.mjs
           node scripts/regression-p0-multichannel-roster-gate.mjs
           node scripts/regression-p0-530-adjacent-month-retention.mjs
           node scripts/regression-p2-530-adjacent-fallback-finance.mjs
