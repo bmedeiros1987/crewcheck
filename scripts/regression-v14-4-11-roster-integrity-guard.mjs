@@ -207,8 +207,8 @@ assert.match(loader, /v14411\/apply\.mjs/);
 assert.equal(policy.versionName, '14.4.11');
 assert.equal(release.version, '14.4.11');
 assert.equal(pkg.version, '14.4.11');
-// Live Play already contains mobile144157; this reviewed phone candidate must upgrade it.
-assert.equal(policy.artifacts.app.versionCode, 144158);
+// Pin the reviewed mobile build candidate; Wear codes remain independently fixed.
+assert.equal(policy.artifacts.app.versionCode, 144159);
 assert.equal(policy.artifacts.wear.versionCode, 144111);
 assert.equal(policy.artifacts.watchface.versionCode, 144112);
 
