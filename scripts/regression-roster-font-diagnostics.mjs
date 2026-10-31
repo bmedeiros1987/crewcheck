@@ -121,3 +121,42 @@ test('late CSS/FontFaces completion and rejection do not mutate persisted timeou
   assert.deepEqual(before.fonts,[{unavailable:true,timeout:true}]);
  }finally{await fs.rm(output,{recursive:true,force:true});}
 });
+
+test('failed regression logs only bounded sanitized categories, outcomes and Inter faces',async()=>{
+ const output=await fs.mkdtemp(path.join(os.tmpdir(),'roster-font-summary-'));
+ const logged=[],prior=console.error;console.error=(...args)=>logged.push(args);
+ try {
+  const context=new Context();context.pages=()=>[{evaluate:async()=>({faces:Array.from({length:30},(_,i)=>({family:'Inter',status:i===0?'SECRET_FACE_STATUS':'error',weight:'SECRET_FACE_VALUE'}))})}];
+  const diagnostic=createFontDiagnostics(context,{output,width:320,theme:'light',scale:1,browserVersion:'SECRET_BROWSER_VALUE'});
+  const original=Error('SECRET_ORIGINAL_ERROR');
+  await assert.rejects(withFontDiagnostics(context,diagnostic,async()=>{
+   diagnostic.route(font+'?token=SECRET_QUERY_VALUE',false);
+   context.emit('response',{url:()=>INTER_CSS,status:()=>200,body:async()=>Buffer.from('SECRET_CSS_BODY')});
+   context.emit('requestfailed',{url:()=>font,failure:()=>({errorText:'net::ERR_CONNECTION_FAILED'})});
+   context.emit('requestfailed',{url:()=>font,failure:()=>({errorText:'net::ERR_SECRET_ERROR_VALUE'})});
+   context.emit('response',{url:()=>font,status:()=> 'SECRET_STATUS_VALUE',body:async()=>{assert.fail('non-CSS body must not be read');}});
+   for(let i=0;i<180;i++)diagnostic.route('https://private.invalid/SECRET_PATH_VALUE?token=SECRET_TOKEN_VALUE',false);
+   throw original;
+  }),error=>error===original);
+  const entry=logged.find(args=>args[0]==='[roster-font-diagnostics]');assert(entry,'failed regression must log diagnostic summary');
+  const encoded=entry[1],summary=JSON.parse(encoded);
+  assert(encoded.length<4096);assert.doesNotMatch(encoded,/SECRET_|https?:|\?|headers|cookies|token|payload/i);
+  assert.equal(summary.events.length,16);assert(summary.omittedEvents>0);assert(summary.droppedEvents>0);
+  assert.deepEqual(summary.events[0],{kind:'route',category:'inter-font',allowed:false});
+  assert.deepEqual(summary.events[1],{kind:'response',category:'inter-css',status:200});
+  assert.equal(summary.events[2].code,'net::ERR_CONNECTION_FAILED');assert.equal(summary.events[3].code,'other-network-error');
+  assert.deepEqual(summary.events[4],{kind:'response',category:'inter-font'});
+  assert.equal(summary.fontFaces.length,8);assert.equal(summary.omittedFontFaces,22);
+  assert.deepEqual(summary.fontFaces[0],{family:'Inter',status:'unknown'});assert.deepEqual(summary.fontFaces[1],{family:'Inter',status:'error'});assert.equal(context.closed,true);
+ }finally{console.error=prior;await fs.rm(output,{recursive:true,force:true});}
+});
+
+test('successful regression does not log a failure summary',async()=>{
+ const output=await fs.mkdtemp(path.join(os.tmpdir(),'roster-font-summary-'));
+ const logged=[],prior=console.error;console.error=(...args)=>logged.push(args);
+ try{
+  const context=new Context(),diagnostic=createFontDiagnostics(context,{output,width:320,theme:'light',scale:1,browserVersion:'synthetic'});
+  await withFontDiagnostics(context,diagnostic,async()=>{});
+  assert.equal(logged.length,0);assert.equal(context.closed,true);
+ }finally{console.error=prior;await fs.rm(output,{recursive:true,force:true});}
+});

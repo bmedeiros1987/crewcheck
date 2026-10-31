@@ -106,6 +106,10 @@ public final class WatchContextSnapshot {
     public final String currentRoute;
     public final String gate;
     public final boolean remoteStand;
+    /** "manual", "radar" (fonte comprovada), "reported" (informado, a confirmar) ou "" (sem origem). */
+    public final String gateSource;
+    /** Proveniência curta para a tela de detalhe do portão. */
+    public final String gateNote;
     public final String boardingTime;
     public final String eta;
     public final String connection;
@@ -134,6 +138,8 @@ public final class WatchContextSnapshot {
             String currentRoute,
             String gate,
             boolean remoteStand,
+            String gateSource,
+            String gateNote,
             String boardingTime,
             String eta,
             String connection,
@@ -161,6 +167,8 @@ public final class WatchContextSnapshot {
         this.currentRoute = currentRoute;
         this.gate = gate;
         this.remoteStand = remoteStand;
+        this.gateSource = gateSource;
+        this.gateNote = gateNote;
         this.boardingTime = boardingTime;
         this.eta = eta;
         this.connection = connection;
@@ -253,6 +261,8 @@ public final class WatchContextSnapshot {
                 clean(json.optString("currentRoute", ""), 32),
                 gate,
                 remoteStand,
+                gateSource(json.optString("gateSource", "")),
+                clean(json.optString("gateNote", ""), 64),
                 clean(json.optString("boardingTime", ""), 12),
                 clean(json.optString("eta", ""), 12),
                 clean(json.optString("connection", ""), 16),
@@ -285,6 +295,8 @@ public final class WatchContextSnapshot {
                     .put("currentRoute", currentRoute)
                     .put("gate", gate)
                     .put("remoteStand", remoteStand)
+                    .put("gateSource", gateSource)
+                    .put("gateNote", gateNote)
                     .put("boardingTime", boardingTime)
                     .put("eta", eta)
                     .put("connection", connection)
@@ -315,6 +327,16 @@ public final class WatchContextSnapshot {
         if (minutes == 1L) return "Atualizado há 1 min";
         if (minutes < 60L) return "Atualizado há " + minutes + " min";
         return "Atualizado há " + (minutes / 60L) + " h";
+    }
+
+    private static String gateSource(String raw) {
+        String value = clean(raw, 12).toLowerCase(Locale.ROOT);
+        return "manual".equals(value) || "radar".equals(value) || "reported".equals(value) ? value : "";
+    }
+
+    /** Portão informado por uma fonte sem observação comprovada: nunca vale como confirmado. */
+    public boolean gateReported() {
+        return "reported".equals(gateSource);
     }
 
     public String gateLabel() {

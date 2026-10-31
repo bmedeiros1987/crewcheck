@@ -24,6 +24,8 @@ on:
       - 'client/src/lib/rosterPresentation.ts'
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'scripts/regression-roster-legend*.mjs'
+      - 'scripts/regression-roster-font-diagnostics.mjs'
+      - 'scripts/lib/roster-font-diagnostics.mjs'
       - 'scripts/fixtures/roster-legend-app.tsx'
       - 'scripts/lib/roster-legend-fixture.mjs'
       - 'client/src/components/v1391/home-roster-preview.css'
@@ -109,6 +111,7 @@ jobs:
       - run: npm ci
       - name: Validate roster legend before canonical preparation (synthetic)
         run: |
+          node --test scripts/regression-roster-font-diagnostics.mjs
           sha256sum client/src/lib/scheduleActivityClassification.ts > "$RUNNER_TEMP/roster-classifier.sha256"
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
@@ -120,6 +123,7 @@ jobs:
         run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
       - name: Validate roster legend after canonical preparation (synthetic)
         run: |
+          node --test scripts/regression-roster-font-diagnostics.mjs
           sha256sum -c "$RUNNER_TEMP/roster-classifier.sha256"
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
