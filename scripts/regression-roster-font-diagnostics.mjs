@@ -7,7 +7,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {INTER_CSS,describeFontRequest,createFontDiagnostics,withFontDiagnostics} from './lib/roster-font-diagnostics.mjs';
-import {createInterFontPolicy,interFontDeclarations} from './lib/roster-inter-policy.mjs';
+import {createInterFontPolicy,interFontDeclarations,interAcquisitionFailure} from './lib/roster-inter-policy.mjs';
 
 const dynamic='https://fonts.gstatic.com/l/font?kit=synthetic_123&skey=0123456789abcdef&v=v99';
 const cssFor=url=>`@font-face{font-family:'Inter';font-style:normal;font-weight:700;src:url('${url}') format('woff2');}`;
@@ -29,21 +29,33 @@ test('official-shaped Inter blocks preserve all shipping weights, swap and Unico
   cssFor(dynamic)+'@media all{}',cssFor(dynamic).replace('700;','7/* comment */00;')])
   assert.throws(()=>interFontDeclarations(malformed));
 });
-test('exact CSS declarations admit dynamic Inter, never arbitrary DOM resources',async()=>{
- const policy=createInterFontPolicy();let calls=0,fulfilled=0;
- const request=(url,method='GET')=>({url:()=>url,method:()=>method});
+const request=(url,method='GET')=>({url:()=>url,method:()=>method});
+const response=(href,{status=200,type=href===INTER_CSS?'text/css':'font/woff2',body=href===INTER_CSS?Buffer.from(cssFor(dynamic)):Buffer.from('synthetic font bytes, never rendering acceptance')}={})=>({
+ url:()=>href,status:()=>status,headers:()=>({'content-type':type,'access-control-allow-origin':'*'}),body:async()=>body,dispose:async()=>{},
+});
+test('one acquisition replays identical bytes through all combinations, never a second external fetch',async()=>{
+ const policy=createInterFontPolicy();let calls=0;const returned=[];
  assert.equal(policy.allows(request(dynamic)),false,'undeclared font fails closed');
- const route=(url,type,body)=>({request:()=>request(url),fetch:async options=>{
-  calls++;assert.deepEqual(options,{maxRedirects:0,timeout:10000});
-  return {url:()=>url,status:()=>200,headers:()=>({'content-type':type}),text:async()=>body};
- },fulfill:async()=>{fulfilled++;}});
- assert.equal(await policy.handle(route(INTER_CSS,'text/css',cssFor(dynamic))),true);
- assert.equal(policy.allows(request(dynamic)),true);
+ const fetch=async(href,options)=>{
+  calls++;assert.ok(calls<=2,'simulated second acquisition would fail');
+  assert.deepEqual(JSON.parse(JSON.stringify(options)),{maxRedirects:0,maxRetries:0,timeout:10000});
+  const result=response(href);returned.push(await result.body());return result;
+ };
+ const first=policy.acquire(fetch);assert.equal(policy.acquire(fetch),first,'single shared in-flight acquisition');
+ const manifest=await first;assert.equal(calls,2);assert.equal(manifest.length,2);
+ for(const body of returned)body.fill(0); // Fetched buffers are not the private snapshot.
+ assert.equal(policy.allows(request(dynamic)),true);assert.equal(policy.allows(request(INTER_CSS)),true);
+ for(const url of [dynamic+'&extra=1',dynamic+'#fragment','https://fonts.gstatic.com/s/inter/v99/undeclared.woff2',INTER_CSS+'&extra=1'])assert.equal(policy.allows(request(url)),false);
  assert.equal(policy.allows(request(dynamic,'POST')),false);
- assert.equal(policy.allows(request(dynamic+'&extra=1')),false);
- assert.equal(policy.allows(request('https://fonts.gstatic.com/s/inter/v99/undeclared.woff2')),false);
- assert.equal(policy.allows(request(INTER_CSS+'&extra=1')),false);
- await policy.handle(route(dynamic,'font/woff2',''));assert.equal(calls,2);assert.equal(fulfilled,2);
+ for(let combination=0;combination<8;combination++)for(const href of [INTER_CSS,dynamic]){
+  const index=href===INTER_CSS?0:1;
+  assert.equal(await policy.handle({request:()=>request(href),fetch:async()=>assert.fail('replay must not acquire'),fulfill:async result=>{
+   assert.equal(result.status,200);assert.deepEqual(result.headers,index===1?{'access-control-allow-origin':'*'}:{});
+   assert.equal(createHash('sha256').update(result.body).digest('hex'),manifest[index].sha256);
+   result.body.fill(0); // A consumer cannot mutate the next replay.
+  }}),true);
+ }
+ assert.equal(calls,2);assert.equal(await policy.handle({request:()=>request(dynamic,'POST')}),false);
  assert.deepEqual(describeFontRequest(dynamic),{category:'inter-font',url:'https://fonts.gstatic.com/l/font',queryRedacted:true});
 });
 test('declarations reject malicious origin/path/query/credentials and unrelated CSS',()=>{
@@ -59,18 +71,103 @@ test('declarations reject malicious origin/path/query/credentials and unrelated 
   cssFor(dynamic)+`body{background:url('${dynamic}')}`,`@import '${INTER_CSS}';`+cssFor(dynamic),
   '/* '+cssFor(dynamic)+' */','x'.repeat(32769)])assert.throws(()=>interFontDeclarations(css));
 });
-test('CSS and font redirects, wrong MIME and unsuccessful responses fail closed',async()=>{
- for(const target of ['css','font'])for(const flaw of ['redirect','status','mime']){
-  const policy=createInterFontPolicy();let fulfilled=0;
-  const route=(url,bad=false)=>({request:()=>({url:()=>url,method:()=> 'GET'}),fetch:async()=>({
-   url:()=>bad&&flaw==='redirect'?url+'#redirect':url,
-   status:()=>bad&&flaw==='status'?302:200,
-   headers:()=>({'content-type':bad&&flaw==='mime'?'text/html':url===INTER_CSS?'text/css':'font/woff2'}),
-   text:async()=>cssFor(dynamic),
-  }),fulfill:async()=>{fulfilled++;}});
-  if(target==='font')await policy.handle(route(INTER_CSS));
-  await assert.rejects(policy.handle(route(target==='css'?INTER_CSS:dynamic,true)));
-  assert.equal(fulfilled,target==='font'?1:0);
+test('acquisition failures distinguish transport/status/MIME without URL, header or error text',async()=>{
+ for(const asset of ['stylesheet','font'])for(const flaw of ['transport','status','mime','redirect','body']){
+  const policy=createInterFontPolicy();let calls=0;
+  const fetch=async href=>{
+   calls++;const selected=(href===INTER_CSS?'stylesheet':'font')===asset;
+   if(!selected)return response(href);
+   if(flaw==='transport')throw Error('SECRET_URL?token=SECRET_TOKEN');
+   const value=response(href,{status:flaw==='status'?503:200,type:flaw==='mime'?'text/html; SECRET_HEADER':href===INTER_CSS?'text/css':'font/woff2'});
+   if(flaw==='redirect')value.url=()=> 'https://private.invalid/SECRET_URL';
+   if(flaw==='body')value.body=async()=>{throw Error('SECRET_BODY_ERROR');};
+   return value;
+  };
+  const pending=policy.acquire(fetch);
+  await assert.rejects(pending,error=>{
+   const diagnostic=interAcquisitionFailure(error);
+   assert.equal(diagnostic.asset,asset);assert.equal(diagnostic.category,flaw==='body'?'transport':flaw);
+   if(flaw==='transport')assert.deepEqual(diagnostic,{asset,category:'transport',stage:'fetch'});
+   else {assert.equal(diagnostic.status,flaw==='status'?503:200);assert.equal(diagnostic.mime,flaw==='mime'?'other':asset==='stylesheet'?'text/css':'font/woff2');}
+   assert.doesNotMatch(JSON.stringify(diagnostic),/SECRET|https:|token|header/i);return true;
+  });
+  assert.equal(policy.allows(request(INTER_CSS)),false,'partial assets cannot escape failed acquisition');
+  assert.equal(policy.allows(request(dynamic)),false);
+  assert.equal(policy.acquire(fetch),pending,'failure retained without retry');
+  await assert.rejects(pending);assert.equal(calls,asset==='stylesheet'?1:2);
+ }
+ assert.deepEqual(interAcquisitionFailure(Error('private')),{asset:'unknown',category:'unknown'});
+});
+test('CSS rejection and invalid metadata remain sanitized, without partial replay',async()=>{
+ for(const flaw of ['css','status','mime','empty','size']){
+  const policy=createInterFontPolicy();
+  await assert.rejects(policy.acquire(async href=>response(href,{
+   ...(flaw==='status'?{status:99999}:{}),...(flaw==='mime'?{type:''}:{}),
+   body:Buffer.from(flaw==='css'?cssFor(dynamic)+'body{font-family:Arial}':flaw==='empty'?'':flaw==='size'?'x'.repeat(32769):cssFor(dynamic)),
+  })),error=>{
+   const d=interAcquisitionFailure(error);assert.equal(d.category,flaw);assert.equal(d.asset,'stylesheet');
+   if(flaw==='status')assert.equal('status' in d,false);return true;
+  });
+  assert.equal(await policy.handle({request:()=>request(INTER_CSS)}),false);
+ }
+});
+for(const corp of ['same-origin','same-site'])test(`shipping external CSS rejects restrictive CORP ${corp} before replay`,async()=>{
+ const policy=createInterFontPolicy();let calls=0;
+ await assert.rejects(policy.acquire(async href=>{
+  calls++;const value=response(href);value.headers=()=>({'content-type':'text/css','cross-origin-resource-policy':corp});return value;
+ }),error=>{assert.deepEqual(interAcquisitionFailure(error),{asset:'stylesheet',category:'corp',status:200,mime:'text/css'});return true;});
+ assert.equal(calls,1,'do not acquire font bytes after blocked CSS');
+ assert.equal(policy.allows(request(INTER_CSS)),false);
+ assert.equal(await policy.handle({request:()=>request(INTER_CSS),fulfill:async()=>assert.fail('blocked CSS must not replay')}),false);
+});
+test('font replay cannot manufacture CORS permission absent from the acquired response',async()=>{
+ for(const cors of [undefined,'https://private.invalid','null']){
+  const policy=createInterFontPolicy();
+  await assert.rejects(policy.acquire(async href=>{
+   const value=response(href);if(href!==INTER_CSS)value.headers=()=>({'content-type':'font/woff2',...(cors===undefined?{}:{'access-control-allow-origin':cors})});
+   return value;
+  }),error=>{assert.deepEqual(interAcquisitionFailure(error),{asset:'font',category:'cors',status:200,mime:'font/woff2'});return true;});
+  assert.equal(policy.allows(request(dynamic)),false);
+ }
+});
+test('never-resolving acquisition body times out; late completion cannot publish partial bytes',async()=>{
+ const policy=createInterFontPolicy();let release,calls=0;
+ const pending=policy.acquire(async href=>{calls++;const value=response(href);value.body=()=>new Promise(resolve=>{release=resolve;});return value;});
+ await assert.rejects(pending,error=>{
+  assert.deepEqual(interAcquisitionFailure(error),{asset:'stylesheet',category:'transport',status:200,mime:'text/css',stage:'body-timeout'});return true;
+ });
+ release(Buffer.from(cssFor(dynamic)));await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(policy.allows(request(INTER_CSS)),false);assert.equal(calls,1);
+ assert.equal(policy.acquire(async()=>assert.fail('no retry')),pending);await assert.rejects(pending);
+});
+
+test('actual setup block closes isolated context, persists sanitized outcomes and stops on acquisition failure',async()=>{
+ const source=await fs.readFile(new URL('./regression-roster-legend-browser.mjs',import.meta.url),'utf8');
+ const block=source.slice(source.indexOf(' const fontPolicy=createInterFontPolicy();'),source.indexOf(' for(const width'));
+ for(const mode of ['success','transport','mime','evidence-write-failure']){
+  let closed=false,calls=0;const writes=[],logs=[];
+  const setup={newPage:async()=>({evaluate:async()=> 'synthetic-browser-agent'}),close:async()=>{closed=true;},request:{get:async(href,options)=>{
+   calls++;assert.deepEqual(JSON.parse(JSON.stringify(options)),{maxRedirects:0,maxRetries:0,timeout:10000,headers:{'user-agent':'synthetic-browser-agent'}});
+   if(href!==INTER_CSS&&mode!=='success'){
+    if(mode==='mime')return response(href,{type:'text/html; SECRET_HEADER'});
+    throw Error('SECRET_URL?token=SECRET_TOKEN');
+   }
+   return response(href);
+  }}};
+  const run=new vm.Script('(async()=>{'+block+';return fontPolicy;})()');
+  const pending=run.runInNewContext({createInterFontPolicy,interAcquisitionFailure,browser:{newContext:async()=>setup},
+   fs:{writeFileSync:(file,text)=>{if(mode==='evidence-write-failure')throw Error('synthetic disk unavailable');writes.push(JSON.parse(text));}},
+   console:{error:(...args)=>logs.push(args.join(' '))},path,output:'/synthetic'});
+  if(mode==='success'){
+   const policy=await pending;assert.equal(policy.allows(request(dynamic)),true);assert.equal(writes[0].status,'acquired');assert.equal(logs.length,0);
+  }else{
+   await assert.rejects(pending,error=>error.message==='Shipping Inter acquisition failed: '+(mode==='mime'?'mime':'transport'));
+   assert.match(logs[0],mode==='mime'?/"category":"mime"/:/"category":"transport"/);
+   if(mode==='evidence-write-failure')assert.equal(logs[1],'[roster-font-acquisition] evidence-unavailable');
+   else assert.equal(writes[0].status,'failed');
+  }
+  assert.equal(closed,true);assert.equal(calls,2);
+  assert.doesNotMatch(JSON.stringify({writes,logs}),/SECRET|https:|token=|user-agent/);
  }
 });
 
@@ -130,10 +227,13 @@ test('actual harness uses declaration policy and mandatory Inter assertions reta
  assert.match(source,/const fontPolicy=createInterFontPolicy\(\);/);
  assert.match(source,/const shippingFont=fontPolicy.allows\(route.request\(\)\)/);
  assert.match(source,/await fontPolicy.handle\(route\)/);
+ assert.ok(source.indexOf('await fontPolicy.acquire(')<source.indexOf('for(const width'),'acquisition finishes before matrix');
+ assert.equal([...source.matchAll(/fontPolicy.acquire\(/g)].length,1,'one acquisition entry point');
+ assert.equal([...source.matchAll(/createInterFontPolicy\(/g)].length,1,'one shared snapshot policy');
  const assertions=source.split('\n').filter(line=>line.includes('const homeFont=await fontCheck')||line.includes("const fonts=await fontCheck")||line.includes('const fontCheck=async')).join('\n');
  assert.equal(createHash('sha256').update(assertions).digest('hex'),'660c06175cd1ed93050adff99184cffb2083b27c9f4ffa2ad828472c9ce19a5e');
  const allowed=url=>createInterFontPolicy().allows({url:()=>url,method:()=> 'GET'});
- assert.equal(allowed(INTER_CSS),true);assert.equal(allowed(font),false,'even static assets require stylesheet declaration');
+ assert.equal(allowed(INTER_CSS),false);assert.equal(allowed(font),false,'even static assets require stylesheet declaration');
  for(const url of [font+'?token=private',font.replace('.woff2','.ttf'),font.replace('synthetic','sub/file'),INTER_CSS+'&extra=1','https://private.invalid/'])assert.equal(allowed(url),false);
 });
 
