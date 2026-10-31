@@ -1,3 +1,4 @@
+import '@/styles/radar-layout.css';
 import { formatWeatherNoticeDetails } from '../../../shared/weatherNoticeDetails.mjs';
 import { openStayProgramEditor as editOperationalStay } from '@/lib/stayEditorNavigation';
 import { readStayOperationalProjection, selectCurrentStayOperationalProjection } from '@/lib/stayOperationalProjection';
@@ -3321,7 +3322,35 @@ function RadarView({ event }: { event: ZeroLeg }) {
   const arr = event.arrival;
   const quality = verified?.quality ? `${verified.quality}%` : 'Aguardando';
   const latency = verified?.latencyMs ? `${verified.latencyMs} ms` : '—';
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>{radarFlightDateLabel(event)}</span><span>Status: {status}</span><span>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</span><span>Matrícula: {gateInfo.registration || 'Não confirmada'}{gateInfo.registrationSource === 'manual' ? ' · informado por você' : ''}</span>{Boolean(gateInfo.operationalConflicts?.length) && <span role="note">Há divergência; dados conflitantes não confirmados e valores manuais preservados.</span>}{event.status && <span>Planejamento da escala: {event.status}</span>}</article><article><Plane/><h2>Horários planejados da escala</h2><p>Partida {safe(dep, 'Não informada')} · Chegada {safe(arr, 'Não informada')}</p><strong>{verified?.ok ? 'Resposta recebida; confirmação por campo' : radarAvailabilityLabel(state)}</strong><span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Resposta {latency}; pontuação interna não comprova exatidão.</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination}</p></section>
+    <section className="cz-radar-screen">
+      <article>
+        <div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div>
+        <h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p>
+        <span>{radarFlightDateLabel(event)}</span>
+        <strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span>
+        <span>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</span>
+        <span>Matrícula: {gateInfo.registration || 'Não confirmada'}{gateInfo.registrationSource === 'manual' ? ' · informado por você' : ''}</span>
+        {Boolean(gateInfo.operationalConflicts?.length) && <span role="note">Há divergência; dados conflitantes não confirmados e valores manuais preservados.</span>}
+        {event.status && <span>Planejamento da escala: {event.status}</span>}
+      </article>
+      <article>
+        <h2><Plane aria-hidden="true"/> Horários da escala</h2>
+        <p>Partida {safe(dep, 'Não informada')} · Chegada {safe(arr, 'Não informada')}</p>
+        <strong>{verified?.ok ? 'Resposta recebida; confirmação por campo' : radarAvailabilityLabel(state)}</strong>
+        <span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span>
+        <details className="cc-radar-sources"><summary><ShieldCheck aria-hidden="true"/> Fontes</summary>
+          <p>Resposta {latency}; pontuação interna não comprova exatidão.</p>
+          <strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong>
+          <span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span>
+        </details>
+      </article>
+    </section>
+    <section className="cz-toolbox cc-radar-actions"><h2>Ações</h2><div className="cz-tool-actions">
+      <button onClick={() => refresh(true)} disabled={loading} aria-label="Atualizar Radar e card"><Radar aria-hidden="true"/> Atualizar</button>
+      <button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')} aria-label="Consultar voo em outra aba"><Globe2 aria-hidden="true"/> Consultar</button>
+      <button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))} aria-label="Meteorologia"><CloudSun aria-hidden="true"/> Meteo</button>
+    </div></section><ManualGateEditor event={event}/></>;
 }
 
 type WeatherDisplayMode = 'both' | 'raw' | 'decoded';

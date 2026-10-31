@@ -1,0 +1,252 @@
+/* Radar presentation only. Operational evidence, manual edits and navigation stay upstream. */
+html body .cz-app[data-version][data-view="radar"] {
+  --cc-radar-surface: #111c2b;
+  --cc-radar-subtle: #172537;
+  --cc-radar-border: #294258;
+  --cc-radar-text: #edf4fb;
+  --cc-radar-muted: #b4c3d4;
+  --cc-radar-accent: #7cc4ff;
+}
+html body #root .cz-app[data-version][data-view="radar"] {
+  padding-left: max(14px, env(safe-area-inset-left, 0px)) !important;
+  padding-right: max(14px, env(safe-area-inset-right, 0px)) !important;
+  padding-bottom: calc(max(var(--cc-fixed-footer-height, 0px), var(--cc-canonical-nav-clearance, 112px)) + 24px) !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version][data-view="radar"] {
+  --cc-radar-surface: #fff;
+  --cc-radar-subtle: #f1f5f9;
+  --cc-radar-border: #cbd5e1;
+  --cc-radar-text: #10243a;
+  --cc-radar-muted: #475569;
+  --cc-radar-accent: #0b5fb5;
+}
+html:has(.cz-app[data-view="radar"]) {
+  scroll-padding-bottom: calc(var(--cc-canonical-nav-clearance, 112px) + 24px);
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-panel-head, .cz-radar-screen, .cz-toolbox) {
+  width: min(100%, 1030px) !important;
+  max-width: 1030px !important;
+  min-width: 0 !important;
+  margin: 0 auto 12px !important;
+  box-sizing: border-box !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cz-panel-head {
+  padding: 8px 2px !important;
+  min-height: 0 !important;
+}
+html body #root .cz-app[data-version][data-view="radar"] .cz-panel-head h1 {
+  font-size: calc(1.35rem * var(--cc-text-scale, 1)) !important;
+  line-height: 1.3 !important;
+  margin: 0 0 4px !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cz-radar-screen {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)) !important;
+  gap: 12px !important;
+  align-items: start !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-radar-screen > article, .cz-toolbox) {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 16px !important;
+  border: 1px solid var(--cc-radar-border) !important;
+  border-radius: 16px !important;
+  background: var(--cc-radar-surface) !important;
+  color: var(--cc-radar-text) !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cz-toolbox::before { display: none !important; }
+html body .cz-app[data-version][data-view="radar"] .cz-radar-screen > article {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 6px !important;
+  text-align: left !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-radar-screen, .cz-toolbox) h2 {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin: 0 0 8px !important;
+  font-size: 1rem !important;
+  line-height: 1.4 !important;
+  color: var(--cc-radar-text) !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cz-radar-screen > article:first-child > h2 {
+  font-size: 1.35rem !important;
+  margin: 0 !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cz-radar-airline {
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  margin: 0 0 4px !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-panel-head, .cz-radar-screen, .cz-toolbox) :is(p, span, small, time, strong, label) {
+  min-width: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.45 !important;
+  text-shadow: none !important;
+  letter-spacing: normal !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-panel-head, .cz-radar-screen, .cz-toolbox) :is(p, span, small, time) {
+  margin-block: 0 !important;
+  font-size: max(.875rem, 14px) !important;
+  color: var(--cc-radar-muted) !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-radar-screen, .cz-toolbox) :is(strong, label) {
+  font-size: max(.9375rem, 14px) !important;
+  color: var(--cc-radar-text) !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-radar-screen, .cz-toolbox) :is(button, summary) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  min-height: 44px !important;
+  min-width: 44px !important;
+  max-width: 100% !important;
+  height: auto !important;
+  padding: 8px 12px !important;
+  border: 1px solid var(--cc-radar-border) !important;
+  border-radius: 10px !important;
+  background: var(--cc-radar-subtle) !important;
+  color: var(--cc-radar-text) !important;
+  box-shadow: none !important;
+  font-size: max(.875rem, 14px) !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  cursor: pointer;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-radar-screen, .cz-toolbox) :is(button, summary, h2) > svg {
+  width: 18px !important;
+  height: 18px !important;
+  flex: 0 0 auto !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-radar-screen, .cz-toolbox) :is(button, summary, input):focus-visible {
+  outline: 3px solid var(--cc-radar-accent) !important;
+  outline-offset: 3px !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cz-radar-screen, .cz-toolbox) :is(button, summary, input) {
+  scroll-margin-block: 120px calc(var(--cc-canonical-nav-clearance, 112px) + 24px);
+}
+html body .cz-app[data-version][data-view="radar"] .cz-tool-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin: 0 !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cz-tool-actions > button {
+  width: auto !important;
+  flex: 0 1 auto !important;
+}
+html body #root .cz-app[data-version][data-view="radar"] .cc-radar-actions .cz-tool-actions {
+  gap: 6px !important;
+}
+/* Keep a short label whole; wrap the action itself when enlarged text needs room. */
+html body #root .cz-app[data-version][data-view="radar"] .cc-radar-actions .cz-tool-actions > button {
+  flex: 1 1 max-content !important;
+  padding-inline: 6px !important;
+  min-width: max-content !important;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cc-radar-sources, .cc-followed-list > details) {
+  margin-top: 8px !important;
+  border-top: 1px solid var(--cc-radar-border) !important;
+  padding-top: 4px !important;
+}
+html body .cz-app[data-version][data-view="radar"] :is(.cc-radar-sources, .cc-followed-list > details) > summary {
+  justify-content: flex-start !important;
+  border: 0 !important;
+  background: transparent !important;
+  padding: 6px 0 !important;
+  width: 100% !important;
+  list-style: none;
+}
+html body .cz-app[data-version][data-view="radar"] details > summary::-webkit-details-marker { display: none; }
+html body .cz-app[data-version][data-view="radar"] details > summary::after {
+  content: "+";
+  margin-left: auto;
+  font-size: 1.1em;
+}
+html body .cz-app[data-version][data-view="radar"] details[open] > summary::after { content: "−"; }
+html body .cz-app[data-version][data-view="radar"] :is(.cc-radar-sources, .cc-followed-list > details)[open] > summary {
+  margin-bottom: 8px !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-radar-sources :is(p, strong, span) {
+  display: block !important;
+  margin-bottom: 4px !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-followed-add {
+  justify-content: flex-start !important;
+  text-align: left !important;
+  width: 100% !important;
+  margin-bottom: 12px !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-followed-add strong { display: block; }
+html body .cz-app[data-version][data-view="radar"] .cc-followed-row {
+  display: grid !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding-block: 12px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-followed-row + .cc-followed-row { border-top: 1px solid var(--cc-radar-border) !important; }
+html body .cz-app[data-version][data-view="radar"] .cc-followed-identity {
+  display: grid !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+html body .cz-app[data-version][data-view="radar"] time.cc-followed-date {
+  display: block !important;
+  font-variant-numeric: tabular-nums;
+  font-size: calc(max(.875rem, 14px) * var(--cc-text-scale, 1)) !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-followed-meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px 12px !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-followed-meta > small {
+  flex: 1 1 170px !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-followed-stop {
+  flex: 0 0 auto !important;
+  width: auto !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-manual-gate form {
+  width: 100% !important;
+  max-width: none !important;
+  margin-top: 16px !important;
+  gap: 8px !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-manual-gate input {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 44px !important;
+  font-size: max(1rem, 14px) !important;
+  box-sizing: border-box !important;
+  border: 1px solid var(--cc-radar-border) !important;
+  background: var(--cc-radar-subtle) !important;
+  color: var(--cc-radar-text) !important;
+}
+html body .cz-app[data-version][data-view="radar"] .cc-manual-gate .cc-manual-gate-status:not(:empty) { margin-top: 12px !important; }
+@media (min-width: 700px) {
+  html body .cz-app[data-version][data-view="radar"] .cc-manual-gate form { max-width: 560px !important; }
+}
+
+@media (max-width: 480px) {
+  html body .cz-app[data-version][data-view="radar"] .cc-radar-actions .cz-tool-actions > button {
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+}

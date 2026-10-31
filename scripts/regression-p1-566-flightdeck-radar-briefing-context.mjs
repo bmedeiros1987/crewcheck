@@ -42,7 +42,7 @@ assert.match(bridge, /clearPendingNavigationContext\(\);[\s\S]*detail: 'cockpit'
 // from FlightDeck, rather than rebuilding identity from a label or selecting another flight.
 assert.match(home, /const inheritedContext = peekPendingNavigationContext\('radar'\);/, 'Radar deve inspecionar o contexto que recebeu');
 assert.match(home, /setPendingNavigationContext\(\{ \.\.\.inheritedContext, targetView: 'weather' \}\)/, 'Radar deve repassar o mesmo contexto para Meteorologia');
-assert.match(home, /<button onClick=\{openWeatherFromRadar\}><CloudSun\/> Meteorologia<\/button>/, 'handoff Radar → Meteorologia deve usar a ponte contextual');
+assert.match(home, /<button onClick=\{openWeatherFromRadar\} aria-label="Meteorologia"><CloudSun aria-hidden="true"\/> Meteo<\/button>/, 'handoff Radar → Meteorologia deve usar a ponte contextual');
 
 // Privacy/architecture: context surface is display/navigation only. Word-boundary ACT
 // avoids treating the package name "react" as the aviation acronym.
