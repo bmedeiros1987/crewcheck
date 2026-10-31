@@ -21,7 +21,8 @@ const m={exports:{}};Function('module','exports','require','Date',compiled.outpu
 const gate=m.exports;
 const event={id:'fixture-event',kind:'flight',flightNumber:'LA100',origin:'GRU',destination:'REC',day:{date:'14/10/2032'},canonical:{date:'2032-10-14',startDateTime:'2032-10-14T12:00:00Z'},date:new Date('2032-10-14T12:00:00Z')};
 const store=new Map(),storage={getItem:k=>store.get(k)||null};
-const client=vm.createContext({...radarAdmission,...policy,...gate,Date:FixedDate,storage:{get:k=>store.get(k)||'null',set:(k,v)=>store.set(k,v)},localStorage:{},window:{dispatchEvent:()=>{}},CustomEvent:class {},getStoredUser:()=>({}),readManualGate:()=>null,manualGateAccountKey:()=> 'fixture-account',publishCrewCheckNotice:()=>{},publishCrewCheckPulse:()=>{},reconcileCrewCheckPulse(){},manualGateNoticeScope:()=>'synthetic-scope',RADAR_CARD_CACHE_TTL_MS:6*3600000});
+const notices=[],pulses=[];
+const client=vm.createContext({...radarAdmission,...policy,...gate,Date:FixedDate,storage:{get:k=>store.get(k)||'null',set:(k,v)=>store.set(k,v)},localStorage:{},window:{dispatchEvent:()=>{}},CustomEvent:class {},getStoredUser:()=>({}),readManualGate:()=>null,manualGateAccountKey:()=> 'fixture-account',publishCrewCheckNotice:notice=>notices.push(notice),publishCrewCheckPulse:pulse=>pulses.push(pulse),reconcileCrewCheckPulse(){},manualGateNoticeScope:()=>'synthetic-scope',RADAR_CARD_CACHE_TTL_MS:6*3600000});
 vm.runInContext(functions('client/src/pages/Home.tsx',['radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','validatedRadarForEvent','readRadarSnapshot','radarGateInfo','saveRadarSnapshot']),client);
 // Provider-reported gate: exact occurrence, a gate, no field observation or gate-update proof.
 const payload=(over={})=>({ok:true,configured:true,provider:'flightaware',flight:'LA100',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',gate:'12',status:'Programado',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z',sourceReceivedAt:at('08:00'),...over});
@@ -52,6 +53,14 @@ assert.deepEqual(info.automaticFieldValidUntilEpochMs,{});
 assert.equal(saved.operationalEvidence,undefined);assert.equal(saved.gateUpdate,undefined);assert.equal(saved.gateEvidenceReceivedAt,undefined);
 now=at('08:29');assert.equal(client.radarGateInfo(event,saved).gateSource,'reported','Home card path, same anchor');
 now=at('08:31');assert.notEqual(client.radarGateInfo(event,saved).gateSource,'reported','Home card path expires at 08:30 too');
+// Changing a merely reported gate cannot emit either automatic notice or Pulse.
+now=at('08:05');client.saveRadarSnapshot(event,payload({gate:'14'}));
+assert.equal(client.radarGateInfo(event,client.readRadarSnapshot(event)).gateSource,'reported');
+assert.equal(notices.length,0);assert.equal(pulses.length,0);
+// Saving/reloading the same receipt does not renew its validity.
+now=at('08:29');const resaved=client.saveRadarSnapshot(event,JSON.parse(JSON.stringify(saved)));
+assert.equal(resaved.updatedAt,at('08:00'));assert.equal(resaved.sourceReceivedAt,at('08:00'));
+assert.equal(resolve('08:31').gate,'');
 // Without a source receipt the phone's own receipt stays the anchor; a receipt ahead of the phone clock is capped.
 now=at('09:00');const noReceipt=payload({sourceReceivedAt:undefined});delete noReceipt.sourceReceivedAt;
 assert.equal(client.saveRadarSnapshot(event,noReceipt).updatedAt,at('09:00'));

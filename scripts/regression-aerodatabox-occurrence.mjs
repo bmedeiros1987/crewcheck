@@ -24,14 +24,28 @@ const event={id:'synthetic-flight',kind:'flight',flightNumber:occurrence.flight,
 const read=async()=>{const candidate=await scope.providerAeroDataBox({iata:occurrence.flight,gateQueryEvidence:occurrence},1000);return scope.publicRadarPayload({...candidate,sourceReceivedAt:now});};
 const accepted=await read();assert.equal(accepted.operationalEvidence,undefined);
 const resolve=radar=>mod.exports.resolveNextFlightGate({event,radar:{...radar,sourceOrigin:radar.origin,sourceDestination:radar.destination,updatedAt:now},now});
-assert.equal(accepted.gate,'12');assert.equal(resolve(accepted).gate,'','record update cannot confirm gate observation');
-payload=[{...row,departure:{...row.departure,gate:'14'},lastUpdatedUtc:'2032-10-21T07:59:00Z'}];assert.equal(resolve(await read()).gate,'','newer record with changed gate remains unproven without field observation');
-payload=[{...row,lastUpdatedUtc:'2032-10-21T07:00:00Z'}];assert.equal(resolve(await read()).gate,'','new HTTP receipt cannot refresh stale source record');
+const assertReported=(radar,gate)=>{
+ const info=resolve(radar);
+ assert.equal(info.gate,gate);assert.equal(info.gateSource,'reported');assert.equal(info.usesRadar,false);
+ assert.equal(radar.operationalEvidence,undefined);assert.equal(radar.gateUpdate,null);
+ assert.equal(info.status,'');assert.equal(info.registration,'');
+ assert.equal(info.automaticFieldValidUntilEpochMs.gate,now+30*60_000);
+};
+assert.equal(accepted.gate,'12');assertReported(accepted,'12');
+for(const patch of [{operationalConflicts:['gate']},{operationalEvidence:{gate:{version:1,value:'12',sourceObservedAt:'2032-10-20T07:00:00Z',provenance:'synthetic'}}},{gateUpdateWatermark:{gate:'12',sourceUpdatedAtEpochMs:now,conflicted:true}}]){
+ const rejected=resolve({...accepted,...patch});assert.equal(rejected.gate,'');assert.notEqual(rejected.gateSource,'reported');
+}
+// A later cache/save clock must not replace the original HTTP receipt.
+const expired=mod.exports.resolveNextFlightGate({event,radar:{...accepted,sourceOrigin:accepted.origin,sourceDestination:accepted.destination,updatedAt:now+31*60_000},now:now+31*60_000});
+assert.equal(expired.gate,'');assert.notEqual(expired.gateSource,'reported');
+payload=[{...row,departure:{...row.departure,gate:'14'},lastUpdatedUtc:'2032-10-21T07:59:00Z'}];assertReported(await read(),'14');
+// Generic record time is not propagated by the adapter and proves no field freshness.
+payload=[{...row,lastUpdatedUtc:'2032-10-21T07:00:00Z'}];const oldRecord=await read();assert.equal(oldRecord.lastUpdatedUtc,undefined);assertReported(oldRecord,'12');
 payload=[{...row,departure:{...row.departure,gate:null}}];assert.equal(resolve(await read()).gate,'');
 payload=[{...row,number:'QA999'}];assert.equal((await read()).ok,false);
 const manual={flight:occurrence.flight,origin:occurrence.origin,destination:occurrence.destination,date:'2032-10-21',scheduledDepartureUtc:occurrence.scheduledDepartureUtc,gate:'7A',author:'synthetic',setAtEpochMs:now};
 const manualResult=mod.exports.resolveNextFlightGate({event,radar:{...accepted,sourceOrigin:accepted.origin,sourceDestination:accepted.destination,updatedAt:now},manual,now});assert.equal(manualResult.gate,'7A');assert.equal(manualResult.gateSource,'manual');
-assert.equal(calls,5);console.log('PASS actual AeroDataBox adapter → public projection → card resolver: record update never promoted, matching row selection, missing/stale, ambiguity/other occurrence, change and manual preserved; zero external network.');
+assert.equal(calls,5);console.log('PASS actual AeroDataBox adapter → public projection → card resolver: reported receipt window only; no observation/status promotion; failed/conflicting proof denied; matching row selection, missing, ambiguity/other occurrence, change and manual preserved; zero external network.');
 
 // Provider health with the real server functions: a valid response for another
 // occurrence is not a provider failure, so other flights keep querying it; an HTTP

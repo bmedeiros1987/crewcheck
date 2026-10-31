@@ -29,6 +29,7 @@ on:
       - 'scripts/regression-radar-availability-browser.mjs'
       - 'scripts/regression-radar-provider-provenance.mjs'
       - 'scripts/regression-radar-receipt-preserved.mjs'
+      - 'scripts/regression-reported-gate-cache-browser.mjs'
       - 'scripts/regression-radar-source-occurrence.mjs'
       - 'scripts/regression-flightaware-response-selection.mjs'
       - 'scripts/regression-gate-query-day.mjs'
@@ -59,7 +60,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '22.13.0'
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       - name: Simulated contract in three timezones (no network, no credentials)
@@ -151,5 +152,6 @@ jobs:
           GATE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/radar-browser/package.json
         run: |
           node scripts/regression-next-flight-gate-pulse-browser.mjs
+          node scripts/regression-reported-gate-cache-browser.mjs
           node scripts/regression-manual-gate-review-browser.mjs
           node scripts/regression-manual-operational-fields-browser.mjs
