@@ -78,7 +78,7 @@ const normal = harness(source); const normalBody = await normal.call(legacyUrl);
 const off = harness(source); const offBody = await off.call(legacyUrl + '&ciriumEnabled=true', { cirium: { enabled: false, source: poison } });
 assert.deepEqual(offBody, normalBody, 'OFF preserves current fallback payload');
 assert.deepEqual(off.counters, normal.counters, 'OFF preserves existing provider/snapshot behavior');
-assert.equal(offBody.provider, undefined); assert.equal(offBody.provenance, undefined);
+assert.equal(offBody.provider, 'custom', 'OFF names the existing answering source, never Cirium'); assert.equal(offBody.provenance, undefined);
 assert.equal(offBody.gate, 'C4'); assert.equal(offBody.exportedToConcierge, true);
 assert.equal(off.counters.apply, 1); assert.equal(off.counters.save, 1);
 // The legacy write above is existing behavior; the isolated Cirium result must never reach it.

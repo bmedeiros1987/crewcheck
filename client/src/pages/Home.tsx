@@ -22,7 +22,7 @@ import { alertAccount, alertDigest, alertIsReviewed, complianceAlertIdentity, AL
 import { alertText } from '@/lib/alertExperienceText';
 import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
 import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailability';
-import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
+import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate, radarSourceEpoch } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {OperationalBriefing} from '@/components/notifications/OperationalBriefing';
 import {ConciergeChannels} from '@/components/concierge/ConciergeChannels';
@@ -1739,9 +1739,16 @@ function confirmedRadarGate(value?: string): string {
 }
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: ReturnType<typeof beginOperationalRadarRead> = null, receipt = ""): RadarSnapshot {
   const previous = readRadarSnapshot(event);
+  // Âncora da janela de 30 min do portão: o recebimento original da fonte, o mesmo que a
+  // admissão conferiu (nunca no futuro do celular; sem ele, agora). Gravar no celular não
+  // renova a idade da fonte, e recebimento não é hora observada do portão.
+  const savedAt = Date.now(), sourceReceipt: unknown = payload.sourceReceivedAt ?? payload.updatedAt;
+  const sourceAt = typeof sourceReceipt === 'number' ? sourceReceipt : typeof sourceReceipt === 'string' ? radarSourceEpoch(sourceReceipt) : NaN;
+  const receivedAt = Number.isFinite(sourceAt) && sourceAt > 0 ? Math.min(sourceAt, savedAt) : savedAt;
+  const incoming = { ...payload, sourceReceivedAt: receivedAt, updatedAt: receivedAt };
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
-  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
-  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, incoming) : incoming;
+  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, incoming) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: receivedAt };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   retainOperationalRadarResponse(snapshot,key,JSON.stringify(event.canonical),readTicket,receipt);
@@ -1752,7 +1759,8 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: R
   // Alerts must accept exactly the same source/occurrence as the phone/watch decision.
   const before = resolveNextFlightGate({ event, radar: previous });
   const after = resolveNextFlightGate({ event, radar: snapshot });
-  const previousGate = manualGate || before.gate;
+  // A provider-reported gate never starts or anchors a change alert.
+  const previousGate = manualGate || (before.gateSource === 'radar' ? before.gate : '');
   const nextGate = after.operationalDate && after.gateSource === 'radar' && !after.radarRejected && !after.stale ? after.gate : '';
   const previousRadarGate = before.gateSource === 'radar' && !before.radarRejected ? before.gate : '';
   const reviewAfter = manualEntry ? resolveNextFlightGate({ event, radar: snapshot, manual: manualEntry }).manualReview : null;
@@ -1858,7 +1866,7 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
     {isFlight ? <div className="cz-flight-pills"><span className="cz-work-type-badge"><b>Operação</b>{workTypeLabel(workType)}</span><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Chegada planejada</b>{event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>{isFlight ? 'Decolagem' : 'Início'}</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>{isFlight ? 'Chegada' : 'Fim'}</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{gateInfo.gateSource === 'manual' ? 'Informado por você' : gateInfo.gateSource === 'radar' ? 'Fonte com evidência válida' : 'Sem confirmação operacional'}{gateInfo.gate ? ` · ${terminal}` : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong>{status}</strong>{isFlight && <small>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</small>}<small>{isFlight ? `Aeronave planejada: ${aircraft} · Matrícula: ${registration}${gateInfo.registrationSource === 'manual' ? ' · informada por você' : gateInfo.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
+    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{gateInfo.gateSource === 'manual' ? 'Informado por você' : gateInfo.gateSource === 'radar' ? 'Fonte com evidência válida' : gateInfo.gateSource === 'reported' ? `Informado por ${gateInfo.reportedProvider} · a confirmar` : 'Sem confirmação operacional'}{gateInfo.gate ? ` · ${terminal}` : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong>{status}</strong>{isFlight && <small>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</small>}<small>{isFlight ? `Aeronave planejada: ${aircraft} · Matrícula: ${registration}${gateInfo.registrationSource === 'manual' ? ' · informada por você' : gateInfo.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
     {!compact && gateInfo.manualGateUnlinked && <p role="note">Portão manual anterior preservado; confirme o vínculo com este voo no editor.</p>}
     {!compact && Boolean(gateInfo.operationalConflicts?.length) && <p role="note">Há divergência nos dados operacionais. Valores manuais preservados; confirme a informação.</p>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
