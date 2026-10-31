@@ -122,6 +122,8 @@ public final class CrewCheckWatchPublisher {
         copyString(source, out, "currentRoute", 32);
         copyString(source, out, "gate", 18);
         out.put("remoteStand", source.optBoolean("remoteStand", false));
+        copyString(source, out, "gateSource", 12);
+        copyString(source, out, "gateNote", 64);
         copyString(source, out, "boardingTime", 12);
         copyString(source, out, "eta", 12);
         copyString(source, out, "connection", 16);

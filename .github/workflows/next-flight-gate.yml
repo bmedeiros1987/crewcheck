@@ -7,6 +7,8 @@ on:
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server.mjs'
       - 'server/gate-source-update.mjs'
+      - 'server/aerodatabox-occurrence.mjs'
+      - 'scripts/regression-aerodatabox-occurrence.mjs'
       - 'shared/radar-field-evidence.mjs'
       - 'scripts/regression-radar-field-evidence.mjs'
       - 'client/src/lib/manualGateNotices.ts'
@@ -19,6 +21,8 @@ on:
       - 'shared/timezone-choice.mjs'
       - 'shared/airport-timezones.mjs'
       - 'server/platform.mjs'
+      - 'server/radar-publication-authority.mjs'
+      - 'scripts/regression-radar-owned-history.mjs'
       - 'server/v1403/premium-helpers.snippet'
       - 'client/src/lib/radarAvailability.ts'
       - 'client/src/lib/authClient.ts'
@@ -26,6 +30,8 @@ on:
       - 'scripts/regression-radar-authority-followup.mjs'
       - 'scripts/regression-radar-availability-browser.mjs'
       - 'scripts/regression-radar-provider-provenance.mjs'
+      - 'scripts/regression-radar-receipt-preserved.mjs'
+      - 'scripts/regression-reported-gate-cache-browser.mjs'
       - 'scripts/regression-radar-source-occurrence.mjs'
       - 'scripts/regression-flightaware-response-selection.mjs'
       - 'scripts/regression-gate-query-day.mjs'
@@ -38,6 +44,8 @@ on:
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-next-flight-gate.mjs'
+      - 'scripts/regression-gate-behavior-rule.mjs'
+      - 'docs/gate-behavior-rule.md'
       - 'scripts/regression-next-flight-gate-pulse.mjs'
       - 'scripts/regression-next-flight-gate-pulse-browser.mjs'
       - 'scripts/regression-next-flight-gate-prepared.mjs'
@@ -54,7 +62,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '22.13.0'
+          node-version: '22.23.4'
           cache: npm
       - run: npm ci
       - name: Simulated contract in three timezones (no network, no credentials)
@@ -62,7 +70,12 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-aerodatabox-occurrence.mjs
+          TZ=UTC node scripts/regression-radar-receipt-preserved.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-receipt-preserved.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-receipt-preserved.mjs
           node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-gate-behavior-rule.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
@@ -71,6 +84,9 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
           node scripts/regression-radar-cpv-timezone.mjs
           node scripts/regression-radar-authority-followup.mjs
+          TZ=UTC node scripts/regression-radar-owned-history.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-owned-history.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-owned-history.mjs
           TZ=UTC node scripts/regression-gate-query-day.mjs
           TZ=UTC node scripts/regression-gate-query-binding.mjs
           TZ=UTC node scripts/regression-gate-query-proof.mjs
@@ -91,7 +107,12 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-aerodatabox-occurrence.mjs
+          TZ=UTC node scripts/regression-radar-receipt-preserved.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-receipt-preserved.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-receipt-preserved.mjs
           node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-gate-behavior-rule.mjs
           TZ=UTC node scripts/regression-radar-field-evidence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-field-evidence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-field-evidence.mjs
@@ -100,6 +121,9 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
           node scripts/regression-radar-cpv-timezone.mjs
           node scripts/regression-radar-authority-followup.mjs
+          TZ=UTC node scripts/regression-radar-owned-history.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-owned-history.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-owned-history.mjs
           TZ=UTC node scripts/regression-gate-query-day.mjs
           TZ=UTC node scripts/regression-gate-query-binding.mjs
           TZ=UTC node scripts/regression-gate-query-proof.mjs
@@ -136,5 +160,6 @@ jobs:
           GATE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/radar-browser/package.json
         run: |
           node scripts/regression-next-flight-gate-pulse-browser.mjs
+          node scripts/regression-reported-gate-cache-browser.mjs
           node scripts/regression-manual-gate-review-browser.mjs
           node scripts/regression-manual-operational-fields-browser.mjs

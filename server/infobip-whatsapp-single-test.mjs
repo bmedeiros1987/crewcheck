@@ -45,5 +45,32 @@ export function createInfobipWhatsAppSingleTestHost(options={}) {
     if(!raw)return createInfobipWhatsAppHost();
     policy=validateInfobipRestrictedPolicy(JSON.parse(raw));
   } catch {return createInfobipWhatsAppHost();}
-  return createInfobipWhatsAppApplicationHost({...options,environment,enabled:true,policy});
+  const application=createInfobipWhatsAppApplicationHost({...options,environment,enabled:true,policy});
+  const held=createInfobipWhatsAppHost();
+  let unavailable=false,starting,listener,closed=false,stage;
+  const health=()=>unavailable
+    ? {enabled:false,ready:false,code:'INFOBIP_APPLICATION_UNAVAILABLE',stage} : application.health();
+  // Only this optional web caller contains its own startup rejection. The strict
+  // application host still rejects invalid configuration; no global error handler,
+  // credential fallback, automatic retry or relaxed activation policy is added.
+  return Object.freeze({
+    health,
+    start(servingListener) {
+      if(closed || (starting && servingListener!==listener))return Promise.reject(Error('INFOBIP_APPLICATION_UNAVAILABLE'));
+      if(starting)return starting;
+      listener=servingListener;
+      starting=application.start(listener).catch(async error=>{
+        if(error?.message!=='INFOBIP_APPLICATION_UNAVAILABLE')throw error;
+        unavailable=true;
+        stage=['policy','deployment-binding','host-preflight'].includes(error.stage)?error.stage:'host-preflight';
+        await application.dispose();
+        console.warn('[infobip] optional integration unavailable; stage='+stage+'; callbacks and sends held');
+        return health();
+      });
+      return starting;
+    },
+    handleRoute:(...args)=>(unavailable?held:application).handleRoute(...args),
+    dispatch:(...args)=>(unavailable?held:application).dispatch(...args),
+    dispose:()=>{closed=true;return application.dispose();},
+  });
 }

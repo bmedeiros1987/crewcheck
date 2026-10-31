@@ -112,7 +112,7 @@ const radarBase = observedFields({ ok: true, flight:'LA3377', gate: '9', termina
   const sourced = m.resolveNextFlightGate({event:next,radar:radarBase,now:NOW});
   assert.equal(sourced.statusSource,'radar');
   assert.match(m.statusSourceLabel(sourced), /fonte|Radar/i);
-  const receiptOnly=m.resolveNextFlightGate({event:next,radar:{...radarBase,operationalEvidence:undefined},now:NOW});assert.equal(receiptOnly.gate,'');assert.equal(receiptOnly.status,'','receipt does not prove status observation');
+  const receiptOnly=m.resolveNextFlightGate({event:next,radar:{...radarBase,operationalEvidence:undefined},now:NOW});assert.equal(receiptOnly.gate,radarBase.gate,'a fresh exact answer without observation is shown as reported');assert.equal(receiptOnly.gateSource,'reported');assert.equal(receiptOnly.usesRadar,false);assert.equal(receiptOnly.status,'','receipt does not prove status observation');
   const staleObservation=m.resolveNextFlightGate({event:next,radar:observedFields(radarBase,'2026-10-11T20:00:00Z'),now:NOW});assert.equal(staleObservation.gate,'');
   const planned=m.resolveNextFlightGate({event:{...next,gate:'77',status:'Programado',registration:'PR-PLAN'},now:NOW});assert.equal(planned.gate,'');assert.equal(planned.status,'');assert.equal(planned.registration,'');assert.equal(planned.plannedGate,'77');
   const legacyManual={gate:'24',flight:'LA3377',date:m.flightOperationalDate(next),origin:'GRU',destination:'REC',setAtEpochMs:NOW,author:'Legacy'};const legacyResult=m.resolveNextFlightGate({event:next,manual:legacyManual,now:NOW});assert.equal(legacyResult.gate,'');assert.equal(legacyResult.manualGateUnlinked,true);assert.equal(legacyManual.scheduledDepartureUtc,undefined,'legacy object must not receive inferred UTC');

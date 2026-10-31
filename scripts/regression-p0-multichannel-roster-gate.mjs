@@ -26,9 +26,9 @@ const android = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainAc
 const platform = read('server/platform.mjs');
 const server = read('server.mjs');
 
-// One canonical operational snapshot still feeds Cockpit and every operational
-// consumer. The Escala UI may expand only its visual calendar window with adjacent
-// saved competences; that visual window must never become the operational bundle.
+// HOME and explicit event navigation may read the fenced historical projection.
+// This projection must never replace the active operational bundle used by global
+// entry points, compliance, persistence or the primary financial snapshot.
 assert.match(home, /const \[bundle, setBundle\] = useState<BundleState>\(loadRoster\(\)\);/);
 assert.match(home, /const events = useMemo\(\(\) => buildLegs\(bundle\.roster\)/);
 assert.match(home, /const \[rosterWindow, setRosterWindow\] = useState<CrewRoster>/);
@@ -37,8 +37,11 @@ assert.match(home, /openRosterDisplayWindow\(primary\)/);
 
 const cockpitRender = nearby(home, "{view === 'cockpit' && <Cockpit", 900);
 const cockpitTag = cockpitRender.match(/<Cockpit[\s\S]*?\/>/)?.[0] || '';
-expectAll('Cockpit deve usar apenas events do bundle operacional ativo', cockpitTag, ['<Cockpit', 'events={events}']);
-assert.ok(!cockpitTag.includes('rosterEvents'), '[p0-multichannel] Cockpit não pode consumir a janela visual multi-competência');
+expectAll('HOME usa histórico cercado, compliance continua na competência ativa', cockpitTag, ['<Cockpit', 'events={rosterEvents}', 'compliance={reviewableCompliance(compliance, bundle.roster)}']);
+assert.ok(!cockpitTag.includes('events={events}'), '[p0-multichannel] HOME não pode perder os dias relevantes após ativar outro mês');
+assert.match(home, /const flightEvent = nextRealFlight\(events\);/);
+assert.match(home, /const flightSurfaceEvent = flightSurfaceContext\?\.programId \? contextualFlightEvent : flightEvent/);
+assert.match(home, /const compliance = currentCompliance\(bundle\);/);
 
 if (home.includes("{view === 'roster' && <RosterLaunchView")) {
   const rosterRender = nearby(home, "{view === 'roster' && <RosterLaunchView", 900);

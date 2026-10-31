@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {resolveOwnedGatePublication} from '../server/radar-publication-authority.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -46,30 +47,50 @@ const poison = new Proxy({}, { get() { throw Error('OFF inspected identity'); } 
 assert.equal(await injection.runCiriumRadarInjection(poison, { enabled: false, source: () => { throw Error('OFF source'); } }), null);
 assert.deepEqual(injection.ciriumRadarRegistration(), { key: 'cirium-sky', available: false, state: 'disabled' });
 
+const platformSource=fs.readFileSync('server/platform.mjs','utf8');
+// Delimit the actual exported loader by its unique neighboring declaration.
+// This raw lifecycle intentionally has no node_modules: extraction uses only Node.
+const loaderStart='export async function loadOwnedPlatformRoster(';
+const loaderEnd='\n\nconst APP_VERSION = ';
+assert.equal(platformSource.split(loaderStart).length,2,'unique actual owned loader');
+assert.equal(platformSource.split(loaderEnd).length,2,'unique following platform declaration');
+const ownedLoader=platformSource.slice(platformSource.indexOf(loaderStart),platformSource.indexOf(loaderEnd)).trim().replace(/^export /,'');
+assert.ok(ownedLoader.startsWith('async function loadOwnedPlatformRoster(')&&ownedLoader.endsWith('}'),'complete actual loader body');
 function harness(text, forbidLegacy = false, overrides = {}) {
   const counters = { provider: 0, auth: 0, load: 0, apply: 0, save: 0, env: 0, fetch: 0 };
+  const platformReads={jwt:0,db:0};
+  let lastStatus;
+  let account='fictional@example.invalid';
   const roster = structuredClone(overrides.roster || (forbidLegacy ? ciriumRoster : legacyRoster));
   const now = overrides.now ?? Date.parse(forbidLegacy ? '2026-11-01T04:00:00Z' : '2026-10-12T00:00:00Z');
-  const sandbox = { ...injection, ...gatePolicy, ...radarEvidence, buildCanonicalRosterEvents,
+  const sandbox = { resolveOwnedGatePublication, ...injection, ...gatePolicy, ...radarEvidence, buildCanonicalRosterEvents,
     gateQueryDay: (identity, instant) => gatePolicy.gateQueryDay(identity, instant ?? now), radarHealth: new Map(), console, setTimeout, clearTimeout, URL,
     Date: class extends Date { static now() { return now; } },
     process: { env: new Proxy({}, { get() { counters.env++; if (forbidLegacy) throw Error('Synthetic path read env'); return undefined; } }) },
     fetch() { counters.fetch++; throw Error('Network forbidden'); },
-    telegramRequestUser() { counters.auth++; return { email: 'fictional@example.invalid', authenticated: true }; },
+    telegramRequestUser() { counters.auth++; return { email: account, authenticated: true }; },
+    requestToken() { return 'synthetic-only'; },
+    verifyJwt() { platformReads.jwt++; return {email:'fictional@example.invalid'}; },
+    safeEmail(value) { return String(value || '').trim().toLowerCase(); },
+    async pool() { return {query:async(sql,values)=>{
+      platformReads.db++; assert.equal(sql.startsWith('SELECT '),true);
+      assert.ok(sql.includes('WHERE owner_email=$1')); assert.deepEqual(Array.from(values),['fictional@example.invalid']);
+      return {rows:[]};
+    }}; },
     telegramAppRequestAllowed() { return true; }, conciergeSafeKey(value) { return value; },
-    async conciergeLoadSnapshot() { counters.load++; return { email:'fictional@example.invalid', roster }; }, conciergeAccessMatches() { return true; },
+    async conciergeLoadSnapshot() { counters.load++; await Promise.resolve(); if(overrides.changeAccountDuringSnapshot) account='other@example.invalid'; return { email:'fictional@example.invalid', roster }; }, conciergeAccessMatches() { return true; },
     conciergeFindFlight() { return { leg: {} }; }, conciergeApplyRadar() { counters.apply++; },
     async conciergeSaveSnapshotAsync() { counters.save++; } };
   const scope = text.slice(text.indexOf('function sendJson('), text.indexOf('function mapsServerKey('));
   assert.ok(scope.includes('async function handleRadar('));
-  vm.createContext(sandbox); vm.runInContext(scope, sandbox);
+  vm.createContext(sandbox); vm.runInContext(ownedLoader,sandbox); vm.runInContext(scope, sandbox);
   vm.runInContext(`for (const name of ['providerFlightAware','providerCustom','providerAviationstack','providerAirLabs','providerAeroDataBox']) {
     globalThis[name] = async () => { legacyHit(); return name === 'providerCustom' ? legacyRow : null; };
   }`, Object.assign(sandbox, { legacyHit() { counters.provider++; if (forbidLegacy) throw Error('Synthetic path reached fallback'); },
     legacyRow: { ok: true, configured: true, flight: 'LA3377', origin: 'GRU', destination: 'BSB', gate: 'C4', terminal: '2',
       status: 'Programado', scheduledDepartureUtc: legacyValidated.candidate.scheduledDepartureUtc, departure: '2026-10-12T01:00:00Z', arrival: '2026-10-12T03:00:00Z', latencyMs: 100 } }));
-  return { counters, roster, async call(url, options) {
-    let body; const res = { writeHead(status) { assert.equal(status, 200); }, end(value) { body = JSON.parse(value); } };
+  return { counters, platformReads, get status(){return lastStatus;}, roster, async call(url, options) {
+    let body; const res = { writeHead(status) { lastStatus=status; assert.equal(status, 200); }, end(value) { body = JSON.parse(value); } };
     await sandbox.handleRadar({}, res, new URL(url), options); return body;
   } };
 }
@@ -78,7 +99,7 @@ const normal = harness(source); const normalBody = await normal.call(legacyUrl);
 const off = harness(source); const offBody = await off.call(legacyUrl + '&ciriumEnabled=true', { cirium: { enabled: false, source: poison } });
 assert.deepEqual(offBody, normalBody, 'OFF preserves current fallback payload');
 assert.deepEqual(off.counters, normal.counters, 'OFF preserves existing provider/snapshot behavior');
-assert.equal(offBody.provider, undefined); assert.equal(offBody.provenance, undefined);
+assert.equal(offBody.provider, 'custom', 'OFF names the existing answering source, never Cirium'); assert.equal(offBody.provenance, undefined);
 assert.equal(offBody.gate, 'C4'); assert.equal(offBody.exportedToConcierge, true);
 assert.equal(off.counters.apply, 1); assert.equal(off.counters.save, 1);
 // The legacy write above is existing behavior; the isolated Cirium result must never reach it.
@@ -114,7 +135,8 @@ assert.ok(body.occurrenceKey.endsWith('|UTC:2026-11-01T05:30:00.000Z'));
 assert.equal(body.provenance.occurrenceKey, body.occurrenceKey);
 for (const field of Object.values(body.provenance.fields)) assert.equal(field.occurrenceKey, body.occurrenceKey);
 assert.equal(body.provenance.fields.departureGate.provider, 'cirium-sky');
-assert.deepEqual(synthetic.counters, { provider: 0, auth: 2, load: 1, apply: 0, save: 0, env: 0, fetch: 0 });
+assert.deepEqual(synthetic.platformReads,{jwt:0,db:0});
+assert.deepEqual(synthetic.counters, { provider: 0, auth: 4, load: 1, apply: 0, save: 0, env: 0, fetch: 0 });
 assert.deepEqual(synthetic.roster, ciriumRoster, 'Cirium cannot mutate the authorized published roster');
 const delayedRow=structuredClone(row);
 delayedRow.operationalTimes.estimatedGateDeparture={dateUtc:'2026-11-01T07:30:00Z'};
@@ -136,19 +158,19 @@ for (const [expected, sourceFn] of [['no_data', async () => ({ state: 'available
   ['not_configured', undefined], ['timeout', async () => ({ state: 'timeout' })]]) {
   const h = harness(source, true); const response = await h.call(url, { cirium: { enabled: true, source: sourceFn } });
   assert.equal(response.providerState, expected); assert.equal(response.ok, false); assert.equal(response.exportedToConcierge, false);
-  assert.equal(h.counters.auth, 2); assert.equal(h.counters.load, 1);
+  assert.equal(h.counters.auth, 4); assert.deepEqual(h.platformReads,{jwt:0,db:0}); assert.equal(h.counters.load, 1);
   assert.deepEqual(h.roster, ciriumRoster);
   assert.equal(h.counters.apply + h.counters.save + h.counters.provider + h.counters.env + h.counters.fetch, 0);
 }
 // These are cost/authority guards, independent of the adapter's invalid_request
 // assertions above. Reuse the real resolver; never stub an allowed occurrence.
-for (const [name, changes, overrides] of [
-  ['unpublished', { flight: 'AA124' }, {}],
+for (const [name, changes, overrides, expectedAuth, expectedDb, expectedReason] of [
+  ['unpublished', { flight: 'AA124' }, {},6,1,'occurrence-unverified'],
   ['unknown origin', { origin: 'JFK', originTimeZone: 'America/New_York' }, {
     roster: { ...ciriumRoster, days: [{ ...ciriumRoster.days[0], legs: [{ ...ciriumRoster.days[0].legs[0], origin: 'JFK' }] }] },
-  }],
-  ['previous origin day', {}, { now: Date.parse('2026-11-01T02:59:59Z') }],
-  ['missing canonical instant', { scheduledDepartureUtc: '' }, {}],
+  },6,1,'occurrence-unverified'],
+  ['previous origin day', {}, { now: Date.parse('2026-11-01T02:59:59Z') },4,0,'outside-published-flight-day'],
+  ['missing canonical instant', { scheduledDepartureUtc: '' }, {},6,1,'occurrence-unverified'],
 ]) {
   const guarded = harness(source, true, overrides);
   const denied = new URL(url);
@@ -161,9 +183,19 @@ for (const [name, changes, overrides] of [
   assert.equal(reply.querySuppressed, true, name); assert.equal(reply.ok, false, name);
   assert.equal(reply.exportedToConcierge, false, name);
   assert.equal(deniedSourceCalls + deniedCredentialReads, 0, name);
-  assert.deepEqual(guarded.counters, { provider: 0, auth: 2, load: 1, apply: 0, save: 0, env: 0, fetch: 0 }, name);
+  assert.equal(guarded.status,200,name); assert.equal(reply.queryReason,expectedReason,name);
+  assert.deepEqual(guarded.platformReads,{jwt:expectedDb,db:expectedDb},name);
+  assert.deepEqual(guarded.counters, { provider: 0, auth: expectedAuth, load: 1, apply: 0, save: 0, env: 0, fetch: 0 }, name);
   assert.deepEqual(guarded.roster, overrides.roster || ciriumRoster, name);
 }
+// Identity changes across the actual awaited snapshot must stop before any DB/source.
+const changedAccount=harness(source,true,{changeAccountDuringSnapshot:true});
+let changedSourceCalls=0;
+const changedReply=await changedAccount.call(url,{cirium:{enabled:true,source:()=>{changedSourceCalls++;throw Error('Stale account reached source');}}});
+assert.equal(changedAccount.status,200);assert.equal(changedReply.queryReason,'account-unverified');
+assert.equal(changedReply.ok,false);assert.equal(changedReply.exportedToConcierge,false);assert.equal(changedSourceCalls,0);
+assert.deepEqual(changedAccount.platformReads,{jwt:0,db:0});
+assert.deepEqual(changedAccount.counters,{provider:0,auth:4,load:1,apply:0,save:0,env:0,fetch:0});
 // Actual handler -> race -> Sky transport -> pure adapter/provenance -> public response.
 // Only an explicit code capability can select this path; HTTP parameters cannot.
 const skyNow = Date.parse(row.lastUpdatedDate);
@@ -183,7 +215,8 @@ assert.equal(skyBody.scheduledDepartureUtc, '2026-11-01T05:30:00.000Z');
 assert.equal(skyBody.scheduledDepartureUtc, body.scheduledDepartureUtc);
 assert.equal(skyBody.gate, 'A12'); assert.equal(skyBody.occurrenceKey, body.occurrenceKey);
 assert.deepEqual(skyBody.provenance, body.provenance); assert.equal(skyBody.exportedToConcierge, false);
-assert.deepEqual(skyHarness.counters, { provider: 0, auth: 2, load: 1, apply: 0, save: 0, env: 0, fetch: 0 });
+assert.deepEqual(skyHarness.platformReads,{jwt:0,db:0});
+assert.deepEqual(skyHarness.counters, { provider: 0, auth: 4, load: 1, apply: 0, save: 0, env: 0, fetch: 0 });
 assert.ok(!JSON.stringify(skyBody).includes('OFFLINE_FAKE_SECRET'));
 // The real evaluator must reject the original impossible offset through both transports.
 for(const [offset,minutes] of [['+14:01',841],['+15:00',900],['-15:00',-900]]) {

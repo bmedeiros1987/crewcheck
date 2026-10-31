@@ -2,6 +2,7 @@ import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
 import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { authFetch, getStoredUser, getToken } from './authClient';
+import { captureAuthSession as captureRosterReadSession } from './authClient';
 
 export interface DatabaseStatus {
   ok: boolean;
@@ -120,20 +121,31 @@ function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterS
 }
 
 export async function listSavedRosters(limit = 72, strictHistory = false, options: { preserveRevisions?: boolean } = {}): Promise<SavedRosterSummary[]> {
+  const session = captureRosterReadSession();
+  const assertListSession = () => {
+    if (!session.isCurrent()) throw Object.assign(new Error('A sessão mudou durante a leitura do histórico.'), { code: 'STALE_SESSION' });
+  };
   const local = getLocalRosterSummaries(limit, options.preserveRevisions);
+  assertListSession();
   if (!hasCrewCheckAuthToken()) return normalizeSingleActiveSummary(local);
   try {
+    assertListSession();
     const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}&manager=1`);
+    assertListSession();
     if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');
     let online = payload.rosters || [];
     if (!strictHistory && !online.some((item) => item.isActive)) {
       try {
+        assertListSession();
         const active = await jsonFetch<{ ok: boolean; roster?: SavedRosterSummary | null }>(`/api/rosters/active`, { cache: 'no-store' });
+        assertListSession();
         if (active?.roster?.id) online = [active.roster, ...online];
       } catch {
+        assertListSession();
         // Alguns backends antigos ainda não expõem /active; o histórico local cobre o iOS.
       }
     }
+    assertListSession();
     const seen = new Set<string>();
     const merged: SavedRosterSummary[] = [];
     for (const item of [...online, ...local]) {
@@ -145,6 +157,7 @@ export async function listSavedRosters(limit = 72, strictHistory = false, option
     const sorted = merged.sort((a, b) => Number(Boolean(b.isActive)) - Number(Boolean(a.isActive)) || String(b.year || 0).localeCompare(String(a.year || 0)) || Number(b.month || 0) - Number(a.month || 0) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, limit);
     return normalizeSingleActiveSummary(sorted);
   } catch (error) {
+    assertListSession();
     if (strictHistory) throw error;
     return normalizeSingleActiveSummary(local);
   }
@@ -211,6 +224,10 @@ function assertExpectedRosterCrew(roster: CrewRoster, expected?: Pick<SavedRoste
 }
 
 export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSummary, 'year' | 'month' | 'crewId' | 'crewName'>): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
+  const session = captureRosterReadSession();
+  const assertReadSession = () => {
+    if (!session.isCurrent()) throw Object.assign(new Error('A sessão mudou durante a leitura da escala.'), { code: 'STALE_SESSION' });
+  };
   const local = findLocalRoster(id, expected);
   if (id.startsWith('local-') || id.startsWith('offline-')) {
     if (local) {
@@ -239,14 +256,17 @@ export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSum
 
   let lastError: unknown = null;
   for (const endpoint of attempts) {
+    assertReadSession();
     try {
       const payload = await jsonFetch<{ ok: boolean; data: { roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] } }>(endpoint);
+      assertReadSession();
       if (payload?.data?.roster?.days?.length) {
         assertExpectedRosterPeriod(payload.data.roster, expected);
         assertExpectedRosterCrew(payload.data.roster, expected);
         return payload.data;
       }
     } catch (error) {
+      assertReadSession();
       if ((error as any)?.code === 'ROSTER_PERIOD_MISMATCH') throw error;
       // An identity mismatch is a wrong-crew answer, never a reason to keep trying
       // the next endpoint and fall back to whatever the device happens to hold.
@@ -255,6 +275,7 @@ export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSum
     }
   }
 
+  assertReadSession();
   if (local) {
     assertExpectedRosterPeriod(local.roster, expected);
     assertExpectedRosterCrew(local.roster, expected);

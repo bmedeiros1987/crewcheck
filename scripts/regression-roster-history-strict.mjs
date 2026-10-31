@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import {loadClientModules} from './lib/ts-module-harness.mjs';
+// Use the real session capture; only storage and transport remain synthetic.
+const authModules=loadClientModules({files:['client/src/lib/authClient.ts'],prefix:'strict-history-session-'});
+const previousStorage=globalThis.localStorage;
+const sessionValues=new Map([['crewcheck_auth_token','synthetic-strict-token'],['crewcheck_auth_user',JSON.stringify({id:'synthetic-strict-owner'})]]);
+globalThis.localStorage={getItem:key=>sessionValues.get(key)??null};
+const captureRosterReadSession=authModules.load('authClient').captureAuthSession;
+try {
 const source=fs.readFileSync('client/src/lib/databaseClient.ts','utf8');
 const ast=ts.createSourceFile('databaseClient.ts',source,ts.ScriptTarget.ES2022,true);
 const node=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='listSavedRosters');
@@ -10,7 +18,7 @@ const compiled=ts.transpileModule(node.getText(ast),{compilerOptions:{module:ts.
 let reply,calls;
 const local=[{id:'synthetic-local',createdAt:'2026-01-01'}];
 const exports={};
-vm.runInNewContext(compiled,{exports,getLocalRosterSummaries:()=>local,hasCrewCheckAuthToken:()=>true,normalizeSingleActiveSummary:items=>items,jsonFetch:async()=>{calls++;if(reply instanceof Error) throw reply;return reply;}});
+vm.runInNewContext(compiled,{captureRosterReadSession,exports,getLocalRosterSummaries:()=>local,hasCrewCheckAuthToken:()=>true,normalizeSingleActiveSummary:items=>items,jsonFetch:async()=>{calls++;if(reply instanceof Error) throw reply;return reply;}});
 for(const status of [401,403,500]) {
  const error=Object.assign(new Error('synthetic HTTP failure'),{status});reply=error;calls=0;
  await assert.rejects(exports.listSavedRosters(72,true),e=>e===error);
@@ -28,3 +36,8 @@ const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
 assert.match(home,/listSavedRosters\(72, true\)/);
 assert.match(home,/historyError \? <article/);
 console.log('PASS: prepared strict history rejects HTTP/application/malformed failures instead of false empty; legacy offline fallback remains scoped.');
+
+} finally {
+  authModules.cleanup();
+  if(previousStorage===undefined) delete globalThis.localStorage; else globalThis.localStorage=previousStorage;
+}

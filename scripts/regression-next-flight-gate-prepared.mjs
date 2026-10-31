@@ -44,10 +44,10 @@ try {
   for(const sourceView of ['cockpit','home-roster']){
     m.setPendingNavigationContext({sourceView,targetView:'radar',programId:event.id,flightKey:event.flightNumber,returnView:'cockpit',policy:'persistent-until-return'});
     nav.openWeatherFromRadar();assert.equal(m.peekPendingNavigationContext('weather')?.programId,event.id);assert.equal(m.peekPendingNavigationContext('weather')?.sourceView,sourceView);
-    const select=vm.createContext({...m,view:'weather',events:[globalFlight,event],flightEvent:globalFlight});vm.runInContext(pickerCode,select);assert.equal(select.selected.id,event.id,'weather retains card flight, not global earlier flight');
-    const missing=vm.createContext({...m,view:'weather',events:[globalFlight],flightEvent:globalFlight});vm.runInContext(pickerCode,missing);assert.equal(missing.selected,null,'removed program fails closed');
+    const select=vm.createContext({...m,view:'weather',events:[globalFlight],rosterEvents:[globalFlight,event],flightEvent:globalFlight});vm.runInContext(pickerCode,select);assert.equal(select.selected.id,event.id,'weather resolves historical card flight absent from the active collection, not the global earlier flight');
+    const missing=vm.createContext({...m,view:'weather',events:[globalFlight],rosterEvents:[globalFlight],flightEvent:globalFlight});vm.runInContext(pickerCode,missing);assert.equal(missing.selected,null,'removed program fails closed');
   }
-  m.clearPendingNavigationContext();const global=vm.createContext({...m,view:'weather',events:[globalFlight,event],flightEvent:globalFlight});vm.runInContext(pickerCode,global);assert.equal(global.selected.id,globalFlight.id,'global navigation keeps normal selection');
+  m.clearPendingNavigationContext();const global=vm.createContext({...m,view:'weather',events:[globalFlight],rosterEvents:[globalFlight,event],flightEvent:globalFlight});vm.runInContext(pickerCode,global);assert.equal(global.selected.id,globalFlight.id,'global navigation keeps normal selection');
 
   const positive={ok:true,flight:event.flightNumber,gate:'7',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:canonical.startDateTime,departure:canonical.startDateTime,updatedAt:now-60_000,operationalEvidence:{gate:{version:1,value:'7',sourceObservedAt:new Date(now-60000).toISOString(),provenance:'synthetic-prepared-field-proof'}}};
   function savedNotice(payload,manual=null,previous=positive){

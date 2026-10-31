@@ -16,11 +16,38 @@ async function collectWithinDeadline(read) {
  })]);}finally{clearTimeout(timer);}
 }
 
+// Failure log only: fixed fields and vocabulary, never URLs, CSS or arbitrary text.
+const SUMMARY_EVENT_LIMIT=16, SUMMARY_FACE_LIMIT=8;
+const SUMMARY_NETWORK_CODES=new Set(['net::ERR_FAILED','net::ERR_ABORTED',
+ 'net::ERR_CONNECTION_FAILED','net::ERR_CONNECTION_RESET','net::ERR_CONNECTION_CLOSED',
+ 'net::ERR_CONNECTION_REFUSED','net::ERR_CONNECTION_TIMED_OUT','net::ERR_TIMED_OUT',
+ 'net::ERR_NAME_NOT_RESOLVED','net::ERR_INTERNET_DISCONNECTED',
+ 'net::ERR_CERT_AUTHORITY_INVALID','net::ERR_HTTP2_PROTOCOL_ERROR',
+ 'net::ERR_BLOCKED_BY_CLIENT','net::ERR_ACCESS_DENIED']);
+function failureSummary({events,dropped,fonts}) {
+ const selected=events.slice(0,SUMMARY_EVENT_LIMIT).map(event=>({
+  kind:['route','response','requestfailed'].includes(event.kind)?event.kind:'other',
+  category:['inter-css','inter-font','other-external'].includes(event.category)?event.category:'other-external',
+  ...(typeof event.allowed==='boolean'?{allowed:event.allowed}:{}),
+  ...(Number.isInteger(event.status)&&event.status>=100&&event.status<=599?{status:event.status}:{}),
+  ...(event.kind==='requestfailed'?{code:SUMMARY_NETWORK_CODES.has(event.error)?event.error:'other-network-error'}:{}),
+ }));
+ const fontFaces=[];let faceCount=0;
+ const addFace=face=>{faceCount++;if(fontFaces.length<SUMMARY_FACE_LIMIT)fontFaces.push(face);};
+ for(const page of fonts){
+  if(page.unavailable){addFace({status:'unavailable',...(page.timeout===true?{timeout:true}:{})});continue;}
+  for(const face of page.faces||[])if(face.family==='Inter')addFace({family:'Inter',
+   status:['unloaded','loading','loaded','error'].includes(face.status)?face.status:'unknown'});
+ }
+ return {events:selected,omittedEvents:events.length-selected.length,droppedEvents:dropped,
+  fontFaces,omittedFontFaces:faceCount-fontFaces.length};
+}
+
 // Never persist arbitrary external paths, queries, headers, cookies or page text.
 export function describeFontRequest(value) {
  const url = new URL(value);
  if (url.href === INTER_CSS) return {category:'inter-css',url:INTER_CSS};
- if (url.protocol === 'https:' && url.hostname === 'fonts.gstatic.com' && /^\/s\/inter\/v\d+\/[A-Za-z0-9_.-]{1,512}$/.test(url.pathname)) {
+ if (url.origin === 'https://fonts.gstatic.com' && !url.username && !url.password && (/^\/s\/inter\/v\d+\/[A-Za-z0-9_.-]{1,512}$/.test(url.pathname) || url.pathname === '/l/font')) {
   return {category:'inter-font',url:url.origin+url.pathname,queryRedacted:!!url.search};
  }
  return {category:'other-external',destinationRedacted:true};
@@ -61,7 +88,9 @@ export function createFontDiagnostics(context, {output,width,theme,scale,browser
     catch{fonts.push({unavailable:true});}
    }
    await fs.mkdir(output,{recursive:true});
-   await fs.writeFile(path.join(output,`font-diagnostics-${width}-${theme}-${scale}.json`),JSON.stringify({width,theme,scale,browserVersion,events,dropped,fonts},null,2));
+   const report={width,theme,scale,browserVersion,events,dropped,fonts};
+   await fs.writeFile(path.join(output,`font-diagnostics-${width}-${theme}-${scale}.json`),JSON.stringify(report,null,2));
+   return failureSummary(report);
   },
  };
 }
@@ -71,7 +100,7 @@ export async function withFontDiagnostics(context,diagnostics,work) {
  let failed=false;
  try{return await work();}catch(error){failed=true;throw error;}
  finally{
-  try{await diagnostics.save();}catch(error){if(!failed)throw error;console.error('Unable to persist font diagnostics');}
+  try{const summary=await diagnostics.save();if(failed&&summary)console.error('[roster-font-diagnostics]',JSON.stringify(summary));}catch(error){if(!failed)throw error;console.error('Unable to persist font diagnostics');}
   finally{try{await context.close();}catch(error){if(!failed)throw error;console.error('Unable to close font diagnostic context');}}
  }
 }

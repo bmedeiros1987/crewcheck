@@ -24,6 +24,9 @@ on:
       - 'client/src/lib/rosterPresentation.ts'
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'scripts/regression-roster-legend*.mjs'
+      - 'scripts/regression-roster-font-diagnostics.mjs'
+      - 'scripts/lib/roster-font-diagnostics.mjs'
+      - 'scripts/lib/roster-inter-policy.mjs'
       - 'scripts/fixtures/roster-legend-app.tsx'
       - 'scripts/lib/roster-legend-fixture.mjs'
       - 'client/src/components/v1391/home-roster-preview.css'
@@ -64,6 +67,8 @@ on:
       - 'client/src/lib/rosterPublication*.ts'
       - 'client/src/lib/rosterStartup.ts'
       - 'scripts/roster-startup/**'
+      - 'scripts/regression-demo-bootstrap-*'
+      - 'scripts/v1432/apply.mjs'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
       - 'scripts/regression-publication-import-flow.cjs'
       - 'scripts/regression-roster-publication-review.mjs'
@@ -107,6 +112,7 @@ jobs:
       - run: npm ci
       - name: Validate roster legend before canonical preparation (synthetic)
         run: |
+          node --test scripts/regression-roster-font-diagnostics.mjs
           sha256sum client/src/lib/scheduleActivityClassification.ts > "$RUNNER_TEMP/roster-classifier.sha256"
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
@@ -118,6 +124,7 @@ jobs:
         run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
       - name: Validate roster legend after canonical preparation (synthetic)
         run: |
+          node --test scripts/regression-roster-font-diagnostics.mjs
           sha256sum -c "$RUNNER_TEMP/roster-classifier.sha256"
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
@@ -188,6 +195,11 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-roster-legend-browser.mjs
+      - name: Verify owner choice never becomes demo during offline bootstrap
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          DEMO_BOOTSTRAP_OUTPUT: artifacts/demo-bootstrap
+        run: node scripts/regression-demo-bootstrap-offline.cjs
       - name: Verify quick roster card presentation with synthetic events
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -231,6 +243,7 @@ jobs:
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
             artifacts/roster-legend
+            artifacts/demo-bootstrap
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
             artifacts/menu-density
