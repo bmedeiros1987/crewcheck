@@ -11,6 +11,7 @@ import { defaultCiriumRadarOptions, ciriumRadarInjectionEnabled, ciriumRadarRegi
 import { weatherCanaryRecipientHash, weatherConsentCommand, sameWeatherCanaryConsent, writeWeatherCanaryConsent, weatherMonitorSettings, weatherMonitorReadiness, weatherCanaryConsent, createWeatherCanaryPolicy, findWeatherCanarySnapshots, acquireWeatherCanaryLease } from './server/weather/monitor-readiness.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { reviewedWeatherStation } from './shared/weather-station-overrides.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -979,6 +980,13 @@ function reportTimestamp(value = '') {
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
 }
+// Additive provenance for automatic UI admission. Existing report selection and
+// legacy observedAt formatting are unchanged; never expose a provider row.
+function observationTimeSource(row, fields) {
+  const value = firstKnown(...fields.map(field => row?.[field]));
+  const field = fields.find(name => row?.[name] === value) || '';
+  return { field, value: typeof value === 'string' || typeof value === 'number' ? value : null };
+}
 async function fetchRedemetMetars(stations = [], options = {}) {
   const apiKey = redemetApiKey();
   const unique = [...new Set(stations.map(airportIcao).filter((station) => /^[A-Z]{4}$/.test(station)))].slice(0, 8);
@@ -1005,7 +1013,7 @@ async function fetchRedemetMetars(stations = [], options = {}) {
       const observedAt = reportTimestamp(firstKnown(row?.validade_inicial, row?.recebimento, row?.data));
       const previousTime = new Date(reports[station]?.observedAt || 0).getTime();
       const currentTime = new Date(observedAt || 0).getTime();
-      if (!reports[station] || currentTime >= previousTime) reports[station] = { ok: true, configured: true, station, type: 'METAR', raw, observedAt, provider: 'redemet', source: 'REDEMET · DECEA', official: true, cachedAt: now };
+      if (!reports[station] || currentTime >= previousTime) reports[station] = { ok: true, configured: true, station, type: 'METAR', raw, observedAt, observationTimeSource: observationTimeSource(row, ['validade_inicial', 'recebimento', 'data']), provider: 'redemet', source: 'REDEMET · DECEA', official: true, cachedAt: now };
     }
     if (ok && Object.keys(reports).length) {
       const result = { ok: true, configured: true, reports, provider: 'redemet', cachedAt: now };
@@ -1038,7 +1046,7 @@ async function fetchAviationWeatherReport(station, type = 'metar') {
     const row = ok && Array.isArray(payload) ? payload[0] || {} : {};
     const raw = safeText(row.rawOb || row.rawTAF || row.raw_text || row.raw || (text && !text.trim().startsWith('<') ? text : ''));
     if (raw) {
-      const report = { ok: true, configured: true, station: normalizedStation, type: endpointType.toUpperCase(), raw, observedAt: firstKnown(row.obsTime, row.reportTime, row.issueTime, row.validTimeFrom), provider: 'aviationweather', source: 'AviationWeather.gov', official: true, cachedAt: now };
+      const report = { ok: true, configured: true, station: normalizedStation, type: endpointType.toUpperCase(), raw, observedAt: firstKnown(row.obsTime, row.reportTime, row.issueTime, row.validTimeFrom), observationTimeSource: observationTimeSource(row, ['obsTime', 'reportTime', 'issueTime', 'validTimeFrom']), provider: 'aviationweather', source: 'AviationWeather.gov', official: true, cachedAt: now };
       aviationWeatherCache.set(key, report);
       return { ...report, cache: 'live' };
     }
@@ -1175,12 +1183,12 @@ async function handleAviationWeather(req, res, url) {
   const requestedAirports = String(url.searchParams.get('airports') || airport).split(',').map((value) => value.trim().toUpperCase()).filter(Boolean).slice(0, 6);
   const type = String(url.searchParams.get('type') || 'metar').trim().toLowerCase();
   const view = ['raw', 'decoded', 'both'].includes(String(url.searchParams.get('view') || '').toLowerCase()) ? String(url.searchParams.get('view')).toLowerCase() : 'both';
-  const station = airportIcao(requestedAirports[0]);
+  const station = reviewedWeatherStation(requestedAirports[0]) || airportIcao(requestedAirports[0]);
   if (!station) return sendJson(res, 200, { ok: false, configured: redemetApiKey() ? true : false, message: 'Informe um aeroporto para consultar meteorologia.' });
   if (requestedAirports.length > 1 || url.searchParams.has('airports') || type === 'all') {
     const stations = {};
     await Promise.all(requestedAirports.map(async (requested) => {
-      const icao = airportIcao(requested);
+      const icao = reviewedWeatherStation(requested) || airportIcao(requested);
       if (!/^[A-Z]{4}$/.test(icao)) return;
       const [metar, taf] = await Promise.all([fetchAviationWeatherReport(icao, 'metar'), fetchAviationWeatherReport(icao, 'taf')]);
       const data = {
@@ -1192,6 +1200,9 @@ async function handleAviationWeather(req, res, url) {
         tafDecoded: decodeTafPtBr(taf.raw, icao),
         source: { metar: metar.source || '', taf: taf.source || '' },
         provider: { metar: metar.provider || '', taf: taf.provider || '' },
+        official: { metar: metar.official === true, taf: taf.official === true },
+        available: { metar: metar.ok === true, taf: taf.ok === true },
+        observationTimeSource: { metar: metar.observationTimeSource || null, taf: taf.observationTimeSource || null },
         observedAt: { metar: metar.observedAt || '', taf: taf.observedAt || '' },
         cache: { metar: metar.cache, taf: taf.cache },
         monitoring: aviationReportMetrics(metar.raw),

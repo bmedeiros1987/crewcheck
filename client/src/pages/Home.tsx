@@ -1,3 +1,7 @@
+import { reviewedWeatherStation } from '../../../shared/weather-station-overrides.mjs';
+import { createOperationalWeatherContextReader, weatherContextRefreshEvent } from '@/lib/operationalWeatherContext';
+import { operationalWeatherController, WEATHER_PREFERENCE_EVENT } from '@/lib/operationalWeatherController';
+import { WEATHER_LANDING_SCOPE } from '@/lib/operationalWeatherNotices';
 import { formatWeatherNoticeDetails } from '../../../shared/weatherNoticeDetails.mjs';
 import { openStayProgramEditor as editOperationalStay } from '@/lib/stayEditorNavigation';
 import { readStayOperationalProjection, selectCurrentStayOperationalProjection } from '@/lib/stayOperationalProjection';
@@ -241,7 +245,7 @@ const storage = {
   },
   set(key: string, value: string) {
     if (isFinancialSetting(key)) return writeFinancialSetting(key, value);
-    try { localStorage.setItem(key, value); return true; } catch { return false; }
+    try { localStorage.setItem(key, value); if (key === 'crewcheck_weather_hourly' || key === 'crewcheck_weather_landing_alerts') window.dispatchEvent(new CustomEvent(WEATHER_PREFERENCE_EVENT, { detail: { key } })); return true; } catch { return false; }
   },
 };
 
@@ -2237,7 +2241,7 @@ function airportIcao(code?: string): string {
   const map: Record<string, string> = {
     BSB:'SBBR', GRU:'SBGR', CGH:'SBSP', GIG:'SBGL', SDU:'SBRJ', CNF:'SBCF', CWB:'SBCT', POA:'SBPA', FOR:'SBFZ', SSA:'SBSV', REC:'SBRF', BEL:'SBBE', MAO:'SBEG', NAT:'SBSG', SLZ:'SBSL', PMW:'SBPJ', CXJ:'SBCX', RAO:'SBRP', VCP:'SBKP', MAB:'SBMA', THE:'SBTE', AJU:'SBAR', VIX:'SBVT', MCZ:'SBMO'
   };
-  return map[String(code || '').toUpperCase()] || String(code || 'SB').toUpperCase();
+  return reviewedWeatherStation(code) || map[String(code || '').toUpperCase()] || String(code || 'SB').toUpperCase();
 }
 function weatherStoredReport(airport: string, kind: 'metar' | 'taf'): string {
   const code = String(airport || '').toUpperCase();
@@ -2366,31 +2370,19 @@ function notifyCrewCheck(title: string, body: string, displayDetail = body) {
     action,
   });
 }
-function useWeatherLandingMonitor(event: ZeroLeg) {
+function useWeatherLandingMonitor() {
   useEffect(() => {
-    if (!event || event.placeholder || event.kind !== 'flight') return;
-    if (storage.get('crewcheck_weather_landing_alerts', '1') === '0') return;
-    const airport = String(event.destination || '').toUpperCase();
-    if (!airport) return;
-    const signatureKey = `crewcheck_weather_signature_${airport}_${event.id}`;
-    const check = () => {
-      const report = storage.get(`crewcheck_latest_weather_report_${airport}`, '');
-      const upper = String(report || '').toUpperCase();
-      if (!upper.startsWith('METAR') && !upper.startsWith('SPECI')) return;
-      const signature = `${airport}|${upper}`;
-      const previous = storage.get(signatureKey, '');
-      if (previous && previous !== signature && weatherLooksWorse(upper)) {
-        notifyCrewCheck('Meteorologia mudou', `${airport}: novo ${upper.startsWith('SPECI') ? 'SPECI' : 'METAR'} com atenção operacional até o pouso.`, `${airport} · ${formatWeatherNoticeDetails({ raw: upper, station: airportIcao(airport) })}`);
-      }
-      storage.set(signatureKey, signature);
-    };
-    try { navigator.geolocation?.getCurrentPosition((pos) => storage.set('crewcheck_last_geo', `${pos.coords.latitude},${pos.coords.longitude}`), () => {}, { enableHighAccuracy: false, timeout: 2500 }); } catch {}
-    check();
-    const timer = window.setInterval(check, 60000);
-    return () => window.clearInterval(timer);
-  }, [event?.id, event?.destination, event?.kind]);
+    // A localização é solicitada somente por ação explícita do usuário para evitar prompts e ciclos no iPad.
+    // No proven cache writer/owner/source contract exists for this legacy feature.
+    // Keep its setting, but never activate raw-cache alerts, polling or geolocation.
+    const clear = () => reconcileCrewCheckPulse(WEATHER_LANDING_SCOPE, []);
+    const names = [WEATHER_PREFERENCE_EVENT, ALERT_REVIEW_EVENT, 'storage', 'crewcheck:auth-will-change',
+      'crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:roster-choice-start', 'crewcheck:roster-cleared'];
+    clear();
+    for (const name of names) window.addEventListener(name, clear, true);
+    return () => { for (const name of names) window.removeEventListener(name, clear, true); clear(); };
+  }, []);
 }
-
 
 function useOperationalRadarPulse(events: ZeroLeg[]) {
   useEffect(() => {
@@ -2419,57 +2411,30 @@ function useOperationalRadarPulse(events: ZeroLeg[]) {
   }, [events]);
 }
 
-function useOperationalWeatherPulse(event: ZeroLeg) {
+function useOperationalWeatherPulse(bundle: BundleState, events: ZeroLeg[]) {
+  const reader = useMemo(() => createOperationalWeatherContextReader(bundle.roster, bundle.source, events, airportIcao,
+    () => storage.get('crewcheck_weather_hourly', '1') !== '0'), [bundle.roster, bundle.source, events]);
+  const lease = useRef<ReturnType<typeof operationalWeatherController.attach> | null>(null);
+  const committed = useRef({ bundle, events });
   useEffect(() => {
-    if (!event || event.placeholder || event.kind !== 'flight') return;
-    if (storage.get('crewcheck_weather_hourly', '1') === '0') return;
-    const airports = Array.from(new Set([event.origin, event.destination].map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))).slice(0, 2);
-    if (!airports.length) return;
-
-    let alive = true;
-    const check = async () => {
-      try {
-        const response = await fetch(`/api/aviation-weather?airports=${encodeURIComponent(airports.join(','))}&type=all&view=decoded&v=1393`, { cache: 'no-store' });
-        const payload = await response.json().catch(() => null);
-        if (!alive || !payload?.stations) return;
-
-        for (const airport of airports) {
-          const station = payload.stations?.[airport];
-          const severity = Number(station?.monitoring?.severity || 0);
-          if (!station || severity < 2) continue;
-          const hazards = Array.isArray(station.monitoring?.hazards) ? station.monitoring.hazards : [];
-          const hazardText = hazards.map((item: any) => String(item?.label || item?.code || '').trim()).filter(Boolean).slice(0, 3).join(' · ');
-          const signature = [severity, station.metar || '', station.taf || '', hazardText].join('|');
-          const signatureKey = `crewcheck_weather_pulse_signature_${event.id}_${airport}`;
-          if (storage.get(signatureKey, '') === signature) continue;
-          storage.set(signatureKey, signature);
-
-          publishCrewCheckNotice({
-            id: `weather:${event.id}:${airport}:${signature}`,
-            dedupeKey: `weather:${event.id}:${airport}:${signature}`,
-            category: 'weather',
-            tone: severity >= 3 ? 'erro' : 'atencao',
-            priority: severity >= 3 ? 'critica' : 'alta',
-            title: severity >= 3 ? `Meteorologia crítica · ${airport}` : `Meteorologia requer atenção · ${airport}`,
-            detail: formatWeatherNoticeDetails({ raw: station.metar, observedAt: station.observedAt?.metar, station: station.icao || airportIcao(airport) }),
-            // Copy-only patch: keep the pre-existing review identity, including old dismissals.
-            review: { occurrence: alertDigest(['notice', `weather:${event.id}:${airport}:${signature}`]), version: alertDigest([`weather:${event.id}:${airport}:${signature}`, hazardText || `${event.flightNumber || 'Próximo voo'} · METAR/TAF com critério operacional relevante.`]) },
-            pulseCooldownMs: 10 * 60_000,
-            systemNotification: 'background',
-            notificationTag: `crewcheck:weather:${event.id}:${airport}`,
-            notificationCooldownMs: 15 * 60_000,
-            action: { label: 'Ver meteorologia', view: 'weather', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: airport } },
-          });
-        }
-      } catch {
-        // Alert monitoring is auxiliary; never block roster rendering.
-      }
+    const attached = operationalWeatherController.attach(reader); lease.current = attached;
+    return () => { attached.detach(); if (lease.current === attached) lease.current = null; };
+  }, []);
+  useEffect(() => { committed.current = { bundle, events }; lease.current?.update(reader); }, [reader]);
+  useEffect(() => {
+    // A cancelled/finished choice or token refresh can invalidate a captured
+    // guard without changing React's roster object. Rebuild from committed props,
+    // never from an old async response or an intent-start event.
+    const refresh = (event: Event) => {
+      if (!weatherContextRefreshEvent(event)) return;
+      const current = committed.current;
+      lease.current?.update(createOperationalWeatherContextReader(current.bundle.roster, current.bundle.source, current.events, airportIcao,
+        () => storage.get('crewcheck_weather_hourly', '1') !== '0'));
     };
-
-    void check();
-    const timer = window.setInterval(() => { void check(); }, 60 * 60_000);
-    return () => { alive = false; window.clearInterval(timer); };
-  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+    const names = ['crewcheck:auth-changed', 'crewcheck:roster-choice-finished', 'crewcheck:roster-updated', 'crewcheck:roster-history-updated', 'storage'];
+    for (const name of names) window.addEventListener(name, refresh, true);
+    return () => { for (const name of names) window.removeEventListener(name, refresh, true); };
+  }, []);
 }
 
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
@@ -5438,9 +5403,9 @@ export default function Home() {
     ? readOperationalRadarAdmission(finalRegulationSnapshot,radarSnapshotKey(finalRegulationEvent),finalRegulationSignature) : null,
     [finalRegulationSnapshot,finalRegulationSignature,rosterReadRevision]);
   const gym = currentGym(bundle);
-  useWeatherLandingMonitor(flightEvent);
+  useWeatherLandingMonitor();
   useOperationalRadarPulse(events);
-  useOperationalWeatherPulse(flightEvent);
+  useOperationalWeatherPulse(bundle, events);
 
 
   useEffect(() => {
