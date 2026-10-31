@@ -16,6 +16,11 @@ on:
       - 'scripts/regression-roster-list-session.mjs'
       - 'client/src/lib/databaseClient.ts'
       - 'scripts/regression-home-crossmonth-continuity.cjs'
+      - 'scripts/regression-home-owned-radar-browser.cjs'
+      - 'scripts/fixtures/owned-radar-http.mjs'
+      - 'server.mjs'
+      - 'server/platform.mjs'
+      - 'server/radar-publication-authority.mjs'
       - 'scripts/regression-p0-multichannel-roster-gate.mjs'
       - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
       - 'scripts/regression-p2-530-adjacent-fallback-finance.mjs'
@@ -73,6 +78,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
         run: node scripts/regression-home-crossmonth-continuity.cjs
+      - name: Verify historical HOME through real owned Radar backend
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
+        run: node scripts/regression-home-owned-radar-browser.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -80,3 +89,4 @@ jobs:
           path: |
             artifacts/quick-roster-cards
             artifacts/home-crossmonth-continuity
+            artifacts/home-owned-radar
