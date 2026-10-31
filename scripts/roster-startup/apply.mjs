@@ -143,9 +143,11 @@ if (!home.includes(marker)) {
 }
 // Repair a prior preparation that carried the startup marker but missed a
 // newly extended live route; a second application is byte-for-byte stable.
+const { repairHomeContinuity } = await import('./home-continuity.mjs');
 const currentHome = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const financialHome = repairOwnedDemoFallback(guardFinancialRoute(guardFinancialRoute(currentHome, 'perdiem', 'allowance', 'PerDiemView'), 'salary', 'salary', 'SalaryReliableView'));
-if (financialHome !== currentHome) fs.writeFileSync('client/src/pages/Home.tsx', financialHome);
+const continuousHome = repairHomeContinuity(financialHome);
+if (continuousHome !== currentHome) fs.writeFileSync('client/src/pages/Home.tsx', continuousHome);
 
 let database = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
 if (!database.includes('strictHistory = false')) {
