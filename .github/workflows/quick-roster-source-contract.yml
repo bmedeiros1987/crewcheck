@@ -9,6 +9,14 @@ on:
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
       - 'scripts/p0-691-care-context/**'
       - 'scripts/regression-quick-roster-care-source.mjs'
+      - 'scripts/roster-startup/**'
+      - 'scripts/regression-home-continuity-contract.mjs'
+      - 'scripts/regression-home-history-session.mjs'
+      - 'scripts/regression-saved-roster-retry-session.mjs'
+      - 'scripts/regression-home-crossmonth-continuity.cjs'
+      - 'scripts/regression-p0-multichannel-roster-gate.mjs'
+      - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
+      - 'scripts/regression-p2-530-adjacent-fallback-finance.mjs'
       - '.github/workflows/quick-roster-source-contract.yml'
 jobs:
   source-contract:
@@ -25,11 +33,18 @@ jobs:
           npx tsc --noEmit
           node scripts/regression-quick-roster-care-source.mjs --record "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-p1-303-schedule-classification-counts.mjs
+          node scripts/regression-home-continuity-contract.mjs
       - run: SOURCE_VERSION=$(git rev-parse HEAD) npm run build
       - run: npm run check
       - name: Compare prepared contract and preserve formal authority
         run: |
           node scripts/regression-quick-roster-care-source.mjs --compare "$RUNNER_TEMP/care-raw.json"
+          node scripts/regression-home-continuity-contract.mjs
+          node scripts/regression-home-history-session.mjs
+          node scripts/regression-saved-roster-retry-session.mjs
+          node scripts/regression-p0-multichannel-roster-gate.mjs
+          node scripts/regression-p0-530-adjacent-month-retention.mjs
+          node scripts/regression-p2-530-adjacent-fallback-finance.mjs
           node scripts/regression-p1-303-schedule-classification-counts.mjs
           node scripts/p0-691-care-context/regression-formal-folga-authority.mjs
       # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
@@ -50,8 +65,14 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-quick-roster-cards-browser.mjs
+      - name: Verify authenticated cross-month HOME continuity
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
+        run: node scripts/regression-home-crossmonth-continuity.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: quick-roster-source-contract
-          path: artifacts/quick-roster-cards
+          path: |
+            artifacts/quick-roster-cards
+            artifacts/home-crossmonth-continuity
