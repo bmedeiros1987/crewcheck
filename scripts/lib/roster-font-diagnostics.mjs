@@ -47,7 +47,7 @@ function failureSummary({events,dropped,fonts}) {
 export function describeFontRequest(value) {
  const url = new URL(value);
  if (url.href === INTER_CSS) return {category:'inter-css',url:INTER_CSS};
- if (url.protocol === 'https:' && url.hostname === 'fonts.gstatic.com' && /^\/s\/inter\/v\d+\/[A-Za-z0-9_.-]{1,512}$/.test(url.pathname)) {
+ if (url.origin === 'https://fonts.gstatic.com' && !url.username && !url.password && (/^\/s\/inter\/v\d+\/[A-Za-z0-9_.-]{1,512}$/.test(url.pathname) || url.pathname === '/l/font')) {
   return {category:'inter-font',url:url.origin+url.pathname,queryRedacted:!!url.search};
  }
  return {category:'other-external',destinationRedacted:true};

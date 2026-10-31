@@ -26,6 +26,7 @@ on:
       - 'scripts/regression-roster-legend*.mjs'
       - 'scripts/regression-roster-font-diagnostics.mjs'
       - 'scripts/lib/roster-font-diagnostics.mjs'
+      - 'scripts/lib/roster-inter-policy.mjs'
       - 'scripts/fixtures/roster-legend-app.tsx'
       - 'scripts/lib/roster-legend-fixture.mjs'
       - 'client/src/components/v1391/home-roster-preview.css'

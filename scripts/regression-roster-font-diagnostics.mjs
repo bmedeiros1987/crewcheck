@@ -7,6 +7,72 @@ import path from 'node:path';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {INTER_CSS,describeFontRequest,createFontDiagnostics,withFontDiagnostics} from './lib/roster-font-diagnostics.mjs';
+import {createInterFontPolicy,interFontDeclarations} from './lib/roster-inter-policy.mjs';
+
+const dynamic='https://fonts.gstatic.com/l/font?kit=synthetic_123&skey=0123456789abcdef&v=v99';
+const cssFor=url=>`@font-face{font-family:'Inter';font-style:normal;font-weight:700;src:url('${url}') format('woff2');}`;
+for(const [name,css] of [
+ ['local fallback',cssFor(dynamic).replace('src:','src:local("Arial"),')],
+ ['duplicate weight',cssFor(dynamic).replace('font-weight:700;','font-weight:700;font-weight:300;')],
+ ['duplicate family',cssFor(dynamic).replace("font-family:'Inter';","font-family:'Inter';font-family:Arial;")],
+ ['outside override',cssFor(dynamic)+'body{font-family:Arial!important}'],
+])test(`whole CSS rejects ${name}`,()=>assert.throws(()=>interFontDeclarations(css)));
+test('official-shaped Inter blocks preserve all shipping weights, swap and Unicode subsets',()=>{
+ const css='/* latin subset */\n'+[400,500,600,700,800,900].map(weight=>cssFor(dynamic)
+  .replace('font-weight:700;',`font-weight:${weight};font-display:swap;`)
+  .replace(/}$/, 'unicode-range:U+0000-00FF, U+0131, U+1F??;}')).join('\n/* another weight */\n');
+ assert.deepEqual([...interFontDeclarations(css)],[dynamic]);
+ for(const malformed of [cssFor(dynamic).replace('src:','SRC:local("Arial"),'),
+  cssFor(dynamic).replace('700;','700!important;'),cssFor(dynamic).replace('700;','700;FONT-WEIGHT:700;'),
+  cssFor(dynamic).replace('700;','700;font-display:swap;font-display:block;'),
+  cssFor(dynamic).replace('700;','700;unicode-range:U+0000-00FF;unicode-range:U+0100-FFFF;'),
+  cssFor(dynamic)+'@media all{}',cssFor(dynamic).replace('700;','7/* comment */00;')])
+  assert.throws(()=>interFontDeclarations(malformed));
+});
+test('exact CSS declarations admit dynamic Inter, never arbitrary DOM resources',async()=>{
+ const policy=createInterFontPolicy();let calls=0,fulfilled=0;
+ const request=(url,method='GET')=>({url:()=>url,method:()=>method});
+ assert.equal(policy.allows(request(dynamic)),false,'undeclared font fails closed');
+ const route=(url,type,body)=>({request:()=>request(url),fetch:async options=>{
+  calls++;assert.deepEqual(options,{maxRedirects:0,timeout:10000});
+  return {url:()=>url,status:()=>200,headers:()=>({'content-type':type}),text:async()=>body};
+ },fulfill:async()=>{fulfilled++;}});
+ assert.equal(await policy.handle(route(INTER_CSS,'text/css',cssFor(dynamic))),true);
+ assert.equal(policy.allows(request(dynamic)),true);
+ assert.equal(policy.allows(request(dynamic,'POST')),false);
+ assert.equal(policy.allows(request(dynamic+'&extra=1')),false);
+ assert.equal(policy.allows(request('https://fonts.gstatic.com/s/inter/v99/undeclared.woff2')),false);
+ assert.equal(policy.allows(request(INTER_CSS+'&extra=1')),false);
+ await policy.handle(route(dynamic,'font/woff2',''));assert.equal(calls,2);assert.equal(fulfilled,2);
+ assert.deepEqual(describeFontRequest(dynamic),{category:'inter-font',url:'https://fonts.gstatic.com/l/font',queryRedacted:true});
+});
+test('declarations reject malicious origin/path/query/credentials and unrelated CSS',()=>{
+ for(const url of [
+  dynamic.replace('fonts.gstatic.com','fonts.gstatic.com.evil.invalid'),
+  dynamic.replace('https:','http:'),dynamic.replace('fonts.gstatic.com','user:pass@fonts.gstatic.com'),
+  dynamic.replace('fonts.gstatic.com','fonts.gstatic.com:444'),dynamic+'#fragment',
+  dynamic+'&token=synthetic',dynamic+'&kit=duplicate',dynamic.replace('/l/font','/l/other'),
+  dynamic.replace('kit=synthetic_123','kit=%2Fsecret'),
+  'https://fonts.gstatic.com/s/inter/v99/synthetic.woff2?extra=1',
+ ])assert.throws(()=>interFontDeclarations(cssFor(url)));
+ for(const css of [cssFor(dynamic).replace('Inter','Other'),cssFor(dynamic).replace('700','300'),
+  cssFor(dynamic)+`body{background:url('${dynamic}')}`,`@import '${INTER_CSS}';`+cssFor(dynamic),
+  '/* '+cssFor(dynamic)+' */','x'.repeat(32769)])assert.throws(()=>interFontDeclarations(css));
+});
+test('CSS and font redirects, wrong MIME and unsuccessful responses fail closed',async()=>{
+ for(const target of ['css','font'])for(const flaw of ['redirect','status','mime']){
+  const policy=createInterFontPolicy();let fulfilled=0;
+  const route=(url,bad=false)=>({request:()=>({url:()=>url,method:()=> 'GET'}),fetch:async()=>({
+   url:()=>bad&&flaw==='redirect'?url+'#redirect':url,
+   status:()=>bad&&flaw==='status'?302:200,
+   headers:()=>({'content-type':bad&&flaw==='mime'?'text/html':url===INTER_CSS?'text/css':'font/woff2'}),
+   text:async()=>cssFor(dynamic),
+  }),fulfill:async()=>{fulfilled++;}});
+  if(target==='font')await policy.handle(route(INTER_CSS));
+  await assert.rejects(policy.handle(route(target==='css'?INTER_CSS:dynamic,true)));
+  assert.equal(fulfilled,target==='font'?1:0);
+ }
+});
 
 const font='https://fonts.gstatic.com/s/inter/v99/synthetic.woff2';
 class Context extends EventEmitter {
@@ -58,15 +124,16 @@ test('CSS body failure is visible; other responses never have bodies collected; 
  }finally{await fs.rm(output,{recursive:true,force:true});}
 });
 
-test('actual harness guard and mandatory Inter assertions retain original bytes and reject other external requests',async()=>{
+test('actual harness uses declaration policy and mandatory Inter assertions retain original bytes',async()=>{
  const source=await fs.readFile(new URL('./regression-roster-legend-browser.mjs',import.meta.url),'utf8');
- // Fingerprints pin the original a6de310/e9446e0 policy and font acceptance checks.
- const guard=source.match(/const shippingFont=(.*?);if\(url.origin===origin\)/)[1];
- assert.equal(createHash('sha256').update(guard).digest('hex'),'55f107713edab877c90545f7ea64b2f3ee370ba2936b9fce917b9c80676b9e32');
+ // Acceptance checks retain original bytes; routing intentionally uses the closed declaration policy.
+ assert.match(source,/const fontPolicy=createInterFontPolicy\(\);/);
+ assert.match(source,/const shippingFont=fontPolicy.allows\(route.request\(\)\)/);
+ assert.match(source,/await fontPolicy.handle\(route\)/);
  const assertions=source.split('\n').filter(line=>line.includes('const homeFont=await fontCheck')||line.includes("const fonts=await fontCheck")||line.includes('const fontCheck=async')).join('\n');
  assert.equal(createHash('sha256').update(assertions).digest('hex'),'660c06175cd1ed93050adff99184cffb2083b27c9f4ffa2ad828472c9ce19a5e');
- const allowed=url=>vm.runInNewContext(guard,{url:new URL(url)});
- assert.equal(allowed(INTER_CSS),true);assert.equal(allowed(font),true);
+ const allowed=url=>createInterFontPolicy().allows({url:()=>url,method:()=> 'GET'});
+ assert.equal(allowed(INTER_CSS),true);assert.equal(allowed(font),false,'even static assets require stylesheet declaration');
  for(const url of [font+'?token=private',font.replace('.woff2','.ttf'),font.replace('synthetic','sub/file'),INTER_CSS+'&extra=1','https://private.invalid/'])assert.equal(allowed(url),false);
 });
 
