@@ -95,6 +95,7 @@ public final class MainActivity extends FragmentActivity
         }
     };
 
+    private final Runnable healthExpiry = this::renderSnapshot;
     private final Runnable dataRefresh = this::renderSnapshot;
     private final SharedPreferences.OnSharedPreferenceChangeListener dataListener = (preferences, key) -> {
         handler.removeCallbacks(dataRefresh);
@@ -141,6 +142,7 @@ public final class MainActivity extends FragmentActivity
     protected void onResume() {
         super.onResume();
         store.registerChangeListener(dataListener);
+        wellbeingStore.registerChangeListener(dataListener);
         restartClock();
         renderSnapshot();
         ensureRotaryFocus();
@@ -149,6 +151,8 @@ public final class MainActivity extends FragmentActivity
     @Override
     protected void onPause() {
         store.unregisterChangeListener(dataListener);
+        wellbeingStore.unregisterChangeListener(dataListener);
+        handler.removeCallbacks(healthExpiry);
         handler.removeCallbacks(dataRefresh);
         handler.removeCallbacks(clockTick);
         super.onPause();
@@ -333,6 +337,7 @@ public final class MainActivity extends FragmentActivity
     private void renderSnapshot() {
         if (content == null) return;
 
+        handler.removeCallbacks(healthExpiry);
         content.removeAllViews();
         heroSyncShown = false;
         applySafePadding();
@@ -370,7 +375,6 @@ public final class MainActivity extends FragmentActivity
                 long generated = System.currentTimeMillis();
                 try {
                     store.save(WatchContextSnapshot.demo(generated).toJson().toString());
-                    wellbeingStore.saveCrewLife(CrewLifeSnapshot.demo(generated).toJson().toString());
                     wellbeingStore.saveRoutine(RoutineSnapshot.demo(generated).toJson().toString());
                     showScreen(MODE_NOW);
                 } catch (Exception error) {
@@ -689,11 +693,11 @@ public final class MainActivity extends FragmentActivity
         CrewLifeSnapshot life = wellbeingStore.loadCrewLife();
         RoutineSnapshot routine = wellbeingStore.loadRoutine();
 
-        if (life == null || life.isStale(now)) {
+        if (life == null || !life.hasAny(now)) {
             TextView title = text("CrewLife no pulso", 19, WHITE, true, Gravity.CENTER);
             content.addView(title);
             TextView detail = text(
-                    "CrewLife no relógio ainda não autorizado. No celular, ative “Mostrar CrewLife no relógio”. Só chegam valores agregados que você escolher.",
+                    "Sem medições válidas disponíveis. A sincronização exige celular e relógio compatíveis, autorização e limpeza confirmada.",
                     9, MUTED, false, Gravity.CENTER
             );
             detail.setPadding(0, dp(8), 0, dp(8));
@@ -704,16 +708,13 @@ public final class MainActivity extends FragmentActivity
             return;
         }
 
-        String primaryScore = life.recoveryScore > 0
-                ? (life.isEnergyScore() ? life.recoveryScore + "/100" : life.recoveryScore + "%")
-                : life.recoveryLabel;
+        scheduleHealthExpiry(life, now);
+        String primaryScore = life.complicationText(now);
         TextView score = text(primaryScore, 34, SUCCESS, true, Gravity.CENTER);
         tabular(score);
         content.addView(score);
 
-        String scoreCaption = life.isEnergyScore()
-                ? "Energy Score · Samsung Health"
-                : "Recuperação " + life.recoveryLabel.toLowerCase(Locale.ROOT);
+        String scoreCaption = "Energy Score · Samsung Health";
         TextView label = text(scoreCaption, 10, WHITE, true, Gravity.CENTER);
         label.setPadding(0, dp(0), 0, dp(8));
         content.addView(label);
@@ -721,20 +722,14 @@ public final class MainActivity extends FragmentActivity
         LinearLayout stats = new LinearLayout(this);
         stats.setOrientation(stackColumns() ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         stats.setGravity(Gravity.CENTER);
-        addCrewLifeStat(stats, "SONO", sleepLabel(life), VIOLET);
-        addCrewLifeStat(stats, "PASSOS", compactSteps(life.steps), CYAN);
-        addCrewLifeStat(stats, "FC REPOUSO",
-                life.restingHeartRate > 0 ? life.restingHeartRate + " bpm" : "--", SUCCESS);
+        addCrewLifeStat(stats, "SONO", life.sleepText(now), VIOLET);
+        addCrewLifeStat(stats, "PASSOS", life.value("steps", now) == null ? "--" : compactSteps(life.value("steps", now)), CYAN);
+        Integer active = life.value("activeMinutes", now);
+        addCrewLifeStat(stats, "ATIVIDADE", active == null ? "--" : active + " min", SUCCESS);
         content.addView(stats, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
-
-        if (!life.recommendation.isBlank()) {
-            TextView recommendation = text(life.recommendation, 10, MAGENTA, true, Gravity.CENTER);
-            recommendation.setPadding(0, dp(8), 0, dp(4));
-            content.addView(recommendation);
-        }
 
         if (routine != null && !routine.isStale(now)) {
             LinearLayout card = premiumCard(VIOLET);
@@ -1144,12 +1139,11 @@ public final class MainActivity extends FragmentActivity
         }
 
         CrewLifeSnapshot life = wellbeingStore.loadCrewLife();
-        if (life != null && !life.isStale(now) && items.size() < 4) {
+        if (life != null && life.hasAny(now) && items.size() < 4) {
+            scheduleHealthExpiry(life, now);
             items.add(new NotificationItem(
                     "CrewLife opcional",
-                    life.recoveryScore > 0
-                            ? "Recuperação " + life.recoveryScore + "% · " + firstNonBlank(life.recommendation, life.recoveryLabel)
-                            : life.recoveryLabel,
+                    "Energia " + life.complicationText(now) + " · Sono " + life.sleepText(now),
                     "bem-estar", SUCCESS
             ));
         }
@@ -1373,14 +1367,13 @@ public final class MainActivity extends FragmentActivity
         };
     }
 
-    private static String sleepLabel(CrewLifeSnapshot life) {
-        if (!life.sleepLabel.isBlank()) return life.sleepLabel;
-        if (life.sleepMinutes <= 0) return "--";
-        return (life.sleepMinutes / 60) + "h" + String.format(Locale.ROOT, "%02d", life.sleepMinutes % 60);
+    private void scheduleHealthExpiry(CrewLifeSnapshot life, long now) {
+        long expiry = life.nextExpiry(now);
+        if (expiry > now) handler.postDelayed(healthExpiry, expiry - now);
     }
 
     private static String compactSteps(int steps) {
-        if (steps <= 0) return "--";
+        if (steps < 0) return "--";
         if (steps < 1000) return String.valueOf(steps);
         return String.format(Locale.ROOT, "%.1fk", steps / 1000.0);
     }

@@ -9,6 +9,7 @@ import androidx.wear.watchface.complications.data.ComplicationData;
 import androidx.wear.watchface.complications.data.ComplicationType;
 import androidx.wear.watchface.complications.data.LongTextComplicationData;
 import androidx.wear.watchface.complications.data.MonochromaticImage;
+import androidx.wear.watchface.complications.data.NoDataComplicationData;
 import androidx.wear.watchface.complications.data.PlainComplicationText;
 import androidx.wear.watchface.complications.data.RangedValueComplicationData;
 import androidx.wear.watchface.complications.data.ShortTextComplicationData;
@@ -75,37 +76,44 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
 
         PlainComplicationText descriptionText = text(rendering.description);
         MonochromaticImage icon = icon();
+        androidx.wear.watchface.complications.data.TimeRange validity = rendering.validUntilEpochMs > 0
+                ? androidx.wear.watchface.complications.data.TimeRange.before(
+                        java.time.Instant.ofEpochMilli(rendering.validUntilEpochMs - 1L))
+                : androidx.wear.watchface.complications.data.TimeRange.ALWAYS;
 
         if (ComplicationType.LONG_TEXT.equals(type)) {
             return new LongTextComplicationData.Builder(text(rendering.longText), descriptionText)
                     .setTitle(text(rendering.title))
                     .setMonochromaticImage(icon)
                     .setTapAction(tapAction)
+                    .setValidTimeRange(validity)
                     .build();
         }
 
         if (ComplicationType.RANGED_VALUE.equals(type)) {
-            // Sem medida não há anel: devolver zero desenharia saúde que ninguém mediu.
-            if (rendering.rangedValue == null) return null;
+            // AndroidX null means KEEP the previous host value. Explicit NO_DATA clears it,
+            // including v1 values with no TimeRange; zero remains a valid measured value.
+            if (rendering.rangedValue == null) return new NoDataComplicationData();
             return new RangedValueComplicationData.Builder(
                     rendering.rangedValue, RING_MIN, RING_MAX, descriptionText)
                     .setText(text(rendering.shortText))
                     .setTitle(text(rendering.title))
                     .setMonochromaticImage(icon)
                     .setTapAction(tapAction)
+                    .setValidTimeRange(validity)
                     .build();
         }
 
         if (!ComplicationType.SHORT_TEXT.equals(type)) {
-            // Devolver um tipo que a face não pediu faz o sistema descartar o dado e o slot
-            // fica vazio sem explicação. Null é a resposta correta para tipo não suportado.
-            return null;
+            // Do not retain an earlier value when this provider cannot supply the requested type.
+            return new NoDataComplicationData();
         }
 
         return new ShortTextComplicationData.Builder(text(rendering.shortText), descriptionText)
                 .setTitle(text(rendering.title))
                 .setMonochromaticImage(icon)
                 .setTapAction(tapAction)
+                    .setValidTimeRange(validity)
                 .build();
     }
 
