@@ -384,3 +384,28 @@ if(prepared)for(const onboarding of ['ask-user-name','ask-concierge-name'])for(c
 }
 configureWhatsAppConcierge(null);
 console.log(JSON.stringify({suite:'Render managed HTTP + required raw HMAC',prepared,actualPreparedHttpHandler:prepared,actualApplicationConfigurationAndPool:true,actualPreparedCanonicalBindingAndHelp:prepared,syntheticConsentAndReply:true,externalCalls:0}));
+
+// Optional application startup must not gate the web listener. Real caller/host,
+// synthetic policy and pool only; no provider HTTP or real credentials.
+for (const breakStartup of [
+ o=>delete o.environment.CREWCHECK_INFOBIP_WHATSAPP_API_KEY,
+ o=>{o.environment.RENDER_SERVICE_ID='srv-other';},
+ o=>{o.getPool=async()=>{throw Error('synthetic dependency unavailable');};},
+]) {
+ const f=setup();f.singleTest=true;const options=applicationOptions(f);breakStartup(options);
+ const app=createInfobipWhatsAppSingleTestHost(options),listener=createInfobipRenderHttpServer();
+ const health=await app.start(listener);
+ assert.equal(health.ready,false);assert.equal(health.enabled,false);
+ assert.equal(health.code,'INFOBIP_APPLICATION_UNAVAILABLE');
+ assert.equal((await app.start(listener)).code,health.code,'failed startup must not retry');
+ assert.equal((await app.dispatch('0'.repeat(64))).status,'disabled');
+ let status,body;const res={writeHead(code){status=code;},end(value){body=value;}};
+ assert.equal(await app.handleRoute({},res,new URL(origin+path)),true);
+ assert.equal(status,503);assert.equal(JSON.parse(body).ok,false);
+ assert.equal(f.stats.sends.length,0);assert.equal(f.stats.engine,0);
+ assert.equal(f.stats.scheduled,0);assert.equal(options.signals.listenerCount('SIGTERM'),0);
+ await new Promise((resolve,reject)=>{listener.once('error',reject);listener.listen(0,'127.0.0.1',resolve);});
+ assert(listener.listening,'web listener remains usable after optional startup failure');
+ await app.dispose();await new Promise(resolve=>listener.close(resolve));
+}
+console.log('PASS optional Infobip startup: unavailable integration held, web listener remains usable, no timers or sends.');
