@@ -433,6 +433,12 @@ async function handleRadar(req, res, url, radarOptions = {}) {
         return { kind:'concierge', snapshot, roster:snapshot.roster, id:'', revision:'' };
     }
     if (!profile.authenticated || !authorityCurrent()) return null;
+    const active = await loadOwnedPlatformRoster(req, email);
+    if (!authorityCurrent() || !active) return null;
+    const activeOccurrence = findPublishedGateOccurrence(active.roster, occurrenceRequest, buildCanonicalRosterEvents(active.roster));
+    const activePeriod = `${Number(active.roster.year)}-${String(Number(active.roster.month)).padStart(2, '0')}`;
+    if (activeOccurrence?.publishedDate.slice(0, 7) === activePeriod)
+      return { ...active, kind:'platform', snapshot:null };
     const publication = await loadOwnedPlatformRoster(req, email, occurrenceRequest, buildCanonicalRosterEvents);
     return authorityCurrent() && publication ? { ...publication, kind:'platform', snapshot:null } : null;
   };
