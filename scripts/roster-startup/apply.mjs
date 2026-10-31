@@ -161,6 +161,8 @@ if (!database.includes('strictHistory = false')) {
   database = database.replace('    if (!online.some((item) => item.isActive)) {', '    if (!strictHistory && !online.some((item) => item.isActive)) {');
   database = database.replace('  } catch {\n    return normalizeSingleActiveSummary(local);\n  }\n}', '  } catch (error) {\n    if (strictHistory) throw error;\n    return normalizeSingleActiveSummary(local);\n  }\n}');
 }
+const { repairRosterListSession } = await import('./list-session.mjs');
+database = repairRosterListSession(database);
 if (database !== databaseBefore) fs.writeFileSync('client/src/lib/databaseClient.ts', database);
 
 const css = `

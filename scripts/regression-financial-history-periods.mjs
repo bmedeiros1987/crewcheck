@@ -60,7 +60,7 @@ try {
   const readNames=['listSavedRosters','readLocalHistory','normalizeLocalHistoryItem'];
   const readFunctions=db.statements.filter(n=>ts.isFunctionDeclaration(n)&&readNames.includes(n.name?.text));
   let online=[],local=[],expectedPreserve=false;
-  const readerContext=vm.createContext({exports:{},localStorage:{getItem:()=>JSON.stringify(local)},localHistoryKeys:()=>['synthetic-owned-history'],periodHistoryKey:source=>String(source.roster?.year)+':'+String(source.roster?.month),getLocalRosterSummaries:(limit,preserve)=>{assert.equal(Boolean(preserve),expectedPreserve);return local;},hasCrewCheckAuthToken:()=>true,normalizeSingleActiveSummary:items=>items,jsonFetch:async()=>({ok:true,rosters:online})});
+  const readerContext=vm.createContext({captureRosterReadSession:dependencies.captureAuthSession,exports:{},localStorage:{getItem:()=>JSON.stringify(local)},localHistoryKeys:()=>['synthetic-owned-history'],periodHistoryKey:source=>String(source.roster?.year)+':'+String(source.roster?.month),getLocalRosterSummaries:(limit,preserve)=>{assert.equal(Boolean(preserve),expectedPreserve);return local;},hasCrewCheckAuthToken:()=>true,normalizeSingleActiveSummary:items=>items,jsonFetch:async()=>({ok:true,rosters:online})});
   vm.runInContext(ts.transpileModule(readFunctions.map(n=>n.getText(db)).join('\n')+'\nglobalThis.readers={listSavedRosters,readLocalHistory};',{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,readerContext);
   const revision=(id,date)=>({...item(id,date),checksum:null,isActive:true});
   online=[revision('online-old','2032-02-01T00:00:00Z'),revision('online-new','2032-02-02T00:00:00Z')];expectedPreserve=true;
