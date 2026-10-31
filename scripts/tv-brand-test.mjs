@@ -1,0 +1,59 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { readFile, unlink } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+const out = path.resolve('.tv-brand-test-tmp.mjs');
+const sessionOut = path.resolve('.tv-session-test-tmp.mjs');
+try {
+  await build({ entryPoints:['apps/tv-player/src/presentation.ts'], outfile:out, bundle:true, platform:'node', format:'esm' });
+  const {weatherArt, formatTvTime, formatMonth, activityLabel} = await import(pathToFileURL(out).href);
+  const cases = [[null,'unknown'],['','unknown'],['Dados indisponíveis','unknown'],['Aguardando dados confirmados','unknown'],['26 graus','unknown'],['Sem chuva','unknown'],['no rain','unknown'],['Céu limpo','sun'],['Parcialmente nublado','partly'],['Céu parcialmente nublado','partly'],['Partly cloudy','partly'],['Encoberto','cloud'],['Chuva fraca','rain'],['Light rain','rain'],['Trovoadas','storm'],['Neve','snow'],['Nevoeiro','fog'],['Ventoso','wind']];
+  for(const [input, expected] of cases) assert.equal(weatherArt(input),expected,String(input));
+  assert.equal(formatTvTime('bad-date'),'—'); assert.equal(formatTvTime(null),'—');
+  assert.equal(formatTvTime('2026-09-18T19:25:00Z'),'16:25');
+  assert.equal(formatMonth('2026-09'),'Setembro 2026'); assert.equal(formatMonth('2026-13'),'Escala');
+  assert.equal(activityLabel(null),'Sem programação'); assert.equal(activityLabel({kind:'duty',publishedCode:'OFF'}),'Folga');
+  assert.equal(activityLabel({kind:'duty',publishedCode:'HSB'}),'Sobreaviso'); assert.equal(activityLabel({kind:'rest',publishedCode:'DR'}),'Descanso');
+  const main=await readFile('apps/tv-player/src/main.tsx','utf8'), css=await readFile('apps/tv-player/src/tv.css','utf8'), icons=await readFile('apps/tv-player/src/TvVisuals.tsx','utf8');
+  const broadcast=main.includes("from './BroadcastPanels'");
+  const panels=broadcast?await readFile('apps/tv-player/src/BroadcastPanels.tsx','utf8'):main;
+  const home=main.includes("from './HomeEssentials'")?await readFile('apps/tv-player/src/HomeEssentials.tsx','utf8'):null;
+  // Agora may be owned by HomeEssentials. Guard the active operational surface:
+  // leave-at must remain visually before published presentation.
+  const timingSource=home||panels;
+  assert.ok(timingSource.indexOf('SAIR DE CASA')>=0 && timingSource.indexOf('SAIR DE CASA') < timingSource.indexOf('APRESENTAÇÃO'));
+  if(broadcast){
+    assert.ok(main.includes('<OfficialTvBrand/>'));
+    assert.ok(panels.includes("asset('crewcheck-horizontal-night.png')"));
+    assert.ok(panels.includes("asset('crewcheck-horizontal-light.png')"));
+    assert.ok(home ? home.includes('programPresentation(program)') : panels.includes('snapshot.next?.presentation'));
+    assert.ok(home ? home.includes('currentFact(snapshot.weather') : panels.includes('currentFact(snapshot.weather)'));
+    const assets=JSON.parse(await readFile('apps/tv-player/brand-assets.json','utf8'));
+    assert.ok(assets.files.some(a=>a.file==='crewcheck-horizontal-night.png'&&a.sha256==='d23c0dcc78311445ac0452b8de239a5e795868a02e4b548ee04dfe7b02df428e'));
+  }else{
+    assert.ok(icons.includes("client/public/icons/crewcheck-icon-v2.png"));
+    if(home){
+      assert.ok(home.includes('programPresentation(program)'));
+      assert.ok(home.includes('currentFact(snapshot.weather'));
+    }else{
+      assert.ok(main.includes('next?.presentation'));
+      assert.ok(main.includes('currentFact(snapshot?.weather'));
+    }
+  }
+  assert.ok(main.includes("client/src/lib/brand"));
+  assert.ok(css.includes('[data-motion=off]')); assert.ok(css.includes('prefers-reduced-motion')); assert.ok(css.includes('[data-paused=true]'));
+  assert.doesNotMatch(css,/display:\s*grid\b/); assert.doesNotMatch(css,/(?:^|[;{])\s*gap\s*:/);
+  assert.ok(main.includes("if (demo) { clear(); return; }"));
+  await build({ entryPoints:['packages/tv-core/src/session.ts'], outfile:sessionOut, bundle:true, platform:'node', format:'esm' });
+  const {TvSession}=await import(pathToFileURL(sessionOut).href);
+  const memory=new Map();
+  const storage={getItem:key=>memory.has(key)?memory.get(key):null,setItem:(key,value)=>memory.set(key,String(value)),removeItem:key=>memory.delete(key)};
+  const invalidSession=new TvSession(storage,fetch,'http://192.168.1.10');
+  await assert.rejects(()=>invalidSession.call('pair'),/invalid_origin/);
+  const diagnostics=await readFile('apps/tv-player/src/PairingDiagnostics.tsx','utf8');
+  assert.ok(diagnostics.includes("TV-ORIGIN-01"));
+  assert.ok(main.includes("pairingFailure(error).message"));
+  assert.doesNotMatch(main+panels+(home||''),/departureTime|dutyReport|parsePDF/);
+  console.log('TV brand: 18 weather cases + time/month/labels + active rendering source/brand/motion/scope guards passed');
+} finally { await unlink(out).catch(()=>{}); await unlink(sessionOut).catch(()=>{}); }
