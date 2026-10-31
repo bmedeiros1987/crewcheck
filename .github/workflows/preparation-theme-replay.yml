@@ -1,0 +1,27 @@
+name: Home theme preparation safeguard
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/v13910/**'
+      - 'scripts/finalize-theme-runtime.mjs'
+      - 'scripts/regression-v13910-theme-replay.mjs'
+      - 'client/src/pages/Home.tsx'
+      - '.github/workflows/preparation-theme-replay.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  theme-safeguard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: test ! -e node_modules/typescript/package.json
+      - run: node scripts/regression-v13910-theme-replay.mjs
