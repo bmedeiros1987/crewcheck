@@ -82,6 +82,14 @@ function hasCrewCheckAuthToken(): boolean {
   try { return Boolean(getToken()); } catch { return false; }
 }
 
+// No automatic resend exists for these states: the offline queue in offlineSync.ts has no live
+// caller after full prepare. A status message never promises a later sync; it says what stays on
+// this device and that sync is pending (#1291 holds the durable outbox design).
+export const DATABASE_STATUS_MESSAGES = Object.freeze({
+  unavailable: 'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.',
+  unavailableSignedOut: 'Banco indisponível e sem login. Dados deste dispositivo ficam só aqui.',
+});
+
 function localDatabaseStatus(message = 'Sessão offline/local ativa. Faça login para sincronizar com o banco em nuvem.', health: Partial<DatabaseStatus> = {}): DatabaseStatus {
   return { ...health, ok: Boolean(health.connected), connected: Boolean(health.connected), databaseConfigured: Boolean(health.databaseConfigured ?? health.configured), localOnly: true, message };
 }
@@ -94,7 +102,7 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   } catch {}
   if (!hasCrewCheckAuthToken()) {
     return localDatabaseStatus(
-      health.connected ? 'Banco principal disponível. Faça login para sincronizar esta conta.' : 'Modo local protegido ativo. A sincronização será retomada quando o banco voltar.',
+      health.connected ? 'Banco principal disponível. Faça login para sincronizar esta conta.' : DATABASE_STATUS_MESSAGES.unavailableSignedOut,
       { ...health, databaseConfigured: Boolean(health.configured) }
     );
   }
@@ -104,7 +112,7 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   } catch (error: any) {
     const code = String(error?.code || error?.payload?.code || '').toUpperCase();
     if (code === 'AUTH_REQUIRED' || error?.status === 401) return localDatabaseStatus('Login expirado. Histórico local ativo; entre novamente para sincronizar.', health);
-    return localDatabaseStatus(health.message || 'Banco temporariamente indisponível. O histórico local permanece ativo e será sincronizado depois.', health);
+    return localDatabaseStatus(health.message || DATABASE_STATUS_MESSAGES.unavailable, health);
   }
 }
 
