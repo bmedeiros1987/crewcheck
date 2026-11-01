@@ -52,7 +52,10 @@ async function load(source) {
       plugins: [{ name: 'fixture', setup(b) {
         // Synthetic auth double: the token and the authenticated call are controlled by the test.
         b.onResolve({ filter: /^\.\/authClient$/ }, () => ({ path: 'auth', namespace: 'fixture' }));
-        b.onLoad({ filter: /^auth$/, namespace: 'fixture' }, () => ({ loader: 'js', contents: 'export const getToken=()=>globalThis.__qa.token;export const getStoredUser=()=>null;export async function authFetch(url){return globalThis.__qa.authFetch(url);}' }));
+        b.onResolve({ filter: /^current-auth-session$/ }, () => ({ path: path.resolve('client/src/lib/authClient.ts'), namespace: 'file' }));
+        // Keep the real session-capture binding required by current roster readers.
+        // This suite exercises status only; separate real-reader regressions exercise its fences.
+        b.onLoad({ filter: /^auth$/, namespace: 'fixture' }, () => ({ loader: 'js', contents: 'export {captureAuthSession} from "current-auth-session";export const getToken=()=>globalThis.__qa.token;export const getStoredUser=()=>null;export async function authFetch(url){return globalThis.__qa.authFetch(url);}' }));
       } }] });
   } finally { fs.rmSync(file, { force: true }); }
   return import(pathToFileURL(out).href);
