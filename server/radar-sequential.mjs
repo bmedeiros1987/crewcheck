@@ -37,12 +37,14 @@ function retainPrimaryStatus(candidate, primary, identity, now) {
   // Receipt remains the original field receipt, never the fallback/cache clock.
   if (primary?.provider !== 'cirium-flex' || !eligible(primary, identity, now)
     || typeof primary.status !== 'string' || !primary.status.trim() || primary.status.length > 80
-    || primary.operationalConflicts?.includes('status') || field?.provider !== 'cirium-flex'
+    || typeof primary.cancelled !== 'boolean' || primary.cancelled !== (primary.status === 'Cancelado')
+    || (candidate.cancelled === true && primary.cancelled !== true)
+    || candidate.operationalConflicts?.includes('status') || primary.operationalConflicts?.includes('status') || field?.provider !== 'cirium-flex'
     || field.value !== primary.status || field.observedAt !== null
     || field.coverageState !== 'provided_no_source_freshness'
     || radarSourceEpoch(field.receivedAt) !== primary.sourceReceivedAt
     || !fresh(field.receivedAt, now, 30 * 60_000)) return candidate;
-  return { ...candidate, status: primary.status, provenance: { ...candidate.provenance,
+  return { ...candidate, status: primary.status, cancelled: primary.cancelled, provenance: { ...candidate.provenance,
     matchedProviders: [...candidate.provenance.matchedProviders, 'cirium-flex'],
     fields: { ...candidate.provenance.fields, status: { ...field } } } };
 }

@@ -10,6 +10,7 @@ on:
       - 'scripts/regression-radar-paid-sequence.mjs'
       - 'scripts/regression-cirium-flex-status.mjs'
       - 'scripts/regression-radar-status-complement.mjs'
+      - 'scripts/regression-flightaware-status-adapter.mjs'
       - 'scripts/regression-radar-flightaware-off.mjs'
       - 'scripts/regression-radar-paid-ledger-mysql.mjs'
       - 'docs/radar-cirium-flightaware-sequential.md'
@@ -49,6 +50,7 @@ jobs:
       - run: npm ci
       - name: Sequential primary/fallback and authenticated handler offline
         run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-flightaware-status-adapter.mjs; done
           node scripts/regression-radar-sequential.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-radar-paid-sequence.mjs; done
           node scripts/regression-radar-flightaware-off.mjs
@@ -57,6 +59,7 @@ jobs:
       - name: Sequential routing after canonical materialization
         run: |
           node scripts/v139/apply.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-flightaware-status-adapter.mjs; done
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-radar-status-complement.mjs; done
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-cirium-flex-status.mjs; done
           node scripts/regression-radar-sequential.mjs
