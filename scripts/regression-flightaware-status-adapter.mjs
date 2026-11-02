@@ -8,6 +8,10 @@ import { radarResultDecision } from '../shared/gate-query-day.mjs';
 const source = fs.readFileSync('server.mjs', 'utf8');
 const ast = ts.createSourceFile('server.mjs', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const names = ['firstKnown', 'normalizeFlightAwareFlight', 'providerFlightAware'];
+// Canonical preparation adds these real occurrence helpers to the provider.
+for (const name of ['radarAirportCode', 'flightAwareAirport', 'flightAwareScheduledDeparture', 'flightAwareOccurrenceRank', 'selectFlightAwareOccurrence']) {
+  if (ast.statements.some(n => ts.isFunctionDeclaration(n) && n.name?.text === name)) names.unshift(name);
+}
 const code = names.map(name => { const n = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name); assert(n, name); return n.getText(ast); }).join('\n');
 const at = Date.parse('2032-10-31T12:00:00Z');
 class Clock extends Date { static now() { return at; } }
@@ -25,7 +29,7 @@ for (const origin of ['BSB', 'GRU', 'CGH']) {
   const primary = { ...identity, ok: true, provider: 'cirium-flex', sourceReceivedAt: receipt, status: 'Programado', cancelled: false, gate: '', provenance: { fields: { status: proof } } };
   for (const status of [undefined, null, '', '   ']) {
     row = { ...row, status };
-    const adapted = await scope.providerFlightAware(ctx, 100);
+    const adapted = await scope.providerFlightAware(ctx, 100, origin, identity.destination, identity.scheduledDepartureUtc);
     assert.equal(adapted.status, '', 'Real FlightAware adapter must not manufacture Monitorando');
     const result = await run({ identity, primary: async () => primary, fallback: async () => ({ ...adapted, sourceReceivedAt: at }), admit: async () => true, now: () => at });
     assert.equal(result.status, 'Programado'); assert.equal(result.cancelled, false);
@@ -34,7 +38,7 @@ for (const origin of ['BSB', 'GRU', 'CGH']) {
   }
   for (const [over, expected, cancelled] of [[{ status: 'Embarcando' }, 'Embarcando', false], [{ status: '', cancelled: true }, 'Cancelado', true], [{ status: '', cancelled: false, progress_percent: 100 }, 'Finalizado', false]]) {
     row = { ...row, ...over };
-    const adapted = await scope.providerFlightAware(ctx, 100);
+    const adapted = await scope.providerFlightAware(ctx, 100, origin, identity.destination, identity.scheduledDepartureUtc);
     assert.equal(adapted.status, expected); assert.equal(adapted.cancelled, cancelled);
     const result = await run({ identity, primary: async () => primary, fallback: async () => ({ ...adapted, sourceReceivedAt: at }), admit: async () => true, now: () => at });
     assert.equal(result.status, expected); assert.equal(result.cancelled, cancelled);
