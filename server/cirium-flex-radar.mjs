@@ -7,7 +7,7 @@ import { radarFlightId, radarResultDecision } from '../shared/gate-query-day.mjs
 // departure gate) with the time Cirium recorded the change; that is neither a physical
 // observation of the gate nor a gate update here. Receipt is recorded as receipt only.
 const FLEX_STATUS_URL = 'https://api.flightstats.com/flex/flightstatus/rest/v2/json/flight/status';
-const STATUS = { S: 'Programado', A: 'Em voo', L: 'Pousou', C: 'Cancelado', D: 'Alternado', R: 'Redirecionado' };
+const STATUS = { S: 'Programado', A: 'Em voo', L: 'Pousou', C: 'Cancelado', D: 'Alternado', R: 'Redirecionado', NO: 'Não operacional', U: 'Desconhecido' };
 const text = value => typeof value === 'string' ? value.trim() : '';
 // The named dateUtc field is UTC even when the zone suffix is omitted.
 const utc = value => { const raw = text(value?.dateUtc); return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw) ? raw + 'Z' : raw; };
@@ -46,7 +46,9 @@ export function normalizeCiriumFlexRow(row = {}, appendix = {}) {
     flight: `${carrier}${number}`, origin, destination,
     // Planned gate/published departure only; departureDate is operational, not the schedule.
     scheduledDepartureUtc: utc(times.scheduledGateDeparture) || utc(times.publishedDeparture),
-    status: STATUS[row.status] || 'Monitorando',
+    // Only explicit provider codes carry status provenance. A local UI placeholder
+    // must never become evidence that Cirium supplied an operational status.
+    status: typeof row.status === 'string' && Object.hasOwn(STATUS, row.status) ? STATUS[row.status] : '',
     gate: text(resources.departureGate), terminal: text(resources.departureTerminal),
     departure: text(times.actualGateDeparture?.dateLocal) || text(times.estimatedGateDeparture?.dateLocal) || text(times.scheduledGateDeparture?.dateLocal),
     arrival: text(times.actualGateArrival?.dateLocal) || text(times.estimatedGateArrival?.dateLocal) || text(times.scheduledGateArrival?.dateLocal),

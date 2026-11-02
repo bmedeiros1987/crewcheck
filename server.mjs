@@ -152,7 +152,7 @@ function normalizeFlightAwareFlight(row = {}, ctx) {
     ok: true,
     configured: true,
     flight: firstKnown(row.ident, row.fa_flight_id),
-    status: firstKnown(row.status, row.cancelled ? 'Cancelado' : '', row.progress_percent === 100 ? 'Finalizado' : '', 'Monitorando'),
+    status: firstKnown(row.status, row.cancelled ? 'Cancelado' : '', row.progress_percent === 100 ? 'Finalizado' : ''),
     gate: firstKnown(row.gate_origin, row.departure_gate),
     terminal: firstKnown(row.terminal_origin, row.departure_terminal),
     scheduledDepartureUtc: firstKnown(row.scheduled_out, row.filed_departure_time),
