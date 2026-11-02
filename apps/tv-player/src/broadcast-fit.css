@@ -1,0 +1,12 @@
+/* broadcast-fit-017: readable rows and compact right-hand cards. */
+.tv-broadcast .official-tv-tag{display:none}
+.tv-broadcast .broadcast-column>.broadcast-card{padding:1.1vw 1.55vw}
+.tv-broadcast .countdown-card>strong{font-size:2.65vw;line-height:1.12;margin:.6vh 0}
+.tv-broadcast .countdown-card>small{font-size:.67vw}
+.tv-broadcast .summary-pair{margin:1.2vh 0}
+.tv-broadcast .summary-pair b{font-size:2.4vw}
+.tv-broadcast .presentation-main .journey-line{margin:2.1vh 3vw}
+.tv-broadcast .calendar:not(.week-view) .day-button{position:relative;padding:.35vw .6vw}
+.tv-broadcast .calendar:not(.week-view) .day-button b{position:absolute;top:.42vw;left:.65vw;font-size:1.1vw;line-height:1;margin:0}
+.tv-broadcast .calendar:not(.week-view) .day-button small{position:absolute;top:.47vw;right:.65vw;font-size:.7vw;line-height:1;margin:0}
+.tv-broadcast .calendar:not(.week-view) .day-button span{position:absolute;bottom:.45vw;left:.65vw;right:.65vw;font-size:.72vw;line-height:1.1;flex-shrink:0}

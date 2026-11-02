@@ -1,0 +1,32 @@
+name: TV premium visual foundation
+on:
+  pull_request:
+    paths:
+      - 'apps/tv-player/**'
+      - 'apps/android-tv/**'
+      - 'apps/lg-webos/**'
+      - 'apps/samsung-tizen/**'
+      - 'apps/tv-assets/**'
+      - 'packages/tv-core/**'
+      - 'scripts/tv-deep-programming-test.mjs'
+      - 'scripts/tv-extension-premium-test.mjs'
+      - 'scripts/tv-brand-test.mjs'
+      - 'tsconfig.tv.json'
+      - '.github/workflows/tv-visual-foundation.yml'
+permissions:
+  contents: read
+jobs:
+  visual-tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-deep-programming-test.mjs
+      - run: node scripts/tv-extension-premium-test.mjs
+      - run: node scripts/tv-brand-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json

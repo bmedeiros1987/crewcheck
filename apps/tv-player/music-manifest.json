@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "source": "Owner-provided original MP3 attachments, 2026-09-18; bytes not published in this repository.",
+  "tracks": [
+    {"input":"CrewCheck_Theme.mp3","file":"crewcheck-theme.mp3","title":"CrewCheck Theme","sha256":"aaf469b8c596a626f88ec8ea2355b6dca28a57076db0611b21a4352d425336eb","bytes":2897431},
+    {"input":"CrewCheck_Suite.mp3","file":"crewcheck-suite.mp3","title":"CrewCheck Suite","sha256":"8bd338941406e746ac87fb1bd0962191cf8fa57a0728ee2aaeaf114e6d2b4ed9","bytes":2897431},
+    {"input":"Clear_for_Flight (1).mp3","file":"clear-for-flight.mp3","title":"Clear for Flight","sha256":"6deecd3e34630a85d21ed08f1ebfde93466ad43df89583b7ddcbb757b4439181","bytes":2897431},
+    {"input":"Effortless_Ascent.mp3","file":"effortless-ascent.mp3","title":"Effortless Ascent","sha256":"9af51239262d6706c20f59850e6b1dbdb56b30a96df3c48da003a131740f1a3c","bytes":2897431}
+  ]
+}
