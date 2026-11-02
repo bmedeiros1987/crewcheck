@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -19,10 +20,11 @@ try {
  const names=['perDiemConfig','calculatePerDiem','moneyBRL','moneyCurrency','readNumberSetting','readOptionalNumberSetting'],functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));assert.equal(functions.length,6);
  const storageNode=ast.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)==='storage'));assert(storageNode);
  const context=vm.createContext({...learning,...settings,localStorage:globalThis.localStorage,readAccountNotificationSetting:()=>undefined,...modules.load('financialAmounts'),...modules.load('financialJourneyGrouping'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialForecastPeriods'),
- resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'test',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100},{key:'foreign',label:'Synthetic foreign',currency:'USD',mainMeal:80}]}),
+ resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'test',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100},{key:'other_international',label:'Synthetic foreign',currency:'USD',mainMeal:80}]}),
  loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:()=>({rateKey:geography,airport:'TEST',reason:'synthetic'}),isOperationalEvent:()=>true,financialEventCode:e=>e.day.type,
  eventStartDateTime:e=>new Date(e.start),eventEndDateTime:e=>new Date(e.end),dateChip:d=>d.toISOString().slice(0,10)});
  vm.runInContext(ts.transpileModule(storageNode.getText(ast)+'\n'+functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.calculate=calculatePerDiem;',{compilerOptions:{target:99}}).outputText,context);
+  installAllowanceDependencies(context,{manual:{other_international:80}});
  const month='2032-08',iso=month+'-06',roster={year:2032,month:8,base:'TEST'};
  const reserve=(report='06:10')=>({id:'synthetic-reserve',kind:'duty',origin:'TEST',destination:'TEST',start:iso+'T'+report+':00-03:00',end:iso+'T12:30:00-03:00',day:{type:'ASB',dutyReport:report,dutyDebrief:'12:30',dutyReportSource:'published',dutyDebriefSource:'published'}});
  const run=(report)=>context.calculate([reserve(report)],roster,new Date(iso+'T15:00:00Z'));
@@ -51,7 +53,7 @@ try {
  assert.equal(writes,count);assert.equal(storage.get(key),damaged);
  assert(run().unclassifiedItems.every(item=>/Histórico local de tarifas inválido/.test(item.reason)));
  assert.equal(run('04:10').monthlyUnclassifiedItems.filter(item=>item.pendingKind==='taxi_rate').length,1,'eligible taxi remains visible and unpriced');
- geography='foreign';const foreign=run();assert(foreign.nativeSummary.complete,'independent international rules are not blocked');assert.equal(foreign.rows.length,2);assert.equal(foreign.rows.find(row=>row.label==='Almoço').value,80);geography='domestic';
+ geography='other_international';const foreign=run();assert(foreign.nativeSummary.complete,'independent international rules are not blocked');assert.equal(foreign.rows.length,2);assert.equal(foreign.rows.find(row=>row.label==='Almoço').value,80);geography='domestic';
  const base=JSON.parse(valid);
  for(const [label,raw] of [
    ['bad JSON','{'],['wrong version',JSON.stringify({...base,version:1})],
@@ -107,7 +109,7 @@ try {
  assert.equal(run().monthly,100,'missing archive retains independently stored manual meal and quarter breakfast');
  assert.match(run().rows[0].source,/não salva neste dispositivo/);
  storage.set(key,valid);login('synthetic-b');
- assert.equal(learning.readFinancialRateArchive().state,'missing');assert.equal(run().monthly,125,'another owner cannot see A reference');
+ assert.equal(learning.readFinancialRateArchive().state,'missing');assert.equal(run().monthly,null,'another owner cannot see A reference or inherit ACT applicability');
  storage.set('crewcheck_financial_learned_rates_v2:synthetic-b','{');login('synthetic-a');assert.equal(run().monthly,250,'another owner archive cannot poison A');
  storage.delete('crewcheck_auth_token');assert.equal(learning.readFinancialRateArchive().state,'unauthenticated');assert.equal(learning.readConfirmedFinancialRates().length,0);login('synthetic-a');assert.equal(run().monthly,250);
  storage.set(key,JSON.stringify({...base,rates:[]}));assert.equal(learning.readFinancialRateArchive().state,'ready','explicit empty valid archive differs from invalid/missing');storage.set(key,valid);

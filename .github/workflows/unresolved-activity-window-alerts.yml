@@ -1,0 +1,73 @@
+name: Unresolved activity window alerts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/complianceAlertSemantics.ts'
+      - 'client/src/components/alerts/**'
+      - 'client/src/lib/alertExperienceText.ts'
+      - 'scripts/regression-unresolved-window-alert-copy.mjs'
+      - 'scripts/fixtures/unresolved-activity-window-alerts-app.tsx'
+      - 'scripts/regression-unresolved-activity-window-alerts-browser.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/unresolved-activity-window-alerts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unresolved-activity-window-alerts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unresolved-activity-window-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Translated interface copy of the pending items (source)
+        run: node scripts/regression-unresolved-window-alert-copy.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Translated interface copy of the pending items (prepared)
+        run: node scripts/regression-unresolved-window-alert-copy.mjs
+      - name: Build web
+        run: npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/unresolved-alerts-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/unresolved-alerts-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Real AlertCenter with the prepared engine (PT/EN, light/dark, 320/1440)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/unresolved-alerts-browser/package.json
+        run: node scripts/regression-unresolved-activity-window-alerts-browser.mjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unresolved-activity-window-alerts-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/unresolved-activity-window-alerts
+          if-no-files-found: warn

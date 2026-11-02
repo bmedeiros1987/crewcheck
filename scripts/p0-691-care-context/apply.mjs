@@ -262,6 +262,11 @@ write(homePath, home);
 // ---------------------------------------------------------------------------
 const rosterLaunchPath = 'client/src/components/v1391/RosterLaunchView.tsx';
 let rosterLaunch = read(rosterLaunchPath);
+if (rosterLaunch.includes("from '@/lib/rosterPresentation';")) {
+  const presentation = read('client/src/lib/rosterPresentation.ts');
+  for (const contract of ['carePresentationForScheduleActivity(event)', "mode === 'rest' ? care?.label"]) if (!presentation.includes(contract)) throw new Error(`${TAG} shared roster Care presentation absent: ${contract}`);
+  if (!rosterLaunch.includes('carePresentation?.label || meta.label')) throw new Error(`${TAG} roster Care label absent`);
+} else {
 if (!rosterLaunch.includes("import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';")) {
   rosterLaunch = replaceRequired(
     rosterLaunch,
@@ -306,6 +311,7 @@ rosterLaunch = replaceRequired(
   `<div><small>{carePresentation?.label || meta.label} · {formatDate(${rosterCardDate})}</small><h3>{cardTitle(event, mode)}</h3></div>`,
   'Roster exibe rótulo Care',
 );
+}
 write(rosterLaunchPath, rosterLaunch);
 
 // ---------------------------------------------------------------------------

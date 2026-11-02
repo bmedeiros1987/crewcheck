@@ -1,3 +1,4 @@
+import type { AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { isAimsFormat, parseAimsRoster } from './aimsParser';
 import { getRosterCodeDefinition, isKnownRosterCode } from './rosterCodes';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -30,6 +31,8 @@ export interface CrewMember {
 }
 
 export interface FlightLeg {
+  /** Original AIMS source date; evidence only, never a replacement clock/date. */
+  aimsSourceDate?: string;
   flightNumber: string;
   origin: string;
   destination: string;
@@ -78,6 +81,7 @@ export interface RosterDay {
 }
 
 export interface CrewRoster {
+  aimsFlightSourceCoverage?: AimsFlightSourceCoverage;
   crewName: string;
   crewId: string;
   base: string;

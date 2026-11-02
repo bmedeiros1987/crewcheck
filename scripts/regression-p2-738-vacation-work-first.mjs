@@ -38,12 +38,25 @@ assert.match(home, /function Departure\(\{ event, events, setView \}/, 'Departur
 const departureVacation = home.indexOf('if (vacationContextV14738 && !prepareVacationReturn)');
 const departurePlaceholder = home.indexOf('if (event.placeholder)', departureVacation);
 assert.ok(departureVacation >= 0 && departurePlaceholder > departureVacation, 'vacation state must win before "awaiting roster" in Departure');
-assert.match(home, /<Departure event=\{(?:departureEvent|event)\} events=\{events\} setView=\{setView\}\/>/, 'Home router must provide Departure the current roster context without changing its selected event');
+assert.match(home, /<Departure event=\{departureEvent\} events=\{departureContext\?\.programId \? rosterEvents : events\} setView=\{setView\}\/>/, 'Home router must preserve selected Departure event, contextual history and active global collection');
 assert.match(css, /cc-vacation-mode-v14738/, 'vacation UI must have isolated styling');
 assert.doesNotMatch(css, /@keyframes/i, 'vacation UI must not introduce attention-seeking animation');
 assert.match(prepare, /p2-738-vacation-work-first\/apply\.mjs/, 'canonical source preparation must reapply #738');
 
 const source = ts.createSourceFile('prepared-home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const departureRouters=[];
+function findDepartureRouter(node){
+  if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(source)==='Departure')departureRouters.push(node);
+  ts.forEachChild(node,findDepartureRouter);
+}
+findDepartureRouter(source);assert.equal(departureRouters.length,1,'one canonical Departure router');
+const collection=departureRouters[0].attributes.properties.find(p=>ts.isJsxAttribute(p)&&p.name.getText(source)==='events')?.initializer?.expression;
+assert.ok(collection,'real Departure collection expression');
+const chooseCollection=new vm.Script('('+collection.getText(source)+')');
+const activeDepartureEvents=[{id:'SYNTHETIC-ACTIVE'}],historicalDepartureEvents=[{id:'SYNTHETIC-HISTORY'}];
+for(const departureContext of [null,{}, {programId:''}])assert.equal(chooseCollection.runInNewContext({departureContext,events:activeDepartureEvents,rosterEvents:historicalDepartureEvents}),activeDepartureEvents,'global entry retains active roster context');
+assert.equal(chooseCollection.runInNewContext({departureContext:{programId:'SYNTHETIC-HISTORY'},events:activeDepartureEvents,rosterEvents:historicalDepartureEvents}),historicalDepartureEvents,'explicit historical entry receives its own collection');
+
 const names = [
   'normalizeVacationCodeV14738',
   'publishedVacationCodeV14738',

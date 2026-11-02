@@ -1,5 +1,8 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),vm=require('node:vm'),http=require('node:http');
+// Format and zoom sit under the collapsed "Exibição" expander of the roster.
+const openView=async p=>{const d=p.locator('details.cc-roster-view-options');await d.waitFor({state:'attached'});if(!await d.evaluate(e=>e.open))await d.locator(':scope > summary').click();};
 const {createRequire}=require('node:module'),ts=require('typescript');
+const {stabilizeAimsPreAction}=require('./lib/aims-preaction-stability.cjs');
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
 const out=path.resolve('artifacts/aims-document-app');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
@@ -18,19 +21,25 @@ const context=await browser.newContext({viewport:{width,height:844},isMobile:tru
 await context.route('**/*',r=>{const url=new URL(r.request().url());return url.origin!==origin?r.abort():url.pathname.startsWith('/api/')?r.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'}):r.continue();});
 await context.addInitScript(seedScope.seed,{theme,kind:roster,amount:100});await context.addInitScript(size=>localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size)),size);
 const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');window.dispatchEvent(new Event('resize'));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'}));});
-await page.locator('select[aria-label="Formato da escala"]').selectOption('aims');await page.locator('.cc-doc-sheet').waitFor();assert.equal(await page.locator('.cc-doc-day').count(),29);
+await openView(page);await page.locator('select[aria-label="Formato da escala"]').selectOption('aims');await page.locator('.cc-doc-sheet').waitFor();assert.equal(await page.locator('.cc-doc-day').count(),29);
 await page.locator('.cc-doc-viewport').scrollIntoViewIfNeeded();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const canvasClearance=await page.locator('.cc-doc-viewport').evaluate(el=>{const r=el.getBoundingClientRect(),h=document.querySelector('.cz-global-header').getBoundingClientRect(),f=document.querySelector('body > nav.cz-bottom-nav').getBoundingClientRect();return {top:r.top,bottom:r.bottom,headerBottom:h.bottom,footerTop:f.top};});assert.ok(canvasClearance.top>=canvasClearance.headerBottom-1&&canvasClearance.bottom<=canvasClearance.footerTop+1,JSON.stringify({theme,size,width,canvasClearance}));
 await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));const head=await page.locator('.cz-global-header').boundingBox();assert.equal(await page.locator('.cz-global-header .cz-logo').isVisible(),true);assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),size===100,'Decorative tagline is omitted at enlarged mobile font; core logo stays visible');
 const focusBounds=[];for(const zoomLabel of ['Ajustar','100%']){await page.getByRole('button',{name:zoomLabel,exact:true}).click();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));if(zoomLabel==='100%'){await page.locator('.cc-doc-viewport').focus();await page.keyboard.press('End');assert.ok(await page.locator('.cc-doc-viewport').evaluate(e=>e.scrollLeft>2000));}
 // Read-only native event evidence: retain the pre-action baseline and 1px assertions.
 await page.evaluate(()=>{if(window.__aimsNativeTraceInstalled){window.__aimsNativeTrace=[];return;}window.__aimsNativeTraceInstalled=true;window.__aimsNativeTrace=[];for(const name of ['pointerdown','mousedown','focus','focusin','pointerup','mouseup','click','scroll'])document.addEventListener(name,event=>{const frame=document.querySelector('.cc-doc-viewport'),target=event.target;window.__aimsNativeTrace.push({event:name,y:scrollY,left:frame?.scrollLeft,top:frame?.scrollTop,active:document.activeElement?.getAttribute('data-roster-event-id')||document.activeElement?.className||document.activeElement?.tagName,target:target?.getAttribute?.('data-roster-event-id')||target?.className||target?.tagName,at:performance.now()});},{capture:true,passive:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).scrollIntoViewIfNeeded();
-// Preserve the original pre-action baseline and record native activation separately.
-// The remote 2px drift is still under diagnosis; tolerance remains one pixel.
+// Finish preparation before measuring the return baseline. Layout changes fail; only
+// scroll settling is allowed. A bounded wait cannot turn perpetual movement green.
+const preparation=await page.evaluate(stabilizeAimsPreAction);
+console.log('AIMS stable preparation',JSON.stringify({theme,size,width,zoomLabel,...preparation}));
 const preparedBeforePointerAction=await page.evaluate(()=>({y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent}));
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).evaluate(el=>{window.__qaAimsActivationPosition=null;el.addEventListener('click',()=>{window.__qaAimsActivationPosition={y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent};},{capture:true,once:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).click();
 const activated=await page.evaluate(()=>window.__qaAimsActivationPosition);assert.ok(activated,'native activation snapshot must precede the real open handler');const before=preparedBeforePointerAction;
+assert.ok(Math.abs(activated.y-before.y)<=1,'real click must not move the prepared window baseline');
+assert.ok(Math.abs(activated.left-before.left)<=1,'real click must not move prepared horizontal pan');
+assert.ok(Math.abs(activated.top-before.top)<=1,'real click must not move prepared vertical pan');
+assert.equal(activated.zoom,before.zoom,'real click must preserve prepared zoom');
 console.log('AIMS activation snapshot',JSON.stringify({theme,size,width,zoomLabel,preparedBeforePointerAction,activated}));await page.locator('.cc-doc-detail').waitFor();await page.waitForFunction(()=>document.querySelector('.cc-doc-detail')===document.activeElement);assert.match(await page.locator('.cc-doc-detail').innerText(),/QA9029/);
 const detail=await page.locator('.cc-doc-detail').boundingBox(),pinned=await page.locator('.cz-global-header').boundingBox();assert.ok(detail.y>=pinned.y+pinned.height-1,'selected details start below visible header content and safe area');assert.equal(await page.locator('.cc-doc-detail').evaluate(el=>el===document.activeElement),true);
 // Exercise late ancestor movement too: exact scroll/zoom must survive animation completion.

@@ -115,10 +115,10 @@ public final class WatchNotificationCenter {
                             presentation(s))
             );
             case "BOARDING" -> new Notice(
-                    s.remoteStand ? "Embarque remoto" : "Embarque",
+                    confirmedRemote(s) ? "Embarque remoto" : "Embarque",
                     join(" · ",
                             s.currentFlight,
-                            s.remoteStand ? "Remota" : s.gateLabel(),
+                            confirmedRemote(s) ? "Remota" : confirmedGate(s),
                             s.boardingTime.isBlank() ? "" : "embarque " + s.boardingTime)
             );
             case "CONNECTION" -> new Notice(
@@ -126,7 +126,7 @@ public final class WatchNotificationCenter {
                     join(" · ",
                             s.connection,
                             s.nextFlight,
-                            s.gateLabel(),
+                            confirmedGate(s),
                             s.boardingTime.isBlank() ? "" : "embarque " + s.boardingTime)
             );
             case "OVERNIGHT" -> new Notice(
@@ -137,6 +137,19 @@ public final class WatchNotificationCenter {
         };
     }
 
+    /**
+     * Regra do portão (docs/gate-behavior-rule.md): portão informado sem observação nunca
+     * alerta. Ele não entra no texto do aviso nem na deduplicação, então aparecer ou mudar
+     * um portão informado não dispara notificação nem é anunciado como confirmado.
+     */
+    private static String confirmedGate(WatchContextSnapshot s) {
+        return s.gateReported() ? "" : s.gateLabel();
+    }
+
+    private static boolean confirmedRemote(WatchContextSnapshot s) {
+        return s.remoteStand && !s.gateReported();
+    }
+
     private static String fingerprint(WatchContextSnapshot s, Notice notice) {
         return String.join("|",
                 s.state,
@@ -145,7 +158,7 @@ public final class WatchNotificationCenter {
                 s.leaveTime,
                 s.currentFlight,
                 s.nextFlight,
-                s.gate,
+                s.gateReported() ? "" : s.gate,
                 s.boardingTime,
                 s.overnight,
                 Boolean.toString(s.changed),

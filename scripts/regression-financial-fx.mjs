@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import {createFinancialFxService,createFinancialFxHandler,FINANCIAL_FX_PATH} from '../server/financial-fx.mjs';
 import {convertFinancialMinor,estimateAllowanceBrl} from '../shared/financialFx.mjs';
@@ -112,6 +113,7 @@ try {
   financialWeeks:()=>[],nextAllowancePayment:()=>null,buildLegs:()=>[],getStoredUser:()=>({email:'synthetic@example.invalid'}),
   CanonicalForecastCapture:()=>null,PerDiemMonthView:()=>null,NextPaymentCard:()=>null,FinancialStatementReconciliation:()=>null});
  vm.runInContext(ts.transpileModule(functions.map(node=>node.getText(ast)).join('\n')+'\nglobalThis.subject={scopedFinancialForecast,PerDiemView};',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,context);
+ installAllowanceDependencies(context);
  const scoped=context.subject.scopedFinancialForecast([snapshot],range,[],first.quotes,'2032-02-09');
  assert.equal(scoped.monthly,200.05);assert.equal(scoped.pendingCurrencies.length,0);
  const blocked=context.subject.scopedFinancialForecast([snapshot],range,[],{},'2032-02-09');assert.equal(blocked.monthly,null);assert.deepEqual(Array.from(blocked.pendingCurrencies),['USD']);

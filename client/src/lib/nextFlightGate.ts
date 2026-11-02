@@ -10,6 +10,12 @@ import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayD
  *
  * Regras: portão de embarque nunca é preenchido por posição da aeronave, portão de chegada
  * ou dado de outro trecho/dia. Ausente fica "não informado"; antigo fica "desatualizado".
+ *
+ * Ordem do portão (docs/gate-behavior-rule.md):
+ *  1. manual vinculado à partida — sempre prevalece;
+ *  2. 'radar': fonte com hora de observação do campo comprovada — alerta, Pulse e relógio;
+ *  3. 'reported': fonte respondeu para esta partida exata, sem hora de observação — aparece
+ *     como "informado pela fonte" por até 30 min após o recebimento; nunca alerta nem Pulse.
  */
 
 export const NEXT_FLIGHT_DEPARTED_GRACE_MS = 20 * 60 * 1000;
@@ -53,10 +59,14 @@ export type RadarGateSnapshot = {
   scheduledDepartureUtc?: string;
   operationalDeparture?: string;
   updatedAt?: number;
+  /** Original receipt of the source response (number or ISO), as the server sent it. */
+  sourceReceivedAt?: number | string;
   sourceOrigin?: string;
   sourceDestination?: string;
   quality?: number;
   alternatives?: number;
+  /** Public provider key of the winning response (e.g. 'flightaware'); labels a reported gate. */
+  provider?: string;
   /** Source-produced departure-gate update, never the local fetch/cache clock. */
   gateUpdate?: GateSourceUpdate | null;
   gateUpdateWatermark?: GateUpdateWatermark | null;
@@ -68,7 +78,9 @@ export type RadarGateSnapshot = {
 
 export type OperationalFieldEvidence = { version: 1; value: string; sourceObservedAt: string; provenance: string; conflict?: boolean };
 export type ManualOperationalField = { value: string; author: string; setAtEpochMs: number };
-type ManualOperationalGate = ManualOperationalField & {terminal?:string;sourceReview?:ManualGateSourceReview};
+export type BoardingType = 'unknown' | 'remote' | 'finger';
+export type ManualBoardingType = ManualOperationalField & { value: Exclude<BoardingType, 'unknown'>; gate: string; gateSetAtEpochMs: number };
+type ManualOperationalGate = ManualOperationalField & {terminal?:string;sourceReview?:ManualGateSourceReview;boardingType?:ManualBoardingType};
 type ManualOperationalEntry = { legacyGateDismissed?:true; gate?:ManualOperationalGate; owner: string; flight: string; date: string; origin: string; destination: string; scheduledDepartureUtc: string; status?: ManualOperationalField; registration?: ManualOperationalField };
 
 export type GateUpdateWatermark = { sourceUpdatedAtEpochMs: number; gate: string; conflicted: boolean };
@@ -108,6 +120,7 @@ export type ManualGateEntry = {
   operationalStatus?: ManualOperationalField;
   operationalRegistration?: ManualOperationalField;
   operationalScheduledDepartureUtc?: string;
+  boardingType?: ManualBoardingType;
 };
 
 export type ManualGateReviewInfo = {
@@ -115,7 +128,7 @@ export type ManualGateReviewInfo = {
   candidate: { gate: string; provider: 'custom'; sourceUpdatedAtEpochMs: number; fingerprint: string } | null;
 };
 
-export type GateSource = 'manual' | 'radar' | 'roster';
+export type GateSource = 'manual' | 'radar' | 'reported' | 'roster';
 
 export type NextFlightGateInfo = {
   eventId: string;
@@ -128,6 +141,9 @@ export type NextFlightGateInfo = {
   departure: string;
   gate: string;
   remote: boolean;
+  /** Phone/web manual declaration only; never changes the legacy Wear remote boolean. */
+  boardingType: BoardingType;
+  manualBoardingType: ManualBoardingType | null;
   gateSource: GateSource | null;
   terminal: string;
   status: string;
@@ -147,9 +163,11 @@ export type NextFlightGateInfo = {
   automaticFieldValidUntilEpochMs: Partial<Record<'gate' | 'status' | 'registration', number>>;
   /** O portão exibido vem do Radar (base para a validade no relógio). */
   usesRadar: boolean;
+  /** Fonte que informou um portão sem observação comprovada ('reported'). */
+  reportedProvider: string;
   stale: boolean;
   radarRejected: '' | 'not-ok' | 'other-flight' | 'other-segment' | 'other-day' | 'unproven-day' | 'position';
-  divergence: { manualGate: string; sourceGate: string; source: 'radar' | 'roster' } | null;
+  divergence: { manualGate: string; sourceGate: string; source: 'radar' | 'reported' | 'roster' } | null;
   manual: ManualGateEntry | null;
   manualReview: ManualGateReviewInfo;
 };
@@ -253,7 +271,7 @@ export function readManualGate(storage: StorageLike, account: string, event: Nex
     setAtEpochMs: 0, author: '',
   };
   // Never adopt optional status/registration fields from a legacy v1 record.
-  return { ...base, operationalStatus: fields?.status, operationalRegistration: fields?.registration, operationalScheduledDepartureUtc: fields?.scheduledDepartureUtc };
+  return { ...base, boardingType: fields?.gate?.boardingType, operationalStatus: fields?.status, operationalRegistration: fields?.registration, operationalScheduledDepartureUtc: fields?.scheduledDepartureUtc };
 }
 
 function operationalIdentity(event: NextFlightLike): string {
@@ -273,13 +291,27 @@ function validManualField(field: ManualOperationalField | undefined, normalizer:
     && typeof field.author === 'string' && Boolean(field.author.trim()) && field.author.length <= 60
     && typeof field.setAtEpochMs === 'number' && Number.isFinite(field.setAtEpochMs) && field.setAtEpochMs > 0 ? field : undefined;
 }
+/** Only a declaration saved with this exact gate revision is meaningful. Missing
+ * metadata (including legacy records) is unknown, never an airport inference. */
+function validManualBoardingType(field: ManualBoardingType | undefined, gate: string, gateSetAtEpochMs: number): ManualBoardingType | undefined {
+  if (!field || !['remote', 'finger'].includes(field.value) || field.gate !== gate
+    || field.gateSetAtEpochMs !== gateSetAtEpochMs || field.setAtEpochMs !== gateSetAtEpochMs
+    || !validManualField(field, value => value === 'remote' || value === 'finger' ? value : '')
+    || (field.value === 'finger' && normalizeBoardingGate(gate).remote)) return undefined;
+  return { value: field.value, gate: field.gate, gateSetAtEpochMs: field.gateSetAtEpochMs, author: field.author, setAtEpochMs: field.setAtEpochMs };
+}
+
+export function boardingTypeLabel(value: BoardingType): string {
+  return value === 'remote' ? 'Remota' : value === 'finger' ? 'Finger' : 'Não confirmado';
+}
+
 function readManualOperational(storage: StorageLike, account: string, event: NextFlightLike): ManualOperationalEntry | null {
   if (!account || account === 'local') return null;
   const identity = operationalIdentity(event), entry = operationalMap(storage, account)[identity];
   if (!identity || !entry || entry.owner !== account || ![entry.flight,entry.date,entry.origin,entry.destination,entry.scheduledDepartureUtc].every(value=>typeof value==='string')
     || [entry.flight,entry.date,entry.origin,entry.destination,entry.scheduledDepartureUtc].join('|') !== identity) return null;
   const status = validManualField(entry.status, cleanStatus), registration = validManualField(entry.registration, cleanRegistration);
-  const gate = validManualField(entry.gate,value=>normalizeBoardingGate(value).gate) ? entry.gate : undefined;
+  const gate = validManualField(entry.gate,value=>normalizeBoardingGate(value).gate) ? { ...entry.gate!, boardingType: validManualBoardingType(entry.gate?.boardingType, entry.gate!.value, entry.gate!.setAtEpochMs) } : undefined;
   return gate || status || registration || entry.legacyGateDismissed===true ? { ...entry, gate, status, registration, ...(entry.legacyGateDismissed===true?{legacyGateDismissed:true}:{}) } : null;
 }
 
@@ -313,11 +345,17 @@ export function writeManualGate(
   storage: StorageLike,
   account: string,
   event: NextFlightLike,
-  input: { gate: string; terminal?: string; author: string },
+  input: { gate: string; terminal?: string; author: string; boardingType?: BoardingType; expectedManualRevision?: string },
   now = Date.now(),
 ): ManualGateWriteResult {
   const identity = operationalIdentity(event);
   if (!identity || !account || account === 'local' || event.kind !== 'flight' || event.placeholder || !Number.isFinite(now) || now <= 0) return {ok:false,message:'Conta e ocorrência publicada precisam estar confirmadas.'};
+  const typed = Object.prototype.hasOwnProperty.call(input, 'boardingType');
+  // One local record/write for gate + type. A stale rendered editor must not
+  // overwrite a newer gate or review; no asynchronous work occurs after this check.
+  if ((typed || input.expectedManualRevision !== undefined) && (typeof input.expectedManualRevision !== 'string'
+    || manualGateRevision(readManualGate(storage,account,event),account,event) !== input.expectedManualRevision)) return {ok:false,message:'Os dados mudaram. Reveja o portão antes de salvar.'};
+  if (typed && !['unknown','remote','finger'].includes(input.boardingType!)) return {ok:false,message:'Tipo de embarque inválido.'};
   const map=operationalMap(storage,account),previous=readManualOperational(storage,account,event);
   const [flight,date,origin,destination,scheduledDepartureUtc]=identity.split('|');
   const entry:ManualOperationalEntry={owner:account,flight,date,origin,destination,scheduledDepartureUtc,...(previous?.legacyGateDismissed?{legacyGateDismissed:true}:{}),...(previous?.gate?{gate:previous.gate}:{}),...(previous?.status?{status:previous.status}:{}),...(previous?.registration?{registration:previous.registration}:{})};
@@ -326,10 +364,14 @@ export function writeManualGate(
     const normalized=normalizeBoardingGate(input.gate);
     if (normalized.position) return {ok:false,message:'Informe o portão de embarque, não a posição da aeronave.'};
     if (!normalized.gate) return {ok:false,message:'Portão inválido. Use até 12 caracteres, por exemplo 24 ou 7A.'};
+    if (input.boardingType === 'finger' && normalized.remote) return {ok:false,message:'O portão contém indicação de remota. Corrija o portão antes de selecionar Finger.'};
     delete entry.legacyGateDismissed;
-    entry.gate={value:normalized.gate,terminal:cleanTerminal(input.terminal),author:text(input.author).slice(0,60)||'Você',setAtEpochMs:now};
+    const author=text(input.author).slice(0,60)||'Você';
+    entry.gate={value:normalized.gate,terminal:cleanTerminal(input.terminal),author,setAtEpochMs:now};
+    if (input.boardingType === 'remote' || input.boardingType === 'finger') entry.gate.boardingType={value:input.boardingType,gate:normalized.gate,gateSetAtEpochMs:now,author,setAtEpochMs:now};
   }
   if(entry.gate||entry.status||entry.registration||entry.legacyGateDismissed)map[identity]=entry;else delete map[identity];
+  if ((typed || input.expectedManualRevision !== undefined) && manualGateRevision(readManualGate(storage,account,event),account,event) !== input.expectedManualRevision) return {ok:false,message:'Os dados mudaram. Reveja o portão antes de salvar.'};
   try{storage.setItem(MANUAL_OPERATIONAL_PREFIX+account,JSON.stringify(map));}catch{return {ok:false,message:'Não foi possível salvar neste dispositivo.'};}
   return {ok:true,entry:entry.gate?readManualGate(storage,account,event):null};
 }
@@ -347,12 +389,25 @@ export function canonicalFlightId(value: unknown): string {
   return match ? `${CARRIER_ALIASES[match[1]] || match[1]}${match[2]}` : raw;
 }
 
+/**
+ * Original source receipt of a Radar record: the earliest of the record's anchor and the
+ * source's own receipt. Caches saved before the receipt was preserved anchored updatedAt on
+ * the phone save time while keeping sourceReceivedAt; neither may extend the source's age.
+ * A receipt only, never a gate observation. 0 when there is none.
+ */
+export function radarReceiptEpochMs(radar: Pick<RadarGateSnapshot, 'updatedAt' | 'sourceReceivedAt'> | null | undefined): number {
+  const anchors = [radar?.updatedAt, radar?.sourceReceivedAt]
+    .map(value => typeof value === 'number' ? value : typeof value === 'string' ? radarSourceEpoch(value) : NaN)
+    .filter(value => Number.isFinite(value) && value > 0);
+  return anchors.length ? Math.min(...anchors) : 0;
+}
+
 /** Only an explicit source gate-update contract can establish chronology.
  * Aircraft signals, HTTP receipt time and cache updatedAt are never substitutes. */
 export function sourceGateUpdate(event: NextFlightLike, radar: RadarGateSnapshot | null, now = Date.now()): ManualGateReviewInfo['candidate'] {
   if (!Number.isFinite(now)) return null;
   const proof = radar?.gateUpdate;
-  const receipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  const receipt = radar?.gateEvidenceReceivedAt ?? radarReceiptEpochMs(radar);
   if (typeof receipt !== 'number' || !Number.isFinite(receipt) || receipt <= 0 || receipt > now || now - receipt > RADAR_GATE_STALE_MS) return null;
   const at = radarSourceEpoch(proof?.sourceUpdatedAt);
   const expected = flightDepartureEpochMs(event);
@@ -391,9 +446,10 @@ export function nextGateUpdateWatermark(event: NextFlightLike, previous: RadarGa
  * Status, operational times, aircraft, terminal and query receipt remain live. */
 export function retainLatestGateEvidence<T extends RadarGateSnapshot>(event: NextFlightLike, previous: T | null, incoming: T, now = Date.now()): T {
   const before = sourceGateUpdate(event, previous, now);
-  const after = sourceGateUpdate(event, { ...incoming, updatedAt: now }, now);
+  // The incoming answer keeps its own receipt; only a receipt-less one is "now".
+  const after = sourceGateUpdate(event, { ...incoming, updatedAt: typeof incoming.updatedAt === 'number' ? incoming.updatedAt : now }, now);
   return previous && before && (!after || after.sourceUpdatedAtEpochMs < before.sourceUpdatedAtEpochMs)
-    ? { ...incoming, gate: previous.gate, gateUpdate: previous.gateUpdate, gateEvidenceReceivedAt: previous.gateEvidenceReceivedAt ?? previous.updatedAt }
+    ? { ...incoming, gate: previous.gate, gateUpdate: previous.gateUpdate, gateEvidenceReceivedAt: previous.gateEvidenceReceivedAt ?? radarReceiptEpochMs(previous) }
     : incoming;
 }
 
@@ -417,8 +473,13 @@ function manualGateReview(event: NextFlightLike, radar: RadarGateSnapshot | null
 }
 
 /** Compare-and-review token, scoped by the caller to its account and occurrence. */
-export function manualGateRevision(entry: ManualGateEntry | null, account: string): string {
-  return entry ? JSON.stringify([account, entry.gate, entry.terminal || '', entry.setAtEpochMs, entry.sourceReview || null, entry.scheduledDepartureUtc || '']) : '';
+export function manualGateRevision(entry: ManualGateEntry | null, account: string, event?: NextFlightLike): string {
+  const parts: unknown[] | null = entry ? [account, entry.gate, entry.terminal || '', entry.setAtEpochMs, entry.sourceReview || null, entry.scheduledDepartureUtc || ''] : null;
+  // Preserve existing untyped notice/review revisions byte-for-byte on upgrade.
+  if (parts && entry?.boardingType) parts.push(entry.boardingType);
+  const revision = parts ? JSON.stringify(parts) : '';
+  // Editor writes additionally bind even an empty record to its exact occurrence.
+  return event ? JSON.stringify(['manual-gate-editor:v1',account,operationalIdentity(event),revision]) : revision;
 }
 
 export type ManualGateReviewWriteResult = { ok: true; entry: ManualGateEntry } | { ok: false; message: string };
@@ -446,7 +507,7 @@ export function writeManualGateReview(storage: StorageLike, account: string, eve
   // validated gate fields; legacy status/registration and v1 bytes stay untouched.
   const priorGate=entry.gate||{value:current.gate,terminal:cleanTerminal(current.terminal),author:current.author,setAtEpochMs:current.setAtEpochMs};
   const gate:ManualOperationalGate={...priorGate,sourceReview:{action:input.action,decidedAtEpochMs:now,fingerprint:candidate.fingerprint,sourceGate:candidate.gate,sourceUpdatedAtEpochMs:candidate.sourceUpdatedAtEpochMs,provider:candidate.provider}};
-  if(input.action==='accept'){gate.value=candidate.gate;gate.author=text(input.author).slice(0,60)||'Você';gate.setAtEpochMs=now;}
+  if(input.action==='accept'){delete gate.boardingType;gate.value=candidate.gate;gate.author=text(input.author).slice(0,60)||'Você';gate.setAtEpochMs=now;}
   map[identity]={owner:account,flight:entry.flight,date:entry.date,origin:entry.origin,destination:entry.destination,scheduledDepartureUtc:entry.scheduledDepartureUtc,gate,
     ...(entry.legacyGateDismissed?{legacyGateDismissed:true}:{}),...(entry.status?{status:entry.status}:{}),...(entry.registration?{registration:entry.registration}:{})};
   try{storage.setItem(MANUAL_OPERATIONAL_PREFIX+account,JSON.stringify(map));}catch{return {ok:false,message:'Não foi possível salvar a escolha neste dispositivo.'};}
@@ -507,7 +568,7 @@ export function resolveNextFlightGate(input: {
     if (radarRejected) radar = null;
   }
 
-  const receipt = typeof radar?.updatedAt === 'number' ? radar.updatedAt : 0;
+  const receipt = radarReceiptEpochMs(radar);
   const receivedFresh = receipt > 0 && receipt <= now && now - receipt <= RADAR_GATE_STALE_MS;
   const conflicted = (field:'gate'|'status'|'registration') => radar?.operationalEvidence?.[field]?.conflict === true || (Array.isArray(radar?.operationalConflicts) && radar.operationalConflicts.includes(field));
   const conflicts = { gate:conflicted('gate'), status:conflicted('status'), registration:conflicted('registration') };
@@ -519,11 +580,12 @@ export function resolveNextFlightGate(input: {
   };
   const automaticFieldValidUntilEpochMs: NextFlightGateInfo['automaticFieldValidUntilEpochMs'] = {};
   const fieldValue = (field: 'gate' | 'status' | 'registration'): string => {
-    if (!radar || !receivedFresh || conflicts[field]) return '';
+    if (!radar || conflicts[field]) return '';
     const normalize = field === 'gate' ? (value:unknown)=>normalizeBoardingGate(value).gate : field === 'status' ? cleanStatus : cleanRegistration;
     const evidence = radar.operationalEvidence?.[field], value = normalize(radar[field]);
     const observed = sourceInstantEpochMs(evidence?.sourceObservedAt);
-    if (value && evidence?.version === 1 && typeof evidence.value === 'string' && normalize(evidence.value) === value
+    // Field evidence travels with the live response: that response's receipt must be fresh.
+    if (receivedFresh && value && evidence?.version === 1 && typeof evidence.value === 'string' && normalize(evidence.value) === value
       && typeof evidence.provenance === 'string' && Boolean(evidence.provenance.trim()) && Number.isFinite(observed)
       && observed <= now && observed <= receipt && now - observed <= RADAR_GATE_STALE_MS) {
       if (field === 'gate' && gateHistoryBlocks(observed)) return '';
@@ -532,9 +594,12 @@ export function resolveNextFlightGate(input: {
     }
     if (field === 'gate') {
       const proof = sourceGateUpdate(event,radar,now);
-      if (proof && proof.sourceUpdatedAtEpochMs <= receipt && now - proof.sourceUpdatedAtEpochMs <= RADAR_GATE_STALE_MS) {
+      // Retained gate proof keeps its own receipt, as on the server (gateEvidenceReceivedAt);
+      // sourceGateUpdate already requires that receipt to be fresh.
+      const proofReceipt = typeof radar.gateEvidenceReceivedAt === 'number' ? radar.gateEvidenceReceivedAt : receipt;
+      if (proof && proof.sourceUpdatedAtEpochMs <= proofReceipt && now - proof.sourceUpdatedAtEpochMs <= RADAR_GATE_STALE_MS) {
         if (gateHistoryBlocks(proof.sourceUpdatedAtEpochMs)) return '';
-        automaticFieldValidUntilEpochMs.gate = Math.min(receipt, proof.sourceUpdatedAtEpochMs) + RADAR_GATE_STALE_MS;
+        automaticFieldValidUntilEpochMs.gate = Math.min(proofReceipt, proof.sourceUpdatedAtEpochMs) + RADAR_GATE_STALE_MS;
         return proof.gate;
       }
     }
@@ -542,12 +607,25 @@ export function resolveNextFlightGate(input: {
   };
   const radarGate = normalizeBoardingGate(fieldValue('gate'));
   if (radar && normalizeBoardingGate(radar.gate).position) radarRejected = 'position';
+  // Reported: the exact occurrence answered with a gate but no field observation instant.
+  // Shown as provider-reported for the receipt window; never confirmed, alerted or pulsed.
+  const reportedGate = (() => {
+    // A source that sent field evidence or a gate update spoke about observation; when that
+    // proof fails (stale, mismatched, conflicting) the gate stays hidden, never "reported".
+    if (radarGate.gate || !radar || !receivedFresh || conflicts.gate || radar.operationalEvidence?.gate || radar.gateUpdate) return normalizeBoardingGate('');
+    const value = normalizeBoardingGate(radar.gate), watermark = radar.gateUpdateWatermark;
+    // Any gate-update history that differs or is itself marked conflicting blocks it.
+    if (!value.gate || (watermark && (watermark.gate !== value.gate || watermark.conflicted === true))) return normalizeBoardingGate('');
+    automaticFieldValidUntilEpochMs.gate = receipt + RADAR_GATE_STALE_MS;
+    return value;
+  })();
   const rosterGate = normalizeBoardingGate(event.gate);
-  const radarGateReceipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  const radarGateReceipt = radar?.gateEvidenceReceivedAt ?? radarReceiptEpochMs(radar);
   const radarUpdatedAt = radar && Number(radarGateReceipt) > 0 && Number(radarGateReceipt) <= now + 60_000 ? Number(radarGateReceipt) : 0;
   const radarStale = Boolean(radar) && (!radarUpdatedAt || now - radarUpdatedAt > RADAR_GATE_STALE_MS);
 
-  const sourceGate = radarGate.gate ? { ...radarGate, source: 'radar' as const } : null;
+  const sourceGate = radarGate.gate ? { ...radarGate, source: 'radar' as const }
+    : reportedGate.gate ? { ...reportedGate, source: 'reported' as const } : null;
 
   let gate = '';
   let remote = false;
@@ -578,8 +656,12 @@ export function resolveNextFlightGate(input: {
   if (manualRegistration && radarRegistration && manualRegistration.value !== radarRegistration) conflicts.registration = true;
   if (divergence) conflicts.gate = true;
 
+  const declaredType = linkedManualGate && manual ? validManualBoardingType(manual.boardingType,manual.gate,manual.setAtEpochMs) : undefined;
+  // Manual declarations retain the existing manual-input lifecycle. This is
+  // provenance, not a fresh provider observation or an airport-wide mapping.
+  const manualBoardingType = declaredType && declaredType.setAtEpochMs <= now ? declaredType : null;
   const updatedAtEpochMs = gateSource === 'manual' ? manual!.setAtEpochMs : radarUpdatedAt;
-  const stale = (gateSource === 'radar' || Boolean(radarStatus)) && radarStale;
+  const stale = (gateSource === 'radar' || gateSource === 'reported' || Boolean(radarStatus)) && radarStale;
 
   return {
     eventId: event.id,
@@ -592,6 +674,8 @@ export function resolveNextFlightGate(input: {
     departure: clockOnly(event.departure),
     gate,
     remote,
+    boardingType: manualBoardingType?.value || 'unknown',
+    manualBoardingType,
     gateSource,
     terminal,
     status: manualStatus?.value || radarStatus,
@@ -607,6 +691,7 @@ export function resolveNextFlightGate(input: {
     radarUpdatedAtEpochMs: radarUpdatedAt,
     automaticFieldValidUntilEpochMs,
     usesRadar: gateSource === 'radar',
+    reportedProvider: gateSource === 'reported' || divergence?.source === 'reported' ? providerLabel(radar?.provider) : '',
     stale,
     radarRejected,
     divergence,
@@ -620,6 +705,12 @@ export function statusSourceLabel(info: Pick<NextFlightGateInfo, 'statusSource'>
   if (info.statusSource === 'manual') return 'Informado por você · preservado neste dispositivo';
   if (info.statusSource === 'radar') return 'Fonte operacional · observação do status comprovada';
   return 'Status operacional não confirmado';
+}
+
+const PROVIDER_LABELS: Record<string, string> = { flightaware: 'FlightAware', aerodatabox: 'AeroDataBox', airlabs: 'AirLabs', aviationstack: 'Aviationstack', custom: 'Fonte própria', 'cirium-sky': 'Cirium', 'cirium-flex': 'Cirium' };
+/** Nome público da fonte; desconhecida vira um rótulo genérico, nunca texto livre da resposta. */
+export function providerLabel(provider: unknown): string {
+  return PROVIDER_LABELS[String(provider || '')] || 'Fonte operacional';
 }
 
 export function gateDisplay(info: Pick<NextFlightGateInfo, 'gate' | 'remote'>): string {
@@ -653,7 +744,7 @@ export function readCachedRadarForFlight(storage: Pick<Storage, 'getItem'>, even
   if (event.kind !== 'flight' || event.placeholder || !flightOperationalDate(event)) return null;
   try {
     const parsed = JSON.parse(storage.getItem(radarSnapshotStorageKey(event)) || 'null') as RadarCacheRecord | null;
-    if (!parsed || !parsed.updatedAt || now - Number(parsed.updatedAt) > RADAR_SNAPSHOT_TTL_MS) return null;
+    if (!parsed || !parsed.updatedAt || now - radarReceiptEpochMs(parsed) > RADAR_SNAPSHOT_TTL_MS) return null;
     if (canonicalFlightId(parsed.flight) !== canonicalFlightId(event.flightNumber)
       || parsed.operationalDate !== flightOperationalDate(event)
       || upper(parsed.origin) !== upper(event.origin)

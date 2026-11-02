@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -13,7 +14,7 @@ try {
  assert.equal(learned.rates.find(x=>x.key==='per_diem.breakfast')?.value,25);
  assert.equal(learned.rates.every(x=>!x.confirmed),true);
  assert.equal(learning.learnPerDiemStatement(document.replace('Total depositado','TAXI R$ 40,00\nTotal depositado'),'synthetic-conflict.txt').rates.some(x=>x.key==='per_diem.taxi'),false);
- const store=new Map();globalThis.localStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)};globalThis.window={dispatchEvent:()=>{}};
+ const store=new Map();globalThis.localStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)};globalThis.window=new EventTarget();
  const rate=learned.rates.find(x=>x.key==='per_diem.taxi');
  assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-05'),null);
  assert.equal(learning.saveConfirmedFinancialRates([{...rate,confirmed:true}]),true);
@@ -27,6 +28,7 @@ try {
  perDiemConfig:()=>({taxiRate,rates:{domestic:{mainMeal:100,currency:'BRL',label:'SYNTHETIC'}},domesticBreakfast:25,domesticMainMealSource:'synthetic',domesticBreakfastSource:'synthetic',breakfastPercent:.25,exchangeRates:{BRL:1},source:'SYNTHETIC',act:{version:'synthetic'}}),
  loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:origin=>({rateKey:'domestic',airport:origin,reason:'synthetic'}),isOperationalEvent:()=>true,financialEventCode:e=>e.day.type,readOptionalNumberSetting:()=>null,dateChip:d=>d.toISOString().slice(0,10),moneyCurrency:(v,c)=>`${c} ${v}`});
  vm.runInContext(ts.transpileModule(fns.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.calculate=calculatePerDiem;',{compilerOptions:{target:99}}).outputText,context);
+ installAllowanceDependencies(context,{stubConfig:true});
  const at=(clock,iso='2032-10-05')=>`${iso}T${clock}:00-03:00`;
  const flight=(report='04:00',origin='BSB',destination='GRU',departure='06:00',arrival='08:00',iso='2032-10-05')=>({id:'SYN-FLIGHT',kind:'flight',origin,destination,day:{type:'VOO',dutyReport:report,dutyReportSource:'published'},canonical:{journeyId:'SYN-JOURNEY',startDateTime:at(departure,iso),endDateTime:at(arrival,iso),leg:{departureTime:departure,arrivalTime:arrival}}});
  const roster={year:2032,month:10,base:'BSB'};
@@ -46,7 +48,7 @@ try {
  const view=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='PerDiemMonthView');assert(view);
  const {build}=await import('esbuild');const http=await import('node:http');const {createRequire}=await import('node:module');
  const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
- const entry=`import PersonalAllowanceReference from './client/src/components/finance/PersonalAllowanceReference';import * as learning from './client/src/lib/financialStatementLearning';window.learning=learning;import FinancialStatementImporter from './client/src/components/finance/FinancialStatementImporter';import React,{useState,useMemo} from 'react';import{createRoot}from'react-dom/client';
+ const entry=`import FinancialActApplicability,{AllowanceMinimumReference} from './client/src/components/finance/FinancialActApplicability';import PersonalAllowanceReference from './client/src/components/finance/PersonalAllowanceReference';import * as learning from './client/src/lib/financialStatementLearning';window.learning=learning;import FinancialStatementImporter from './client/src/components/finance/FinancialStatementImporter';import React,{useState,useMemo} from 'react';import{createRoot}from'react-dom/client';
  const buildLegs=()=>[], calculatePerDiem=()=>window.forecast;
  const useFinancialPrivacy=()=>({hidden:window.hidden,amount:v=>window.hidden?'••••':v,text:v=>window.hidden?'••••':v});
  const isAdmin=()=>window.admin;const Brand=()=>null,BriefcaseBusiness=()=>null,CalendarDays=()=>null,Plane=()=>null,DollarSign=()=>null;
@@ -70,8 +72,10 @@ try {
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-taxi-owner',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-offline-token');const draft=learning.learnPerDiemStatement('DEMONSTRATIVO DE DIARIAS\nDe 2032-09-01 ate 2032-09-07\nTAXI R$ 31,50','synthetic-reference.pdf');if(!learning.saveConfirmedFinancialRates(learning.mergeConfirmedRates([],draft.rates.map(rate=>({...rate,confirmed:true})))))throw Error('synthetic archive setup failed');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
  await render(missing);
  await page.getByText('Reutilizar referência arquivada nas diárias',{exact:true}).click();
- const select=page.getByLabel('Referência arquivada'),taxiOption=await select.locator('option').filter({hasText:'Táxi'}).getAttribute('value');await select.selectOption(taxiOption);await page.getByLabel('Usar na previsão desde').fill('2032-10-01');await page.getByRole('button',{name:'Confirmar uso nas previsões',exact:true}).click();await page.getByRole('status').filter({hasText:'Referência pessoal ativada'}).waitFor();
- await render(confirmed);assert.equal(await pending.count(),0);await page.getByText('Reutilizar referência arquivada nas diárias',{exact:true}).click();await page.getByRole('button',{name:'Revogar Táxi',exact:true}).click();await page.getByRole('status').filter({hasText:'Referência pessoal revogada'}).waitFor();assert.equal(await page.evaluate(()=>learning.confirmedPerDiemReferencesAt('2032-10-05').taxi),null);assert.deepEqual(errors,[]);
+ const personalReferenceRaw=()=>page.evaluate(()=>localStorage.getItem('crewcheck_personal_allowance_reference_v1:synthetic-taxi-owner'));const beforeActivation=await personalReferenceRaw();
+ const select=page.getByLabel('Referência arquivada'),taxiOption=await select.locator('option').filter({hasText:'Táxi'}).getAttribute('value');await select.selectOption(taxiOption);await page.getByLabel('Usar na previsão desde').fill('2032-10-01');await page.getByRole('button',{name:'Revisar uso nas previsões',exact:true}).click();assert.equal(await page.evaluate(()=>learning.confirmedPerDiemReferencesAt('2032-10-05').taxi),null,'activation preview does not apply the reference');assert.equal(await personalReferenceRaw(),beforeActivation,'activation preview preserves exact storage bytes');await page.getByRole('button',{name:'Confirmar vigências nesta conta',exact:true}).click();await page.getByRole('status').filter({hasText:'Referência pessoal ativada'}).waitFor();
+ const beforeRevocation=await personalReferenceRaw();
+ await render(confirmed);assert.equal(await pending.count(),0);await page.getByText('Reutilizar referência arquivada nas diárias',{exact:true}).click();await page.getByRole('button',{name:'Revogar Táxi',exact:true}).click();assert.equal(await page.evaluate(()=>learning.confirmedPerDiemReferencesAt('2032-10-05').taxi),31.5,'revocation preview preserves the active reference');assert.equal(await personalReferenceRaw(),beforeRevocation,'revocation preview preserves exact storage bytes');await page.getByRole('button',{name:'Confirmar vigências nesta conta',exact:true}).click();await page.getByRole('status').filter({hasText:'Referência pessoal revogada'}).waitFor();assert.equal(await page.evaluate(()=>learning.confirmedPerDiemReferencesAt('2032-10-05').taxi),null);assert.deepEqual(errors,[]);
  console.log('PASS actual Home calculator + extracted PerDiemMonthView: missing taxi is pending dash outside numeric rows, confirmed taxi unchanged, ineligible absent, existing actual importer review, explicit zero, privacy masking; offline synthetic UI.');
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 }finally{modules.cleanup();}

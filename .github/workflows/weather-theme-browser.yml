@@ -19,6 +19,11 @@ on:
       - 'scripts/v14344/**'
       - 'scripts/finalize-theme-runtime.mjs'
       - 'scripts/regression-weather-theme-browser.mjs'
+      - 'client/src/components/pulse/**'
+      - 'scripts/pulse-alert-experience/**'
+      - 'scripts/lib/pulse-touch-target-sample.cjs'
+      - 'scripts/regression-pulse-mobile-navigation.mjs'
+      - 'scripts/regression-pulse-touch-target-browser.cjs'
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - '.github/workflows/weather-theme-browser.yml'
@@ -75,11 +80,19 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
         run: node scripts/regression-weather-theme-browser.mjs
+      - name: Verify real Pulse touch targets in Chromium and WebKit
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
+        run: |
+          node scripts/regression-pulse-mobile-navigation.mjs
+          node scripts/regression-pulse-touch-target-browser.cjs
       - name: Save synthetic weather viewport evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: CrewCheck-weather-theme-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/weather-theme
+          path: |
+            artifacts/weather-theme
+            artifacts/pulse-touch-targets
           if-no-files-found: warn
           retention-days: 7

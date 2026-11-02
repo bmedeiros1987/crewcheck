@@ -1,3 +1,5 @@
+import { rosterCardPresentation, rosterSourceSignature } from '@/lib/rosterPresentation';
+import { RosterActivityIcon } from './RosterLegend';
 import { StayOperationalDetails } from './StayOperationalDetails';
 import { rosterDisplayIso, rosterLabelDate, rosterUnconfirmedDateText, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -5,7 +7,6 @@ import { currentPublicationReview, publicationOwner, publicationReviewStatus, su
 import { publication, type PublishedEvent } from '@/lib/rosterPublicationReview';
 import { PublicationChangeDetail } from './PublicationChangeDetail';
 import './aims-vertical.css';
-import { rosterActivityLabel } from './rosterActivityLabel';
 type AimsRosterEvent = {
   id: string;
   operationalTimeZone?: string;
@@ -37,20 +38,11 @@ function dateLabel(event: AimsRosterEvent) {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, weekday: 'short', day: '2-digit', month: '2-digit' }).format(date);
 }
 
-function publishedClock(value?: string | null) {
-  // Preserve the published suffix and unknown text; this is only a projection.
-  return String(value || '').trim() || '—';
-}
-
-function activityCode(event: AimsRosterEvent) {
-  return rosterActivityLabel(String(event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação'));
-}
-
 function details(event: AimsRosterEvent) {
   return String(event.subtitle || event.hotel || event.title || event.kind || '—');
 }
 
-export function AimsRosterTable({ events, operationalEvents = events, title = 'Escala publicada por dia', dayView = false, showHistory = true, focusEventId, focusEventIndex }: { focusEventIndex?: number; focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; operationalEvents?: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
+export function AimsRosterTable({ events, filtered = false, operationalEvents = events, title = 'Escala publicada por dia', dayView = false, showHistory = true, focusEventId, focusEventIndex }: { focusEventIndex?: number; focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; filtered?: boolean; operationalEvents?: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
   const [storedReview,setReview] = useState(currentPublicationReview);
   const review = storedReview?.owner === publicationOwner() ? storedReview : null;
   const [runtimeStatus,setRuntimeStatus] = useState(publicationReviewStatus);
@@ -60,15 +52,15 @@ export function AimsRosterTable({ events, operationalEvents = events, title = 'E
   useEffect(() => { setHistoryOpen(null); setExpandedKey(null); }, [owner]);
   const titleId = `cc-aims-roster-${useId()}`;
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const sourceSignature = rosterSourceSignature(events), operationalSignature = rosterSourceSignature(operationalEvents);
   const eventRenderKeys = useMemo(() => {
-    const counts = new Map<string, number>();
-    return events.map((event) => {
-      const base = String(event.id || 'row');
-      const ordinal = counts.get(base) || 0;
-      counts.set(base, ordinal + 1);
-      return `${base}#${ordinal}`;
+    const occurrences = new Map<AimsRosterEvent, number>();
+    return events.map((event, index) => {
+      const ordinal = occurrences.get(event) || 0; occurrences.set(event, ordinal + 1);
+      const sourceIndices = operationalEvents.flatMap((source, sourceIndex) => source === event ? [sourceIndex] : []);
+      return `${event.id || 'row'}#${sourceIndices[ordinal] ?? index}:${rosterSourceSignature([event])}`;
     });
-  }, [events]);
+  }, [events, operationalEvents, sourceSignature, operationalSignature]);
   // Group only for presentation. Keep every event and its original order within
   // the published day; never infer dates, times or additional activities here.
   const days = useMemo(() => {
@@ -105,7 +97,7 @@ export function AimsRosterTable({ events, operationalEvents = events, title = 'E
       </div>
       <span>{events.length} {events.length === 1 ? 'atividade' : 'atividades'}</span>
     </header>
-    {events.length === 0 && <p className="cc-aims-empty" role="status">Nenhuma programação no período selecionado.</p>}
+    {events.length === 0 && <p className="cc-aims-empty" role="status">{filtered ? 'Nenhum item deste filtro no período selecionado.' : 'Nenhuma programação no período selecionado.'}</p>}
     <ol className="cc-aims-days" aria-label="Programações publicadas por dia">
       {days.map(([dayKey, group]) => <li className="cc-aims-day" key={dayKey} data-roster-iso={group.iso}>
         <h3 className="cc-aims-date">
@@ -114,34 +106,36 @@ export function AimsRosterTable({ events, operationalEvents = events, title = 'E
         <ol className="cc-aims-activities" aria-label={`Atividades de ${dateLabel(group.events[0].event)}`}>
           {group.events.map(({ event, renderKey }) => {
             const iso = isoOf(event);
+            const card = rosterCardPresentation(event, iso);
             const expanded = expandedKey === renderKey && review?.version === observedVersion.current;
             const item = event.canonical ? publication([event.canonical as PublishedEvent]).items[0] : null;
             const changes = item && review ? review.history.filter(change => change.after && JSON.stringify(change.after) === JSON.stringify(item)) : [];
             const unread = changes.some(change => !change.seen);
             const detailId = `${titleId}-detail-${eventRenderKeys.indexOf(renderKey)}`;
-            return <li key={renderKey} className="cc-aims-activity"
+            return <li key={renderKey} className="cc-aims-activity cc-roster-token" data-roster-mode={card.mode}
               data-change-status={unread ? 'unread' : undefined}
               data-roster-iso={iso} data-roster-event-id={event.id}>
               <button type="button" className="cc-aims-activity-toggle"
                 aria-expanded={expanded} aria-controls={expanded ? detailId : undefined}
-                aria-label={`${activityCode(event)} em ${dateLabel(event)}. ${expanded ? 'Fechar' : 'Abrir'} detalhes`}
+                aria-label={`${card.title} em ${dateLabel(event)}. ${expanded ? 'Fechar' : 'Abrir'} detalhes`}
                 onClick={() => openDetails(renderKey)}>
-                <small>Código / atividade</small>
-                <strong>{activityCode(event)}</strong>
+                <small>Atividade</small>
+                <strong className="cc-roster-card-heading"><RosterActivityIcon mode={card.mode}/>{card.title}</strong>
                 {unread && <span className="cc-aims-change-badge">Alteração não vista</span>}
                 <span className="cc-aims-detail-label">{expanded ? 'Fechar detalhes −' : 'Ver detalhes +'}</span>
               </button>
               {!iso && <p className="cc-aims-unconfirmed-date">{rosterUnconfirmedDateText(event)}</p>}
               <dl className="cc-aims-published-fields">
-                <div><dt>Apresentação</dt><dd>{event.presentation && event.presentation !== 'Conexão/Solo' ? publishedClock(event.presentation) : '—'}</dd></div>
-                <div><dt>Partida / início</dt><dd>{publishedClock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure)}</dd></div>
-                <div><dt>Origem</dt><dd>{event.origin || '—'}</dd></div>
-                <div><dt>Destino</dt><dd>{event.destination || '—'}</dd></div>
-                <div><dt>Chegada / fim</dt><dd>{publishedClock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival)}</dd></div>
-                <div className="cc-aims-source-details"><dt>Detalhes publicados</dt><dd>{details(event)}</dd></div>
+                {card.presentation && <div><dt>Apresentação</dt><dd>{card.presentation}</dd></div>}
+                <div><dt>Partida / início{card.startDate && ` · ${card.startDate}`}</dt><dd>{card.start}</dd></div>
+                {card.nonOperational ? card.context && <div><dt>Local</dt><dd>{card.context}</dd></div> : <><div><dt>Origem</dt><dd>{event.origin || '—'}</dd></div><div><dt>Destino</dt><dd>{event.destination || '—'}</dd></div></>}
+                <div><dt>Chegada / fim{card.endDate && ` · ${card.endDate}`}</dt><dd>{card.end}</dd></div>
+                {card.datesUnconfirmed && <div><dt>Datas</dt><dd>Virada de dia indicada; datas a confirmar</dd></div>}
+                {card.hotel && <div><dt>Hotel publicado</dt><dd>{card.hotel}</dd></div>}
+                <div className="cc-aims-source-details"><dt>Dados da fonte · {card.code}</dt><dd>{details(event)}</dd></div>
               </dl>
               {expanded && <div id={detailId} className="cc-aims-activity-detail">
-                {event.kind === 'stay' ? <StayOperationalDetails event={event} events={operationalEvents}/> : <>
+                {card.mode === 'stay' ? <StayOperationalDetails event={event} events={operationalEvents}/> : <>
                   <strong>Detalhes publicados</strong>
                   <p>{details(event)}</p>
                 </>}

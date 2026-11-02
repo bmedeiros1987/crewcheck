@@ -3,6 +3,8 @@ name: CrewCheck notification settings UI
 on:
   pull_request:
     paths:
+      - 'client/src/components/preferences/PreferenceSwitch.tsx'
+      - 'client/src/components/preferences/preference-switch.css'
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
@@ -24,6 +26,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'client/src/components/preferences/PreferenceSwitch.tsx'
+      - 'client/src/components/preferences/preference-switch.css'
       - 'client/src/components/notifications/**'
       - 'client/src/components/v139/BidsAlertPreferences.tsx'
       - 'client/src/lib/crewcheckPushRuntime.ts'
@@ -83,6 +87,7 @@ jobs:
           node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
+          node scripts/regression-notification-settings-dom.mjs --browser
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
@@ -102,6 +107,7 @@ jobs:
           node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
+          node scripts/regression-notification-settings-dom.mjs --browser
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs

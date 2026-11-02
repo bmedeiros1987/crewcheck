@@ -11,7 +11,7 @@ import * as auth from './client/src/lib/authClient';import * as admission from '
 import {readStayOperationalProjection} from './client/src/lib/stayOperationalProjection';
 import * as gate from './client/src/lib/nextFlightGate';import {applyNextFlightToWatchSnapshot} from './client/src/lib/nextFlightWatch';import {buildCrewCheckWatchSnapshot} from './client/src/lib/watchContext';
 import * as stayStore from './client/src/lib/stayEditorStore';import {emptyStayEditor,stayEditorKey} from './shared/stay-editor-store.mjs';import {alertRosterOwned} from './client/src/lib/alertRosterOwnership';import {startupKey,startupOwner} from './client/src/lib/rosterStartup';
-import {gateQueryDay,gateQuerySuppressed,originFlightDate,radarResultDecision} from './shared/gate-query-day.mjs';import {radarFailurePayload} from './client/src/lib/radarAvailability';
+import {gateQueryDay,gateQuerySuppressed,originFlightDate,radarResultDecision,radarSourceEpoch} from './shared/gate-query-day.mjs';import {radarFailurePayload} from './client/src/lib/radarAvailability';
 const {captureAuthSession,getStoredUser,getToken,authFetch}=auth;const {beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission}=admission;
 const {retainLatestGateEvidence,nextGateUpdateWatermark,canonicalFlightId,RADAR_GATE_STALE_MS,MANUAL_GATE_EVENT,manualGateIdentity,flightOperationalDate,gateChangeAlertAllowed,manualGateAccountKey,resolveNextFlightGate,radarSnapshotStorageKey,readCachedRadarForFlight,readManualGate,selectNextFlight}=gate;
 const {savedStayEditorEvent}=stayStore;

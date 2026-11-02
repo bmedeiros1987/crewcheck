@@ -277,3 +277,8 @@ html body .cc-partner-admin .cc-partner-list td { border-bottom-color: var(--cc-
   .cc-tour-progress span { transition: none; }
   .cc-tour-highlight { scroll-behavior: auto !important; }
 }
+
+.cc-tour-card { max-height:calc(100dvh - 150px); overflow-y:auto; overflow-wrap:anywhere; }
+.cc-tour-card .cc-tour-destination { width:100%; min-height:44px; border-radius:12px; padding:12px; white-space:normal; font:inherit; }
+.cc-tour-card button:focus-visible { outline:3px solid var(--cc-readable-focus); outline-offset:3px; }
+.cc-tour-card > footer nav { flex-wrap:wrap; }

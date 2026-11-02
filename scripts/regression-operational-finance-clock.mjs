@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -13,12 +14,13 @@ try {
   const functions = ast.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
   assert.equal(functions.length, names.length);
   const context = vm.createContext({ ...modules.load('financialIntervalEvidence'), ...policy, ...modules.load('financialJourneyGrouping'), ...modules.load('financialForecastPeriods'), ...modules.load('financialAmounts'),
-    perDiemConfig: () => ({ rates: { domestic: { mainMeal: 100, currency: 'BRL', label: 'SYNTHETIC' }, foreign: { mainMeal: 20, currency: 'USD', label: 'SYNTHETIC' } }, domesticBreakfast: 25, domesticMainMealSource: 'synthetic', domesticBreakfastSource: 'synthetic', breakfastPercent: .25, exchangeRates: { BRL: 1 }, source: 'SYNTHETIC — not a tariff', act: { version: 'SYNTHETIC' } }),
-    loadAirportPerDiemOverrides: () => ({}), resolvePerDiemRule: origin => ({ rateKey: origin === 'INT' ? 'foreign' : 'domestic', airport: origin, reason: 'synthetic fixture' }),
+    perDiemConfig: () => ({ rates: { domestic: { mainMeal: 100, currency: 'BRL', label: 'SYNTHETIC' }, other_international: { mainMeal: 20, currency: 'USD', label: 'SYNTHETIC' } }, domesticBreakfast: 25, domesticMainMealSource: 'synthetic', domesticBreakfastSource: 'synthetic', breakfastPercent: .25, exchangeRates: { BRL: 1 }, source: 'SYNTHETIC — not a tariff', act: { version: 'SYNTHETIC' } }),
+    loadAirportPerDiemOverrides: () => ({}), resolvePerDiemRule: origin => ({ rateKey: origin === 'INT' ? 'other_international' : 'domestic', airport: origin, reason: 'synthetic fixture' }),
     isOperationalEvent: () => true, financialEventCode: e => e.day.type, readOptionalNumberSetting: () => null,
     dateChip: d => d.toISOString().slice(0, 10), moneyCurrency: (v, c) => `${c} ${v}`,
   });
   vm.runInContext(ts.transpileModule(functions.map(n => n.getText(ast)).join('\n') + '\nglobalThis.calculate=calculatePerDiem;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+  installAllowanceDependencies(context,{stubConfig:true});
   const event = (id, start, end, report, kind = 'flight', origin = 'BSB') => ({ id, kind, origin, destination: 'BSB', presentation: report, day: { date: '05/10/2032', type: kind === 'flight' ? 'VOO' : 'ASB', dutyReport: report, dutyDebrief: end.slice(11,16), dutyReportSource:'published', dutyDebriefSource:'published' }, canonical: { kind, journeyId: id, startDateTime: start, endDateTime: end, leg:kind === 'flight' ? {departureTime:start.slice(11,16),arrivalTime:end.slice(11,16)} : undefined } });
   const roster = { year: 2032, month: 10, base: 'BSB' };
   const now = new Date('2032-10-08T00:30:00-03:00');

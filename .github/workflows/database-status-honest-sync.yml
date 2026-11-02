@@ -1,0 +1,69 @@
+name: Database status honest sync copy
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/offlineSync.ts'
+      - 'client/src/lib/i18n.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-database-status-*'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/roster-startup/**'
+      - '.github/workflows/database-status-honest-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-status-honest-sync-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database-status-honest-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Status states, no live resend, old-copy counterproof and mutant (prepared sources)
+        run: node scripts/regression-database-status-honest-sync.mjs
+      - name: Build web
+        run: npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/database-status-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/database-status-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Settings card on the compiled app (down, English, connected; 320 px)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/database-status-browser/package.json
+        run: node scripts/regression-database-status-card-browser.cjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-status-honest-sync-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/database-status
+          if-no-files-found: warn

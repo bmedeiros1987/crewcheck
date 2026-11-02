@@ -276,12 +276,19 @@ html[data-crew-theme="light"] .cc-calendar-roster { box-shadow: 0 14px 34px rgba
 
 .cc-calendar-roster > header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 18px 20px;
   border-bottom: 1px solid var(--ccr-line);
   background: linear-gradient(135deg, rgba(167, 139, 250, .10), rgba(53, 213, 236, .05));
+}
+/* With large text on narrow screens the count badge moves below the title instead of
+   squeezing it into one letter per line. */
+.cc-calendar-roster > header > div {
+  flex: 1 1 14em;
+  min-width: 0;
 }
 .cc-calendar-roster > header small {
   color: #a78bfa;
@@ -400,9 +407,9 @@ html[data-crew-theme="light"] .cc-calendar-roster { box-shadow: 0 14px 34px rgba
 }
 .cc-calendar-day article {
   padding: 10px;
-  border-left: 3px solid #a78bfa;
+  border-left: 3px solid var(--cc-roster-accent, #94a3b8);
   border-radius: 8px;
-  background: color-mix(in srgb, #a78bfa 7%, var(--ccr-panel-soft));
+  background: color-mix(in srgb, var(--cc-roster-accent, #94a3b8) 7%, var(--ccr-panel-soft));
 }
 .cc-calendar-day article strong,
 .cc-calendar-day article span,

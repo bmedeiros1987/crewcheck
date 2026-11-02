@@ -1,0 +1,8 @@
+.cc-concierge-channels { min-width:0; padding:clamp(16px,4vw,24px); margin-block:16px; border:1px solid var(--cc-readable-border); border-radius:18px; background:var(--cc-readable-surface); color:var(--cc-readable-text); overflow-wrap:anywhere; }
+.cc-concierge-channels h2 { margin:0 0 10px; font-size:clamp(1.2rem,4vw,1.65rem); }
+.cc-concierge-channels p,.cc-concierge-channels li { line-height:1.55; }
+.cc-concierge-channels ol { padding-inline-start:24px; list-style:decimal; }
+.cc-concierge-channels li+li { margin-top:8px; }
+.cc-concierge-channels button { display:block; width:100%; min-height:48px; padding:12px 16px; border:1px solid var(--cc-readable-primary); border-radius:12px; white-space:normal; font:inherit; font-weight:750; color:var(--cc-readable-primary-contrast); background:var(--cc-readable-primary); cursor:pointer; }
+.cc-concierge-channels button:focus-visible { outline:3px solid var(--cc-readable-focus); outline-offset:4px; }
+.cc-concierge-channels-note { margin-bottom:0; }

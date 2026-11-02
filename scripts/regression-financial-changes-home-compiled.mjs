@@ -1,6 +1,8 @@
 // Actual compiled Home routes and changesDetails slots. Synthetic local state;
 // every API/external request is intercepted. No delivery or provider calls.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import http from 'node:http';import vm from 'node:vm';import ts from 'typescript';import {createRequire} from 'node:module';import {build} from 'esbuild';
+// Format sits under the collapsed "Exibição" expander of the roster.
+const openView=async p=>{const d=p.locator('details.cc-roster-view-options');await d.waitFor({state:'attached'});if(!await d.evaluate(e=>e.open))await d.locator(':scope > summary').click();};
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const root=path.resolve(process.env.FINANCIAL_CHANGES_COMPILED_ROOT||process.cwd()),dist=path.join(root,'dist');assert(fs.existsSync(path.join(dist,'index.html')),'Build the actual candidate first');
 const source=fs.readFileSync(path.join(root,'scripts/regression-financial-payment-preview.cjs'),'utf8'),ast=ts.createSourceFile('fixture.cjs',source,99,true,ts.ScriptKind.JS);
@@ -30,7 +32,7 @@ try{
   await page.getByRole('combobox',{name:'Filtro financeiro',exact:true}).selectOption('month');
   for(const layout of ['aims','calendar']){
    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'})));
-   await page.getByRole('combobox',{name:'Formato da escala',exact:true}).selectOption(layout);
+   await openView(page);await page.getByRole('combobox',{name:'Formato da escala',exact:true}).selectOption(layout);
    assert.equal(await page.locator('.cc-publication-history').count(),0,'publication history is absent from actual roster '+layout);
    const link=page.getByRole('link',{name:'Alterações',exact:true});assert.equal(await link.count(),1);
    assert.equal(await link.getAttribute('href'),'?view=perdiem&fmode=allowance&fscreen=changes');

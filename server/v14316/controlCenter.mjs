@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { handleEscalaContact } from '../escala-contact.mjs';
 import { cleanText, dbPool, env, isAdminEmail, readBody, requireIdentity, safeEmail, sendJson, sha256 } from '../v139/common.mjs';
 import { sendSystemEmail } from '../v139/delivery.mjs';
 
@@ -295,6 +296,7 @@ async function adminOverview(req, res) {
 }
 
 export async function handleV14316ControlRoute(req, res, url) {
+  if (await handleEscalaContact(req, res, url)) return true;
   if (url.pathname === '/api/guardian/card' && req.method === 'GET') { await readGuardian(req, res, url); return true; }
   if (url.pathname === '/api/guardian/card' && req.method === 'POST') { await createGuardian(req, res); return true; }
   if (url.pathname === '/api/guardian/card' && req.method === 'DELETE') { await revokeGuardian(req, res); return true; }

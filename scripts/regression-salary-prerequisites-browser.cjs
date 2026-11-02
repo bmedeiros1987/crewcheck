@@ -26,7 +26,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
   const NativeDate=Date,instant=Date.parse('2032-02-02T15:00:00Z');
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
-  localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+  localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
   // Explicit synthetic personal tariffs; no ACT reference is extrapolated to2032.
   for(const [key,value] of Object.entries({day_km_metric:1,night_km_metric:2,reserve_hour:3,standby_hour:4}))localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_act_'+key+'_brl',String(value));
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');

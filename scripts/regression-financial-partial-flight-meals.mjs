@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -21,7 +22,7 @@ try {
   const rates=modules.load('financialStatementLearning');
   const context=vm.createContext({
     ...modules.load('financialAmounts'),...modules.load('financialJourneyGrouping'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialForecastPeriods'),
-    resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'synthetic-v1',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100},{key:'foreign',label:'Synthetic foreign',currency:'USD',mainMeal:65}]}),
+    resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'synthetic-v1',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100},{key:'other_international',label:'Synthetic foreign',currency:'USD',mainMeal:65}]}),
     confirmedPerDiemReferencesAt:date=>{
       const at=key=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL');};
       return {state:'ready',mainMeal:at('per_diem.lunch')??at('per_diem.dinner')??at('per_diem.supper'),breakfast:at('per_diem.breakfast')?.value??null,taxi:at('per_diem.taxi')?.value??null};
@@ -29,12 +30,13 @@ try {
     confirmedRateAt:(key,date)=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL');},
     confirmedRateValueAt:(key,date)=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL')?.value??null;},
     readOptionalNumberSetting:()=>null,readNumberSetting:()=>0,loadAirportPerDiemOverrides:()=>({}),
-    resolvePerDiemRule:(origin,destination)=>({rateKey:origin==='UNKNOWN'||destination==='UNKNOWN'?null:destination==='FOREIGN'?'foreign':'domestic',airport:destination,reason:'Synthetic geography'}),
+    resolvePerDiemRule:(origin,destination)=>({rateKey:origin==='UNKNOWN'||destination==='UNKNOWN'?null:destination==='FOREIGN'?'other_international':'domestic',airport:destination,reason:'Synthetic geography'}),
     isOperationalEvent:()=>true,financialEventCode:event=>event.day.type,
     eventStartDateTime:event=>new Date(event.start),eventEndDateTime:event=>new Date(event.end),
     dateChip:date=>date.toISOString().slice(0,10),
   });
   vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.calculate=calculatePerDiem;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+  installAllowanceDependencies(context,{manual:{domestic:100,other_international:65}});
   const month='2032-08',iso=month+'-06',roster={year:2032,month:8,base:'TEST'};
   const at=clock=>iso+'T'+clock+':00-03:00';
   function flight({id='one',departure='09:10',arrival='11:20',report=departure,reportSource='estimated',destination='AWAY',index=0,legs,records}={}) {
@@ -47,7 +49,7 @@ try {
   const pair=[flight({legs}),flight({id:'two',departure:'11:55',arrival:'14:10',index:1,legs})];
   const run=events=>context.calculate(events,roster,new Date(iso+'T15:00:00Z'));
   const known=run([reserve,...pair]);
-  assert.match(known.rows.find(row=>row.label==='Almoço').source,/referência ACT; tarifa empresarial da conta não confirmada neste período/,'reference pricing must disclose that an account tariff is unconfirmed');
+  assert.match(known.rows.find(row=>row.label==='Almoço').source,/Calibração manual desta conta; previsão não comprova pagamento/,'synthetic manual reference must disclose that payment is unconfirmed');
   assert.equal(known.rows.filter(row=>row.label==='Almoço').length,1,'literal flights crossing lunch preserve one known meal despite unknown APZ');
   assert.equal(known.rows.find(row=>row.label==='Almoço').value,100);
   assert.equal(known.rows.filter(row=>row.label==='Café').length,1,'breakfast is from the separately proven reserve only');
@@ -77,7 +79,7 @@ try {
   const early=flight({id:'early-independent',departure:'05:00',arrival:'06:40',report:'04:10',reportSource:'published'});
   const missingTaxi=run([early]);
   assert.equal(missingTaxi.rows.filter(row=>row.label==='Táxi').length,0);
-  assert(missingTaxi.unclassifiedItems.some(row=>/Tarifa de táxi confirmada para o período ausente/.test(row.reason)),'proved commute with absent tariff stays a specific pending item, never zero');
+  assert(missingTaxi.unclassifiedItems.some(row=>/Tarifa de táxi para o período pendente/.test(row.reason)),'proved commute with absent tariff stays a specific pending item, never zero');
   assert.equal(missingTaxi.monthlyUnclassifiedItems.filter(row=>row.pendingKind==='taxi_rate').length,1,'eligible unpriced taxi has a display-only pending marker');
   learned.push({key:'per_diem.taxi',value:31.25,currency:'BRL',confirmed:true,effectiveFrom:iso,effectiveTo:iso});
   const pricedTaxi=run([early]);assert.equal(pricedTaxi.rows.find(row=>row.label==='Táxi').value,31.25,'taxi uses its own reviewed amount, never the breakfast percentage');

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { authFetch, captureAuthSession } from '@/lib/authClient';
 
-type Result = { ok: boolean; linked: boolean; consentConcierge: boolean; last4?: string };
+type Result = { ok: boolean; linked: boolean; consentConcierge: boolean; last4?: string;
+  provider?: string; recorded?: boolean; canonicalVerified?: boolean;
+  testWindow?: 'active' | 'expired' | 'not_started' | 'unavailable'; linkStartAvailable?: boolean };
 export function WhatsAppLinkStatus() {
   const generation = useRef(0);
   const [status, setStatus] = useState<'unread' | 'loading' | 'ready' | 'unavailable'>('unread');
@@ -28,8 +30,16 @@ export function WhatsAppLinkStatus() {
     }
   };
   const last4 = /^\d{4}$/.test(result?.last4 || '') ? result!.last4 : '';
+  const saved=result?.recorded===true||result?.linked===true;
+  const verified=result?.provider==='infobip'&&result?.canonicalVerified===true&&result?.linked===true;
+  const description=status==='unread'?'Vínculo ainda não consultado.':status==='loading'?'Consultando vínculo…':
+    status==='unavailable'?'Não foi possível consultar o vínculo. Tente novamente.':
+    !saved?'WhatsApp ainda não vinculado. Confira a disponibilidade antes de gerar um código.':
+    !verified?`Há um vínculo salvo${last4?` · final ${last4}`:''}, mas a compatibilidade com o teste Infobip não foi confirmada. Isso não comprova recebimento pelo novo canal.`:
+    `Vínculo compatível com o teste Infobip${last4?` · final ${last4}`:''}. ${result?.consentConcierge?'Concierge autorizado.':'Concierge não autorizado.'} Recebimento e entrega pelo canal ainda não confirmados.`;
   return <section aria-label="Vínculo WhatsApp">
     <button type="button" onClick={() => void refresh()} disabled={status === 'loading'}>Conferir vínculo WhatsApp</button>
-    <p role="status">{status === 'unread' ? 'Vínculo ainda não consultado.' : status === 'loading' ? 'Consultando vínculo…' : status === 'unavailable' ? 'Não foi possível consultar o vínculo. Tente novamente.' : !result?.linked ? 'WhatsApp ainda não vinculado. Gere um código e envie-o pelo seu próprio WhatsApp.' : `WhatsApp vinculado${last4 ? ` · final ${last4}` : ''}. ${result.consentConcierge ? 'Concierge autorizado.' : 'Concierge não autorizado.'} Entrega ainda não confirmada.`}</p>
+    <p role="status">{description}</p>
+    {status==='ready'&&result?.linkStartAvailable!==true&&<p>{result?.testWindow==='expired'?'Janela de vínculo Infobip encerrada.':'Geração de novo vínculo Infobip não liberada.'} Não gere nem envie outro código agora.</p>}
   </section>;
 }

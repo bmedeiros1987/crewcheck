@@ -2,6 +2,7 @@ import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
 import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { authFetch, getStoredUser, getToken } from './authClient';
+import { captureAuthSession as captureRosterReadSession } from './authClient';
 
 export interface DatabaseStatus {
   ok: boolean;
@@ -81,6 +82,14 @@ function hasCrewCheckAuthToken(): boolean {
   try { return Boolean(getToken()); } catch { return false; }
 }
 
+// No automatic resend exists for these states: the offline queue in offlineSync.ts has no live
+// caller after full prepare. A status message never promises a later sync; it says what stays on
+// this device and that sync is pending (#1291 holds the durable outbox design).
+export const DATABASE_STATUS_MESSAGES = Object.freeze({
+  unavailable: 'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.',
+  unavailableSignedOut: 'Banco indisponível e sem login. Dados deste dispositivo ficam só aqui.',
+});
+
 function localDatabaseStatus(message = 'Sessão offline/local ativa. Faça login para sincronizar com o banco em nuvem.', health: Partial<DatabaseStatus> = {}): DatabaseStatus {
   return { ...health, ok: Boolean(health.connected), connected: Boolean(health.connected), databaseConfigured: Boolean(health.databaseConfigured ?? health.configured), localOnly: true, message };
 }
@@ -93,7 +102,7 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   } catch {}
   if (!hasCrewCheckAuthToken()) {
     return localDatabaseStatus(
-      health.connected ? 'Banco principal disponível. Faça login para sincronizar esta conta.' : 'Modo local protegido ativo. A sincronização será retomada quando o banco voltar.',
+      health.connected ? 'Banco principal disponível. Faça login para sincronizar esta conta.' : DATABASE_STATUS_MESSAGES.unavailableSignedOut,
       { ...health, databaseConfigured: Boolean(health.configured) }
     );
   }
@@ -103,7 +112,7 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
   } catch (error: any) {
     const code = String(error?.code || error?.payload?.code || '').toUpperCase();
     if (code === 'AUTH_REQUIRED' || error?.status === 401) return localDatabaseStatus('Login expirado. Histórico local ativo; entre novamente para sincronizar.', health);
-    return localDatabaseStatus(health.message || 'Banco temporariamente indisponível. O histórico local permanece ativo e será sincronizado depois.', health);
+    return localDatabaseStatus(health.message || DATABASE_STATUS_MESSAGES.unavailable, health);
   }
 }
 
@@ -120,20 +129,31 @@ function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterS
 }
 
 export async function listSavedRosters(limit = 72, strictHistory = false, options: { preserveRevisions?: boolean } = {}): Promise<SavedRosterSummary[]> {
+  const session = captureRosterReadSession();
+  const assertListSession = () => {
+    if (!session.isCurrent()) throw Object.assign(new Error('A sessão mudou durante a leitura do histórico.'), { code: 'STALE_SESSION' });
+  };
   const local = getLocalRosterSummaries(limit, options.preserveRevisions);
+  assertListSession();
   if (!hasCrewCheckAuthToken()) return normalizeSingleActiveSummary(local);
   try {
+    assertListSession();
     const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}&manager=1`);
+    assertListSession();
     if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');
     let online = payload.rosters || [];
     if (!strictHistory && !online.some((item) => item.isActive)) {
       try {
+        assertListSession();
         const active = await jsonFetch<{ ok: boolean; roster?: SavedRosterSummary | null }>(`/api/rosters/active`, { cache: 'no-store' });
+        assertListSession();
         if (active?.roster?.id) online = [active.roster, ...online];
       } catch {
+        assertListSession();
         // Alguns backends antigos ainda não expõem /active; o histórico local cobre o iOS.
       }
     }
+    assertListSession();
     const seen = new Set<string>();
     const merged: SavedRosterSummary[] = [];
     for (const item of [...online, ...local]) {
@@ -145,6 +165,7 @@ export async function listSavedRosters(limit = 72, strictHistory = false, option
     const sorted = merged.sort((a, b) => Number(Boolean(b.isActive)) - Number(Boolean(a.isActive)) || String(b.year || 0).localeCompare(String(a.year || 0)) || Number(b.month || 0) - Number(a.month || 0) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, limit);
     return normalizeSingleActiveSummary(sorted);
   } catch (error) {
+    assertListSession();
     if (strictHistory) throw error;
     return normalizeSingleActiveSummary(local);
   }
@@ -211,6 +232,10 @@ function assertExpectedRosterCrew(roster: CrewRoster, expected?: Pick<SavedRoste
 }
 
 export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSummary, 'year' | 'month' | 'crewId' | 'crewName'>): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] }> {
+  const session = captureRosterReadSession();
+  const assertReadSession = () => {
+    if (!session.isCurrent()) throw Object.assign(new Error('A sessão mudou durante a leitura da escala.'), { code: 'STALE_SESSION' });
+  };
   const local = findLocalRoster(id, expected);
   if (id.startsWith('local-') || id.startsWith('offline-')) {
     if (local) {
@@ -239,14 +264,17 @@ export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSum
 
   let lastError: unknown = null;
   for (const endpoint of attempts) {
+    assertReadSession();
     try {
       const payload = await jsonFetch<{ ok: boolean; data: { roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[] } }>(endpoint);
+      assertReadSession();
       if (payload?.data?.roster?.days?.length) {
         assertExpectedRosterPeriod(payload.data.roster, expected);
         assertExpectedRosterCrew(payload.data.roster, expected);
         return payload.data;
       }
     } catch (error) {
+      assertReadSession();
       if ((error as any)?.code === 'ROSTER_PERIOD_MISMATCH') throw error;
       // An identity mismatch is a wrong-crew answer, never a reason to keep trying
       // the next endpoint and fall back to whatever the device happens to hold.
@@ -255,6 +283,7 @@ export async function openSavedRoster(id: string, expected?: Pick<SavedRosterSum
     }
   }
 
+  assertReadSession();
   if (local) {
     assertExpectedRosterPeriod(local.roster, expected);
     assertExpectedRosterCrew(local.roster, expected);
@@ -471,7 +500,7 @@ export interface StoredPeriodStats {
   gymAvoidDays: number;
   heavyDays: number;
   score: number;
-  intensityScore: number;
+  intensityScore: number | null;
   alertsCount: number;
   criticalAlertsCount: number;
 }
@@ -483,7 +512,7 @@ export interface StoredStatsBlock {
     firstPeriod: string | null;
     lastPeriod: string | null;
     avgScore: number;
-    avgIntensity: number;
+    avgIntensity: number | null;
     avgAlerts: number;
     avgCriticalAlerts: number;
     avgFlightSegments: number;
@@ -747,7 +776,8 @@ function getLocalRosterSummaries(limit: number, preserveRevisions = false): Save
     month: Number(item.roster.month) || null,
     sourceFileName: item.sourceFileName || null,
     score: Number(item.compliance?.score ?? 0),
-    intensityScore: Number(item.compliance?.loadAnalysis?.intensityScore ?? 0),
+    // null = indeterminate load (every measurable day pending), never a confirmed 0.
+    intensityScore: item.compliance?.loadAnalysis?.intensityScore === null ? null : Number(item.compliance?.loadAnalysis?.intensityScore ?? 0),
     alertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter(isActionableComplianceAlert).length : 0,
     criticalAlertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter((a: any) => a?.severity === 'error').length : 0,
     checksum: item.checksum,
@@ -839,7 +869,7 @@ function buildLocalStoredStats(): StoredStatsResponse {
       gymAvoidDays: gym.filter((g: any) => g.priority === 'avoid' || g.priority === 'low').length,
       heavyDays: compliance?.loadAnalysis?.hardestDays?.length || 0,
       score: Number(compliance?.score ?? 0),
-      intensityScore: Number(compliance?.loadAnalysis?.intensityScore ?? 0),
+      intensityScore: compliance?.loadAnalysis?.intensityScore === null ? null : Number(compliance?.loadAnalysis?.intensityScore ?? 0),
       alertsCount: alerts.length,
       criticalAlertsCount: alerts.filter((a: any) => a?.severity === 'error').length,
     };
@@ -860,13 +890,14 @@ function buildLocalStoredStats(): StoredStatsResponse {
 }
 
 function summarizePeriods(periods: StoredPeriodStats[]): StoredStatsBlock['summary'] {
-  const avg = (selector: (item: StoredPeriodStats) => number) => periods.length ? Math.round(periods.reduce((sum, item) => sum + selector(item), 0) / periods.length) : 0;
+  const avg = (selector: (item: StoredPeriodStats) => number, items = periods) => items.length ? Math.round(items.reduce((sum, item) => sum + selector(item), 0) / items.length) : 0;
   return {
     rostersCount: periods.length,
     firstPeriod: periods[0]?.period || null,
     lastPeriod: periods[periods.length - 1]?.period || null,
     avgScore: avg((p) => p.score),
-    avgIntensity: avg((p) => p.intensityScore),
+    // Periods with an indeterminate load stay out; none known -> null, not 0.
+    avgIntensity: periods.some((p) => p.intensityScore !== null) ? avg((p) => p.intensityScore ?? 0, periods.filter((p) => p.intensityScore !== null)) : null,
     avgAlerts: avg((p) => p.alertsCount),
     avgCriticalAlerts: avg((p) => p.criticalAlertsCount),
     avgFlightSegments: avg((p) => p.flightSegments),

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { ownedDemoFallback } from '../roster-startup/demo-fallback.mjs';
 
 const VERSION = '14.3.2';
 const MARKER = 'crewcheck-homologation-v1432';
@@ -50,7 +51,7 @@ update('client/src/pages/Home.tsx', (source) => {
   if (!next.includes('function buildCrewCheckDemoRoster')) {
     next = required(next, 'function loadRoster(): BundleState {', `${demoRoster}function loadRoster(): BundleState {`, 'escala fictícia do modo demonstração');
   }
-  next = required(next,
+  if (!next.includes(ownedDemoFallback)) next = required(next,
     "  const roster = emptyRoster();\n  return { roster, compliance: neutralCompliance(roster), source: 'Nenhuma escala carregada' };",
     "  const demoActive = sessionStorage.getItem('crewcheck_demo_active') === '1';\n  if (demoActive) {\n    const roster = buildCrewCheckDemoRoster();\n    return { roster, compliance: analyzeSafe(roster), source: 'Demonstração fictícia CrewCheck' };\n  }\n  const roster = emptyRoster();\n  return { roster, compliance: neutralCompliance(roster), source: 'Nenhuma escala carregada' };",
     'carregamento automático da demonstração');

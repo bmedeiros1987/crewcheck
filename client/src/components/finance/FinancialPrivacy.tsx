@@ -42,10 +42,11 @@ export function useFinancialPrivacy() {
     },
   };
 }
-export function FinancialPrivacyToggle() {
+/** Shows or hides financial values only. `iconOnly` keeps the accessible name and state without visible text. */
+export function FinancialPrivacyToggle({ iconOnly = false }: { iconOnly?: boolean } = {}) {
   const { hidden, toggle } = useFinancialPrivacy();
-  return <div className="cc-financial-privacy-control"><button type="button" className="cc-financial-privacy-toggle" onClick={toggle} aria-label={hidden ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'} aria-pressed={hidden}>
+  return <div className="cc-financial-privacy-control"><button type="button" className="cc-financial-privacy-toggle" data-icon-only={iconOnly || undefined} onClick={toggle} aria-label={hidden ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'} title={iconOnly ? (hidden ? 'Mostrar valores' : 'Ocultar valores') : undefined} aria-pressed={hidden}>
     {hidden ? <EyeOff size={20} aria-hidden="true"/> : <Eye size={20} aria-hidden="true"/>}
-    <span>{hidden ? 'Mostrar valores' : 'Ocultar valores'}</span>
+    {!iconOnly && <span>{hidden ? 'Mostrar valores' : 'Ocultar valores'}</span>}
   </button></div>;
 }

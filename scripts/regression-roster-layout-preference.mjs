@@ -38,11 +38,12 @@ assert.match(prepared, /<select aria-label="Formato da escala" value=\{layout\}/
 for (const layout of ['cards','list','aims','calendar']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
 assert.ok(prepared.includes('<AimsDocumentView events={visibleEvents}'), 'AIMS uses the existing document projection');
 assert.ok(!prepared.includes('<option value="document">'), 'no duplicate Document option');
-assert.ok(prepared.includes('<CalendarRosterView operationalEvents={allOrdered} events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
+// The calendar shows the filtered events, counts the whole period and keeps every operational event for details.
+assert.ok(prepared.includes('<CalendarRosterView operationalEvents={allOrdered} events={filterRosterEvents(ordered, categoryFilter.filter)} periodEvents={ordered} filtered={categoryFilter.filter !== \'all\'} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
 
 assert.ok(prepared.includes('data-roster-iso={group.iso}'), 'date navigation remains reachable');
 const aimsTable = fs.readFileSync('client/src/components/v1391/AimsRosterTable.tsx', 'utf8');
-for (const heading of ['Código / atividade', 'Apresentação', 'Origem', 'Partida / início', 'Destino', 'Chegada / fim', 'Detalhes publicados']) {
+for (const heading of ['<small>Atividade</small>', 'Apresentação', 'Origem', 'Partida / início', 'Destino', 'Chegada / fim', 'Dados da fonte · {card.code}', 'Detalhes publicados']) {
   assert.ok(aimsTable.includes(heading), `missing published AIMS field: ${heading}`);
 }
 assert.ok(aimsTable.includes('className="cc-aims-days"'), 'AIMS must group each published day in a vertical column');
@@ -54,7 +55,7 @@ const calendar = fs.readFileSync('client/src/components/v1391/CalendarRosterView
 assert.ok(calendar.includes('<table>'), 'calendar must be a semantic monthly table');
 assert.ok(calendar.includes("const weekDays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']"), 'calendar must keep the full Monday-to-Sunday week');
 assert.ok(calendar.includes('data-roster-iso={iso}'), 'calendar cells must preserve date navigation');
-assert.ok(calendar.includes('dayEvents.map((event)'), 'calendar must render every event in each day');
+assert.ok(calendar.includes('dayEvents.map((event, index)'), 'calendar must render every event in each day');
 assert.doesNotMatch(calendar, /dayEvents\.slice\(0,\s*\d+\)/, 'calendar must not hide valid events behind an arbitrary cap');
 assert.doesNotMatch(calendar, /finance|salary|perDiem|parser/i, 'calendar renderer must not invent finance or parser logic');
 const layoutCss = fs.readFileSync('client/src/components/v1391/roster-layout.css', 'utf8');

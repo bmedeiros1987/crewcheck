@@ -20,7 +20,7 @@ final class ComplicationText {
         if (snapshot == null) {
             return new ComplicationRendering(
                     "ABRIR",
-                    "Abra o CrewCheck no celular",
+                    "Abra no celular",
                     "CREWCHECK",
                     "Abra o CrewCheck no celular para sincronizar a escala."
             );
@@ -35,7 +35,7 @@ final class ComplicationText {
 
     static ComplicationRendering gate(WatchContextSnapshot snapshot, long nowEpochMs) {
         if (snapshot == null) {
-            return gateRendering("--", "Abra o CrewCheck no celular",
+            return gateRendering("--", "Abra no celular",
                     "Portão indisponível. Abra o CrewCheck no celular.");
         }
         if (snapshot.isStale(nowEpochMs)) {

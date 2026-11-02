@@ -19,6 +19,7 @@ on:
       - 'scripts/ci/stamp-service-worker-build.mjs'
       - 'scripts/regression-pwa-update-*.mjs'
       - 'scripts/regression-pwa-cache-retirement-guards.mjs'
+      - 'scripts/regression-pwa-private-runtime*.mjs'
       - '.github/workflows/pwa-update-consent.yml'
 permissions:
   contents: read
@@ -56,6 +57,8 @@ jobs:
           node scripts/regression-pwa-update-consent.mjs
           node scripts/regression-pwa-update-cache-lifecycle.mjs
           node scripts/regression-pwa-cache-retirement-guards.mjs
+          node scripts/regression-pwa-private-runtime.mjs
+          node scripts/regression-pwa-private-runtime-browser.mjs
           node scripts/regression-native-play-update-ui.cjs
           node scripts/regression-mobile-pwa-safe-update.mjs
           node scripts/regression-sw-version-sync.mjs
@@ -79,6 +82,8 @@ jobs:
           node scripts/regression-pwa-update-consent.mjs
           node scripts/regression-pwa-update-cache-lifecycle.mjs
           node scripts/regression-pwa-cache-retirement-guards.mjs
+          node scripts/regression-pwa-private-runtime.mjs
+          node scripts/regression-pwa-private-runtime-browser.mjs
           node scripts/regression-native-play-update-ui.cjs
           node scripts/regression-mobile-pwa-safe-update.mjs
           node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs

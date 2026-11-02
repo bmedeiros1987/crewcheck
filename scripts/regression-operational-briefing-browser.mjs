@@ -13,7 +13,7 @@ let browser,disabled=false,missing=false,holdNextRead=null;let reads=0;const wri
 const saved={enabled:false,recorded:false,revision:0,preferences:null};
 try{
  browser=await chromium.launch({args:['--no-sandbox']});const context=await browser.newContext({viewport:{width:360,height:740},timezoneId:'America/Sao_Paulo',serviceWorkers:'block'});
- await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-A'}));});
+ await context.addInitScript(()=>{Date.now=()=>Date.parse('2099-10-06T00:00:00.000Z');localStorage.setItem('crewcheck_auth_token','synthetic-A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-A'}));});
  await context.route('**/*',async route=>{const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return route.continue();assert.equal(url.pathname,'/api/notifications/operational-briefing');
  if(disabled)return route.fulfill({status:503,json:{ok:false,code:'BRIEFING_DISABLED'}});
  if(req.method()==='POST'){const input=req.postDataJSON();assert.equal(input.expectedRevision,saved.revision);assert(input.enabled===false||input.confirmed===true);writes.push(input);Object.assign(saved,{enabled:input.enabled,recorded:input.enabled,revision:saved.revision+1,preferences:input.enabled?input.preferences:null});return route.fulfill({json:{ok:true,revision:saved.revision,inFlight:false}});}

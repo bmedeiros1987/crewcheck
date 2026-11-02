@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { repairOwnedDemoFallback } from './demo-fallback.mjs';
 // Preserve the live JSX (including the shared review prop) inside the existing
 // startup/currency boundary. Only the two supported canonical spellings match.
 function guardFinancialRoute(source, view, mode, component) {
@@ -142,18 +143,27 @@ if (!home.includes(marker)) {
 }
 // Repair a prior preparation that carried the startup marker but missed a
 // newly extended live route; a second application is byte-for-byte stable.
+const { repairHomeContinuity, repairHomeDestinations, repairRosterDeparture, repairHistoryReadSession } = await import('./home-continuity.mjs');
 const currentHome = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
-const financialHome = guardFinancialRoute(guardFinancialRoute(currentHome, 'perdiem', 'allowance', 'PerDiemView'), 'salary', 'salary', 'SalaryReliableView');
-if (financialHome !== currentHome) fs.writeFileSync('client/src/pages/Home.tsx', financialHome);
+const financialHome = repairOwnedDemoFallback(guardFinancialRoute(guardFinancialRoute(currentHome, 'perdiem', 'allowance', 'PerDiemView'), 'salary', 'salary', 'SalaryReliableView'));
+const continuousHome = repairHomeDestinations(repairHomeContinuity(financialHome));
+if (continuousHome !== currentHome) fs.writeFileSync('client/src/pages/Home.tsx', continuousHome);
+const rosterPath = 'client/src/components/v1391/RosterLaunchView.tsx';
+const rosterSource = fs.readFileSync(rosterPath, 'utf8');
+const rosterDeparture = repairRosterDeparture(rosterSource);
+if (rosterDeparture !== rosterSource) fs.writeFileSync(rosterPath, rosterDeparture);
 
-let database = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
+const databaseBefore = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
+let database = repairHistoryReadSession(databaseBefore);
 if (!database.includes('strictHistory = false')) {
   database = database.replace('listSavedRosters(limit = 72)', 'listSavedRosters(limit = 72, strictHistory = false)');
   database = database.replace('    let online = payload.rosters || [];', "    if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');\n    let online = payload.rosters || [];");
   database = database.replace('    if (!online.some((item) => item.isActive)) {', '    if (!strictHistory && !online.some((item) => item.isActive)) {');
   database = database.replace('  } catch {\n    return normalizeSingleActiveSummary(local);\n  }\n}', '  } catch (error) {\n    if (strictHistory) throw error;\n    return normalizeSingleActiveSummary(local);\n  }\n}');
-  fs.writeFileSync('client/src/lib/databaseClient.ts', database);
 }
+const { repairRosterListSession } = await import('./list-session.mjs');
+database = repairRosterListSession(database);
+if (database !== databaseBefore) fs.writeFileSync('client/src/lib/databaseClient.ts', database);
 
 const css = `
 /* Account-derived screens share the premium shell and clear the fixed dock. */

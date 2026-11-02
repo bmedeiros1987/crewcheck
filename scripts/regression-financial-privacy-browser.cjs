@@ -26,7 +26,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
   const NativeDate=Date,instant=Date.parse('2032-02-02T15:00:00Z');
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
-  localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+  localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
   localStorage.setItem('crewcheck_demo_mode_seen','1');
   localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
