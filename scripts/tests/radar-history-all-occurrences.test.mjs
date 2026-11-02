@@ -65,3 +65,15 @@ test('real capture detects credential replacement during DB await without taking
  f.db.getConnection=async()=>{const c=await original();const query=c.query;c.query=async(...args)=>{const value=await query(...args);if(args[0].startsWith('SELECT id,owner_email'))req.headers.authorization='Bearer synthetic-B';return value;};return c;};
  assert.equal((await capture.commit(reported(i))).status,'unavailable');assert.equal(f.states.size,0);assert.equal(identifies,2);
 });
+
+test('archive normalizes only existing accepted gate formats, without broadening notification admission',async()=>{
+ const f=setup(),i=identities(f)[0],expectedScope=await ticket(f,i);
+ const value=reported(i,'cirium-flex','b-12');
+ await history.recordRadarGateArchive(f.db,f.context,{expectedScope,field:'gate',observation:value},{enabled:true,clock:()=>NOW+10000});
+ const custom={ok:true,provider:'custom',...i,gate:'GATE B-12',sourceReceivedAt:NOW,departureGateUpdate:{schema:'crewcheck.departure-gate-update.v1',...i,gate:'GATE B-12',updatedAt:new Date(NOW-1000).toISOString()}};
+ await history.recordRadarGateArchive(f.db,f.context,{expectedScope,field:'gate',observation:custom},{enabled:true,clock:()=>NOW+10000});
+ const page=await history.readArchivedOperationalGateHistory(f.db,f.context,i,{enabled:true,lockSource:true});
+ assert.deepEqual(page.observations.map(row=>row.gate),['B-12','B-12']);assert.ok(page.observations.every(row=>row.observedAt===null));
+ assert.equal(page.observations[0].sourceUpdatedAt,null);assert.equal(page.observations[1].sourceUpdatedAt,new Date(NOW-1000).toISOString());
+ assert.equal(await f.read(),null,'The narrower operational notification contract remains unpopulated');
+});

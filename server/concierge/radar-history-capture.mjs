@@ -1,7 +1,7 @@
 import { requireExistingIdentity, requestToken } from '../v139/common.mjs';
 import { customGateSourceUpdate } from '../gate-source-update.mjs';
 import { radarResultDecision, radarFlightId } from '../../shared/gate-query-day.mjs';
-import { verifiedRadarFields } from '../../shared/radar-field-evidence.mjs';
+import { verifiedRadarFields,normalizeRadarGate } from '../../shared/radar-field-evidence.mjs';
 
 export const RADAR_OPERATIONAL_HISTORY_ENABLED = false;
 const load = async () => ({ history:await import('./operational-history.mjs'),
@@ -51,7 +51,7 @@ export async function beginRadarOperationalHistory(req,occurrence,{enabled=RADAR
           if(result?.ok!==true || result.querySuppressed || result.operationalConflicts?.includes('gate'))return {status:'unconfirmed',stored:false};
           const reported=archiveMode && ['cirium-flex','flightaware'].includes(result.provider);
           if(!reported && (!observation ||
-            verifiedRadarFields(result,ticket.identity,now).gate!==observation.gate || proof?.provider!=='custom' ||
+            verifiedRadarFields(result,ticket.identity,now).gate!==normalizeRadarGate(observation.gate) || proof?.provider!=='custom' ||
             Date.parse(proof.sourceUpdatedAt)!==Date.parse(observation.departureGateUpdate.updatedAt) ||
             (result.gateEvidenceReceivedAt ?? result.sourceReceivedAt)!==observation.sourceReceivedAt))return {status:'unconfirmed',stored:false};
           // Revalidate the existing request identity as well as locked canonical

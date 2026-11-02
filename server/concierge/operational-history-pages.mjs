@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {normalizeRadarGate} from '../../shared/radar-field-evidence.mjs';
 import {originFlightDate} from '../../shared/gate-query-day.mjs';
 export const GATE_ARCHIVE_PAGE_SIZE=100;
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
@@ -18,8 +19,9 @@ function namespace(context,identity){
 function bound(record,ns,kind){if(!record || record.version!==1 || record.kind!==kind || record.email!==ns.email || record.owner!==ns.owner)throw deny();return record;}
 const make=(ns,kind,values)=>({version:1,kind,email:ns.email,owner:ns.owner,...values});
 const proofKey=(prefix,e)=>prefix+':proof:'+hash([e.provider,e.sourceUpdatedAt??e.receivedAt]);
+export const validArchiveGate=value=>typeof value==='string' && normalizeRadarGate(value)===value && /^[A-Z0-9][A-Z0-9 .-]{0,11}$/.test(value) && !/\b(?:PÁTIO|PATIO|REMOTA|REMOTO|REMOTE|BUS)\b/.test(value);
 function entry(input,revision){
- if(!input || input.observedAt!==null || !/^[A-Z]?\d{1,3}[A-Z]?$/.test(input.gate||'') || !['custom','cirium-flex','flightaware'].includes(input.provider) ||
+ if(!input || input.observedAt!==null || !validArchiveGate(input.gate) || !['custom','cirium-flex','flightaware'].includes(input.provider) ||
  (input.sourceUpdatedAt!==null && !iso(input.sourceUpdatedAt)) || !iso(input.receivedAt) || (input.sourceUpdatedAt!==null && Date.parse(input.sourceUpdatedAt)>Date.parse(input.receivedAt)) || !/^[a-f0-9]{64}$/.test(revision||''))throw deny();
  return {gate:input.gate,provider:input.provider,observedAt:null,sourceUpdatedAt:input.sourceUpdatedAt,receivedAt:input.receivedAt,rosterRevision:revision};
 }
@@ -38,20 +40,27 @@ export async function appendGateArchivePage(c,context,scope,observation,{readSta
  if(duplicate){bound(duplicate,ns,'gate-archive-event');if(!meta||!Number.isSafeInteger(duplicate.page)||duplicate.page<0||duplicate.page>=meta.pages)throw deny();return {status:'duplicate',stored:false};}
  const headKey=ns.prefix+':head:'+e.provider,head=await readState(c,headKey);
  if(head){bound(head,ns,'gate-archive-head');entry(head,head.rosterRevision);}
- if(e.sourceUpdatedAt===null && head?.sourceUpdatedAt===null && head.gate===e.gate && Date.parse(head.receivedAt)<=Date.parse(e.receivedAt))return {status:'duplicate',stored:false};
+ if(head && (!iso(head.maxReceivedAt) || (head.maxSourceUpdatedAt!==null&&!iso(head.maxSourceUpdatedAt)) || typeof head.ambiguous!=='boolean'))throw deny();
+ if(e.sourceUpdatedAt===null && head?.sourceUpdatedAt===null && !head.ambiguous && head.gate===e.gate && Date.parse(head.receivedAt)<=Date.parse(e.receivedAt))return {status:'duplicate',stored:false};
  const groupKey=proofKey(ns.prefix,e),group=await readState(c,groupKey);
- if(group){bound(group,ns,'gate-archive-proof');if(!/^[A-Z]?\d{1,3}[A-Z]?$/.test(group.firstGate||'')||typeof group.conflicted!=='boolean')throw deny();}
+ if(group){bound(group,ns,'gate-archive-proof');if(!validArchiveGate(group.firstGate)||typeof group.conflicted!=='boolean')throw deny();}
  const count=meta?.total||0,page=Math.floor(count/GATE_ARCHIVE_PAGE_SIZE),pageKey=ns.prefix+':page:'+page;
  const previous=await readState(c,pageKey);
  if(previous)bound(previous,ns,'gate-archive-page');
  const entries=previous?.entries||[];
  if(!Array.isArray(entries) || entries.length!==count%GATE_ARCHIVE_PAGE_SIZE)throw deny();
  for(const existing of entries)entry(existing,existing.rosterRevision);
- const outOfOrder=Boolean(head && (Date.parse(head.receivedAt)>Date.parse(e.receivedAt) || (head.sourceUpdatedAt!==null && e.sourceUpdatedAt!==null && Date.parse(head.sourceUpdatedAt)>Date.parse(e.sourceUpdatedAt))));
+ const outOfOrder=Boolean(head && (Date.parse(head.maxReceivedAt)>Date.parse(e.receivedAt) || (head.maxSourceUpdatedAt!==null && e.sourceUpdatedAt!==null && Date.parse(head.maxSourceUpdatedAt)>Date.parse(e.sourceUpdatedAt))));
+ const conflicted=group?.conflicted===true || Boolean(group && group.firstGate!==e.gate);
  await writeState(c,pageKey,make(ns,'gate-archive-page',{page,entries:[...entries,{...e,sequence:count+1,outOfOrder}]}));
- await writeState(c,groupKey,make(ns,'gate-archive-proof',{firstGate:group?.firstGate||e.gate,conflicted:group?.conflicted===true || Boolean(group && group.firstGate!==e.gate)}));
+ await writeState(c,groupKey,make(ns,'gate-archive-proof',{firstGate:group?.firstGate||e.gate,conflicted}));
  await writeState(c,marker,make(ns,'gate-archive-event',{page}));
- if(!head || (!outOfOrder && Date.parse(head.receivedAt)<=Date.parse(e.receivedAt)))await writeState(c,headKey,make(ns,'gate-archive-head',e));
+ const latest=!head||Date.parse(head.receivedAt)<=Date.parse(e.receivedAt)?e:entry(head,head.rosterRevision);
+ // Independent index watermarks are not a synthesized source observation.
+ const maxReceivedAt=!head||Date.parse(head.maxReceivedAt)<Date.parse(e.receivedAt)?e.receivedAt:head.maxReceivedAt;
+ const maxSourceUpdatedAt=!head?.maxSourceUpdatedAt || (e.sourceUpdatedAt!==null&&Date.parse(head.maxSourceUpdatedAt)<Date.parse(e.sourceUpdatedAt))?e.sourceUpdatedAt:head.maxSourceUpdatedAt;
+ const ambiguous=latest===e || (head&&proofKey(ns.prefix,head)===groupKey)?conflicted:head.ambiguous;
+ await writeState(c,headKey,make(ns,'gate-archive-head',{...latest,maxReceivedAt,maxSourceUpdatedAt,ambiguous}));
  await writeState(c,ns.prefix,make(ns,'gate-archive-index',{identity,total:count+1,pages:Math.ceil((count+1)/GATE_ARCHIVE_PAGE_SIZE)}));
  return {status:'archived',stored:true};
 }
@@ -68,7 +77,7 @@ export async function readGateArchivePage(c,context,input,{cursor=0,readState}={
   const e=entry(raw,raw.rosterRevision),key=proofKey(ns.prefix,e);
   if(!groups.has(key)){
    const proof=bound(await readState(c,key),ns,'gate-archive-proof');
-   if(typeof proof.conflicted!=='boolean'||!/^[A-Z]?\d{1,3}[A-Z]?$/.test(proof.firstGate||''))throw deny();
+   if(typeof proof.conflicted!=='boolean'||!validArchiveGate(proof.firstGate))throw deny();
    groups.set(key,proof);
   }
   if(raw.sequence!==cursor*GATE_ARCHIVE_PAGE_SIZE+observations.length+1)throw deny();

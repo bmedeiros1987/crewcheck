@@ -44,3 +44,14 @@ test('exact occurrence/user separation, transaction failure rollback and no sile
  await assert.rejects(read(null,context,identity,{cursor:99,readState:f.io.readState}));
  await assert.rejects(append(null,context,scope,{...observation(2),observedAt:observation(2).sourceUpdatedAt},f.io));
 });
+
+test('independent source/receipt watermarks detect later regression and a fresh report can resolve an earlier receipt conflict',async()=>{
+ const f=fixture();
+ for(const [gate,source,received]of [['40',1000,10000],['41',2000,9000],['42',1500,11000]])await append(null,context,scope,observation(0,{gate,sourceUpdatedAt:new Date(time+source).toISOString(),receivedAt:new Date(time+received).toISOString()}),f.io);
+ const page=await read(null,context,identity,{readState:f.io.readState});assert.deepEqual(page.observations.map(x=>x.outOfOrder),[false,true,true]);
+ const g=fixture(),reported=(gate,ms)=>observation(0,{provider:'flightaware',gate,sourceUpdatedAt:null,receivedAt:new Date(time+ms).toISOString()});
+ await append(null,context,scope,reported('10',1000),g.io);await append(null,context,scope,reported('18',1000),g.io);
+ assert.equal((await append(null,context,scope,reported('18',2000),g.io)).stored,true);
+ const result=await read(null,context,identity,{readState:g.io.readState});assert.deepEqual(result.observations.map(x=>x.conflicted),[true,true,false]);
+ for(const [key]of g.rows)assert.ok(key.length<=255);
+});

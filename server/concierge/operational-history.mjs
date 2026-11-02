@@ -4,8 +4,9 @@ import { inspectOperationalChange } from './operational-change-source.mjs';
 import { originFlightDate, gateQueryDay, radarResultDecision } from '../../shared/gate-query-day.mjs';
 import { resolveOwnedGatePublication } from '../radar-publication-authority.mjs';
 import { operationalRosterContentDigest } from './operational-briefing-source.mjs';
-import {appendGateArchivePage,readGateArchivePage,gateArchiveIdentity,GATE_ARCHIVE_PAGE_SIZE} from './operational-history-pages.mjs';
-import { normalizeRadarGate } from '../../shared/radar-field-evidence.mjs';
+import {appendGateArchivePage,readGateArchivePage,gateArchiveIdentity,GATE_ARCHIVE_PAGE_SIZE,validArchiveGate} from './operational-history-pages.mjs';
+import { normalizeRadarGate,verifiedRadarFields } from '../../shared/radar-field-evidence.mjs';
+import {customGateSourceUpdate} from '../gate-source-update.mjs';
 
 // Server-only persistence, no route, timer, network, migration or shipping caller.
 // Gate and trigger remain OFF. Status has no real temporal source contract yet.
@@ -153,11 +154,18 @@ function reportedObservation(observation,current,now) {
   const gate=normalizeRadarGate(observation?.gate),field=observation?.provenance?.fields?.departureGate;
   if(!['cirium-flex','flightaware'].includes(observation?.provider) || !radarResultDecision(observation,current.identity,now).allowed ||
     observation.querySuppressed || observation.operationalConflicts?.includes('gate') || observation.gateUpdate!=null ||
-    !/^[A-Z]?\d{1,3}[A-Z]?$/.test(gate) || gate!==observation.gate ||
-    field?.provider!==observation.provider || field.value!==gate || field.observedAt!==null ||
+    !validArchiveGate(gate) ||
+    field?.provider!==observation.provider || normalizeRadarGate(field.value)!==gate || field.observedAt!==null ||
     field.coverageState!=='provided_no_source_freshness' || Date.parse(field.receivedAt)!==observation.sourceReceivedAt ||
     !Number.isSafeInteger(observation.sourceReceivedAt) || observation.sourceReceivedAt<=0)throw deny();
   return {observation:{gate,provider:observation.provider},at:null,receipt:observation.sourceReceivedAt};
+}
+function archiveCustomObservation(observation,current,now){
+ const proof=customGateSourceUpdate(observation,now);
+ const admitted=verifiedRadarFields({...observation,gateUpdate:proof},current.identity,now);
+ const gate=normalizeRadarGate(observation?.gate);
+ if(!proof || !validArchiveGate(gate) || admitted.gate!==gate || !radarResultDecision(observation,current.identity,now).allowed)throw deny();
+ return {observation:{gate,provider:'custom'},at:Date.parse(proof.sourceUpdatedAt),receipt:observation.sourceReceivedAt};
 }
 export async function recordRadarGateArchive(db,context,input,{enabled=OPERATIONAL_HISTORY_ENABLED,clock=Date.now,revalidate=async()=>true}={}) {
   if(enabled!==true)return {status:'disabled',stored:false};
@@ -165,13 +173,16 @@ export async function recordRadarGateArchive(db,context,input,{enabled=OPERATION
   return transaction(db,async c=>{
     const now=clock(),current=await readRadarGateArchiveScope(c,context,{enabled:true,now,lockSource:true,identity:input.expectedScope.identity});
     if(!same(current,input.expectedScope))throw deny();
-    const next=input.observation?.provider==='custom' ? checked(input.observation,current,clock()) : reportedObservation(input.observation,current,clock());
+    const next=input.observation?.provider==='custom' ? archiveCustomObservation(input.observation,current,clock()) : reportedObservation(input.observation,current,clock());
     if(!gateQueryDay(current.identity,clock()).allowed || !await revalidate())throw deny();
     if(input.observation?.provider==='custom'){
       let operational;
       try{operational=await scope(c,context,clock());}catch(error){if(error.code!=='BRIEFING_CONTEXT_UNAVAILABLE')throw error;}
-      if(operational && archiveKey(operational.identity).key===archiveKey(current.identity).key)
-        await recordOperationalAt(c,context,{...input,expectedScope:operational},clock());
+      let operationalAdmitted=false;
+      if(operational && archiveKey(operational.identity).key===archiveKey(current.identity).key){
+        try{checked(input.observation,operational,clock());operationalAdmitted=true;}catch(error){if(error.code!=='BRIEFING_CONTEXT_UNAVAILABLE')throw error;}
+      }
+      if(operationalAdmitted)await recordOperationalAt(c,context,{...input,expectedScope:operational},clock());
     }
     const result=await appendGateArchivePage(c,context,current,archiveEntry(next),{readState,writeState});
     if(!gateQueryDay(current.identity,clock()).allowed || !await revalidate())throw deny();
