@@ -9,6 +9,7 @@ import mysql from 'mysql2/promise';
 import {readOperationalHistoryScope as scope,recordOperationalGateObservation as record,readOperationalGateHistory as read} from '../server/concierge/operational-history.mjs';
 import {changeTelegramOperationalConsent,runTelegramOperationalChangeCycle} from '../server/concierge/telegram-operational-change.mjs';
 import {dispatchClaimedJob} from '../server/notification-job-safety.mjs';
+import {notificationStateDeletionStatements} from '../server/v139/notificationStateDeletion.mjs';
 const socketPath='/tmp/crewcheck-notification-qa-socket/mysqld.sock';
 assert.equal(process.env.CREWCHECK_NOTIFICATION_QA,'isolated-mysql');assert.equal(process.env.CREWCHECK_QA_MYSQL_SOCKET,socketPath);assert(fs.statSync(socketPath).isSocket());
 globalThis.fetch=()=>assert.fail('Network forbidden');
@@ -80,5 +81,18 @@ try{
  assert(blocked);await writer.commit();writer.release();let result;try{result=await pending;}finally{await reader.rollback();reader.release();}
  assert.equal(result.source.observation.gate,'27','HISTORY_STALE_READ: durable observation must be current after owner wait');
  await db.query('UPDATE crewcheck_platform_rosters SET updated_at=? WHERE id=?',[new Date(NOW-30000),'synthetic-roster']);assert.equal(await tx(c=>read(c,context,options())),null);await assert.rejects(record(db,context,input('27',2700),{enabled:true,clock:()=>now}));
+ // Shipping account-erasure statements must cover every paged/legacy namespace,
+ // while preserving a different account. Only this disposable QA DB is touched.
+ const archivedRows=async who=>(await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key LIKE 'operational-source-history:%' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.email'))=?",[who]))[0];
+ const beforeErasure=await archivedRows(email);assert.ok(beforeErasure.length>10);
+ const kinds=new Set(beforeErasure.map(row=>(typeof row.payload==='string'?JSON.parse(row.payload):row.payload).kind));
+ for(const kind of ['gate-archive-index','gate-archive-page','gate-archive-event','gate-archive-proof','gate-archive-head'])assert.ok(kinds.has(kind),kind);
+ assert.ok(beforeErasure.some(row=>row.state_key===legacyKey));assert.ok(beforeErasure.some(row=>row.state_key==='operational-source-history:live:'+authority.hash(owner)));
+ const otherEmail='other-history@example.invalid',otherKey='operational-source-history:archive:synthetic-unrelated';
+ await authority.writeState(db,otherKey,{email:otherEmail,kind:'synthetic-erasure-sentinel'});
+ await tx(async c=>{for(const [sql,args]of notificationStateDeletionStatements(email))await c.query(sql.replace(/\$1/g,'?'),args);});
+ assert.equal((await archivedRows(email)).length,0,'HISTORY_ERASURE_SCOPE: all target history records must be removed');
+ assert.deepEqual((await archivedRows(otherEmail)).map(row=>row.state_key),[otherKey],'HISTORY_ERASURE_ISOLATION: unrelated account must survive');
+ console.log('PASS actual account erasure statements: legacy/live/index/page/event/proof/head removed; unrelated account preserved; disposable MySQL only.');
  console.log('PASS isolated SQL actual history reader/writer: eight writers, original Radar capture callback, restart, real queue/dispatch with fake transport, current source after RR owner wait, stale ticket/revision refused; external calls=0.');
 }finally{await db.end();}
