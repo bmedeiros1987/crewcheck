@@ -7,7 +7,7 @@ export async function readGateHistoryPage(identity:GateHistoryIdentity,cursor=0,
  if(!session.token||!session.isCurrent())throw Error('Faça login para consultar o histórico.');
  const params=new URLSearchParams({...identity,cursor:String(cursor),...(legacy?{legacy:'1'}:{})});
  let response:Response;
- try{response=await fetch('/api/radar-history?'+params,{method:'GET',headers:{authorization:'Bearer '+session.token},cache:'no-store'});}
+ try{response=await fetch('/api/radar-history?'+params,{method:'GET',headers:{authorization:'Bearer '+session.token},cache:'no-store',redirect:'error'});}
  catch{if(!session.isCurrent())throw Error('A sessão mudou. Consulte novamente.');throw Error('Histórico indisponível. Isso não significa ausência de registros.');}
  if(!session.isCurrent())throw Error('A sessão mudou. Consulte novamente.');
  let body:any;

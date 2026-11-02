@@ -17,7 +17,7 @@ const identity={flight:'LA4774',origin:'BSB',destination:'AJU',departureDate:'20
 const page={kind:'historical-gate-records',currentConfirmation:false,order:'recorded-sequence',identity,cursor:0,nextCursor:null,total:1,observations:[{gate:'18',provider:'flightaware',receivedAt:'2032-10-31T12:00:00.000Z',sourceUpdatedAt:null,observedAt:null,sequence:1,conflicted:false}]};
 let calls=0,last;
 globalThis.fetch=async(url,options)=>{calls++;last={url,options};return {ok:true,json:async()=>({ok:true,history:page})};};
-assert.deepEqual(await actual.readGateHistoryPage(identity),page);assert.match(last.url,/^\/api\/radar-history\?/);assert.equal(last.options.headers.authorization,'Bearer synthetic-A');
+assert.deepEqual(await actual.readGateHistoryPage(identity),page);assert.match(last.url,/^\/api\/radar-history\?/);assert.equal(last.options.headers.authorization,'Bearer synthetic-A');assert.equal(last.options.redirect,'error');
 assert.doesNotMatch(last.url,/owner|email|token|synthetic-A/);
 globalThis.fetch=async()=>({ok:false,json:async()=>({ok:false})});await assert.rejects(actual.readGateHistoryPage(identity),/não significa ausência/);
 globalThis.fetch=async()=>({ok:true,json:async()=>({ok:true,history:{...page,identity:{...identity,origin:'GRU'}}})});await assert.rejects(actual.readGateHistoryPage(identity),/ocorrência/);
