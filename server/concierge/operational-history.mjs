@@ -1,7 +1,7 @@
 import { telegramOperationalAuthority as authority } from './telegram-briefing.mjs';
 import { readOperationalBriefingPreview } from './operational-briefing-source.mjs';
 import { inspectOperationalChange } from './operational-change-source.mjs';
-import { originFlightDate, gateQueryDay, radarResultDecision } from '../../shared/gate-query-day.mjs';
+import { originFlightDate, gateQueryDay, radarResultDecision, findPublishedGateOccurrence } from '../../shared/gate-query-day.mjs';
 import { resolveOwnedGatePublication } from '../radar-publication-authority.mjs';
 import { operationalRosterContentDigest } from './operational-briefing-source.mjs';
 import {appendGateArchivePage,readGateArchivePage,gateArchiveIdentity,GATE_ARCHIVE_PAGE_SIZE,validArchiveGate} from './operational-history-pages.mjs';
@@ -150,7 +150,9 @@ export async function readRadarGateArchiveScope(c,context,{enabled=OPERATIONAL_H
   const {buildCanonicalRosterEvents}=await import('./generated/canonicalRoster.mjs');
   const publication=resolveOwnedGatePublication(rows,context.email,occurrence,buildCanonicalRosterEvents);
   if(!publication)throw deny();
-  return {ownerId:context.owner,rosterRevision:hash([publication.id,publication.revision,operationalRosterContentDigest(publication.roster)]),identity:occurrence};
+  const published=findPublishedGateOccurrence(publication.roster,occurrence,buildCanonicalRosterEvents(publication.roster));
+  if(!published)throw deny();
+  return {ownerId:context.owner,rosterRevision:hash([publication.id,publication.revision,operationalRosterContentDigest(publication.roster)]),identity:{...occurrence,eventId:published.eventId}};
 }
 function reportedObservation(observation,current,now) {
   const gate=normalizeRadarGate(observation?.gate),field=observation?.provenance?.fields?.departureGate;

@@ -18,6 +18,8 @@ on:
       - 'scripts/tests/operational-history-pages.test.mjs'
       - 'scripts/tests/radar-history-all-occurrences.test.mjs'
       - 'scripts/regression-gate-history-client.mjs'
+      - 'scripts/regression-radar-history-paid-capture.mjs'
+      - 'scripts/fixtures/operational-history-fixture.mjs'
       - 'client/src/lib/gateHistory.ts'
       - 'client/src/lib/authClient.ts'
       - 'package.json'
@@ -64,6 +66,7 @@ jobs:
           node scripts/p1-concierge-journey/compile.mjs
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs scripts/tests/operational-history-pages.test.mjs scripts/tests/radar-history-all-occurrences.test.mjs
           node scripts/regression-gate-history-client.mjs
+          node scripts/regression-radar-history-paid-capture.mjs
           node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
@@ -163,6 +166,7 @@ jobs:
           node scripts/p1-concierge-journey/compile.mjs
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs scripts/tests/operational-history-pages.test.mjs scripts/tests/radar-history-all-occurrences.test.mjs
           node scripts/regression-gate-history-client.mjs
+          node scripts/regression-radar-history-paid-capture.mjs
           node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs

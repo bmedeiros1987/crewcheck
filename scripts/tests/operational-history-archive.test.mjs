@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as history from '../../server/concierge/operational-history.mjs';
-import {fixture} from './operational-history.test.mjs';
+import {fixture} from '../fixtures/operational-history-fixture.mjs';
+globalThis.fetch=()=>assert.fail('No external network');
 const NOW=Date.parse('2099-10-06T06:00:00Z'),DAY=86400000;
 const archived=(f,identity)=>history.readArchivedOperationalGateHistory(f.db,f.context,identity,{enabled:true,lockSource:true});
 test('archive retains every admitted change, restart, exact duplicate without renewal and older sample refusal',async()=>{

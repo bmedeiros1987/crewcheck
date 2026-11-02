@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture} from './operational-history.test.mjs';
+import {fixture} from '../fixtures/operational-history-fixture.mjs';
 import * as history from '../../server/concierge/operational-history.mjs';
 import {buildCanonicalRosterEvents} from '../../server/concierge/generated/canonicalRoster.mjs';
 import {originFlightDate} from '../../shared/gate-query-day.mjs';
 import {beginRadarOperationalHistory,handleRadarGateHistory} from '../../server/concierge/radar-history-capture.mjs';
 import {telegramOperationalAuthority as authority} from '../../server/concierge/telegram-briefing.mjs';
+globalThis.fetch=()=>assert.fail('No external network');
 const NOW=Date.parse('2099-10-06T06:00:00Z');
 function setup(){const f=fixture();f.now=NOW+10000;f.roster.crewId='QA001';f.roster.days[0].legs.push({id:'synthetic-second',flightNumber:'LA4321',origin:'BSB',destination:'GRU',departureTime:'09:30',arrivalTime:'11:30',workType:'OP'});return f;}
 const identities=f=>buildCanonicalRosterEvents(f.roster).filter(e=>e.kind==='flight').map(e=>({flight:e.flightNumber,origin:e.origin,destination:e.destination,departureDate:originFlightDate(e.startDateTime,e.origin),scheduledDepartureUtc:e.startDateTime}));
