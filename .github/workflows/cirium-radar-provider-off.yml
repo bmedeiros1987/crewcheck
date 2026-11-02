@@ -9,6 +9,7 @@ on:
       - 'server/radar-paid-sources.mjs'
       - 'scripts/regression-radar-paid-sequence.mjs'
       - 'scripts/regression-cirium-flex-status.mjs'
+      - 'scripts/regression-radar-status-complement.mjs'
       - 'scripts/regression-radar-flightaware-off.mjs'
       - 'scripts/regression-radar-paid-ledger-mysql.mjs'
       - 'docs/radar-cirium-flightaware-sequential.md'
@@ -41,6 +42,7 @@ jobs:
       - name: Pure contract in three timezones without credentials or egress
         run: |
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-cirium-flex-status.mjs; done
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-radar-status-complement.mjs; done
           TZ=UTC node scripts/regression-cirium-radar-provider-off.mjs
           TZ=America/Sao_Paulo node scripts/regression-cirium-radar-provider-off.mjs
           TZ=Pacific/Auckland node scripts/regression-cirium-radar-provider-off.mjs
@@ -55,6 +57,7 @@ jobs:
       - name: Sequential routing after canonical materialization
         run: |
           node scripts/v139/apply.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-radar-status-complement.mjs; done
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do TZ=$zone node scripts/regression-cirium-flex-status.mjs; done
           node scripts/regression-radar-sequential.mjs
           node scripts/regression-radar-paid-sequence.mjs

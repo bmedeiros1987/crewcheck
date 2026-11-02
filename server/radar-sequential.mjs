@@ -30,6 +30,23 @@ function project(result, reason, fallbackAttempted, now) {
     canonicalReadOnly: true, exportedToConcierge: false, sourceReceivedAt: result.sourceReceivedAt ?? now };
 }
 
+function retainPrimaryStatus(candidate, primary, identity, now) {
+  if (typeof candidate.status === 'string' && candidate.status.trim()) return candidate;
+  const field = primary?.provenance?.fields?.status;
+  // Only the Flex adapter's explicit status contract may complement this result.
+  // Receipt remains the original field receipt, never the fallback/cache clock.
+  if (primary?.provider !== 'cirium-flex' || !eligible(primary, identity, now)
+    || typeof primary.status !== 'string' || !primary.status.trim() || primary.status.length > 80
+    || primary.operationalConflicts?.includes('status') || field?.provider !== 'cirium-flex'
+    || field.value !== primary.status || field.observedAt !== null
+    || field.coverageState !== 'provided_no_source_freshness'
+    || radarSourceEpoch(field.receivedAt) !== primary.sourceReceivedAt
+    || !fresh(field.receivedAt, now, 30 * 60_000)) return candidate;
+  return { ...candidate, status: primary.status, provenance: { ...candidate.provenance,
+    matchedProviders: [...candidate.provenance.matchedProviders, 'cirium-flex'],
+    fields: { ...candidate.provenance.fields, status: { ...field } } } };
+}
+
 /** Callers provide the existing bounded/aborting adapters. Await primary completion
  * before starting at most one fallback; no retries, racing, new transport or activation.
  * `fallback: null` means the fallback is not permitted (Flex only): it is never started. */
@@ -68,7 +85,7 @@ export async function runCiriumFlightAwareSequence({ identity, primary, fallback
           [['departureGate', gateValue(second.gate)], ['departureTerminal', second.terminal], ['status', second.status]]
             .filter(([, value]) => typeof value === 'string' && value.trim()).map(([field, value]) => [field,
               { value, provider: 'flightaware', observedAt: null, receivedAt: new Date(received).toISOString(), coverageState: 'provided_no_source_freshness' }])) } };
-      if (candidate.gate) return project(candidate, reason, attempted, now());
+      if (candidate.gate) return project(retainPrimaryStatus(candidate, first, identity, now()), reason, attempted, now());
       if (!eligible(first, identity, now())) return project(candidate, reason, attempted, now());
     }
   }
