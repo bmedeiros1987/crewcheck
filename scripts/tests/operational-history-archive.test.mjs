@@ -66,3 +66,12 @@ test('legacy archive remains immutable and consultable by bounded SQL projection
  await f.write('24',1000);assert.deepEqual(f.states.get(oldKey),old,'No rewrite, removal or truncation of prior history');
  assert.equal((await history.readArchivedOperationalGateHistory(f.db,f.context,identity,{enabled:true,lockSource:true,legacy:true})).total,1100);
 });
+
+test('pre-archive current/previous evidence remains consultable as explicitly partial historical data',async()=>{
+ const {telegramOperationalAuthority:authority}=await import('../../server/concierge/telegram-briefing.mjs');
+ const f=fixture();f.now=NOW+10000;const ticket=await f.scope();await f.write('24',1000);await f.write('25',2000);
+ const old=structuredClone([...f.states.values()].find(row=>row.field==='gate'&&row.source));f.states.clear();f.states.set('operational-source-history:'+authority.hash(f.context.owner),old);
+ const result=await history.readArchivedOperationalGateHistory(f.db,f.context,ticket.identity,{enabled:true,lockSource:true,legacy:true});
+ assert.equal(result.coverage,'stored-current-previous-only');assert.equal(result.currentConfirmation,false);assert.deepEqual(result.observations.map(row=>row.gate),['24','25']);
+ assert.ok(result.observations.every(row=>row.observedAt===null));assert.equal(f.states.size,1);
+});

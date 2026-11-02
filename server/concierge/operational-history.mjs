@@ -8,7 +8,7 @@ import {appendGateArchivePage,readGateArchivePage,gateArchiveIdentity,GATE_ARCHI
 import { normalizeRadarGate,verifiedRadarFields } from '../../shared/radar-field-evidence.mjs';
 import {customGateSourceUpdate} from '../gate-source-update.mjs';
 
-// Server-only persistence, no route, timer, network, migration or shipping caller.
+// Server-only persistence behind OFF capture/read gates; no timer, provider or migration here.
 // Gate and trigger remain OFF. Status has no real temporal source contract yet.
 export const OPERATIONAL_HISTORY_ENABLED = false;
 const { hash, readState, writeState, transaction, deny } = authority;
@@ -18,7 +18,9 @@ const copy = value => structuredClone(value);
 const archiveKey=identity=>({identity:gateArchiveIdentity(identity),key:hash(gateArchiveIdentity(identity))});
 const archiveEntry=next=>({gate:next.observation.gate,provider:next.observation.provider,observedAt:null,sourceUpdatedAt:next.at===null?null:new Date(next.at).toISOString(),receivedAt:new Date(next.receipt).toISOString()});
 async function readSnapshotState(c,owner){
- const current=await readState(c,key(owner));if(current)return current;
+ const current=await readState(c,key(owner));return current||readLegacySnapshot(c,owner);
+}
+async function readLegacySnapshot(c,owner){
  // Fixed projection from the immutable legacy JSON row; never load its archive.
  const fields=['version','email','owner','field','scope','source','conflict'];
  const projection=fields.map(field=>`'${field}',JSON_EXTRACT(payload,'$.${field}')`).join(',');
@@ -196,7 +198,7 @@ async function readLegacyArchivePage(c,context,occurrence,cursor){
  const sql=`SELECT JSON_OBJECT('email',JSON_EXTRACT(payload,'$.email'),'owner',JSON_EXTRACT(payload,'$.owner'),'identity',JSON_EXTRACT(payload,?),'total',JSON_LENGTH(JSON_EXTRACT(payload,?)),'observations',JSON_EXTRACT(payload,${paths.map(()=>'?').join(',')})) AS payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE`;
  const [rows]=await c.query(sql,[root+'.identity',root+'.observations',...paths,legacyKey(context.owner)]);
  if(!Array.isArray(rows)||rows.length>1)throw deny();const record=authority.parse(rows[0]);
- if(!record?.identity)return null;
+ if(!record?.identity)return readLegacyPairPage(c,context,occurrence,cursor);
  if(record.email!==context.email||record.owner!==context.owner||archiveKey(record.identity).key!==occurrence.key||!Number.isSafeInteger(record.total)||record.total<1||!Array.isArray(record.observations)||record.observations.length>GATE_ARCHIVE_PAGE_SIZE)throw deny();
  if(cursor*GATE_ARCHIVE_PAGE_SIZE>=record.total)throw deny();
  const observations=record.observations.map((item,i)=>{
@@ -204,4 +206,22 @@ async function readLegacyArchivePage(c,context,occurrence,cursor){
   return {gate:item.gate,provider:item.provider,observedAt:null,sourceUpdatedAt:item.observedAt,receivedAt:item.receivedAt,rosterRevision:item.rosterRevision,sequence:cursor*GATE_ARCHIVE_PAGE_SIZE+i+1,conflicted:null};
  });
  return {kind:'historical-gate-records',currentConfirmation:false,order:'recorded-sequence',legacy:true,conflictState:'not-indexed-legacy',identity:occurrence.identity,cursor,total:record.total,pageSize:GATE_ARCHIVE_PAGE_SIZE,nextCursor:(cursor+1)*GATE_ARCHIVE_PAGE_SIZE<record.total?cursor+1:null,observations};
+}
+
+async function readLegacyPairPage(c,context,occurrence,cursor){
+ const record=await readLegacySnapshot(c,context.owner);
+ if(!record)return null;
+ if(record.email!==context.email||record.owner!==context.owner||record.version!==1||record.field!=='gate')throw deny();
+ if(!record.scope?.identity || archiveKey(record.scope.identity).key!==occurrence.key)return null;
+ if(!bound(record,context,record.scope)||!/^[a-f0-9]{64}$/.test(record.scope.rosterRevision||''))throw deny();
+ if(cursor!==0)throw deny();
+ const observations=[];
+ for(const raw of [record.source?.previousObservation,record.source?.observation]){
+  if(!raw)continue;
+  const proof=customGateSourceUpdate(raw,raw.sourceReceivedAt),gate=normalizeRadarGate(raw.gate);
+  if(!proof||raw.provider!=='custom'||!validArchiveGate(gate)||!radarResultDecision(raw,occurrence.identity,raw.sourceReceivedAt).allowed)throw deny();
+  observations.push({gate,provider:'custom',observedAt:null,sourceUpdatedAt:proof.sourceUpdatedAt,receivedAt:new Date(raw.sourceReceivedAt).toISOString(),rosterRevision:record.scope.rosterRevision,sequence:observations.length+1,conflicted:record.conflict===true?true:null});
+ }
+ if(!observations.length)return null;
+ return {kind:'historical-gate-records',currentConfirmation:false,order:'recorded-sequence',legacy:true,coverage:'stored-current-previous-only',conflictState:'not-indexed-legacy',identity:occurrence.identity,cursor:0,total:observations.length,pageSize:GATE_ARCHIVE_PAGE_SIZE,nextCursor:null,observations};
 }

@@ -27,13 +27,19 @@ function entry(input,revision){
 }
 function metadata(record,ns,identity){
  if(!record)return null;bound(record,ns,'gate-archive-index');
- if(hash(gateArchiveIdentity(record.identity))!==hash(identity) || !Number.isSafeInteger(record.total) || record.total<1 || record.total>=Number.MAX_SAFE_INTEGER || record.pages!==Math.ceil(record.total/GATE_ARCHIVE_PAGE_SIZE))throw deny();return record;
+ if(hash(gateArchiveIdentity(record.identity))!==hash(identity) || !Number.isSafeInteger(record.total) || record.total<0 || record.total>=Number.MAX_SAFE_INTEGER || record.pages!==Math.ceil(record.total/GATE_ARCHIVE_PAGE_SIZE))throw deny();return record;
+}
+export async function ensureGateArchiveIndex(c,key,value){
+ // Seed before a missing-key FOR UPDATE: do not acquire a gap lock then try
+ // to upgrade it on first use. INSERT IGNORE never overwrites prior history.
+ await c.query('INSERT IGNORE INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES (?,?,NOW(3))',[key,JSON.stringify(value)]);
 }
 // Caller owns the SQL transaction and account-incarnation lock. Every row is
 // bounded; append reads at most five indexed records and touches one fixed page.
-export async function appendGateArchivePage(c,context,scope,observation,{readState,writeState}){
+export async function appendGateArchivePage(c,context,scope,observation,{readState,writeState,ensureState=ensureGateArchiveIndex}){
  if(scope?.ownerId!==context?.owner)throw deny();
  const identity=gateArchiveIdentity(scope.identity),ns=namespace(context,identity),e=entry(observation,scope.rosterRevision);
+ await ensureState(c,ns.prefix,make(ns,'gate-archive-index',{identity,total:0,pages:0}));
  const meta=metadata(await readState(c,ns.prefix),ns,identity);
  const marker=ns.prefix+':event:'+hash([e.provider,e.gate,e.sourceUpdatedAt??e.receivedAt]);
  const duplicate=await readState(c,marker);

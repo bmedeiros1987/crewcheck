@@ -22,6 +22,7 @@ export function fixture(){
    return [[{payload:{email:record.email,owner:record.owner,identity:entry.identity,total:entry.observations.length,observations:entry.observations.slice(start,start+100)}}]];
   }
   if(sql.startsWith('SELECT payload')){assert.match(sql,/FOR UPDATE$/);const sqlJson=value=>Array.isArray(value)?value.map(sqlJson):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,sqlJson(value[k])])):value;return [states.has(args[0])?[{payload:sqlJson(states.get(args[0]))}]:[]];}
+  if(sql.startsWith('INSERT IGNORE INTO crewcheck_telegram_state')){if(!states.has(args[0]))states.set(args[0],JSON.parse(args[1]));return [{affectedRows:1}];}
   if(sql.startsWith('INSERT INTO crewcheck_telegram_state')){states.set(args[0],JSON.parse(args[1]));return [{affectedRows:1}];}
   throw Error('Unexpected SQL '+sql);
  }

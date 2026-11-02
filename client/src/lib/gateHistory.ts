@@ -1,7 +1,7 @@
 import {captureAuthSession} from './authClient';
 export type GateHistoryIdentity={flight:string;origin:string;destination:string;departureDate:string;scheduledDepartureUtc:string};
 export type HistoricalGate={gate:string;provider:string;sourceUpdatedAt:string|null;observedAt:null;receivedAt:string;sequence:number;conflicted:boolean|null;outOfOrder?:boolean};
-export type GateHistoryPage={kind:'historical-gate-records';currentConfirmation:false;order:'recorded-sequence';identity:GateHistoryIdentity;cursor:number;nextCursor:number|null;total:number;observations:HistoricalGate[];legacy?:boolean};
+export type GateHistoryPage={kind:'historical-gate-records';currentConfirmation:false;order:'recorded-sequence';identity:GateHistoryIdentity;cursor:number;nextCursor:number|null;total:number;observations:HistoricalGate[];legacy?:boolean;coverage?:'stored-current-previous-only'};
 export async function readGateHistoryPage(identity:GateHistoryIdentity,cursor=0,legacy=false):Promise<GateHistoryPage|null>{
  const session=captureAuthSession();
  if(!session.token||!session.isCurrent())throw Error('Faça login para consultar o histórico.');

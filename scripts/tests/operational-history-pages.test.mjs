@@ -6,13 +6,13 @@ const identity={flight:'LA4774',origin:'BSB',destination:'AJU',departureDate:'20
 const scope={ownerId:context.owner,identity,rosterRevision:'a'.repeat(64)},time=Date.parse('2032-10-31T12:00:00Z');
 const observation=(i,over={})=>({gate:String(10+i%900),provider:'custom',observedAt:null,sourceUpdatedAt:new Date(time+i*1000).toISOString(),receivedAt:new Date(time+i*1000+100).toISOString(),...over});
 function fixture(){const rows=new Map();let reads=0,writes=0,failAt=Infinity;
- const io={readState:async(_,key)=>{reads++;return rows.has(key)?structuredClone(rows.get(key)):null;},writeState:async(_,key,value)=>{if(++writes===failAt)throw Error('synthetic storage failure');rows.set(key,structuredClone(value));}};
+ const io={ensureState:async(_,key,value)=>{if(!rows.has(key)){if(++writes===failAt)throw Error('synthetic storage failure');rows.set(key,structuredClone(value));}},readState:async(_,key)=>{reads++;return rows.has(key)?structuredClone(rows.get(key)):null;},writeState:async(_,key,value)=>{if(++writes===failAt)throw Error('synthetic storage failure');rows.set(key,structuredClone(value));}};
  return {rows,io,counts:()=>({reads,writes}),reset:()=>{reads=0;writes=0;},fail:n=>{failAt=n;},
  async atomic(run){const before=structuredClone(rows);try{return await run();}catch(e){rows.clear();for(const [k,v]of before)rows.set(k,v);throw e;}}};}
 globalThis.fetch=()=>assert.fail('No historical/provider network');
 test('1100 records use fixed pages and indexed operations; bounded read and append without dropping older pages',async()=>{
  const f=fixture();let maxRow=0;
- for(let i=0;i<1100;i++){f.reset();assert.equal((await append(null,context,scope,observation(i),f.io)).stored,true);const c=f.counts();assert.ok(c.reads<=5);assert.ok(c.writes<=5);}
+ for(let i=0;i<1100;i++){f.reset();assert.equal((await append(null,context,scope,observation(i),f.io)).stored,true);const c=f.counts();assert.ok(c.reads<=5);assert.ok(c.writes<=6);}
  for(const value of f.rows.values())maxRow=Math.max(maxRow,Buffer.byteLength(JSON.stringify(value)));
  assert.ok(maxRow<50000,`largest row ${maxRow}`);let cursor=0,total=0;
  do{f.reset();const page=await read(null,context,identity,{cursor,readState:f.io.readState});assert.ok(f.counts().reads<=102);assert.equal(page.order,'recorded-sequence');assert.equal(page.currentConfirmation,false);assert.equal(page.observations.length,GATE_ARCHIVE_PAGE_SIZE);total+=page.observations.length;cursor=page.nextCursor;}while(cursor!==null);
