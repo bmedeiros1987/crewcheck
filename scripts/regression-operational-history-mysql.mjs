@@ -13,7 +13,9 @@ import {notificationStateDeletionStatements} from '../server/v139/notificationSt
 const socketPath='/tmp/crewcheck-notification-qa-socket/mysqld.sock';
 assert.equal(process.env.CREWCHECK_NOTIFICATION_QA,'isolated-mysql');assert.equal(process.env.CREWCHECK_QA_MYSQL_SOCKET,socketPath);assert(fs.statSync(socketPath).isSocket());
 globalThis.fetch=()=>assert.fail('Network forbidden');
-const db=mysql.createPool({socketPath,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:12});
+// Fixture Date values are UTC instants, matching the disposable MySQL UTC clock;
+// never serialize them using the timezone inherited from a prior test matrix.
+const db=mysql.createPool({socketPath,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:12,timezone:'Z'});
 const NOW=Date.parse('2032-10-06T06:00:00Z'),email='history@example.invalid',owner='CC-SYNTHETIC-HISTORY',chatId='123456789';let now=NOW,sends=0;
 const context={email,owner},options=()=>({enabled:true,now,lockSource:true});
 async function tx(fn){const c=await db.getConnection();try{await c.beginTransaction();const v=await fn(c);await c.commit();return v;}catch(e){await c.rollback();throw e;}finally{c.release();}}
