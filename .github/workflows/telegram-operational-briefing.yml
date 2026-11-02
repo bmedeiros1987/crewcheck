@@ -15,6 +15,14 @@ on:
       - 'scripts/regression-radar-operational-history.mjs'
       - 'scripts/tests/operational-history.test.mjs'
       - 'scripts/tests/operational-history-archive.test.mjs'
+      - 'scripts/tests/operational-history-pages.test.mjs'
+      - 'scripts/tests/radar-history-all-occurrences.test.mjs'
+      - 'scripts/regression-gate-history-client.mjs'
+      - 'client/src/lib/gateHistory.ts'
+      - 'client/src/components/nextflight/GateHistoryPanel.tsx'
+      - 'scripts/gate-history/**'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/pages/Home.tsx'
       - 'scripts/regression-operational-history-mysql.mjs'
       - 'scripts/tests/telegram-operational-change.test.mjs'
       - 'scripts/regression-telegram-operational-change-mysql.mjs'
@@ -42,7 +50,8 @@ jobs:
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs scripts/tests/operational-history-pages.test.mjs scripts/tests/radar-history-all-occurrences.test.mjs
+          node scripts/regression-gate-history-client.mjs
           node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
@@ -140,7 +149,8 @@ jobs:
         run: |
           node scripts/v139/apply.mjs
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs scripts/tests/operational-history-pages.test.mjs scripts/tests/radar-history-all-occurrences.test.mjs
+          node scripts/regression-gate-history-client.mjs
           node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs

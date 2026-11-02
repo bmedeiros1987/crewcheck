@@ -1,3 +1,4 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 // Cirium Flex primary → FlightAware fallback with durable per-provider budget, shared
 // occurrence cache and in-flight coalescing. Synthetic only: fake fetch, fake MySQL
 // with row locks (the real-InnoDB counterpart is regression-radar-paid-ledger-mysql);
@@ -204,7 +205,7 @@ assert.equal((await import('../server/cirium-radar-injection.mjs')).defaultCiriu
 const source = fs.readFileSync('server.mjs', 'utf8'), ast = ts.createSourceFile('server.mjs', source, 99, true, ts.ScriptKind.JS);
 const fn = name => { const n = ast.statements.find(x => ts.isFunctionDeclaration(x) && x.name?.text === name); assert(n, name); return n.getText(ast); };
 const later = at + 4 * 60_000; let faCalls = 0, guarded = 0, primaryAdmit = null, lastSequence = null;
-const scope = vm.createContext({ ...radarEvidence, Date: class extends Date { static now() { return later; } }, process: { env: {} },
+const scope = vm.createContext({beginRadarOperationalHistory, ...radarEvidence, Date: class extends Date { static now() { return later; } }, process: { env: {} },
   gateQueryDay: i => gateQueryDay(i, later), radarResultDecision: (p, i) => radarResultDecision(p, i, later), gateQuerySuppressed: d => ({ ok: false, querySuppressed: true, queryReason: d.reason }),
   ciriumRadarInjectionEnabled: o => o?.enabled === true, runCiriumRadarInjection: async () => { throw Error('Sky path must not run'); }, ciriumRadarProjection: () => ({}),
   runCiriumFlightAwareSequence: async o => (lastSequence = await runCiriumFlightAwareSequence({ ...o, now: () => later })), sequentialRadarProjection: () => ({}),

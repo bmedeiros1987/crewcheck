@@ -1,3 +1,4 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 import {resolveOwnedGatePublication} from '../server/radar-publication-authority.mjs';
 import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 import assert from 'node:assert/strict';

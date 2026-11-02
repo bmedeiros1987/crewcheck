@@ -1,3 +1,4 @@
+import {appendGateArchivePage,readGateArchivePage} from '../server/concierge/operational-history-pages.mjs';
 import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 import * as actualHistory from '../server/concierge/operational-history.mjs';
 import {telegramOperationalAuthority as authority} from '../server/concierge/telegram-briefing.mjs';
@@ -43,9 +44,33 @@ try{
  await Promise.all(Array.from({length:8},()=>runTelegramOperationalChangeCycle(db,{enabled:true,clock:()=>now,readSource:source})));
  const [jobs]=await db.query('SELECT * FROM crewcheck_notification_jobs');assert.equal(jobs.length,1);const job=jobs[0];await db.query("UPDATE crewcheck_notification_jobs SET status='processing',locked_at=NOW(3) WHERE id=?",[job.id]);
  const dispatch=()=>dispatchClaimedJob(db,job,{operationalChangeEnabled:true,readOperationalChangeSource:source,clock:()=>now,deliver:async()=>{sends++;return {ok:true};}});await Promise.all([dispatch(),dispatch()]);assert.equal(sends,1);
+ // Paged archive on the SAME isolated InnoDB, with owner lock and rollback.
+ const storageIO={readState:authority.readState,writeState:authority.writeState};
+ for(let i=0;i<105;i++)await tx(async c=>{
+  const current=await scope(c,context,options());
+  return appendGateArchivePage(c,context,current,{gate:String(100+i),provider:'custom',observedAt:null,sourceUpdatedAt:new Date(NOW+1000+i).toISOString(),receivedAt:new Date(now).toISOString()},storageIO);
+ });
+ const archivedPage=await tx(c=>actualHistory.readArchivedOperationalGateHistory(c,context,ticket.identity,{enabled:true,lockSource:true,cursor:0}));
+ assert.equal(archivedPage.observations.length,100);assert.equal(archivedPage.nextCursor,1);assert.equal(archivedPage.currentConfirmation,false);
+ const archivedSecond=await tx(c=>actualHistory.readArchivedOperationalGateHistory(c,context,ticket.identity,{enabled:true,lockSource:true,cursor:1}));
+ assert.equal(archivedSecond.total,archivedPage.total);assert.equal(archivedSecond.nextCursor,null);
+ const beforeRollback=archivedPage.total;let storageWrites=0;
+ await assert.rejects(tx(async c=>{
+  const current=await scope(c,context,options());
+  return appendGateArchivePage(c,context,current,{gate:'299',provider:'custom',observedAt:null,sourceUpdatedAt:new Date(NOW+1500).toISOString(),receivedAt:new Date(now).toISOString()},{...storageIO,writeState:async(...args)=>{if(++storageWrites===3)throw Error('QA_STORAGE_FAILURE');return authority.writeState(...args);}});
+ }));
+ assert.equal((await tx(c=>actualHistory.readArchivedOperationalGateHistory(c,context,ticket.identity,{enabled:true,lockSource:true}))).total,beforeRollback);
+ // Immutable pre-pagination JSON remains separately consultable without transfer
+ // of the entire collection. Real MySQL validates the fixed-path projection shape.
+ const legacyIdentity=Object.fromEntries(['flight','origin','destination','departureDate','scheduledDepartureUtc'].map(k=>[k,ticket.identity[k]]));legacyIdentity.scheduledDepartureUtc=new Date(legacyIdentity.scheduledDepartureUtc).toISOString();
+ const legacyKey='operational-source-history:'+authority.hash(owner),legacyOccurrence=authority.hash(legacyIdentity);
+ const legacyObservations=Array.from({length:110},(_,i)=>({gate:'24',provider:'custom',observedAt:new Date(NOW+1000+i).toISOString(),receivedAt:new Date(now).toISOString(),rosterRevision:ticket.rosterRevision}));
+ await authority.writeState(db,legacyKey,{version:1,email,owner,field:'gate',archive:{[legacyOccurrence]:{identity:legacyIdentity,observations:legacyObservations}}});
+ const legacyPage=await tx(c=>actualHistory.readArchivedOperationalGateHistory(c,context,ticket.identity,{enabled:true,lockSource:true,legacy:true,cursor:1}));
+ assert.equal(legacyPage.observations.length,10);assert.equal(legacyPage.total,110);assert.equal(legacyPage.nextCursor,null);assert.equal(legacyPage.observations[0].observedAt,null);assert.equal(legacyPage.observations[0].sourceUpdatedAt,legacyObservations[100].observedAt);
  // Actual reader under RR: snapshot precedes owner wait; writer changes the
  // durable source during that wait. Only the test wrapper can remove the lock.
- const [rows]=await db.query("SELECT * FROM crewcheck_telegram_state WHERE state_key LIKE 'operational-source-history:%'");assert.equal(rows.length,1);const revised=typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;
+ const [rows]=await db.query("SELECT * FROM crewcheck_telegram_state WHERE state_key=?",["operational-source-history:live:"+authority.hash(owner)]);assert.equal(rows.length,1);const revised=typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;
  revised.source.previousObservation=revised.source.observation;revised.source.observation=observation(ticket.identity,'27',2800);revised.source.observation.sourceReceivedAt=now;
  const writer=await db.getConnection();await writer.beginTransaction();await writer.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);await writer.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(revised),rows[0].state_key]);
  const reader=await db.getConnection();await reader.query('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');await reader.beginTransaction();await reader.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[rows[0].state_key]);const id=(await reader.query('SELECT CONNECTION_ID() AS id'))[0][0].id;

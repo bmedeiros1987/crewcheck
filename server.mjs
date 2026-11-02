@@ -1,4 +1,4 @@
-import { beginRadarOperationalHistory } from './server/concierge/radar-history-capture.mjs';
+import { beginRadarOperationalHistory, handleRadarGateHistory } from './server/concierge/radar-history-capture.mjs';
 import { runCiriumFlightAwareSequence, sequentialRadarProjection } from './server/radar-sequential.mjs';
 import { configureRadarPaidSources } from './server/radar-paid-sources.mjs';
 import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
@@ -479,9 +479,9 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
     ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
   }
+  ctx.operationalHistory = await beginRadarOperationalHistory(req, ctx.gateQueryEvidence);
   if (authority.kind === 'platform' && !await ctx.radarReadAdmission())
     return sendJson(res, 200, { ...gateQuerySuppressed({reason: authorityCurrent() && gateQueryDay(ctx.gateQueryEvidence).allowed ? 'response-occurrence-changed' : 'response-context-expired'}), exportedToConcierge:false });
-  ctx.operationalHistory = await beginRadarOperationalHistory(req, ctx.gateQueryEvidence);
   const payload = await runRadarRace(ctx, origin, destination);
   if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
   if (payload.querySuppressed || (payload.provider === 'cirium-sky' && payload.radarRouting !== 'cirium-flightaware-v1')) return sendJson(res, 200, { ...payload, exportedToConcierge: false });
@@ -4301,6 +4301,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
   if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version:'14.1.7', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
+  if (url.pathname === '/api/radar-history') return handleRadarGateHistory(req,res,url);
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });
