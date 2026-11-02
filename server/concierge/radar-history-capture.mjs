@@ -85,7 +85,7 @@ export async function handleRadarGateHistory(req,res,url,{enabled=RADAR_OPERATIO
     if(!who)return res.writableEnded?undefined:reply(401,{ok:false,code:'AUTH_REQUIRED'});
     const occurrence=Object.fromEntries(['flight','origin','destination','departureDate','scheduledDepartureUtc'].map(k=>[k,url.searchParams.get(k)||'']));
     const rawCursor=url.searchParams.get('cursor')||'0';
-    if(!/^\d{1,9}$/.test(rawCursor))return reply(400,{ok:false,code:'INVALID_HISTORY_CURSOR'});
+    if(!/^\d{1,16}$/.test(rawCursor)||!Number.isSafeInteger(Number(rawCursor)))return reply(400,{ok:false,code:'INVALID_HISTORY_CURSOR'});
     const legacy=url.searchParams.get('legacy');
     if(legacy && legacy!=='1')return reply(400,{ok:false,code:'INVALID_HISTORY_CURSOR'});
     const page=await authority.transaction(identity.db,c=>history.readArchivedOperationalGateHistory(c,who,occurrence,{enabled:true,lockSource:true,cursor:Number(rawCursor),legacy:legacy==='1'}));
