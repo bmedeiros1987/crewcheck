@@ -18,6 +18,7 @@ on:
       - 'scripts/tests/operational-history-pages.test.mjs'
       - 'scripts/tests/radar-history-all-occurrences.test.mjs'
       - 'scripts/regression-gate-history-client.mjs'
+      - 'scripts/regression-gate-history-browser.mjs'
       - 'scripts/regression-radar-history-paid-capture.mjs'
       - 'scripts/fixtures/operational-history-fixture.mjs'
       - 'client/src/lib/gateHistory.ts'
@@ -156,6 +157,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/briefing-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/briefing-browser/node_modules/playwright/cli.js" install --with-deps chromium
           node scripts/regression-operational-briefing-browser.mjs
+          node scripts/regression-gate-history-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
@@ -177,6 +179,7 @@ jobs:
           node scripts/regression-telegram-operational-change-mysql.mjs
           node scripts/regression-operational-history-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
+          node scripts/regression-gate-history-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
