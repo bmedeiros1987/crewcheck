@@ -33,5 +33,23 @@ try{
  await refresh.click();await page.waitForFunction(()=>window.requests.length===4);await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));localStorage.setItem('crewcheck_auth_token','synthetic-B');window.renderRadar('two')});await page.waitForFunction(()=>window.requests.length===5);await page.evaluate(()=>window.reply(3,200,'old','OLD ACCOUNT MUST NOT RENDER'));await settle();assert.equal(await page.getByText('OLD ACCOUNT MUST NOT RENDER').count(),0);assert(await refresh.isDisabled());await page.evaluate(()=>window.reply(4,403));await page.getByText('Acesso indisponível',{exact:true}).waitFor();
  await refresh.click();await page.waitForFunction(()=>window.requests.length===6);await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-B-rotated');window.renderRadar('two')});await page.waitForFunction(()=>window.requests.length===7);await page.evaluate(()=>window.reply(5,200,'old','OLD TOKEN MUST NOT RENDER'));await settle();assert.equal(await page.getByText('OLD TOKEN MUST NOT RENDER').count(),0);assert(await refresh.isDisabled());await page.evaluate(()=>window.reply(6,200,'occurrence-unverified'));await page.getByText('O voo ainda não foi vinculado à programação publicada desta conta.',{exact:true}).waitFor();
  await refresh.click();await page.waitForFunction(()=>window.requests.length===8);await page.evaluate(()=>window.unmountRadar());await page.evaluate(()=>window.reply(7,200,'old','UNMOUNTED MUST NOT RENDER'));await settle();await page.getByText('Unmounted',{exact:true}).waitFor();assert.equal(await page.getByText('UNMOUNTED MUST NOT RENDER').count(),0);assert.deepEqual(errors,[]);
- console.log('PASS actual RadarView React: explicit suppression/backend/access reasons, no negative gate, late event/account/token/unmount fences and loading serial; network local-only');
+ const diagnostics=await context.newPage();await diagnostics.goto(origin);await diagnostics.waitForFunction(()=>window.requests.length===1);
+ const sourceCases=[
+  ['source-unverified','A resposta da fonte não confirmou a ocorrência publicada.'],
+  ['source-origin-date-unverified','A origem, o fuso ou a data da resposta da fonte não foram confirmados.'],
+  ['source-other-flight-or-route','A fonte respondeu sobre outro voo ou rota; resposta descartada.'],
+  ['source-instant-unverified','O horário de partida informado pela fonte não foi confirmado.'],
+  ['source-other-day','A resposta da fonte corresponde a outra data local; resposta descartada.'],
+  ['source-other-occurrence','A resposta da fonte corresponde a outro horário de partida; resposta descartada.'],
+  ['source-stale','A resposta da fonte está desatualizada; nenhum portão foi confirmado.'],
+ ];
+ for(let i=0;i<sourceCases.length;i++){
+  const [reason,message]=sourceCases[i];await diagnostics.evaluate(({i,reason})=>window.reply(i,200,reason),{i,reason});
+  await diagnostics.getByText(message,{exact:true}).waitFor();assert.equal(await diagnostics.getByText('DO-NOT-DISPLAY').count(),0);
+  await diagnostics.getByText('Consulta suspensa',{exact:true}).waitFor();
+  await diagnostics.locator('.cz-radar-screen article').first().locator('strong').filter({hasText:/Portão: Não confirmado/}).waitFor();
+  if(i<sourceCases.length-1){await diagnostics.getByRole('button',{name:'Atualizar e exportar ao card',exact:true}).click();await diagnostics.waitForFunction(count=>window.requests.length===count,i+2);}
+ }
+ await diagnostics.close();
+ console.log('PASS actual RadarView React: explicit source-* diagnostics, no negative gate, late event/account/token/unmount fences and loading serial; network local-only');
 }finally{await browser.close();await new Promise(r=>server.close(r));fs.rmSync(tmp,{recursive:true,force:true})}
