@@ -33,7 +33,7 @@ export function aggregateAllowanceEvidence<R extends AllowanceEvidenceRow, P ext
         // its meals forward. Preserve the nominal publication's authority.
         const originIso = row.originIso;
         if (!originIso || !validFinancialDay(originIso) || originIso > row.iso) { addPending({iso:row.iso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Origem da jornada entre competências não verificada.'}); continue; }
-        if (row.originIso.slice(0,7)!==month) continue;
+        if (originIso.slice(0,7)!==month) continue;
       }
       if (row.partial===true) addPending({iso:row.iso,originIso:row.originIso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Completude da jornada de origem da diária não comprovada.'});
       // Existing producer: one of each meal and at most one taxi per civil day.
