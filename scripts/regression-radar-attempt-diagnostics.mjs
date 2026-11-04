@@ -13,7 +13,8 @@ import {createPaidRadarSource,createRadarSourceCache} from '../server/radar-paid
 
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,99,true,ts.ScriptKind.JS);
 const extract=name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,name);return fn.getText(ast);};
-const names=['firstKnown','normalizeFlightRaw','buildFlightContext','jsonFetch','providerAvailable','markProvider','noteProviderError','providerAirLabs','normalizeFlightAwareFlight','providerFlightAware','publicRadarPayload','scoreRadar','runRadarRace','handleRadarHealth'];
+const preparedNames=['radarAirportCode','flightAwareAirport','flightAwareScheduledDeparture','flightAwareOccurrenceRank','selectFlightAwareOccurrence'].filter(name=>ast.statements.some(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name));
+const names=[...preparedNames,'firstKnown','normalizeFlightRaw','buildFlightContext','jsonFetch','providerAvailable','markProvider','noteProviderError','providerAirLabs','normalizeFlightAwareFlight','providerFlightAware','publicRadarPayload','scoreRadar','runRadarRace','handleRadarHealth'];
 const identity={flight:'LA8138',origin:'GRU',destination:'AEP',departureDate:'2026-11-04',scheduledDepartureUtc:'2026-11-04T20:05:00.000Z'};
 let now=Date.parse('2026-11-04T13:30:00Z'),mode,fetches,row,admin,health,release;
 let diagnostics,scope;
