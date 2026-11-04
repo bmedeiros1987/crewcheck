@@ -26,6 +26,7 @@ on:
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'server/radar-publication-authority.mjs'
+      - 'server/concierge/radar-history-capture.mjs'
       - 'scripts/regression-p0-multichannel-roster-gate.mjs'
       - 'scripts/regression-p0-530-adjacent-month-retention.mjs'
       - 'scripts/regression-p2-530-adjacent-fallback-finance.mjs'
