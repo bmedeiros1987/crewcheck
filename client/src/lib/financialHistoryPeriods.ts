@@ -5,6 +5,21 @@ export function validFinancialDay(value: string): boolean {
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value && Number(value.slice(0, 4)) >= 2000 && Number(value.slice(0, 4)) <= 2200;
 }
 const civil = (d: Date) => d.toISOString().slice(0, 10);
+// Adjacent sources can prove carry-in rows, but can publish daily coverage
+// only for their own nominal competence. Never borrow an old foreign DO.
+export function nominalFinancialDays(rosters: readonly ({ year?: number | null; month?: number | null; days?: readonly { date: string }[] } | null | undefined)[]): string[] {
+  const dates = new Set<string>();
+  for (const roster of rosters) {
+    const month = `${roster?.year}-${String(roster?.month).padStart(2,'0')}`;
+    if (!validFinancialDay(month+'-01')) continue;
+    for (const day of roster?.days || []) {
+      if (typeof day.date!=='string') continue;
+      const iso = /^\d{2}\/\d{2}\/\d{4}$/.test(day.date) ? day.date.split('/').reverse().join('-') : day.date;
+      if (validFinancialDay(iso) && iso.slice(0,7)===month) dates.add(iso);
+    }
+  }
+  return [...dates].sort();
+}
 // Only published dates prove daily coverage. Rows (including an overnight
 // meal/carry-in) cannot prove that an otherwise absent day was a day off.
 export function financialDayCoverage(range: FinancialRange, coveredDays: readonly string[] = []): { valid: boolean; missingDays: string[] } {

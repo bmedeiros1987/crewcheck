@@ -19,7 +19,7 @@ globalThis.fetch=async(url,init={})=>{
  const payload=u.pathname==='/api/rosters'?{ok:true,rosters:authorized?inventory:[]}:u.pathname==='/api/rosters/active'?{ok:true,roster:null}:u.pathname.startsWith('/api/rosters/')?{ok:true,data:{roster:authorized?documents[decodeURIComponent(u.pathname.slice('/api/rosters/'.length))]:null,compliance:null,gym:[]}}:assert.fail('Unadmitted synthetic route '+u.pathname);
  return new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}});
 };
-const modules=['authClient','databaseClient','financialHistoryPeriods','financialComparisonPeriods','financialForecastPeriods','financialActApplicability','sharedAllowanceResolution','latamAllowanceCatalog','financialStatementLearning','financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialRules','financialFxReference','financialSettingStore','nextFinancialPayment','canonicalRoster'];
+const modules=['authClient','aimsParser','databaseClient','financialHistoryPeriods','financialComparisonPeriods','financialForecastPeriods','financialActApplicability','sharedAllowanceResolution','latamAllowanceCatalog','financialStatementLearning','financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialRules','financialFxReference','financialSettingStore','nextFinancialPayment','canonicalRoster'];
 try{
  const out=path.join(dir,'libs.mjs');
  await build({stdin:{contents:[...modules.map((name,i)=>`export * as m${i} from './client/src/lib/${name}';`),"export * as fx from './shared/financialFx.mjs';"].join('\n'),resolveDir:root,loader:'ts'},bundle:true,format:'esm',platform:'node',outfile:out,logLevel:'silent',define:{'import.meta.env':'{}'},alias:{'@':path.join(root,'client/src'),'@shared':path.join(root,'shared')}});
@@ -47,7 +47,7 @@ try{
   const snapshots=opened.map(({roster:r})=>({roster:r,perdiem:context.subject.calculatePerDiem(events(r),r,new Date('2026-10-31T12:00:00Z'))}));
   const missing=libs.financialMonths(range).filter(month=>!snapshots.some(s=>`${s.roster.year}-${String(s.roster.month).padStart(2,'0')}`===month));
   const result=context.subject.scopedFinancialForecast(snapshots,range,missing);
-  const coveredDays=snapshots.flatMap(s=>s.roster.days.map(d=>d.date.split('/').reverse().join('-')));const payment=libs.nextAllowancePayment(result.rows,result.unclassifiedItems,libs.financialMonths(range).filter(m=>!missing.includes(m)),new Date('2026-10-31T12:00:00Z'),coveredDays);return{result,payment,snapshots,missing,conflicts:selected.conflicts};
+  const coveredDays=libs.nominalFinancialDays(snapshots.map(s=>s.roster));const payment=libs.nextAllowancePayment(result.rows,result.unclassifiedItems,libs.financialMonths(range).filter(m=>!missing.includes(m)),new Date('2026-10-31T12:00:00Z'),coveredDays);return{result,payment,snapshots,missing,conflicts:selected.conflicts};
  };
  context.buildLegs=events;
  const capture=(name,r)=>evidence.push({name,monthly:r.result.monthly,complete:r.result.nativeSummary.complete,rows:r.result.rows.length,missing:r.missing,conflicts:r.conflicts,paymentTotals:r.payment.totals,paymentPartial:r.payment.calculationPartial,pending:r.result.unclassifiedItems.map(i=>({iso:i.iso,kind:i.pendingKind,cause:i.actCause??null}))});
@@ -168,6 +168,71 @@ try{
  assert.equal(libs.allowanceSourceRange(boundary).start,'2026-10-31');assert.equal(libs.allowanceSourceRange(afterBoundary).start,afterBoundary.start);
  assert.equal(libs.allowanceSourceRange(libs.financialRange('month','2027-01','','','')).start,'2026-12-31','year boundary is civil, not device timezone');
  evidence.push({name:'carry-in actual consumer controls',total:294,boundaryTotal:168,duplicateCopiesCountedOnce:true,conflicts:7,sourceMonthAuthority:true,ACTCausePreserved:true,zeroPreserved:true,sourceMutation:false});
+ // Actual AIMS parser + canonical calculator: an unreadable Oct31 origin can
+ // cross into Nov1. It is not equivalent to proven DO, nor to an ACT/taxi issue.
+ function sourceText(year,month,last){
+  const mm=String(month).padStart(2,'0'),tag=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month-1],count=new Date(Date.UTC(year,month,0)).getUTCDate();
+  let text=`Escala de Tripulante Convertida para padrão AIMS\nTripulante: SYNTHETIC PILOT -BP:00000000 -Base: BSB -01/${mm}/${year} até${count}/${mm}/${year}\n`;
+  for(let n=1;n<=count;n++)text+=String(n).padStart(2,'0')+tag+' '+(n===count?last:n<=5?'08:00 LA 3001 09:00 BSB GRU 10:30 (320) LA 3002 11:30 GRU BSB 13:00 (320) 13:30':'DO')+'\n';return text;
+ }
+ const unread='ASB BSB 05:30 BSB 08:40 09:40 LA 4101 09:39 BSB';
+ const snapshotOf=roster=>({roster,perdiem:context.subject.calculatePerDiem(events(roster),roster,new Date('2026-10-31T12:00:00Z'))});
+ reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
+ const unreadOct=libs.parseAimsRoster(sourceText(2026,10,unread)),offOct=libs.parseAimsRoster(sourceText(2026,10,'DO'));
+ const dinnerNov={...nov,crewId:unreadOct.crewId,crewName:unreadOct.crewName,base:unreadOct.base,days:[{...day('2026-11-01'),base:unreadOct.base,dutyReport:'19:00',dutyDebrief:'19:15'}]};
+ assert(unreadOct.aimsFlightSourceCoverage&&offOct.aimsFlightSourceCoverage,'real AIMS source witness exists for both cases');
+ const originUnknown=[snapshotOf(unreadOct),snapshotOf(dinnerNov)],oneDay=libs.financialRange('custom','','','2026-11-01','2026-11-01');
+ assert(originUnknown[0].perdiem.unclassifiedItems.some(item=>item.iso==='2026-10-31'&&item.pendingKind==='source_coverage'),'real parser/calculator prove the prior source gap');
+ assert.equal(consumer(originUnknown,oneDay).forecast.monthly,null,'PREVIOUS_SOURCE_COVERAGE: unreadable October31 is not a proven day off for November1');
+ const sourceOff=snapshotOf(offOct),knownDinner=snapshotOf(dinnerNov);assert(!sourceOff.perdiem.unclassifiedItems.some(item=>item.pendingKind==='source_coverage'),'control is verified source, not an invalid empty witness');
+ assert.equal(consumer([sourceOff,knownDinner],oneDay).forecast.monthly,42,'explicit prior DO does not invent a carry-in issue');
+ const rateOnly=JSON.parse(JSON.stringify(sourceOff));rateOnly.perdiem.unclassifiedItems=[{iso:'2026-10-31',airport:'BSB',pendingKind:'taxi_rate',reason:'SYNTHETIC prior taxi rate'},{iso:'2026-10-31',airport:'BSB',pendingKind:'allowance_reference',actCause:'act_missing',reason:'SYNTHETIC prior ACT'}];
+ assert.equal(consumer([rateOnly,knownDinner],oneDay).forecast.monthly,42,'only operational source gaps propagate across the boundary');
+ const unrelated=JSON.parse(JSON.stringify(sourceOff));unrelated.perdiem.unclassifiedItems=[{iso:'2026-10-15',airport:'BSB',pendingKind:'source_coverage',reason:'SYNTHETIC unrelated source day'}];
+ assert.equal(consumer([unrelated,knownDinner],oneDay).forecast.monthly,42);
+ const foreignWarning=JSON.parse(JSON.stringify(knownDinner));foreignWarning.perdiem.unclassifiedItems=[{iso:'2026-10-31',airport:'BSB',pendingKind:'source_coverage',reason:'SYNTHETIC foreign old warning'}];
+ assert.equal(consumer([sourceOff,foreignWarning],oneDay).forecast.monthly,42,'a foreign warning has no prior-source authority');
+ // The payment cycle begins on a month boundary in October2025; exercise the
+ // real payment consumer, including the upcoming-line partial flag.
+ const sepUnknown=libs.parseAimsRoster(sourceText(2025,9,unread)),sepOff=libs.parseAimsRoster(sourceText(2025,9,'DO'));
+ const octoberWeek={...oct,year:2025,crewId:sepUnknown.crewId,crewName:sepUnknown.crewName,base:sepUnknown.base,days:Array.from({length:7},(_,i)=>({...day(`2025-10-${String(i+1).padStart(2,'0')}`),base:sepUnknown.base,...(i===0?{dutyReport:'19:00',dutyDebrief:'19:15'}:{type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null})}))};
+ function boundaryPayment(source){const snapshots=[source,snapshotOf(octoberWeek)],projection=libs.aggregateAllowanceEvidence(snapshots);return libs.nextAllowancePayment(projection.rows,projection.unclassifiedItems,['2025-09','2025-10'],new Date('2025-10-03T12:00:00Z'),libs.nominalFinancialDays(snapshots.map(item=>item.roster)));}
+ const uncertainPayment=boundaryPayment(snapshotOf(sepUnknown));assert.equal(uncertainPayment.totals,null);assert.equal(uncertainPayment.calculationPartial,true);const cycleLines=uncertainPayment.upcomingLines.filter(row=>row.iso>='2025-10-01'&&row.iso<='2025-10-07');assert.equal(cycleLines.length,1);assert(cycleLines.every(row=>row.partial===true));
+ const completePayment=boundaryPayment(snapshotOf(sepOff));assert.equal(completePayment.totals.BRL,42);assert.equal(completePayment.calculationPartial,false);
+ const foreignMeal={...knownDinner.perdiem.rows[0],currency:'USD',value:20,convertedBRL:null,partial:false,expectedPaymentDate:'2026-11-01',expectedPaymentTimezone:'America/Sao_Paulo'};
+ const foreignUpcoming=pending=>libs.nextAllowancePayment([foreignMeal],pending,['2026-10','2026-11'],new Date('2026-10-31T12:00:00Z'),['2026-10-31','2026-11-01']).upcomingLines[0];
+ assert.equal(foreignUpcoming([{iso:'2026-10-31',airport:'BSB',pendingKind:'source_coverage'}]).partial,true);
+ for(const pending of [[{iso:'2026-10-31',airport:'BSB',pendingKind:'taxi_rate'}],[{iso:'2026-10-31',airport:'BSB',pendingKind:'allowance_reference'}],[{iso:'2026-10-30',airport:'BSB',pendingKind:'source_coverage'}]])assert.equal(foreignUpcoming(pending).partial,false);
+
+ evidence.push({name:'prior operational source uncertainty',actualParser:true,previousDOComplete:true,ACTAndTaxiDoNotPropagate:true,unrelatedAndForeignIgnored:true,paymentAndUpcomingPartial:true});
+
+ // A foreign date in the carry-in source is not publication authority for
+ // the selected competence. Exercise actual history reader -> forecast/UI.
+ reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
+ const foreignOff={...day('2026-11-01'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null};
+ documents.oct={...oct,days:[...oct.days,foreignOff]};documents.nov={...nov,days:nov.days.slice(1)};
+ const foreign=await run(),foreignForecast=consumer(foreign.snapshots,boundary);
+ assert(foreign.snapshots.find(s=>s.roster.month===10).roster.days.some(d=>d.date==='01/11/2026'),'real history reader preserves the foreign printed date');
+ assert.equal(foreignForecast.forecast.monthly,null,'NOMINAL_DAY_COVERAGE: October cannot certify missing November1');
+ assert.equal(foreignForecast.forecast.nativeSummary.complete,false);assert.equal(foreignForecast.payment.totals,null);assert.equal(foreignForecast.capture.complete,false);assert(!foreignForecast.capture.coveredDays.includes('2026-11-01'));
+ const beforeForeign=foreignForecast.forecast.rows.map(row=>[row.eventId,row.iso,row.label,row.value]);
+ documents.oct=oct;const removedForeign=await run(),withoutForeign=consumer(removedForeign.snapshots,boundary);
+ assert.equal(withoutForeign.forecast.monthly,null);assert.deepEqual(withoutForeign.forecast.rows.map(row=>[row.eventId,row.iso,row.label,row.value]),beforeForeign,'removing foreign DO cannot change money evidence');
+ // Only the genuine November publication can certify this day.
+ documents.oct={...oct,days:[...oct.days,foreignOff]};documents.nov={...nov,days:[foreignOff,...nov.days.slice(1)]};
+ const official=consumer((await run()).snapshots,boundary);assert.equal(official.forecast.monthly,84);assert.equal(official.forecast.nativeSummary.complete,true);assert(official.capture.coveredDays.includes('2026-11-01'));
+ // The inverse contamination must not fake the preceding source date either.
+ documents.oct={...oct,days:oct.days.slice(0,3)};documents.nov={...nov,days:[...nov.days,{...day('2026-10-31'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null}]};
+ const reverse=consumer((await run()).snapshots,boundary);assert.equal(reverse.forecast.monthly,null);assert.equal(reverse.payment.totals,null);assert(!reverse.capture.coveredDays.includes('2026-10-31'));
+ // The authorized carry-in rows survive; a copied foreign DO still cannot
+ // turn their absence of nominal daily publication into complete coverage.
+ documents.oct={...oct,days:[...oct.days.slice(0,3),nightDay('2026-10-31'),foreignOff]};documents.nov={...nov,days:nov.days.slice(1)};
+ const carriedWithoutDay=consumer((await run()).snapshots,boundary);assert.equal(carriedWithoutDay.forecast.monthly,null);assert.equal(carriedWithoutDay.payment.totals,null);assert(carriedWithoutDay.forecast.rows.some(row=>row.originIso==='2026-10-31'&&row.iso==='2026-11-01'));
+ for(const order of [foreign.snapshots,[...foreign.snapshots].reverse(),[...foreign.snapshots,...foreign.snapshots]])assert.equal(consumer(order,boundary).forecast.monthly,null);
+ const mixedDates=[{year:2026,month:10,days:[{date:'31/10/2026'},{date:'2026-11-01'},{date:'31/10/2026'},{date:'2026-10-99'}]},{year:2026,month:11,days:[{date:'02/11/2026'},{date:'2026-10-31'}]},{year:2026,month:13,days:[{date:'2026-11-01'}]}],datesBefore=JSON.stringify(mixedDates);
+ assert.deepEqual(libs.nominalFinancialDays(mixedDates),['2026-10-31','2026-11-02']);assert.equal(JSON.stringify(mixedDates),datesBefore,'nominal-date projection does not mutate source records');
+ evidence.push({name:'nominal daily publication authority',foreignDONeverCertifies:true,inverseForeignDayRejected:true,genuineDOComplete:true,authorizedCarryRowsPreserved:true});
+
  // Execute the actual Explorer body and its read-only source-loading effect.
  // Hook state is synthetic; selection, session checks, loader and fetch fence
  // are production code. Only allowance boundaries request the prior source.

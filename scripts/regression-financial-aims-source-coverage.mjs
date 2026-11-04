@@ -83,12 +83,12 @@ for(const source of ['text','visual']) {
   pending(forecast(parse(textFor(good,4)+'31Apr '+civilFlight+'\n'),monthRange(4)));
   pending(forecast(parse(textFor(good,2,{},2033)+'29Feb '+civilFlight+'\n'),libs.financialRange('month','2033-02','','','')));
   complete(forecast(parse(textFor(good,2,{29:civilFlight})),monthRange(2)));
-  const september=parse(textFor(good,9));complete(forecast(september,monthRange(9),[b.snapshot]));
+  const september=parse(textFor(good,9));const priorUncertain=forecast(september,monthRange(9),[b.snapshot]);pending(priorUncertain);assert.ok(priorUncertain.value.unclassifiedItems.some(item=>item.iso==='2032-08-31'&&item.pendingKind==='source_coverage'),'existing source uncertainty extends through the prior source boundary');
   const spillover=parse(textFor()+'01Sep '+bad+'\n08Sep '+good+'\n'),spillEvents=context.subject.buildLegs(spillover);
   for(const day of ['2032-09-01','2032-09-08']){const allRows=context.subject.calculatePerDiem(spillEvents,spillover,new Date(day+'T15:00:00Z'));assert.equal(allRows.monthlySummary.convertedComplete,true,'August authority is not poisoned by later printed issue');assert.equal(allRows.weeklySummary.convertedComplete,false,'weekly all-row consumer retains explicit spillover uncertainty');assert.ok(allRows.unclassifiedItems.some(item=>item.iso===day&&item.pendingKind==='source_coverage'));assert.equal(allRows.monthlyUnclassifiedItems.length,0);}
   complete(forecast(september,monthRange(9),[context.subject.financeSnapshot(spillover)]));
   const monthEnd=parse(textFor(good,8,{31:bad})),end=forecast(monthEnd,dateRange('2032-08-31'));pending(end);
-  complete(forecast(september,monthRange(9),[end.snapshot]));pending(forecast(monthEnd,dateRange('2032-08-31','2032-09-05'),[context.subject.financeSnapshot(september)]));
+  const boundaryUncertain=forecast(september,monthRange(9),[end.snapshot]);pending(boundaryUncertain);assert.ok(boundaryUncertain.value.unclassifiedItems.some(item=>item.iso==='2032-08-31'&&item.pendingKind==='source_coverage'),'malformed prior origin cannot certify the following competence');pending(forecast(monthEnd,dateRange('2032-08-31','2032-09-05'),[context.subject.financeSnapshot(september)]));
   results.push({source,knownMeals:650,knownTaxi:31.5,finalTotal:null,sourceIssues:new Set(b.value.unclassifiedItems.map(item=>item.sourceIssueId)).size,coverageDays:b.value.unclassifiedItems.length});
 }
 const secondaryText=textFor(good,8,{14:'08:00 LA 4501 09:00 BSB GRU 10:30 (320) LA 4502 11:30 GRU BSB 13:00 (320) 13:30'});

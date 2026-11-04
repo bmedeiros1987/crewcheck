@@ -1,5 +1,5 @@
 import { observedStatementCycle, rosterOperationalIso, type AllowanceClockBasis, type AllowanceStatementCycle } from './compensationPolicy';
-import { validFinancialDay } from './financialHistoryPeriods';
+import { validFinancialDay, allowanceSourceRange, type FinancialRange } from './financialHistoryPeriods';
 
 type ForecastRow = { iso: string; currency: string; value: number; convertedBRL: number | null };
 type UnclassifiedItem = { iso: string; airport: string };
@@ -10,6 +10,16 @@ type AllowanceEvidenceRow = ForecastRow & {
   expectedPaymentDate?: string; expectedPaymentTimezone?: string;
 };
 type AllowancePending = UnclassifiedItem & { reason?: string; pendingKind?: string; sourceIssueId?: string; actCause?: string; originIso?: string };
+
+// At a competence boundary an unreadable operational origin can carry into
+// the selection. This does not propagate unrelated ACT/taxi rates or earlier
+// warnings; authority filtering by source competence happens before this step.
+export function allowancePendingInRange<T extends { iso: string; pendingKind?: string }>(pending: readonly T[], range: FinancialRange): T[] {
+  const origin = allowanceSourceRange(range).start;
+  return pending.filter(item => !validFinancialDay(item.iso) || range.valid && (
+    item.iso>=range.start && item.iso<=range.end || origin!==range.start && item.iso===origin && item.pendingKind==='source_coverage'
+  ));
+}
 
 // A nominal source may prove meals after midnight in the next competence.
 // Keep the producer's full rows; date filtering belongs to the consumer. This
