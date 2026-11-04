@@ -106,7 +106,9 @@ const allowanceModules=loadClientModules({files:['client/src/lib/financialForeca
 try {
  const homeSource=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',homeSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  const functions=ast.statements.filter(node=>ts.isFunctionDeclaration(node)&&['scopedFinancialForecast','PerDiemView'].includes(node.name?.text));assert.equal(functions.length,2);
- const ownerFx={quotes:first.quotes,setMode:()=>{}},roster={year:2032,month:2,days:[]},snapshot={roster,perdiem:{monthlyRows:originalRows,monthlyUnclassifiedItems:[]}},range={start:'2032-02-01',end:'2032-02-29',valid:true,kind:'month'};
+ // Explicit publication coverage keeps this FX-only fixture independent of
+ // absent dates; an empty roster must no longer certify a monthly total.
+ const ownerFx={quotes:first.quotes,setMode:()=>{}},roster={year:2032,month:2,days:Array.from({length:29},(_,i)=>({date:String(i+1).padStart(2,'0')+'/02/2032',type:'DO',legs:[]}))},snapshot={roster,perdiem:{monthlyRows:originalRows,monthlyUnclassifiedItems:[]}},range={start:'2032-02-01',end:'2032-02-29',valid:true,kind:'month'};
  const context=vm.createContext({...allowanceModules.load('financialForecastPeriods'),...allowanceModules.load('financialHistoryPeriods'),...fxMath,React,
   useFinancialFx:()=>ownerFx,financeSnapshot:()=>snapshot,moneyCurrency:(value,currency)=>currency+value,
   FinancialHistoryExplorer:()=>null,FinancialFreeDayDetails:()=>null,FinancialFxSourceControl:()=>null,

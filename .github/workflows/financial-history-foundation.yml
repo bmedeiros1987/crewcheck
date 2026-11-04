@@ -115,6 +115,7 @@ jobs:
         run: |
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" FINANCIAL_COVERAGE_PHASE=raw node scripts/regression-financial-aims-source-coverage.mjs
+            TZ="$TZ" node scripts/regression-financial-day-coverage.mjs
           done
           node scripts/regression-financial-capture-source-race.mjs
       - run: node scripts/regression-financial-payroll-dsr-source.mjs
@@ -127,6 +128,7 @@ jobs:
         run: |
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" FINANCIAL_COVERAGE_PHASE=prepared node scripts/regression-financial-aims-source-coverage.mjs
+            TZ="$TZ" node scripts/regression-financial-day-coverage.mjs
           done
           node scripts/regression-financial-capture-source-race.mjs
       - name: Private payroll counterproofs after preparation

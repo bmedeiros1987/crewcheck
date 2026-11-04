@@ -5,6 +5,18 @@ export function validFinancialDay(value: string): boolean {
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value && Number(value.slice(0, 4)) >= 2000 && Number(value.slice(0, 4)) <= 2200;
 }
 const civil = (d: Date) => d.toISOString().slice(0, 10);
+// Only published dates prove daily coverage. Rows (including an overnight
+// meal/carry-in) cannot prove that an otherwise absent day was a day off.
+export function financialDayCoverage(range: FinancialRange, coveredDays: readonly string[] = []): { valid: boolean; missingDays: string[] } {
+  const valid = range.valid && validFinancialDay(range.start) && validFinancialDay(range.end) && range.start <= range.end;
+  if (!valid) return { valid: false, missingDays: [] };
+  const covered = new Set(coveredDays.filter(validFinancialDay)), missingDays: string[] = [];
+  for (const day = new Date(range.start + 'T12:00:00Z'); civil(day) <= range.end; day.setUTCDate(day.getUTCDate() + 1)) {
+    const iso = civil(day);
+    if (!covered.has(iso)) missingDays.push(iso);
+  }
+  return { valid: true, missingDays };
+}
 export function financialRange(kind: FinancialRange['kind'], month: string, day: string, start: string, end: string): FinancialRange {
   let a = start, b = end;
   if (kind === 'week' && !validFinancialDay(day)) return { start: '', end: '', valid: false, kind };

@@ -144,7 +144,7 @@ import { resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summar
 import type { AllowanceSlot } from '@/lib/latamAllowanceCatalog';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
-import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { financialRowsInRange, financialWeeks, financialRange, financialDayCoverage, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { confirmedPerDiemReferencesAt, confirmedPayrollDsrContext, financialRateOwner, confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount } from '@/lib/financialAmounts';
@@ -4240,7 +4240,8 @@ function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[]
   const pending = snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems);
   const unclassifiedItems = [...financialRowsInRange(pending, range), ...pending.filter(item => !item.iso)];
   const native = summarizeNativeForecastRows(rows, unclassifiedItems), converted = summarizeForecastRows(rows, unclassifiedItems);
-  const scopeIncomplete = !range.valid || missing.length > 0;
+  const coverage = financialDayCoverage(range, snapshots.flatMap(snapshot => (snapshot.roster?.days || []).map(day => /^\d{2}\/\d{2}\/\d{4}$/.test(day.date) ? day.date.split('/').reverse().join('-') : day.date)));
+  const scopeIncomplete = !coverage.valid || missing.length > 0 || coverage.missingDays.length > 0;
   const nativeSummary = scopeIncomplete ? { ...native, complete:false, totalsByCurrency:{}, state:'unclassified' } : native;
   const monthlySummary = scopeIncomplete ? { ...converted, convertedComplete:false, convertedTotalBRL:null, state:'invalid_amount' } : converted;
   const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
