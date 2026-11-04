@@ -1208,6 +1208,20 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean setWatchCloudCredential(final String credential, final String requestId) {
+            if (requestId == null || !requestId.matches("[A-Za-z0-9-]{1,64}")) return false;
+            // A página só marca o pareamento quando a gravação do Data Layer confirma.
+            return CrewCheckWatchPublisher.publishCloudCredential(MainActivity.this, credential,
+                    (ok, code, message) -> dispatchCrewCheckWatchSyncResult(ok, code, requestId));
+        }
+
+        @JavascriptInterface
+        public boolean clearWatchCloudCredential() {
+            CrewCheckWatchPublisher.clearCloudCredential(MainActivity.this);
+            return true;
+        }
+
+        @JavascriptInterface
         public boolean requestWatchSnapshot() {
             requestCrewCheckWatchSnapshotFromWeb("watch-request");
             return true;

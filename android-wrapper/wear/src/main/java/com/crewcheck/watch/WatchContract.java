@@ -9,6 +9,19 @@ public final class WatchContract {
     public static final String REQUEST_SYNC_PATH = "/crewcheck/watch/request-sync/v1";
     public static final String DATA_KEY_SNAPSHOT_JSON = "snapshotJson";
 
+    /** Credencial para buscar a mesma projeção na nuvem quando o celular está longe. */
+    public static final String CLOUD_PATH = "/crewcheck/watch/cloud/v1";
+    public static final String DATA_KEY_CLOUD_CREDENTIAL = "credential";
+
+    /**
+     * Estado de conta do celular: {conta, época}. A época só muda numa transição explícita
+     * (outra conta ou logout, com conta vazia) e sempre cresce; resumo e credencial levam a
+     * época vigente no mesmo campo (ver WatchAccountGuard).
+     */
+    public static final String ACCOUNT_PATH = "/crewcheck/watch/account/v1";
+    public static final String DATA_KEY_ACCOUNT = "account";
+    public static final String DATA_KEY_ACCOUNT_EPOCH = "accountEpoch";
+
     /**
      * Bem-estar e rotina viajam em canais PRÓPRIOS, nunca dentro do snapshot
      * operacional. Três razões:
