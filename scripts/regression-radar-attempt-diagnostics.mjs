@@ -37,6 +37,7 @@ function reset(){
 const state=provider=>diagnostics.snapshot().providers.find(x=>x.provider===provider);
 const call=()=>scope.runRadarRace({...scope.buildFlightContext('LA8138'),gateQueryEvidence:identity},'GRU','AEP');
 reset();let result=await call();assert.equal(result.ok,true);assert.equal(fetches,1);assert.equal(state('airlabs').counts.networkAttempts,1);assert.equal(state('airlabs').counts.httpResponses,1);assert.equal(state('airlabs').counts.matchedWithGateResults,1);assert.equal(state('airlabs').lastScheduleFormat,'absolute-valid');
+row.dep_gate=18;result=await call();assert.equal(result.gate,18);assert.equal(state('airlabs').counts.matchedWithGateResults,2,'numeric gate accepted by the shared/app normalizer must not be reported as absent');
 row.dep_gate=null;result=await call();assert.equal(result.ok,true);assert.equal(state('airlabs').counts.matchedWithoutGateResults,1,'valid response without gate is not a transport failure');assert.equal(state('airlabs').counts.transportFailures,0);assert.equal(scope.providerAvailable('airlabs',['AIRLABS_API_KEY']),true,'missing gate alone does not start outage cooldown');
 delete row.dep_time_utc;row.dep_time='2026-11-04 17:05';result=await call();assert.equal(result.queryReason,'source-instant-unverified');assert.equal(state('airlabs').counts.rejectedOccurrenceResults,1);assert.equal(state('airlabs').lastScheduleFormat,'zone-less');
 admin=false;scope.handleRadarHealth({},{});assert.equal(health.body.attemptDiagnostics,undefined,'public health cannot see per-provider observations');

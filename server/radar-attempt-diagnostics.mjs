@@ -29,7 +29,7 @@ export function createRadarAttemptDiagnostics({now=Date.now}={}) {
       state.lastScheduleFormat=format(value.scheduledDepartureUtc);
       if(value.ok!==true)increment(state,'unavailableResults');
       else if(decision?.allowed!==true)increment(state,'rejectedOccurrenceResults');
-      else increment(state,typeof value.gate==='string'&&normalizeRadarGate(value.gate)?'matchedWithGateResults':'matchedWithoutGateResults');
+      else increment(state,(typeof value.gate==='string'||typeof value.gate==='number'&&Number.isFinite(value.gate))&&normalizeRadarGate(value.gate)?'matchedWithGateResults':'matchedWithoutGateResults');
     },
     snapshot() {
       return {scope:'process-local',sinceEpochMs:Number.isFinite(since)?since:null,
