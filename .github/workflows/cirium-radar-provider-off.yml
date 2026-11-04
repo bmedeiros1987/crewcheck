@@ -22,6 +22,7 @@ on:
       - '.github/workflows/cirium-radar-provider-off.yml'
       - 'server/cirium-radar-injection.mjs'
       - 'server.mjs'
+      - 'server/radar-attempt-diagnostics.mjs'
       - 'scripts/cirium-radar-off/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-cirium-radar-wiring-off.mjs'
