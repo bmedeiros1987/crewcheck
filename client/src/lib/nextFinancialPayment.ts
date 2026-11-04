@@ -1,6 +1,6 @@
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeNativeForecastRows } from './financialForecastPeriods';
 import { rosterOperationalIso, observedStatementCycle, rosterOperationalDateAt } from './compensationPolicy';
-import { financialMonths, validFinancialDay, financialDayCoverage, type FinancialRange } from './financialHistoryPeriods';
+import { financialMonths, validFinancialDay, financialDayCoverage, allowanceSourceRange, type FinancialRange } from './financialHistoryPeriods';
 import {spBankDay} from '../../../shared/spBankCalendar2026.mjs';
 
 export type PaymentLine = { iso: string; label: string; currency: string; value: number | null; source: string; partial?:boolean;pendingReason?:string;expectedPaymentDate?:string;expectedPaymentTimezone?:string };
@@ -36,7 +36,7 @@ function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string;pendi
   }
   const cycle=observedStatementCycle(rosterOperationalDateAt(row.iso,12),'roster_brt'),start=rosterOperationalIso(cycle.start),end=rosterOperationalIso(cycle.end);
   if(!cycles.has(start)){
-   const coverage=financialDayCoverage({start,end,kind:'custom',valid:true},coveredDays),absent=!coverage.valid||coverage.missingDays.length>0;
+   const coverage=financialDayCoverage(allowanceSourceRange({start,end,kind:'custom',valid:true}),coveredDays),absent=!coverage.valid||coverage.missingDays.length>0;
    const missing=financialMonths({start,end,kind:'custom',valid:true}).some(month=>!covered.includes(month));
    cycles.set(start,{date:observedBrlPaymentDate(rosterOperationalIso(cycle.payment)),partial:absent||missing||rowsInObservedCycle(pending,cycle).length>0||pending.some(item=>!validFinancialDay(item.iso))});
   }
@@ -51,11 +51,11 @@ export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:s
   const range: FinancialRange = {start:rosterOperationalIso(cycle.start),end:rosterOperationalIso(cycle.end),kind:'custom',valid:true};
   const lines = rowsInObservedCycle(rows, cycle), unknown = [...rowsInObservedCycle(pending, cycle), ...pending.filter(item=>!validFinancialDay(item.iso))];
   const missing = financialMonths(range).filter(month=>!covered.includes(month));
-  const {missingDays:absentDays} = financialDayCoverage(range,coveredDays);
+  const {missingDays:absentDays} = financialDayCoverage(allowanceSourceRange(range),coveredDays);
   const summary = summarizeNativeForecastRows(lines, unknown);
   const issues = [
     ...(lines.some(line=>!validFinancialDay(line.iso)) ? ['Há datas inválidas na composição; confira a origem dos itens.'] : []),
-    ...(absentDays.length ? [`Há ${absentDays.length} dia(s) sem programação publicada comprovada neste ciclo. Confira a escala.`] : []),
+    ...(absentDays.length ? [`Há ${absentDays.length} dia(s) sem programação publicada comprovada para conferir a origem deste ciclo. Confira a escala.`] : []),
     ...(missing.length ? [`Falta conferir a escala de ${missing.join(', ')} para completar este ciclo.`] : []),
     ...(unknown.length ? [...new Set(unknown.map(item=>`${validFinancialDay(item.iso)?item.iso:'Data de origem pendente'} · ${item.reason||('Classificação ou tarifa pendente'+(item.airport?' em '+item.airport:''))}`))] : []),
     ...(!lines.length ? ['Nenhum item deste ciclo está disponível. Importe ou confira a escala correspondente.'] : []),

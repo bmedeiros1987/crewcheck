@@ -81,8 +81,8 @@ console.log('PASS actual FX loader/calculator: explicit OFF/access vs temporary,
 // The allowance statement consumes the same quote set without changing native
 // entitlements, saved history, provider mode, or original statement metadata.
 const originalRows=Object.freeze([
- Object.freeze({eventId:'synthetic-foreign',iso:'2032-02-08',label:'Meal',value:20.01,currency:'USD',convertedBRL:999,source:'synthetic original',exchangeRate:999}),
- Object.freeze({eventId:'synthetic-domestic',iso:'2032-02-08',label:'Meal',value:100,currency:'BRL',convertedBRL:100,source:'synthetic original',exchangeRate:1}),
+ Object.freeze({eventId:'synthetic-foreign',iso:'2032-02-08',label:'Almoço',value:20.01,currency:'USD',convertedBRL:999,source:'synthetic original',exchangeRate:999}),
+ Object.freeze({eventId:'synthetic-domestic',iso:'2032-02-08',label:'Jantar',value:100,currency:'BRL',convertedBRL:100,source:'synthetic original',exchangeRate:1}),
 ]);
 const projected=fxMath.projectAllowanceFxRows(originalRows,first.quotes,'2032-02-09');
 assert.equal(projected[0].convertedBRL,100.05);
@@ -109,6 +109,7 @@ try {
  // Explicit publication coverage keeps this FX-only fixture independent of
  // absent dates; an empty roster must no longer certify a monthly total.
  const ownerFx={quotes:first.quotes,setMode:()=>{}},roster={year:2032,month:2,days:Array.from({length:29},(_,i)=>({date:String(i+1).padStart(2,'0')+'/02/2032',type:'DO',legs:[]}))},snapshot={roster,perdiem:{monthlyRows:originalRows,monthlyUnclassifiedItems:[]}},range={start:'2032-02-01',end:'2032-02-29',valid:true,kind:'month'};
+ const prior={roster:{year:2032,month:1,days:[{date:'31/01/2032',type:'DO',legs:[]}]},perdiem:{monthlyRows:[],monthlyUnclassifiedItems:[]}};
  const context=vm.createContext({...allowanceModules.load('financialForecastPeriods'),...allowanceModules.load('financialHistoryPeriods'),...fxMath,React,
   useFinancialFx:()=>ownerFx,financeSnapshot:()=>snapshot,moneyCurrency:(value,currency)=>currency+value,
   FinancialHistoryExplorer:()=>null,FinancialFreeDayDetails:()=>null,FinancialFxSourceControl:()=>null,
@@ -116,14 +117,14 @@ try {
   CanonicalForecastCapture:()=>null,PerDiemMonthView:()=>null,NextPaymentCard:()=>null,FinancialStatementReconciliation:()=>null});
  vm.runInContext(ts.transpileModule(functions.map(node=>node.getText(ast)).join('\n')+'\nglobalThis.subject={scopedFinancialForecast,PerDiemView};',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,context);
  installAllowanceDependencies(context);
- const scoped=context.subject.scopedFinancialForecast([snapshot],range,[],first.quotes,'2032-02-09');
+ const scoped=context.subject.scopedFinancialForecast([prior,snapshot],range,[],first.quotes,'2032-02-09');
  assert.equal(scoped.monthly,200.05);assert.equal(scoped.pendingCurrencies.length,0);
- const blocked=context.subject.scopedFinancialForecast([snapshot],range,[],{},'2032-02-09');assert.equal(blocked.monthly,null);assert.deepEqual(Array.from(blocked.pendingCurrencies),['USD']);
+ const blocked=context.subject.scopedFinancialForecast([prior,snapshot],range,[],{},'2032-02-09');assert.equal(blocked.monthly,null);assert.deepEqual(Array.from(blocked.pendingCurrencies),['USD']);
  // Verify the public component passes the live provider quotes to its actual
  // scoped caller, not only that the pure helper works in isolation.
  ownerFx.quotes={USD:{...manualQuote,asOf:'2001-01-01'}};
  const root=context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}});
- const render=root.props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
+ const render=root.props.render({snapshots:[{roster:prior.roster,snapshot:prior,source:'synthetic prior'},{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
  const monthView=render.props.children.find(child=>child?.props?.forecastOverride);
  assert.equal(monthView.props.forecastOverride.monthly,200.05);
  assert.equal(monthView.props.forecastOverride.monthlyRows[0].fxReferences[0].source,'synthetic reviewed manual');
@@ -133,7 +134,7 @@ try {
  assert(capture,'actual canonical capture host exists');
  for(const quotes of [{},{USD:{...manualQuote,rate:'6',retrievedAt:'2032-02-09T14:00:00Z'}},first.quotes]){
   ownerFx.quotes=quotes;
-  const refreshed=context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
+  const refreshed=context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster:prior.roster,snapshot:prior,source:'synthetic prior'},{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null});
   const current=refreshed.props.children.find(child=>child?.props?.flights);
   assert.equal(current.key,capture.key,'quote refresh/source switch must not remount an in-progress canonical review');
   assert.equal(current.props.rows[0].convertedBRL,undefined,'capture excludes transient converted totals');
@@ -144,7 +145,7 @@ try {
 
  assert.equal(monthView.props.graph.props.children.props.quotes,ownerFx.quotes,'reconciliation receives live quotes and narrows before projection');
  assert.equal(monthView.props.graph.props.children.props.rows[0].value,20.01);
- const captureKey=()=>context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null}).props.children.find(child=>child?.props?.flights).key;
+ const captureKey=()=>context.subject.PerDiemView({bundle:{roster},freeDayEvaluation:{}}).props.render({snapshots:[{roster:prior.roster,snapshot:prior,source:'synthetic prior'},{roster,snapshot,source:'synthetic'}],range,missing:[],coverageReady:true,requestRange:()=>{},controls:null,graph:null}).props.children.find(child=>child?.props?.flights).key;
  const nativeBefore=snapshot.perdiem.monthlyRows;
  snapshot.perdiem.monthlyRows=[{...nativeBefore[0],value:21.01},...nativeBefore.slice(1)];
  assert.notEqual(captureKey(),capture.key,'a native amount change still invalidates the review');
@@ -154,7 +155,7 @@ try {
  context.getStoredUser=()=>({email:'synthetic@example.invalid'});
  assert.equal(captureKey(),capture.key);
 
- assert.equal(context.subject.scopedFinancialForecast([snapshot],range,['2032-03'],first.quotes,'2032-02-09').monthly,null,'missing roster scope still blocks a complete total');
+ assert.equal(context.subject.scopedFinancialForecast([prior,snapshot],range,['2032-03'],first.quotes,'2032-02-09').monthly,null,'missing roster scope still blocks a complete total');
 }finally{allowanceModules.cleanup();}
 console.log('PASS shared FX -> actual allowance scope/view: no undated setting fallback, immutable native amounts, national BRL unchanged, source/date, inverse/manual, OFF/expiry/mixed dates and incomplete scope');
 

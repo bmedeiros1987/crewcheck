@@ -33,7 +33,11 @@ const dateRange=(start,end=start)=>libs.financialRange('custom','','',start,end)
 const results=[];
 function forecast(roster,range=monthRange(8),others=[]) {
   const before=JSON.stringify(roster),snapshot=context.subject.financeSnapshot(roster);
-  const value=context.subject.scopedFinancialForecast([snapshot,...others],range,[]);
+  // This parser fixture explicitly witnesses the preceding source date; do not
+  // use its money rows to fabricate boundary coverage. Actual provided sources
+  // take precedence over this empty adjacent publication fixture.
+  const sourceRange=libs.allowanceSourceRange(range),adjacent=sourceRange.start!==range.start&&!others.some(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===sourceRange.start.slice(0,7))?[{roster:{year:+sourceRange.start.slice(0,4),month:+sourceRange.start.slice(5,7),days:[{date:sourceRange.start.split('-').reverse().join('/'),type:'DO',legs:[]}]},perdiem:{rows:[],monthlyRows:[],unclassifiedItems:[],monthlyUnclassifiedItems:[]}}]:[];
+  const value=context.subject.scopedFinancialForecast([snapshot,...others,...adjacent],range,[]);
   const html=renderToStaticMarkup(React.createElement(context.subject.PerDiemMonthView,{bundle:{roster,source:'synthetic'},forecastOverride:value,rangeLabel:'Synthetic source coverage'}));
   assert.equal(JSON.stringify(roster),before,'source and manual annotations are never mutated');
   return {value,html,snapshot};
@@ -109,10 +113,12 @@ assert.equal(upcoming([{iso:'',airport:'',pendingKind:'source_coverage',reason:'
 assert.equal(upcoming([{iso:'2032-08-16',airport:'',pendingKind:'source_coverage'}]).partial,false,'unrelated source date does not contaminate this foreign item');
 assert.equal(upcoming([{iso:'2032-08-15',airport:'BSB',pendingKind:'taxi_rate'}]).partial,false,'BRL taxi tariff pending is not a currency-independent source gap');
 // Evaluate the actual Home caller argument expressions, not a hand-built cohort:
-// monthly rows must use monthly pending, while the engine weekly path keeps all.
+// genuine cross-competence journeys stay available; foreign nominal activities
+// remain owned by their own competence, including their pending source warnings.
 const spilloverRoster=libs.parseAimsRoster(textFor()+'01Sep '+bad+'\n'),septemberRoster=libs.parseAimsRoster(textFor(good,9));
 const cohorts=[spilloverRoster,septemberRoster].map(roster=>({roster,snapshot:context.subject.financeSnapshot(roster)}));
-const cohortContext=vm.createContext({snapshots:cohorts,snapshot:cohorts[0].snapshot});
+const cohortEvidence=libs.aggregateAllowanceEvidence(cohorts.map(item=>item.snapshot));
+const cohortContext=vm.createContext({snapshots:cohorts,snapshot:cohorts[0].snapshot,evidence:cohortEvidence});
 let paymentPendingArgs=[],reconciliationPending;
 function findPendingArguments(node){
  if(ts.isCallExpression(node)&&node.expression.getText(ast)==='nextAllowancePayment')paymentPendingArgs.push(node.arguments[1]);
@@ -121,8 +127,8 @@ function findPendingArguments(node){
 }
 findPendingArguments(ast);assert.equal(paymentPendingArgs.length,2);assert.ok(reconciliationPending);
 for(const expression of [...paymentPendingArgs,reconciliationPending])assert.equal(vm.runInContext(expression.getText(ast),cohortContext).length,0,'actual nominal-row caller cannot inherit old-source spillover warnings');
-const combinedRows=cohorts.flatMap(item=>item.snapshot.perdiem.monthlyRows),combinedDays=cohorts.flatMap(item=>item.roster.days.map(day=>day.date.split('/').reverse().join('-')));
-const coherentPending=vm.runInContext(paymentPendingArgs.find(node=>node.getText(ast).includes('snapshots.')).getText(ast),cohortContext);
+const combinedRows=cohortEvidence.rows,combinedDays=cohorts.flatMap(item=>item.roster.days.map(day=>day.date.split('/').reverse().join('-')));
+const coherentPending=vm.runInContext(paymentPendingArgs.find(node=>node.getText(ast).includes('evidence.')).getText(ast),cohortContext);
 const independentPayment=paymentExports.nextAllowancePayment(combinedRows,coherentPending,['2032-08','2032-09'],new Date('2032-09-03T15:00:00Z'),combinedDays);
 assert.equal(independentPayment.calculationPartial,false,'independently witnessed September payment remains complete');
 

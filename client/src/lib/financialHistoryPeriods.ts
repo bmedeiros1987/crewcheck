@@ -17,6 +17,14 @@ export function financialDayCoverage(range: FinancialRange, coveredDays: readonl
   }
   return { valid: true, missingDays };
 }
+// At a competence boundary the preceding source/day can contain the beginning
+// of a journey that produces meals in this selection. This is a source scope,
+// not an extension of payable dates or a change to the nominal competence.
+export function allowanceSourceRange(range: FinancialRange): FinancialRange {
+  if (!range.valid || !validFinancialDay(range.start) || !range.start.endsWith('-01')) return range;
+  const previous = new Date(range.start + 'T12:00:00Z'); previous.setUTCDate(previous.getUTCDate() - 1);
+  return { ...range, start:civil(previous) };
+}
 export function financialRange(kind: FinancialRange['kind'], month: string, day: string, start: string, end: string): FinancialRange {
   let a = start, b = end;
   if (kind === 'week' && !validFinancialDay(day)) return { start: '', end: '', valid: false, kind };
