@@ -49,17 +49,22 @@ export async function beginRadarOperationalHistory(req,occurrence,{enabled=RADAR
         try {
           const now=clock(),proof=result?.gateUpdate;
           if(result?.ok!==true || result.querySuppressed || result.operationalConflicts?.includes('gate'))return {status:'unconfirmed',stored:false};
-          const reported=archiveMode && ['cirium-flex','flightaware'].includes(result.provider);
-          if(!reported && (!observation ||
-            verifiedRadarFields(result,ticket.identity,now).gate!==normalizeRadarGate(observation.gate) || proof?.provider!=='custom' ||
-            Date.parse(proof.sourceUpdatedAt)!==Date.parse(observation.departureGateUpdate.updatedAt) ||
-            (result.gateEvidenceReceivedAt ?? result.sourceReceivedAt)!==observation.sourceReceivedAt))return {status:'unconfirmed',stored:false};
+          // Proof origin is independent of the winning response provider. Keep
+          // only the raw custom observation captured by THIS request, with its
+          // original update/receipt; an attached invalid proof cannot downgrade
+          // to the weaker reported path.
+          const custom=Boolean(observation &&
+            verifiedRadarFields(result,ticket.identity,now).gate===normalizeRadarGate(observation.gate) && proof?.provider==='custom' &&
+            Date.parse(proof.sourceUpdatedAt)===Date.parse(observation.departureGateUpdate.updatedAt) &&
+            (result.gateEvidenceReceivedAt ?? result.sourceReceivedAt)===observation.sourceReceivedAt);
+          const reported=archiveMode && proof==null && ['cirium-flex','flightaware'].includes(result.provider);
+          if(!custom && !reported)return {status:'unconfirmed',stored:false};
           // Revalidate the existing request identity as well as locked canonical
           // source. A delayed response for a replaced session cannot write.
           const fresh=await identify(req,sink()),current=authority.principal(fresh,now);
           if(!current || current.email!==who.email || current.owner!==who.owner)return {status:'context_changed',stored:false};
           const credential=archiveMode?requestToken(req):'';
-          return await (archiveMode?history.recordRadarGateArchive:history.recordOperationalGateObservation)(identity.db,who,{expectedScope:ticket,field:'gate',observation:reported?result:observation},
+          return await (archiveMode?history.recordRadarGateArchive:history.recordOperationalGateObservation)(identity.db,who,{expectedScope:ticket,field:'gate',observation:custom?observation:result},
             {enabled:true,clock,revalidate:async()=>{
               // Reuse the already authenticated canonical identity and its exact
               // credential. Profile incarnation is locked by the writer. Do not

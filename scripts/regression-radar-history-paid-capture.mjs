@@ -8,6 +8,8 @@ import {telegramOperationalAuthority as authority} from '../server/concierge/tel
 import {buildCanonicalRosterEvents} from '../server/concierge/generated/canonicalRoster.mjs';
 import {runCiriumFlightAwareSequence} from '../server/radar-sequential.mjs';
 import * as policy from '../shared/gate-query-day.mjs';
+import * as fields from '../shared/radar-field-evidence.mjs';
+import {customGateSourceUpdate} from '../server/gate-source-update.mjs';
 globalThis.fetch=()=>assert.fail('No external provider network');
 const now=Date.parse('2099-10-06T06:00:00Z')+10000;
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,99,true,ts.ScriptKind.JS);
@@ -40,4 +42,43 @@ for(const provider of ['cirium-flex','flightaware']){
  assert.equal(historical.history.currentConfirmation,false);assert.equal(historical.history.observations[0].provider,provider);assert.equal(historical.history.observations[0].gate,'18');
  assert.equal(historical.history.observations[0].observedAt,null);assert.equal(historical.history.observations[0].sourceUpdatedAt,null);assert.equal(requests,1);assert.equal(sources,1);
 }
-console.log('PASS real Radar handler + paid sequence + capture + scoped writer + history route: Flex/FlightAware each one synthetic source, no additional source on read, no Concierge mutation');
+// The legacy race can select FlightAware while retaining an agreeing custom
+// proof. Compose the REAL race/custom adapter/capture/archive instead of
+// constructing a reported-only response that skips that boundary.
+for(const kind of ['valid','valid-second-flight','gate-mismatch','future-proof','receipt-mismatch','uncaptured']){
+ const f=fixture();f.now=now;f.roster.crewId='QA001';
+ if(kind==='valid-second-flight')f.roster.days[0].legs.push({flightNumber:'LA4321',origin:'BSB',destination:'SSA',departureTime:'09:30',arrivalTime:'11:30',workType:'OP'});
+ const event=buildCanonicalRosterEvents(f.roster).filter(e=>e.kind==='flight').at(-1);
+ const i={flight:event.flightNumber,origin:event.origin,destination:event.destination,departureDate:policy.originFlightDate(event.startDateTime,event.origin),scheduledDepartureUtc:event.startDateTime};
+ const identify=async()=>({db:f.db,email:f.context.email,profile:{public_id:f.context.owner},payload:{iss:'crewcheck',aud:'crewcheck-web',sub:f.context.owner,email:f.context.email,exp:(now+86400000)/1000}});
+ const opts={enabled:true,identify,clock:()=>now,loadRuntime:async()=>({history:{...history,OPERATIONAL_HISTORY_ENABLED:true},authority})};
+ const req={headers:{authorization:'Bearer synthetic-A'}},capture=await beginRadarOperationalHistory(req,i,opts);assert.ok(capture);
+ const raw={ok:true,...i,gate:'24',departureGateUpdate:{schema:'crewcheck.departure-gate-update.v1',...i,gate:'24',updatedAt:new Date(now-1000).toISOString()}};
+ let customCalls=0,flightAwareCalls=0;
+ const race=vm.createContext({...policy,...fields,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},URL,setTimeout,clearTimeout,process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},
+  customGateSourceUpdate:p=>customGateSourceUpdate(p,now),ciriumRadarInjectionEnabled:()=>false,ciriumRadarProjection:()=>({}),configuredProviders:()=>[],
+  envAny:()=> 'https://synthetic.invalid/{flight}',jsonFetch:async()=>{customCalls++;return {response:{ok:true},payload:structuredClone(raw)};},
+  providerFlightAware:async()=>{flightAwareCalls++;return {ok:true,...i,provider:'flightaware',gate:'24',sourceReceivedAt:now-500};},
+  providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,scoreRadar:r=>r.provider==='flightaware'?80:40});
+ vm.runInContext(extract(['firstKnown','publicRadarPayload','providerCustom','runRadarRace']),race);
+ const result=await race.runRadarRace({gateQueryEvidence:i,operationalHistory:capture,raw:i.flight,iata:i.flight},i.origin,i.destination,i.scheduledDepartureUtc);
+ assert.equal(result.provider,'flightaware');assert.equal(result.gateUpdate?.provider,'custom');assert.equal(result.gateEvidenceReceivedAt,now);assert.equal(result.sourceReceivedAt,now-500);
+ if(kind==='gate-mismatch')result.gateUpdate={...result.gateUpdate,gate:'25'};
+ if(kind==='future-proof')result.gateUpdate={...result.gateUpdate,sourceUpdatedAt:new Date(now+1000).toISOString()};
+ if(kind==='receipt-mismatch')result.gateEvidenceReceivedAt=now-1;
+ const target=kind==='uncaptured'?await beginRadarOperationalHistory(req,i,opts):capture;
+ const committed=await target.commit(result);
+ if(kind.startsWith('valid')){
+  assert.equal(committed.stored,true,'AGREEING_CUSTOM_ARCHIVE: '+JSON.stringify({committed,records:f.states.size}));
+  const page=await history.readArchivedOperationalGateHistory(f.db,f.context,i,{enabled:true,lockSource:true});
+  assert.equal(page.observations.length,1);assert.equal(page.observations[0].provider,'custom');assert.equal(page.observations[0].gate,'24');
+  assert.equal(page.observations[0].sourceUpdatedAt,new Date(now-1000).toISOString());assert.equal(page.observations[0].receivedAt,new Date(now).toISOString());assert.equal(page.observations[0].observedAt,null);assert.equal(page.currentConfirmation,false);
+  assert.equal(result.provider,'flightaware');assert.equal(result.gateUpdate.provider,'custom','capture must not relabel the public winner/proof');
+  const before=JSON.stringify([...f.states]);const repeat=await beginRadarOperationalHistory(req,i,opts);repeat.captureCustom(raw,now);
+  assert.equal((await repeat.commit(result)).stored,false,'duplicate must not renew the original receipt');assert.equal(JSON.stringify([...f.states]),before);
+  if(kind==='valid-second-flight')assert.equal(await f.read(),null,'all-flight archive must not broaden first-duty notification history');
+  else assert.equal((await f.read()).source.observation.gate,'24','first-duty custom reader remains populated');
+ }else{assert.equal(committed.stored,false,kind);assert.equal(f.states.size,0,kind+' must not fall back to a reported write');}
+ assert.equal(customCalls,1);assert.equal(flightAwareCalls,1);
+}
+console.log('PASS real Radar handler/sequence plus real agreeing race/custom adapter/capture/archive: reported Flex/FlightAware, retained custom proof with original clocks, four invalid/uncaptured refusals, zero extra provider calls');

@@ -179,6 +179,7 @@ export async function recordRadarGateArchive(db,context,input,{enabled=OPERATION
     if(!same(current,input.expectedScope))throw deny();
     const next=input.observation?.provider==='custom' ? archiveCustomObservation(input.observation,current,clock()) : reportedObservation(input.observation,current,clock());
     if(!gateQueryDay(current.identity,clock()).allowed || !await revalidate())throw deny();
+    let operationalStored=false;
     if(input.observation?.provider==='custom'){
       let operational;
       try{operational=await scope(c,context,clock());}catch(error){if(error.code!=='BRIEFING_CONTEXT_UNAVAILABLE')throw error;}
@@ -186,11 +187,13 @@ export async function recordRadarGateArchive(db,context,input,{enabled=OPERATION
       if(operational && archiveKey(operational.identity).key===archiveKey(current.identity).key){
         try{checked(input.observation,operational,clock());operationalAdmitted=true;}catch(error){if(error.code!=='BRIEFING_CONTEXT_UNAVAILABLE')throw error;}
       }
-      if(operationalAdmitted)await recordOperationalAt(c,context,{...input,expectedScope:operational},clock());
+      if(operationalAdmitted)operationalStored=(await recordOperationalAt(c,context,{...input,expectedScope:operational},clock())).stored===true;
     }
     const result=await appendGateArchivePage(c,context,current,archiveEntry(next),{readState,writeState});
     if(!gateQueryDay(current.identity,clock()).allowed || !await revalidate())throw deny();
-    return result;
+    // The narrower writer shares this archive. Its first insert can make the
+    // second append a duplicate without making this transaction a no-op.
+    return operationalStored&&!result.stored?{status:'archived',stored:true}:result;
   });
 }
 
