@@ -34,7 +34,7 @@ public class WatchNotificationExpiryTest {
         manager.cancelAll();
     }
 
-    private WatchContextSnapshot snapshot(String state, String source, String gate, long expiry) {
+    private WatchContextSnapshot snapshot(String state, String source, String gate, long expiry) throws Exception {
         JSONObject json = WatchContextSnapshot.demo(NOW - 7_200_000L).toJson()
                 .put("state", state).put("changed", false).put("headline", "")
                 .put("currentFlight", "QA123").put("gate", gate).put("gateSource", source)
@@ -44,7 +44,7 @@ public class WatchNotificationExpiryTest {
 
     private int count() { return Shadows.shadowOf(manager).getAllNotifications().size(); }
 
-    @Test public void delayedOfflineDeliveryNeverPostsExpiredOperationalNotices() {
+    @Test public void delayedOfflineDeliveryNeverPostsExpiredOperationalNotices() throws Exception {
         for (String state : new String[]{"BOARDING", "LEAVE_SOON", "CONNECTION", "OVERNIGHT", "CHANGED"}) {
             for (String source : new String[]{"radar", "manual"}) {
                 WatchNotificationCenter.postForSnapshot(context,
@@ -54,7 +54,7 @@ public class WatchNotificationExpiryTest {
         }
     }
 
-    @Test public void exactValidityBoundaryMatchesSnapshotThenOneMillisecondLaterIsRejected() {
+    @Test public void exactValidityBoundaryMatchesSnapshotThenOneMillisecondLaterIsRejected() throws Exception {
         WatchContextSnapshot boundary = snapshot("BOARDING", "radar", "14", NOW);
         assertFalse(boundary.isStale(NOW));
         WatchNotificationCenter.postForSnapshot(context, boundary);
@@ -67,7 +67,7 @@ public class WatchNotificationExpiryTest {
         assertEquals(0, count());
     }
 
-    @Test public void freshBoardingAndLeaveNoticeStillPostAndDeduplicate() {
+    @Test public void freshBoardingAndLeaveNoticeStillPostAndDeduplicate() throws Exception {
         for (String state : new String[]{"BOARDING", "LEAVE_SOON"}) {
             reset();
             WatchContextSnapshot fresh = snapshot(state, "radar", "14", NOW + 1_800_000L);
@@ -79,7 +79,7 @@ public class WatchNotificationExpiryTest {
         }
     }
 
-    @Test public void rejectedExpiredNoticeDoesNotConsumeFreshNoticeFingerprint() {
+    @Test public void rejectedExpiredNoticeDoesNotConsumeFreshNoticeFingerprint() throws Exception {
         WatchNotificationCenter.postForSnapshot(context, snapshot("BOARDING", "manual", "14", NOW - 1L));
         assertEquals(0, count());
         WatchNotificationCenter.postForSnapshot(context, snapshot("BOARDING", "manual", "14", NOW + 60_000L));
@@ -88,7 +88,7 @@ public class WatchNotificationExpiryTest {
         assertTrue(notice.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("PORTÃO 14"));
     }
 
-    @Test public void reportedGateChangesNeverCreateGateAlertsAndRevokedProjectionDoesNotNotify() {
+    @Test public void reportedGateChangesNeverCreateGateAlertsAndRevokedProjectionDoesNotNotify() throws Exception {
         WatchNotificationCenter.postForSnapshot(context, snapshot("BOARDING", "reported", "14", NOW + 60_000L));
         assertEquals("boarding event remains allowed", 1, count());
         Notification notice = Shadows.shadowOf(manager).getAllNotifications().get(0);
