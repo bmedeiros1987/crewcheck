@@ -12,6 +12,13 @@ const reasons: Record<string, string> = {
   'response-context-expired': 'A conta, a data ou a ocorrência mudou durante a consulta. Atualize a programação.',
   'response-occurrence-changed': 'A programação publicada mudou durante a consulta.',
   'provider-unavailable': 'Nenhuma fonte confirmou esta ocorrência de voo.',
+  'source-unverified': 'A resposta da fonte não confirmou a ocorrência publicada.',
+  'source-origin-date-unverified': 'A origem, o fuso ou a data da resposta da fonte não foram confirmados.',
+  'source-other-flight-or-route': 'Não foi possível confirmar que a resposta da fonte corresponde ao voo e à rota publicados.',
+  'source-instant-unverified': 'O horário de partida informado pela fonte não foi confirmado.',
+  'source-other-day': 'A resposta da fonte corresponde a outra data local; resposta descartada.',
+  'source-other-occurrence': 'A resposta da fonte corresponde a outro horário de partida; resposta descartada.',
+  'source-stale': 'Não foi possível validar a data e hora da resposta da fonte; nenhum portão foi confirmado.',
 };
 export function radarFailurePayload(error: unknown): RadarUnavailable {
   const failure = error as { status?: number; payload?: { ok?: boolean; querySuppressed?: boolean; queryReason?: string } } | null;

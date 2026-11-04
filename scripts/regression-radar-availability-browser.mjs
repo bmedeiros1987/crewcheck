@@ -18,7 +18,7 @@ window.requests=[];function fetchRadarSnapshot(event){return new Promise(resolve
 ${followCandidate}
 ${functions}
 const root=createRoot(document.getElementById('root'));const event=id=>({id,kind:'flight',flightNumber:id==='one'?'LA3981':'LA3982',origin:'CPV',destination:'GRU',day:{date:'14/10/2032'},canonical:{startDateTime:'2032-10-14T12:00:00Z'}});
-window.renderRadar=id=>root.render(<RadarView event={event(id)}/>);window.unmountRadar=()=>root.render(<p>Unmounted</p>);window.reply=(i,status,reason,message)=>window.requests[i].resolve(message?{ok:false,querySuppressed:true,queryReason:reason,message}:radarFailurePayload({status,payload:{ok:false,querySuppressed:true,queryReason:reason,gate:'DO-NOT-DISPLAY'}}));window.renderRadar('one');`;
+window.renderRadar=id=>root.render(<RadarView event={event(id)}/>);window.unmountRadar=()=>root.render(<p>Unmounted</p>);window.reply=(i,status,reason,message)=>window.requests[i].resolve(message?{ok:false,querySuppressed:true,queryReason:reason,message}:radarFailurePayload({status,payload:{ok:false,querySuppressed:true,queryReason:reason,gate:'DO-NOT-DISPLAY'}}));window.diagnoseSourceTime=observed=>{const identity={flight:'LA3981',origin:'CPV',destination:'GRU',departureDate:'2032-10-14',scheduledDepartureUtc:'2032-10-14T12:00:00Z'};const decision=radarResultDecision({ok:true,flight:'LA3981',sourceOrigin:'CPV',sourceDestination:'GRU',scheduledDepartureUtc:identity.scheduledDepartureUtc,sourceReceivedAt:observed},identity,Date.now());const failure=radarFailurePayload({status:200,payload:{ok:false,querySuppressed:true,queryReason:decision.reason}});return {reason:decision.reason,message:failure.message,quality:failure.quality,gate:failure.gate}};window.diagnoseSourceFlight=flight=>{const identity={flight:'LA3981',origin:'CPV',destination:'GRU',departureDate:'2032-10-14',scheduledDepartureUtc:'2032-10-14T12:00:00Z'};const decision=radarResultDecision({ok:true,flight,sourceOrigin:'CPV',sourceDestination:'GRU',scheduledDepartureUtc:identity.scheduledDepartureUtc},identity,Date.now());const failure=radarFailurePayload({status:200,payload:{ok:false,querySuppressed:true,queryReason:decision.reason}});return {reason:decision.reason,message:failure.message,quality:failure.quality,gate:failure.gate}};window.renderRadar('one');`;
 await build({stdin:{contents:code,resolveDir:process.cwd(),loader:'tsx'},bundle:true,platform:'browser',format:'iife',jsx:'automatic',outfile:path.join(tmp,'app.js'),define:{'import.meta.env':'{}'}});
 const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/app.js'?'text/javascript':'text/html');res.end(req.url==='/app.js'?fs.readFileSync(path.join(tmp,'app.js')):'<div id="root"></div><script src="/app.js"></script>')});await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
 const require=createRequire(process.env.RADAR_PLAYWRIGHT_PACKAGE||import.meta.url),browser=await require('playwright').chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined});
@@ -33,5 +33,33 @@ try{
  await refresh.click();await page.waitForFunction(()=>window.requests.length===4);await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));localStorage.setItem('crewcheck_auth_token','synthetic-B');window.renderRadar('two')});await page.waitForFunction(()=>window.requests.length===5);await page.evaluate(()=>window.reply(3,200,'old','OLD ACCOUNT MUST NOT RENDER'));await settle();assert.equal(await page.getByText('OLD ACCOUNT MUST NOT RENDER').count(),0);assert(await refresh.isDisabled());await page.evaluate(()=>window.reply(4,403));await page.getByText('Acesso indisponível',{exact:true}).waitFor();
  await refresh.click();await page.waitForFunction(()=>window.requests.length===6);await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-B-rotated');window.renderRadar('two')});await page.waitForFunction(()=>window.requests.length===7);await page.evaluate(()=>window.reply(5,200,'old','OLD TOKEN MUST NOT RENDER'));await settle();assert.equal(await page.getByText('OLD TOKEN MUST NOT RENDER').count(),0);assert(await refresh.isDisabled());await page.evaluate(()=>window.reply(6,200,'occurrence-unverified'));await page.getByText('O voo ainda não foi vinculado à programação publicada desta conta.',{exact:true}).waitFor();
  await refresh.click();await page.waitForFunction(()=>window.requests.length===8);await page.evaluate(()=>window.unmountRadar());await page.evaluate(()=>window.reply(7,200,'old','UNMOUNTED MUST NOT RENDER'));await settle();await page.getByText('Unmounted',{exact:true}).waitFor();assert.equal(await page.getByText('UNMOUNTED MUST NOT RENDER').count(),0);assert.deepEqual(errors,[]);
- console.log('PASS actual RadarView React: explicit suppression/backend/access reasons, no negative gate, late event/account/token/unmount fences and loading serial; network local-only');
+ const diagnostics=await context.newPage();await diagnostics.goto(origin);await diagnostics.waitForFunction(()=>window.requests.length===1);
+ const sourceCases=[
+  ['source-unverified','A resposta da fonte não confirmou a ocorrência publicada.'],
+  ['source-origin-date-unverified','A origem, o fuso ou a data da resposta da fonte não foram confirmados.'],
+  ['source-other-flight-or-route','Não foi possível confirmar que a resposta da fonte corresponde ao voo e à rota publicados.'],
+  ['source-instant-unverified','O horário de partida informado pela fonte não foi confirmado.'],
+  ['source-other-day','A resposta da fonte corresponde a outra data local; resposta descartada.'],
+  ['source-other-occurrence','A resposta da fonte corresponde a outro horário de partida; resposta descartada.'],
+  ['source-stale','Não foi possível validar a data e hora da resposta da fonte; nenhum portão foi confirmado.'],
+ ];
+ for(let i=0;i<sourceCases.length;i++){
+  const [reason,message]=sourceCases[i];await diagnostics.evaluate(({i,reason})=>window.reply(i,200,reason),{i,reason});
+  await diagnostics.getByText(message,{exact:true}).waitFor();assert.equal(await diagnostics.getByText('DO-NOT-DISPLAY').count(),0);
+  await diagnostics.getByText('Consulta suspensa',{exact:true}).waitFor();
+  await diagnostics.locator('.cz-radar-screen article').first().locator('strong').filter({hasText:/Portão: Não confirmado/}).waitFor();
+  if(i<sourceCases.length-1){await diagnostics.getByRole('button',{name:'Atualizar e exportar ao card',exact:true}).click();await diagnostics.waitForFunction(count=>window.requests.length===count,i+2);}
+ }
+ for(const observed of ['not-a-timestamp','2032-10-14T12:00:01Z']){
+  const diagnostic=await diagnostics.evaluate(value=>window.diagnoseSourceTime(value),observed);
+  assert.equal(diagnostic.reason,'source-stale');assert.equal(diagnostic.message,'Não foi possível validar a data e hora da resposta da fonte; nenhum portão foi confirmado.');
+  assert.equal(diagnostic.message.includes('desatualizada'),false);assert.equal(diagnostic.quality,0);assert.equal(diagnostic.gate,undefined);
+ }
+ for(const flight of [undefined,'???']){
+  const diagnostic=await diagnostics.evaluate(value=>window.diagnoseSourceFlight(value),flight);
+  assert.equal(diagnostic.reason,'source-other-flight-or-route');assert.equal(diagnostic.message,'Não foi possível confirmar que a resposta da fonte corresponde ao voo e à rota publicados.');
+  assert.equal(diagnostic.message.includes('outro voo'),false);assert.equal(diagnostic.quality,0);assert.equal(diagnostic.gate,undefined);
+ }
+ await diagnostics.close();
+ console.log('PASS actual RadarView React: explicit source-* diagnostics, no negative gate, late event/account/token/unmount fences and loading serial; network local-only');
 }finally{await browser.close();await new Promise(r=>server.close(r));fs.rmSync(tmp,{recursive:true,force:true})}
