@@ -42,6 +42,9 @@ public final class WatchNotificationCenter {
 
     public static void postForSnapshot(Context context, WatchContextSnapshot snapshot) {
         if (context == null || snapshot == null || !isEnabled(context)) return;
+        // Delayed/offline deliveries cannot turn an expired projection into a new alert.
+        // Use the same inclusive validity boundary as the watch display.
+        if (snapshot.isStale(System.currentTimeMillis())) return;
         if (Build.VERSION.SDK_INT >= 33
                 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) return;
