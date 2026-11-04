@@ -128,12 +128,15 @@ export function watchCloudPublisher() {
       native: () => (globalThis as { AndroidCrewCheckNative?: WatchCloudNative }).AndroidCrewCheckNative,
       events: globalThis,
     });
-    // authClient announces logout/account change without importing this module.
-    globalThis.addEventListener?.('crewcheck:watch-cloud-forget', event => {
-      const detail = (event as CustomEvent<{ token?: unknown; owner?: unknown }>).detail;
-      if (typeof detail?.owner === 'string') void publisher.forget({ token: typeof detail.token === 'string' ? detail.token : '', owner: detail.owner });
-    });
     shared = publisher;
   }
   return shared;
 }
+
+// App imports this module through Home even when another route is mounted. Listen at
+// module evaluation: a cold-process logout must revoke the native cache before any
+// Home publication creates the lazy singleton. Repeated getter calls add no listeners.
+globalThis.addEventListener?.('crewcheck:watch-cloud-forget', event => {
+  const detail = (event as CustomEvent<{ token?: unknown; owner?: unknown }>).detail;
+  if (typeof detail?.owner === 'string') void watchCloudPublisher().forget({ token: typeof detail.token === 'string' ? detail.token : '', owner: detail.owner });
+});

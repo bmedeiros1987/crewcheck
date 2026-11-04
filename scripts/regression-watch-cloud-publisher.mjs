@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import vm from 'node:vm';
 import { watchOwnerKey } from '../server/watch-cloud-sync.mjs';
 
 const root = process.cwd(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-cloud-publisher-'));
@@ -164,5 +165,73 @@ try {
   assert.match(fn('clearSession'), /crewcheck:watch-cloud-forget[\s\S]*crewcheck:auth-will-change[\s\S]*removeItem\(TOKEN_KEY\)/, 'revoked before the token is removed');
   assert.doesNotMatch(fn('expireSession'), /watch-cloud-forget/, 'expiry of the same account keeps the watch paired');
   assert.equal((fn('persistSession').match(/watch-cloud-forget/g) || []).length, 1, 'same-account refresh does not revoke');
+  // Cold app process: these are the complete real modules, not copied auth/listener logic.
+  // The bridge is synthetic; Android cache/transport are covered separately by native tests.
+  // Keep cold-route evaluation independent of mounting Home. A future lazy import
+  // must move the listener into an equally eager bootstrap, rather than dropping it.
+  for (const [entry, dependency] of [
+    ['client/src/App.tsx', './pages/Home'], ['client/src/pages/Home.tsx', '@/lib/watchCloud'],
+  ]) {
+    const parsed = await build({ entryPoints: [path.join(root, entry)], bundle: false,
+      platform: 'browser', format: 'esm', write: false, metafile: true, logLevel: 'silent' });
+    assert.ok(Object.values(parsed.metafile.outputs).some(output => output.imports.some(
+      item => item.path === dependency && item.kind === 'import-statement')),
+      `${entry}: revocation listener must be evaluated on cold routes`);
+  }
+  const coldModules = {};
+  for (const name of ['authClient', 'watchCloud']) {
+    const output = await build({ entryPoints: [path.join(root, `client/src/lib/${name}.ts`)], bundle: true,
+      platform: 'node', format: 'cjs', write: false, logLevel: 'silent' });
+    coldModules[name] = output.outputFiles[0].text;
+  }
+  for (const scenario of [
+    { name: 'cold logout', initializations: 0, action: 'logout', expected: 1 },
+    { name: 'Home was unmounted', initializations: 1, action: 'logout', expected: 1 },
+    { name: 'repeated initialization', initializations: 3, action: 'logout', expected: 1 },
+    { name: 'cold account change', initializations: 0, action: 'login', expected: 1 },
+    { name: 'initialization after logout', initializations: 0, action: 'logout', late: true, expected: 1 },
+    { name: 'same-account expiry', initializations: 0, action: 'expiry', expected: 0 },
+    { name: 'web without native bridge', initializations: 0, action: 'logout', web: true, expected: 0 },
+  ]) {
+    const values = new Map(), bus = new EventTarget(), requests = [];
+    const local = { getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, String(value)), removeItem: key => values.delete(key) };
+    let nativeClears = 0;
+    const sandbox = vm.createContext({ window: bus, localStorage: local, sessionStorage: local,
+      Event, CustomEvent, URL, Headers, Response, AbortController, performance, setTimeout, clearTimeout,
+      addEventListener: bus.addEventListener.bind(bus), removeEventListener: bus.removeEventListener.bind(bus),
+      AndroidCrewCheckNative: scenario.web ? undefined : {
+        setWatchCloudCredential() { throw Error('Cold auth must not pair or enable cloud sync'); },
+        clearWatchCloudCredential() { nativeClears++; return true; },
+      },
+      fetch: async (url, init) => {
+        requests.push({ url, method: init?.method });
+        if (url === '/api/auth/login') return new Response(JSON.stringify({ token: 'synthetic-B', user: { id: 'synthetic-B' } }));
+        return new Response('{}', { status: url === '/api/watch/cloud' ? 404 : 200 });
+      },
+    });
+    const load = name => {
+      sandbox.exports = {}; sandbox.module = { exports: sandbox.exports };
+      vm.runInContext(coldModules[name], sandbox, { filename: `${name}.ts` });
+      return sandbox.module.exports;
+    };
+    const realAuth = load('authClient'), realCloud = load('watchCloud');
+    for (let i = 0; i < scenario.initializations; i++) realCloud.watchCloudPublisher();
+    local.setItem('crewcheck_auth_token', 'synthetic-A');
+    local.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-A' }));
+    const previous = realAuth.captureAuthSession();
+    if (scenario.action === 'logout') await realAuth.logout();
+    else if (scenario.action === 'login') await realAuth.login('synthetic@example.invalid', 'synthetic-only');
+    else realAuth.expireSession();
+    if (scenario.late) { realCloud.watchCloudPublisher(); realCloud.watchCloudPublisher(); }
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(previous.isCurrent(), false, scenario.name);
+    assert.equal(nativeClears, scenario.expected, `${scenario.name}: revoke native cache independently of Home`);
+    const cloudRequests = requests.filter(r => r.url === '/api/watch/cloud');
+    assert.ok(cloudRequests.every(r => r.method === 'DELETE'), 'never activate pair/publish');
+    if (scenario.web || scenario.action === 'expiry') assert.equal(cloudRequests.length, 0, scenario.name);
+    else assert.equal(cloudRequests.length, scenario.action === 'login' ? 0 : 1, 'no duplicate revocation');
+  }
+  console.log('PASS cold watch auth: static boot imports, logout/account change without Home, late/repeated initialization, expiry preserved, web inert');
   console.log('PASS watch cloud publisher: native-only, pair once, stale session never hands off, dedupe + 30 min refresh, 404 back-off, 409 re-pair, logout/account-change revoke only, projection account = server owner key');
 } finally { fs.rmSync(dir, { recursive: true, force: true }); }
