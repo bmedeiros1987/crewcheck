@@ -17,7 +17,7 @@ import static org.junit.Assert.*;
  * No Data Layer transport, physical watch or provider coverage claim. */
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @org.robolectric.annotation.LooperMode(org.robolectric.annotation.LooperMode.Mode.LEGACY)
-@Config(sdk = 35)
+@Config(sdk = 35, instrumentedPackages = {"com.crewcheck.watch"})
 public class WatchNotificationExpiryTest {
     private static final long NOW = 1_800_000_000_000L;
     private Context context;
@@ -25,6 +25,8 @@ public class WatchNotificationExpiryTest {
 
     @Before public void reset() {
         ShadowSystemClock.setNanoTime(NOW * 1_000_000L);
+        assertEquals("notification code and fixture must share the synthetic wall clock",
+                NOW, System.currentTimeMillis());
         context = RuntimeEnvironment.getApplication();
         Shadows.shadowOf(RuntimeEnvironment.getApplication())
                 .grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS);
