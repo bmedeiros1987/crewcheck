@@ -10,6 +10,7 @@ on:
       - 'scripts/p0-build-identity/apply.mjs'
       - 'scripts/v14387d/apply.mjs'
       - 'scripts/regression-p0-fast-logout.mjs'
+      - 'scripts/regression-auth-session-attempt.cjs'
       - '.github/workflows/p0-fast-logout.yml'
 
 jobs:
@@ -22,6 +23,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Reject stale session-establishing responses (raw)
+        run: node scripts/regression-auth-session-attempt.cjs
       - run: node scripts/v139/apply.mjs
+      - name: Reject stale session-establishing responses (prepared)
+        run: node scripts/regression-auth-session-attempt.cjs
       - run: node scripts/regression-p0-fast-logout.mjs
       - run: npx tsc --noEmit

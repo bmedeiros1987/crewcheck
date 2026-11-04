@@ -66,6 +66,17 @@ export function captureAuthSession() {
 }
 
 
+// Session-establishing requests share one attempt fence, including across endpoints.
+let sessionAttempt = 0;
+function beginSessionAttempt() {
+  const attempt = ++sessionAttempt;
+  const requestSession = captureAuthSession();
+  return () => {
+    if (attempt !== sessionAttempt || !requestSession.isCurrent())
+      throw new AuthClientError('Session changed.', 0, 'STALE_SESSION', null, 'other');
+  };
+}
+
 // Local read admission only. A stored identity/token or successful unrelated API
 // response cannot mint this capability; only this module's canonical getMe can.
 export type ConfirmedGetMe = Readonly<{owner:string;verifiedAt:number}>;
@@ -261,19 +272,25 @@ export async function register(payload: {
   phoneLocal?: string;
   phoneE164?: string;
 }): Promise<AuthSession | { ok: boolean; verificationRequired: true; emailSent?: boolean; message?: string }> {
+  const assertCurrent = beginSessionAttempt();
   const response = await jsonFetch<(AuthSession & { ok: boolean }) | { ok: boolean; verificationRequired: true; emailSent?: boolean; message?: string }>('/api/auth/register', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  if ('token' in response && response.token) persistSession(response);
+  if ('token' in response && response.token) {
+    assertCurrent();
+    persistSession(response);
+  }
   return response;
 }
 
 export async function verifyEmail(email: string, code: string): Promise<AuthSession> {
+  const assertCurrent = beginSessionAttempt();
   const session = await jsonFetch<AuthSession & { ok: boolean }>('/api/auth/verify-email', {
     method: 'POST',
     body: JSON.stringify({ email, code }),
   });
+  assertCurrent();
   persistSession(session);
   return session;
 }
@@ -285,10 +302,12 @@ export async function resendVerification(email: string): Promise<{ ok: boolean; 
 export async function login(email: string, password: string): Promise<AuthSession> {
   // Um token vencido jamais deve acompanhar a tentativa de novo login.
   expireSession();
+  const assertCurrent = beginSessionAttempt();
   const session = await jsonFetch<AuthSession & { ok: boolean }>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
+  assertCurrent();
   persistSession(session);
   return session;
 }
