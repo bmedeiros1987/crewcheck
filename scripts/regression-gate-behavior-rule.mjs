@@ -1,3 +1,4 @@
+import {radarAttemptDiagnostics} from '../server/radar-attempt-diagnostics.mjs';
 // Gate behavior rule (docs/gate-behavior-rule.md): manual > proven source > reported source.
 // Synthetic flights only; real resolver, watch projection, Home alert anchor and server
 // projection/health functions. No provider, network or account.
@@ -76,7 +77,7 @@ try {
  const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,99,true,ts.ScriptKind.JS);
  const fn=name=>{const node=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(node,name);return node.getText(ast);};
  let admin=false,sent=null;const radarHealth=new Map([['flightaware',{lastFail:Date.parse('2032-10-20T08:00:00Z'),lastHttpStatus:401}]]);
- const scope=vm.createContext({radarHealth,process:{env:{}},radarFieldEvidenceGaps:()=>({}),ciriumRadarProjection:()=>({}),gateQuerySuppressed:()=>({}),firstKnown:(...v)=>v.find(x=>x!==undefined&&x!==null&&x!==''),
+ const scope=vm.createContext({radarAttemptDiagnostics,radarHealth,process:{env:{}},radarFieldEvidenceGaps:()=>({}),ciriumRadarProjection:()=>({}),gateQuerySuppressed:()=>({}),firstKnown:(...v)=>v.find(x=>x!==undefined&&x!==null&&x!==''),
   configuredProviders:()=>[{key:'flightaware',available:true},{key:'airlabs',available:false}],radarHealthAdmin:()=>admin,sendJson:(res,status,body)=>{sent={status,body};}});
  vm.runInContext([fn('publicRadarPayload'),fn('handleRadarHealth'),fn('markProvider')].join('\n'),scope);
  assert.equal(scope.publicRadarPayload({ok:true,provider:'flightaware',gate:'12'}).provider,'flightaware');
