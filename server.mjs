@@ -269,6 +269,11 @@ async function providerAirLabs(ctx, timeoutMs) {
   }
   const row = payload?.response || payload;
   markProvider('airlabs', true);
+  // Only the explicitly UTC-named field can omit its zone suffix. Never
+  // reinterpret dep_time (origin-local), estimated or actual clocks as UTC.
+  const namedUtc = typeof row.dep_time_utc === 'string' ? row.dep_time_utc.trim() : row.dep_time_utc;
+  const scheduledUtc = typeof namedUtc === 'string' && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/.test(namedUtc)
+    ? namedUtc.replace(' ', 'T') + 'Z' : namedUtc;
   return {
     ok: true,
     configured: true,
@@ -276,7 +281,7 @@ async function providerAirLabs(ctx, timeoutMs) {
     status: firstKnown(row.status, 'Monitorando'),
     gate: firstKnown(row.dep_gate),
     terminal: firstKnown(row.dep_terminal),
-    scheduledDepartureUtc: firstKnown(row.dep_time_utc, row.dep_time),
+    scheduledDepartureUtc: firstKnown(scheduledUtc, row.dep_time),
     departure: firstKnown(row.dep_estimated, row.dep_actual, row.dep_time),
     arrival: firstKnown(row.arr_estimated, row.arr_actual, row.arr_time),
     origin: firstKnown(row.dep_iata, row.dep_icao),
