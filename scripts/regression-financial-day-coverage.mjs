@@ -144,6 +144,15 @@ try{
  assert(!rendered.forecast.rows.some(row=>row.eventId===future.eventId));assert(!rendered.forecast.unclassifiedItems.some(item=>item.reason==='synthetic foreign nominal activity'));
  const unknownOrigin=JSON.parse(JSON.stringify(october));delete unknownOrigin.perdiem.rows.find(row=>row.iso==='2026-11-01'&&row.label==='Ceia').originIso;
  rendered=consumer([...currentSnapshots.filter(s=>s!==october),unknownOrigin]);assert.equal(rendered.forecast.monthly,null);assert(rendered.forecast.unclassifiedItems.some(item=>/Origem da jornada/.test(item.reason)));
+ for(const origin of ['', 'malformed','2026-10-99','2026-11-02']){
+  const invalid=JSON.parse(JSON.stringify(october));invalid.perdiem.rows.find(row=>row.iso==='2026-11-01'&&row.label==='Ceia').originIso=origin;
+  assert.equal(consumer([...currentSnapshots.filter(s=>s!==october),invalid]).forecast.monthly,null,'invalid carry-in origin is unknown');
+ }
+ // A later authenticated revision removing the Oct31 duty governs; the old
+ // month must not be opened or resurrect its carried rows after reimport.
+ const revised={...documents.oct,days:documents.oct.days.map(d=>d.date==='31/10/2026'?{...day('2026-10-31'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null}:d)};
+ documents['oct-revised']=revised;inventory.push(summary('oct-revised',revised,'2026-10-29T12:00:00Z'));requests.length=0;
+ const reimported=await run();assert.equal(reimported.result.monthly,210);assert.equal(reimported.result.nativeSummary.complete,true);assert(!requests.includes('/api/rosters/oct'));assert(!reimported.result.rows.some(row=>row.eventId.includes('QA0001')),'removed duty never survives from old revision');
  // A literal carried meal from a flight with missing presentation remains
  // a known partial row, never a certified total after the month filter.
  const partialSource=JSON.parse(JSON.stringify(october));const partialNight=partialSource.roster.days.find(day=>day.date==='31/10/2026');partialNight.dutyReport=null;partialNight.dutyReportSource='absent';
@@ -151,7 +160,7 @@ try{
  rendered=consumer([...currentSnapshots.filter(s=>s!==october),partialSource],boundary);assert(rendered.forecast.rows.some(row=>row.iso==='2026-11-01'&&row.partial===true));assert.equal(rendered.forecast.monthly,null);assert.equal(rendered.payment.totals,null);
  // Producer recalculation under a zero owned rate remains an explicit zero;
  // it is not a synthesized fallback for a missing or expired ACT declaration.
- libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','0');r=await run();rendered=consumer(r.snapshots);assert.equal(rendered.forecast.monthly,0);assert.equal(rendered.payment.totals.BRL,0);
+ inventory=inventory.filter(item=>item.id!=='oct-revised');libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','0');r=await run();rendered=consumer(r.snapshots);assert.equal(rendered.forecast.monthly,0);assert.equal(rendered.payment.totals.BRL,0);
  reset();values.set(libs.financialActStorageKey(owner),JSON.stringify(declaration));
  documents.oct={...oct,days:[...oct.days.slice(0,3),nightDay('2026-10-31')]};documents.nov={...nov,days:nov.days.map(d=>d.date==='01/11/2026'?{...d,dutyReport:'14:00',dutyDebrief:'14:15'}:d)};
  r=await run();rendered=consumer(r.snapshots,boundary);assert.equal(rendered.forecast.monthly,null);assert.equal(rendered.payment.totals,null);

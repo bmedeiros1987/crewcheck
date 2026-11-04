@@ -1,4 +1,5 @@
 import { observedStatementCycle, rosterOperationalIso, type AllowanceClockBasis, type AllowanceStatementCycle } from './compensationPolicy';
+import { validFinancialDay } from './financialHistoryPeriods';
 
 type ForecastRow = { iso: string; currency: string; value: number; convertedBRL: number | null };
 type UnclassifiedItem = { iso: string; airport: string };
@@ -22,14 +23,16 @@ export function aggregateAllowanceEvidence<R extends AllowanceEvidenceRow, P ext
   for (const snapshot of snapshots) {
     const month = snapshot.roster?.year && snapshot.roster?.month ? `${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}` : '';
     for (const item of snapshot.perdiem.unclassifiedItems ?? snapshot.perdiem.monthlyUnclassifiedItems) {
-      if (!month || !item.iso || item.iso.slice(0,7)===month || item.originIso?.slice(0,7)===month) addPending(item);
+      if (!month || !item.iso || item.iso.slice(0,7)===month || validFinancialDay(item.originIso||'')&&item.originIso?.slice(0,7)===month) addPending(item);
     }
     for (const row of snapshot.perdiem.rows ?? snapshot.perdiem.monthlyRows) {
+      if (!validFinancialDay(row.iso)) { addPending({iso:'',airport:row.airport||'',pendingKind:'source_coverage',reason:'Data de origem da diária não verificada.'}); continue; }
       if (month && row.iso.slice(0,7)!==month) {
         // A literal activity printed in a different competence is not carry-in.
         // Only a journey beginning in this source's nominal month can carry
         // its meals forward. Preserve the nominal publication's authority.
-        if (!row.originIso) { addPending({iso:row.iso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Origem da jornada entre competências não verificada.'}); continue; }
+        const originIso = row.originIso;
+        if (!originIso || !validFinancialDay(originIso) || originIso > row.iso) { addPending({iso:row.iso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Origem da jornada entre competências não verificada.'}); continue; }
         if (row.originIso.slice(0,7)!==month) continue;
       }
       if (row.partial===true) addPending({iso:row.iso,originIso:row.originIso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Completude da jornada de origem da diária não comprovada.'});
