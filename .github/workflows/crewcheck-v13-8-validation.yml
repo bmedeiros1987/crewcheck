@@ -63,6 +63,7 @@ jobs:
           node scripts/android-play/test_mysql_journal_isolated.mjs || exit $?
           node scripts/android-play/test_planned_cli_isolated.mjs || exit $?
           node scripts/android-play/test_release_approval_isolated.mjs || exit $?
+          node scripts/android-play/test_mobile_composition.mjs --isolated || exit $?
           node scripts/android-play/test_release_workflow_off.mjs
           node scripts/regression-telegram-location-callback-scope.mjs
           node scripts/regression-notification-diagnostic.mjs
@@ -77,6 +78,7 @@ jobs:
           node scripts/regression-platform-entitlement-mysql.mjs
           node scripts/v139/apply.mjs
           node scripts/android-play/test_release_approval_isolated.mjs || exit $?
+          node scripts/android-play/test_mobile_composition.mjs --isolated || exit $?
           node scripts/android-play/test_release_workflow_off.mjs
           node scripts/android-play/test_release_namespace.mjs
           node scripts/regression-free-day-held.mjs

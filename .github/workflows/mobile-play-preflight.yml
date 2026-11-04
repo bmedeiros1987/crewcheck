@@ -108,6 +108,7 @@ jobs:
       - run: node scripts/android-play/test_github_release_review.mjs
       - run: node scripts/android-play/test_release_public_json.mjs
       - run: python3 scripts/android-play/test_journal_approval_prepare.py
+      - run: node scripts/android-play/test_mobile_composition.mjs
       - run: node scripts/android-play/test_release_probe_composition.mjs
       - run: node scripts/android-play/test_release_approval_route.mjs
       - run: node scripts/android-play/test_release_namespace.mjs
@@ -125,6 +126,7 @@ jobs:
       - run: node scripts/android-play/test_recovery_fence.mjs
       - run: node scripts/android-play/test_platform_journal.mjs
       - run: node scripts/android-play/test_journal_protocol.mjs
+      - run: python3 scripts/android-play/test_reviewed_http_exchange.py
       - run: python3 scripts/android-play/test_journal_transport.py
       - run: python3 scripts/android-play/test_publisher_lifecycle.py
   inspect-existing-play-access:
