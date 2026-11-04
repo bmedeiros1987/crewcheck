@@ -12,6 +12,7 @@ const followCandidate=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'crewcheck-radar-ui-'));
 const code=`import React,{useState,useEffect,useRef} from 'react';import {createRoot} from 'react-dom/client';import {Plane,ShieldCheck,Radar,Globe2,CloudSun} from 'lucide-react';
 import {followedFlight} from './shared/followedFlights.mjs';
+import {GateHistoryPanel} from './client/src/components/nextflight/GateHistoryPanel';
 import {getToken,getStoredUser} from '@/lib/authClient';import {manualGateAccountKey,readManualGate,resolveNextFlightGate,RADAR_GATE_STALE_MS} from '@/lib/nextFlightGate';import {gateQueryDay,originFlightDate,publishedGateDate,radarResultDecision} from './shared/gate-query-day.mjs';import {radarFailurePayload,radarAvailabilityLabel} from '@/lib/radarAvailability';
 const safe=(x,f='')=>x||f,normalizedAirlineCode=()=> 'LA',airlineNameFor=()=> 'LATAM',Brand=()=>null,FlightDeckNavigationContext=()=>null,AirlineLogo=()=>null,ManualGateEditor=()=>null,FollowFlightPanel=()=>null,readRadarSnapshot=()=>null;
 window.requests=[];function fetchRadarSnapshot(event){return new Promise(resolve=>window.requests.push({event,resolve}))}
