@@ -1,0 +1,38 @@
+name: Telegram composed base preparation safeguard
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/v1403/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/p1-concierge-stay-menu/**'
+      - 'scripts/v14323/apply.mjs'
+      - 'scripts/v14338/reply-wrapper.snippet'
+      - 'scripts/v14354/**'
+      - 'scripts/v14408/**'
+      - 'scripts/telegram-concierge-menu/apply.mjs'
+      - 'scripts/regression-v1403-prepared-base.mjs'
+      - 'server/v1403/**'
+      - 'server/v1404/telegram-language.mjs'
+      - 'server/concierge/telegram-menu*.mjs'
+      - 'server/concierge/stay-menu.mjs'
+      - 'server.mjs'
+      - '.github/workflows/preparation-telegram-base-replay.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepared-base:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: test ! -e node_modules/typescript/package.json
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-v1403-prepared-base.mjs
