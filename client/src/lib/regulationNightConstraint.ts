@@ -2,6 +2,7 @@ import type {CrewRoster, RosterDay, FlightLeg} from './pdfParser';
 import type {CanonicalRosterEvent} from './canonicalRoster';
 import {buildCanonicalRosterEvents} from './canonicalRoster';
 import {measureCanonicalDuty} from './canonicalDutyMeasurement';
+import {aimsFlightSourceCoveragePending} from './aimsFlightSourceCoverage';
 import {getRosterCodeDefinition} from './rosterCodes';
 import {getActRulesForProfile, type LegalProfileSummary} from './actRules';
 import {airportTimeZone} from '../../../shared/airport-timezones.mjs';
@@ -32,6 +33,7 @@ export function regulationNightConstraint({roster,journey,start,referenceEnd,pro
  const zone=airportTimeZone(roster.base);if(!zone)return {...result,reason:'Fuso da base contratual não comprovado'};result.zone=zone;result.applicability='supported_act_comparison';
  const scenarioDate=localParts(start,zone).date;if(scenarioDate<'2025-12-01'||scenarioDate>'2027-11-30')return {...result,state:'unknown',reason:'Vigência do ACT não comprovada para a data',applicability:'unverified'};
  const events=buildCanonicalRosterEvents(roster),selectedIds=new Set(journey.map(e=>e.journeyId));
+ if(journey.some(e=>!events.some(source=>source.id===e.id&&source.journeyId===e.journeyId&&source.startDateTime===e.startDateTime&&source.endDateTime===e.endDateTime&&source.origin===e.origin&&source.destination===e.destination)))return {...result,reason:'A jornada selecionada não pertence à publicação histórica fornecida'};
  const representedLegs=new Set(events.filter(e=>e.kind==='flight'&&e.leg).map(e=>legKey(e.publishedDay.date,e.leg!)));
  const representedActivities=new Set(events.filter(e=>e.kind==='duty').map(e=>activityKey(e.publishedDay)));
  const recordMissing=(record:unknown):boolean=>{
@@ -44,6 +46,7 @@ export function regulationNightConstraint({roster,journey,start,referenceEnd,pro
  // Up to two preceding published days may prove the free gap that establishes
  // an anchor. Never invent that anchor at the first activity we happen to see.
  const availableDates=new Set(roster.days.filter(d=>!(d as any).continuityInferred).map(d=>dateKey(d.date)));for(let i=0;i<2;i++){const previous=new Date(Date.parse(firstDate+'T12:00Z')-DAY).toISOString().slice(0,10);if(!availableDates.has(previous))break;firstDate=previous;}
+ if(aimsFlightSourceCoveragePending(roster,events.map(e=>({kind:e.kind,day:e.publishedDay,leg:e.leg,canonical:e}))).some(issue=>!issue.iso||issue.iso>=firstDate&&issue.iso<=lastDate))return {...result,reason:'Cobertura da fonte AIMS incompleta no histórico da janela'};
  const days=roster.days.filter(d=>!(d as any).continuityInferred&&dateKey(d.date)>=firstDate&&dateKey(d.date)<=lastDate);
  const dates=new Set(days.map(d=>dateKey(d.date)));
  for(let d=Date.parse(firstDate+'T12:00Z');d<=Date.parse(lastDate+'T12:00Z');d+=DAY){if(!dates.has(new Date(d).toISOString().slice(0,10)))return {...result,reason:'Histórico diário incompleto na janela anterior de 168h'};}
