@@ -80,15 +80,15 @@ public final class ComplicationTextTest {
     public void crewLifeWithoutOptInStaysEmpty() {
         ComplicationRendering rendering = ComplicationText.crewLife(null, NOW);
         assertEquals("--", rendering.shortText);
-        assertEquals("Ative o CrewLife no celular", rendering.longText);
+        assertEquals("Medições indisponíveis", rendering.longText);
         assertEquals("CREWLIFE", rendering.title);
     }
 
     @Test
     public void crewLifeShowsDerivedRecoveryAndSleep() {
         ComplicationRendering rendering = ComplicationText.crewLife(CrewLifeSnapshot.demo(NOW), NOW);
-        assertEquals("78%", rendering.shortText);
-        assertTrue(rendering.longText.startsWith("78% · 6h52"));
+        assertEquals("78/100", rendering.shortText);
+        assertTrue(rendering.longText.startsWith("Energia 78/100 · 6h52"));
         assertTrue(rendering.longText.length() <= 48);
     }
 
@@ -177,13 +177,10 @@ public final class ComplicationTextTest {
 
     @Test
     public void crewLifeWithoutScoreHasNoRingValue() throws Exception {
-        JSONObject withoutScore = new JSONObject()
-                .put("schemaVersion", WatchContract.CREWLIFE_SCHEMA_VERSION)
-                .put("generatedAtEpochMs", NOW)
-                .put("validUntilEpochMs", NOW + 3_600_000L)
-                .put("sleepLabel", "6h52");
+        JSONObject withoutScore = CrewLifeSnapshot.demo(NOW).toJson();
+        withoutScore.getJSONObject("metrics").remove("recoveryScore");
         // Anel só existe com medida: silêncio não vira zero desenhado no pulso.
-        assertNull(ComplicationText.crewLife(CrewLifeSnapshot.fromJson(withoutScore), NOW).rangedValue);
+        assertNull(ComplicationText.crewLife(CrewLifeSnapshot.fromJson(withoutScore, NOW), NOW).rangedValue);
     }
 
     @Test
