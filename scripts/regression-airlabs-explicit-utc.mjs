@@ -15,7 +15,7 @@ const source=names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDecla
 const now=Date.parse('2026-11-04T13:30:00Z');
 const identity={flight:'LA8138',origin:'GRU',destination:'AEP',departureDate:'2026-11-04',scheduledDepartureUtc:'2026-11-04T20:05:00.000Z'};
 let row,calls=0,utcResult;
-const scope=vm.createContext({...policy,...injection,...fields,Date:class extends Date{static now(){return now;}},URL,setTimeout,clearTimeout,
+const scope=vm.createContext({...policy,...injection,...fields,gateQueryDay:evidence=>policy.gateQueryDay(evidence,now),Date:class extends Date{static now(){return now;}},URL,setTimeout,clearTimeout,
  process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},envAny:keys=>keys.includes('AIRLABS_API_KEY')?'SYNTHETIC_ONLY':'',providerAvailable:()=>true,markProvider:()=>{},
  jsonFetch:async()=>{calls++;return{response:{ok:true,status:200},payload:{response:row}};},
  providerFlightAware:async()=>null,providerCustom:async()=>null,providerAviationstack:async()=>null,providerAeroDataBox:async()=>null,
