@@ -1,7 +1,8 @@
 import {getScheduledDutyLimitReference} from './complianceEngine';
 import {regulationAircraftEvidence} from './regulationAircraftEvidence';
 import {resolvePerDiemRule} from './financialRules';
-import type {RosterDay,FlightLeg} from './pdfParser';
+import {regulationNightConstraint,nightDutyTouches} from './regulationNightConstraint';
+import type {CrewRoster,RosterDay,FlightLeg} from './pdfParser';
 import type {CanonicalRosterEvent} from './canonicalRoster';
 import type {LegalProfileSummary} from './actRules';
 import {explicitInstant} from '../../../shared/regulationTemporalScenario.mjs';
@@ -35,7 +36,7 @@ export function regulationAutomaticContext(day:(RosterDay&{regulationJourney?:Ca
 
 // One existing engine produces the numeric reference. This function does not
 // choose a new table or claim operational/legal applicability from defaults.
-export function regulationAutomaticAssessment(context:ReturnType<typeof regulationAutomaticContext>,form:AutomaticRegulationForm,profile?:LegalProfileSummary|null){
+export function regulationAutomaticAssessment(context:ReturnType<typeof regulationAutomaticContext>,form:AutomaticRegulationForm,profile?:LegalProfileSummary|null,roster?:CrewRoster|null,operationalDutyEnd?:string|null){
  const missing:string[]=[],conditions:string[]=[];
  const stamp=explicitInstant(form.presentation+form.offset),date=form.presentation.slice(0,10),report=form.presentation.slice(11,16);
  const legs=context.legs.map((leg,index)=>({...leg,aircraftType:form.equipment[index]??leg.aircraftType,workType:form.workTypes[index]??leg.workType}));
@@ -58,17 +59,22 @@ export function regulationAutomaticAssessment(context:ReturnType<typeof regulati
  const supportedScenario=(!form.composition||form.composition==='simple')&&form.acclimatization==='acclimatized'&&form.timingChange==='flight-delay';
  const post=integer(form.postFlight,360),tasks=integer(form.tasks,1440),delay=integer(form.delay,1440);
  const end=explicitInstant(form.plannedEnd+form.offset);
- const normalEnd=referenceEnd!==null&&supportedScenario?referenceEnd:null;
+ let normalEnd=referenceEnd!==null&&supportedScenario?referenceEnd:null;
  const finalOperating=classifications.at(-1)==='OP';
  const minimumPost=form.operation==='domestic'?30:form.operation==='international'?45:null;
- const cut=normalEnd!==null&&finalOperating&&minimumPost!==null&&post!==null&&post>=minimumPost&&tasks!==null&&stamp!==null&&normalEnd-(post+tasks)*60_000>=stamp?normalEnd-(post+tasks)*60_000:null;
  const derivedEnd=context.plannedEndSource==='scheduled_arrival_plus_scenario_postflight'&&form.plannedEnd===context.form.plannedEnd
   ?context.scheduledArrival!==null&&minimumPost!==null&&post!==null&&post>=minimumPost&&tasks!==null?context.scheduledArrival+(post+tasks)*60_000:null:end;
  const validEnd=derivedEnd!==null&&stamp!==null&&derivedEnd>=stamp;
- const projected=validEnd&&delay!==null?derivedEnd!+delay*60_000:null;
+ const projected=operationalDutyEnd!==undefined?(operationalDutyEnd===null?null:explicitInstant(operationalDutyEnd)):validEnd&&delay!==null?derivedEnd!+delay*60_000:null;
+ const night=regulationNightConstraint({roster,journey:context.journey,start:stamp,referenceEnd:normalEnd,projectedEnd:projected,profile,workTypes:classifications});
+ const touches=normalEnd!==null&&stamp!==null?nightDutyTouches(stamp,normalEnd,roster?.base||context.journey[0]?.publishedDay.base||''):null;
+ if(night.state==='restricted')normalEnd=normalEnd!==null&&night.latestDutyEnd?Math.min(normalEnd,Date.parse(night.latestDutyEnd)):null;
+ else if(night.state==='unknown'&&touches!==false)normalEnd=null;
+ const cut=normalEnd!==null&&finalOperating&&minimumPost!==null&&post!==null&&post>=minimumPost&&tasks!==null&&stamp!==null&&normalEnd-(post+tasks)*60_000>=stamp?normalEnd-(post+tasks)*60_000:null;
+
  const iso=(value:number|null)=>value===null?null:new Date(value).toISOString();
  const margin=normalEnd!==null&&projected!==null&&tasks!==null?(normalEnd-projected)/60_000:null;
- return {version:REGULATION_AUTOMATIC_REFERENCE_VERSION,reference,referenceDutyEnd:iso(referenceEnd),normalDutyEnd:iso(normalEnd),engineStopLimit:iso(cut),projectedDutyEnd:iso(projected),marginMinutes:margin,missing,conditions,aircraft,
+ return {version:REGULATION_AUTOMATIC_REFERENCE_VERSION,night,reference,referenceDutyEnd:iso(referenceEnd),normalDutyEnd:iso(normalEnd),engineStopLimit:iso(cut),projectedDutyEnd:iso(projected),marginMinutes:margin,missing,conditions,aircraft,
   evidence:{presentation:editedPresentation?'user_scenario':context.publicationReport?'published':'missing',publicationClock:form.offset===context.form.offset?'BRT_convention_not_document_confirmation':'user_scenario',composition:form.composition===context.form.composition&&aircraft.group==='NB'?'NB_scenario_default':form.composition?'user_scenario':'simple_comparison_hypothesis',acclimatization:form.acclimatization===context.form.acclimatization?'scenario_default':'user_scenario',tasks:form.tasks===context.form.tasks?'zero_scenario_default':'user_scenario',postFlight:form.postFlight===context.form.postFlight?'existing_scenario_parameter':'user_scenario'},
   state:normalEnd===null?'unavailable':'conditional',authorization:'not_assessed',operationalCompliance:'not_assessed'};
 }

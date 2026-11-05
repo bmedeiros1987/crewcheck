@@ -532,17 +532,22 @@ function inferCanonicalRosterPeriod(roster: CrewRoster, days: RosterDay[], fallb
 
 export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
   const byActivity = new Map<string, RosterDay>();
+  const publishedRecords: unknown[] = [];
   const defaultMonth = roster.month || new Date().getMonth() + 1;
   const defaultYear = roster.year || new Date().getFullYear();
 
   for (const sourceDay of Array.isArray(roster.days) ? roster.days : []) {
     const parsed = parseRosterDate(sourceDay.date, sourceDay.month || defaultMonth, sourceDay.year || defaultYear);
     const date = formatDate(parsed.day, parsed.month, parsed.year);
-    const publishedClockEvidence = (sourceDay as any).publishedClockEvidence || {
+    const publishedClockEvidence = Object.prototype.hasOwnProperty.call(sourceDay, 'publishedClockEvidence') ? (sourceDay as any).publishedClockEvidence : {
+      coverageSchema: 'crewcheck.published-activity-coverage.v1',
+      date: sourceDay.date, type: sourceDay.type, pairingCode: sourceDay.pairingCode,
       dutyReport: sourceDay.dutyReport, dutyDebrief: sourceDay.dutyDebrief,
       dutyReportSource: (sourceDay as any).dutyReportSource, dutyDebriefSource: (sourceDay as any).dutyDebriefSource,
-      legs: (sourceDay.legs || []).map(leg => ({ departureTime: leg.departureTime, arrivalTime: leg.arrivalTime, presentationTime: leg.presentationTime })),
+      legs: (sourceDay.legs || []).map(leg => ({ flightNumber: leg.flightNumber, origin: leg.origin, destination: leg.destination,
+        departureTime: leg.departureTime, arrivalTime: leg.arrivalTime, presentationTime: leg.presentationTime })),
     };
+    publishedRecords.push(...(Array.isArray(publishedClockEvidence?.records) ? publishedClockEvidence.records : [publishedClockEvidence]));
     const day = cloneDay({ ...sourceDay, publishedClockEvidence, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year } as RosterDay);
     day.legs = selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport));
 
@@ -599,12 +604,18 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
   const completedDays = completeContinuityDays(collectedDays, roster);
   const normalizedDays = filterDaysByPublishedRange(completedDays, roster, period.month, period.year);
 
-  return {
+  // Keep the pre-selection inventory even when reconciliation removes an
+  // entire activity. Repeated normalization must not certify only survivors.
+  const result = {
     ...roster,
+    publishedActivityEvidence: Object.prototype.hasOwnProperty.call(roster, 'publishedActivityEvidence') ? (roster as any).publishedActivityEvidence : {
+      coverageSchema: 'crewcheck.published-activity-coverage.v1', records: publishedRecords,
+    },
     month: period.month,
     year: period.year,
     days: normalizedDays,
   };
+  return result;
 }
 
 export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterEvent[] {

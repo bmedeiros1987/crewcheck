@@ -36,6 +36,10 @@ on:
       - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationNightConstraint.ts'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'shared/airport-timezones.mjs'
+      - 'shared/timezone-choice.mjs'
       - 'client/src/lib/regulationAircraftEvidence.ts'
       - 'client/src/lib/useRegulationOperationalArrival.ts'
       - 'scripts/regression-regulation-automatic*.mjs'
@@ -93,6 +97,10 @@ on:
       - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationNightConstraint.ts'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'shared/airport-timezones.mjs'
+      - 'shared/timezone-choice.mjs'
       - 'client/src/lib/regulationAircraftEvidence.ts'
       - 'client/src/lib/useRegulationOperationalArrival.ts'
       - 'scripts/regression-regulation-automatic*.mjs'
@@ -172,6 +180,7 @@ jobs:
       - name: Current conditional temporal scenario regression
         run: |
           node scripts/regression-regulation-automatic-scenario.mjs
+          node scripts/regression-regulation-automatic-night-limits.mjs
           node scripts/regression-regulation-window-selection.mjs
           node scripts/regression-regulation-prefill.mjs
           node scripts/regression-regulation-source-hydration.mjs

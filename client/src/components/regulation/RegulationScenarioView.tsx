@@ -1,3 +1,4 @@
+import type {CrewRoster} from '@/lib/pdfParser';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Calculator,ChevronDown,RotateCcw} from 'lucide-react';
 import {getStoredUser,getToken} from '@/lib/authClient';
@@ -27,7 +28,7 @@ function localClock(instant:string|undefined,offset:string){if(!instant||!/^([+-
 // no subscription/fetch is created here. captureAuthSession is continuity only;
 // the supplying host must separately confirm authenticated source authority.
 export type {RegulationOperationalArrivalInput} from '@/lib/useRegulationOperationalArrival';
-export function DetailedRegulationScenarioView({scheduleDay,compliance,program,operationalArrival}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;operationalArrival?:RegulationOperationalArrivalInput|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
+export function DetailedRegulationScenarioView({scheduleDay,compliance,program,operationalArrival}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;nightRoster?:CrewRoster|null;operationalArrival?:RegulationOperationalArrivalInput|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
  const details=useRef<HTMLDetailsElement>(null),owner=session(),signature=JSON.stringify(scheduleDay||null),key=owner+'|'+(program?.id||scheduleDay?.date||'manual');
  const admittedOwner=useRef(owner),observedOwner=useRef(owner),sourceAllowed=Boolean(owner&&admittedOwner.current===owner);
  const reference=useMemo(()=>{try{return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleDay?.dutyReport||'')?getScheduledDutyLimitReference(scheduleDay as RosterDay,compliance?.legalProfile):null;}catch{return null;}},[signature,compliance?.legalProfile]);
@@ -180,6 +181,6 @@ export default function RegulationScenarioView(props:Parameters<typeof DetailedR
  // a real imported leg remains imported and cannot be overwritten as manual OP.
  const imported=Boolean(props.scheduleDay&&props.scheduleDay.type!=='IMPORTAR'&&(props.scheduleDay.legs?.length||props.program?.kind==='duty'));
  const automatic=imported&&props.scheduleDay?.type==='VOO'&&!manual;
- if(automatic)return <RegulationAutomaticView scheduleDay={props.scheduleDay!} program={props.program} compliance={props.compliance} operationalArrival={props.operationalArrival} onManual={()=>setManual(true)}/>;
+ if(automatic)return <RegulationAutomaticView scheduleDay={props.scheduleDay!} program={props.program} compliance={props.compliance} operationalArrival={props.operationalArrival} nightRoster={props.nightRoster} onManual={()=>setManual(true)}/>;
  return <>{imported&&<div className="cc-regulation-scenario cc-reg-return-bar"><button className="cc-reg-return-auto" type="button" onClick={()=>setManual(false)}>Voltar ao cenário automático</button></div>}<DetailedRegulationScenarioView {...props} scheduleDay={imported?props.scheduleDay:null} program={imported?props.program:null}/></>;
 }

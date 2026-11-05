@@ -1,3 +1,4 @@
+import type {CrewRoster} from '@/lib/pdfParser';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Calculator,ChevronDown,RotateCcw,Clock,PlaneLanding,SlidersHorizontal,Info,Power} from 'lucide-react';
 import {explicitInstant} from '@shared/regulationTemporalScenario.mjs';
@@ -13,16 +14,16 @@ import RegulationNavigationContext from './RegulationNavigationContext';
 import './regulation-scenario.css';
 
 const localClock=(instant:string|null,offset:string)=>{if(!instant||!/^([+-])\d{2}:\d{2}$/.test(offset))return '-';const sign=offset[0]==='-'?-1:1,shift=sign*(Number(offset.slice(1,3))*60+Number(offset.slice(4)))*60_000;return new Date(Date.parse(instant)+shift).toISOString().slice(0,16).replace('T',' · ');};
-type Props={scheduleDay:ScheduleDayLike;program?:CanonicalRosterEvent|null;compliance?:{legalProfile?:LegalProfileSummary};operationalArrival?:RegulationOperationalArrivalInput|null;onManual:()=>void};
-export default function RegulationAutomaticView({scheduleDay,program,compliance,operationalArrival,onManual}:Props){
+type Props={scheduleDay:ScheduleDayLike;program?:CanonicalRosterEvent|null;compliance?:{legalProfile?:LegalProfileSummary};nightRoster?:CrewRoster|null;operationalArrival?:RegulationOperationalArrivalInput|null;onManual:()=>void};
+export default function RegulationAutomaticView({scheduleDay,program,compliance,operationalArrival,nightRoster,onManual}:Props){
  const session=useRef(captureAuthSession()),[invalidated,setInvalidated]=useState(false),details=useRef<HTMLElement>(null),[editing,setEditing]=useState(false);
  // This is a local scenario continuity fence, not login/source authority.
  const current=Boolean(!invalidated&&session.current.token&&session.current.owner&&session.current.isCurrent());
- const signature=JSON.stringify([scheduleDay,program,compliance?.legalProfile]);
+ const signature=JSON.stringify([scheduleDay,program,compliance?.legalProfile,nightRoster]);
  const context=useMemo(()=>regulationAutomaticContext(current?scheduleDay as RosterDay:null,current?program:null),[current,signature]);
  const [draft,setDraft]=useState<{key:string;overrides:Partial<AutomaticRegulationForm>;compositionEdited?:boolean}>({key:signature,overrides:{}});
  const form={...context.form,...(current&&draft.key===signature?draft.overrides:{})};
- const baseAssessment=regulationAutomaticAssessment(context,form,current?compliance?.legalProfile:null);
+ const baseAssessment=regulationAutomaticAssessment(context,form,current?compliance?.legalProfile:null,current?nightRoster:null);
  const [forecastMode,setForecastMode]=useState('automatic');
  const finalProgram=context.journey.at(-1),lastActivity=form.workTypes.at(-1)==='OP'?'operating':form.workTypes.at(-1)==='PS'?'positioning':'unknown';
  const {read:operationalRead,projection:operationalProjection}=useRegulationOperationalArrival({input:operationalArrival,sourceAllowed:current&&form.workTypes.every((type,i)=>type===context.form.workTypes[i]),finalProgram,lastActivity,form});
@@ -32,7 +33,7 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
  // for engineStopAt/dutyEndAt before this hook can expose a projection.
  const presentation=explicitInstant(form.presentation+form.offset);
  const operationalConflict=Boolean(useOperational&&(presentation===null||Date.parse(operationalEnd)<presentation||Date.parse(operationalProjection.scenario.engineStop)<presentation));
- const assessment=operationalConflict?{...baseAssessment,projectedDutyEnd:null,marginMinutes:null,missing:['Chegada operacional incompatível com a apresentação; ajuste os dados ou selecione previsão manual']}:operationalEnd?{...baseAssessment,projectedDutyEnd:operationalEnd,marginMinutes:baseAssessment.normalDutyEnd?(Date.parse(baseAssessment.normalDutyEnd)-Date.parse(operationalEnd))/60_000:null}:baseAssessment;
+ const assessment=operationalConflict?{...baseAssessment,projectedDutyEnd:null,marginMinutes:null,missing:['Chegada operacional incompatível com a apresentação; ajuste os dados ou selecione previsão manual']}:operationalEnd?regulationAutomaticAssessment(context,form,current?compliance?.legalProfile:null,current?nightRoster:null,operationalEnd):baseAssessment;
  useEffect(()=>{setDraft({key:signature,overrides:{}});setForecastMode('automatic');},[signature]);
  useEffect(()=>{const reset=()=>{setInvalidated(true);setDraft({key:'',overrides:{}});};const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key)||!session.current.isCurrent())reset();};const names=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];for(const name of names)window.addEventListener(name,reset);window.addEventListener('storage',storage);return()=>{for(const name of names)window.removeEventListener(name,reset);window.removeEventListener('storage',storage);};},[]);
  const update=(changes:Partial<AutomaticRegulationForm>)=>setDraft(previous=>({key:signature,overrides:{...(previous.key===signature?previous.overrides:{}),...changes},compositionEdited:(previous.key===signature&&previous.compositionEdited)||Object.hasOwn(changes,'composition')}));
@@ -53,6 +54,7 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
     <div><h2><Power size={18} aria-hidden="true"/> Corte dos motores</h2><strong role={!assessment.engineStopLimit ? 'img' : undefined} aria-label={!assessment.engineStopLimit ? 'Corte dos motores: limite previsto não calculável' : undefined}>{localClock(assessment.engineStopLimit,form.offset).split(' · ').at(-1)}</strong>{assessment.engineStopLimit&&<small>{localClock(assessment.engineStopLimit,form.offset).split(' · ')[0]}</small>}</div>
     <div><h2><Clock size={18} aria-hidden="true"/> Fim da jornada</h2><strong role={!assessment.normalDutyEnd ? 'img' : undefined} aria-label={!assessment.normalDutyEnd ? 'Fim da jornada: limite previsto não calculável' : undefined}>{localClock(assessment.normalDutyEnd,form.offset).split(' · ').at(-1)}</strong>{assessment.normalDutyEnd&&<small>{localClock(assessment.normalDutyEnd,form.offset).split(' · ')[0]}</small>}</div>
    </div>
+   <p role="status" data-night-state={assessment.night.state}>Madrugadas: {assessment.night.state==='unknown'?'indeterminado':assessment.night.state==='restricted'?'teto restringido':assessment.night.state==='at'?(assessment.night.projectedNight?'limite atingido no cenário':'referência alcança o limite'):'comparação disponível'}. {assessment.night.reason}. {assessment.night.consecutive!==null&&`Na madrugada da referência: sequência ${assessment.night.consecutive}; período de 168h: ${assessment.night.in168h}.`} {assessment.night.zone&&`Fuso da base: ${assessment.night.zone}.`} {assessment.night.deadlineExclusive&&'O encerramento deve ser anterior à meia-noite; exibição com precisão de minuto.'} {assessment.night.basis}.</p>
    <div className="cc-reg-chips" aria-label="Hipóteses do cenário"><span title="Equipamentos reconhecidos somente nesta jornada">{assessment.aircraft.group==='NB'?'NB':assessment.aircraft.group==='WB'?'WB':assessment.aircraft.group==='mixed'?'Misto':'Equipamento ?'}</span><span title={composition}>{form.composition==='augmented'?'Composta':form.composition==='relief'?'Revezamento':form.composition==='simple'?'Simples*':'Composição ?'}</span><span title={clockSource}>{form.offset==='-03:00'?'BRT*':'UTC'+form.offset}</span><span title="Aclimatado é padrão ajustável do cenário, sem confirmação operacional">{form.acclimatization==='acclimatized'?'Aclimatado*':'Aclimatação ?'}</span></div>
    <small className="cc-reg-hypothesis"><Info size={14} aria-hidden="true"/> * Hipóteses ajustáveis</small>
    {assessment.projectedDutyEnd&&<div className="cc-reg-forecast"><span><PlaneLanding size={16} aria-hidden="true"/> Encerramento previsto</span><b>{localClock(assessment.projectedDutyEnd,form.offset)}</b><small>{useOperational?`${operationalRead.kind==='actual'?'Real':'Estimado'} · ${operationalRead.provider} · obs. ${localClock(operationalRead.observedAt,form.offset)}`:'Escala + atraso manual'}</small></div>}

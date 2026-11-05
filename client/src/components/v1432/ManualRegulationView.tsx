@@ -1,3 +1,4 @@
+import type {CrewRoster} from '@/lib/pdfParser';
 import type {CanonicalRosterEvent} from '@/lib/canonicalRoster';
 import type {LegalProfileSummary} from '@/lib/actRules';
 import RegulationScenarioView from '@/components/regulation/RegulationScenarioView';
@@ -328,4 +329,4 @@ function LegacyManualRegulationView({ compliance, scheduleDay }: { compliance?: 
 }
 
 // New read-only scenario UI; legacy helpers remain unchanged for canonical callers.
-export default function ManualRegulationView(props: { compliance?: ComplianceLike & {legalProfile?:LegalProfileSummary}; scheduleDay?: ScheduleDayLike | null; program?:CanonicalRosterEvent|null;operationalArrival?:RegulationOperationalArrivalInput|null }) { return <RegulationScenarioView {...props}/>; }
+export default function ManualRegulationView(props: { compliance?: ComplianceLike & {legalProfile?:LegalProfileSummary}; scheduleDay?: ScheduleDayLike | null; program?:CanonicalRosterEvent|null;nightRoster?:CrewRoster|null;operationalArrival?:RegulationOperationalArrivalInput|null }) { return <RegulationScenarioView {...props}/>; }
