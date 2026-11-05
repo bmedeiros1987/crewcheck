@@ -1,6 +1,8 @@
+import {extractPositionedPayroll} from './positionedPayrollExtraction';
 /** Pure private extraction. Raw source text is ephemeral preview data, never a saved rate. */
 export type PayrollSourceOrigin = 'pdf-physical' | 'document-logical';
-export interface PayrollPage { page: number; text: string; origin?: PayrollSourceOrigin }
+export interface PayrollGeometryRow { line:number; y:number; cells:Array<{x:number;width:number|null;text:string}> }
+export interface PayrollPage { page: number; text: string; origin?: PayrollSourceOrigin; geometry?:{version:1;rows:PayrollGeometryRow[]} }
 export interface PayrollSource { page: number; origin: PayrollSourceOrigin; line: number; field: string; text: string }
 export interface PayrollCandidate<T> { value: T; sources: PayrollSource[]; confidence: 'medium' | 'review' }
 export interface PayrollField<T> {
@@ -10,6 +12,9 @@ export interface PayrollField<T> {
   unresolvedSources: PayrollSource[];
 }
 export interface PayrollItem {
+  code?:string;
+  quantity?:PayrollField<number>;
+  printedRate?:PayrollField<number>;
   competence?: string;
   kind: 'earning' | 'deduction' | 'advance' | 'vacation' | 'thirteenth' | 'proportional';
   direction: 'credit' | 'debit' | 'unknown';
@@ -25,7 +30,8 @@ export interface PrivatePayrollExtraction {
   monthlyBase: PayrollField<number>;
   items: PayrollItem[];
   totals: { gross: PayrollField<number>; deductions: PayrollField<number>; net: PayrollField<number> };
-  layout: 'lines' | 'unstructured' | 'no-text';
+  layout: 'lines' | 'unstructured' | 'no-text' | 'positioned-table';
+  itemReconciliation?: 'unavailable' | 'balanced' | 'mismatch';
   incomplete: boolean;
   unresolvedSources: PayrollSource[];
   reconciliation: 'unavailable' | 'balanced' | 'mismatch';
@@ -87,6 +93,8 @@ function amounts(line: string): { values: number[]; uncertainDirection: boolean;
 export function extractPrivatePayroll(input: string | readonly PayrollPage[]): PrivatePayrollExtraction {
   const pages: readonly PayrollPage[] = typeof input === 'string'
     ? input.split('\f').map((text, i) => ({ page: i + 1, text, origin: 'document-logical' })) : input;
+  const positioned=extractPositionedPayroll(pages);
+  if(positioned)return positioned;
   const result: PrivatePayrollExtraction = { version: 1, competence: field(), creditDate: field(), monthlyBase: field(), items: [],
     totals: { gross: field(), deductions: field(), net: field() }, layout: 'lines', incomplete: false, unresolvedSources: [],
     reconciliation: 'unavailable', requiresReview: true, warnings: [] };
