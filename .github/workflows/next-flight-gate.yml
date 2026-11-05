@@ -6,6 +6,10 @@ on:
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'server.mjs'
+      - 'server/radar-attempt-diagnostics.mjs'
+      - 'scripts/regression-radar-attempt-diagnostics.mjs'
+      - 'scripts/regression-radar-provider-cooldown.mjs'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchPublisher.java'
       - 'server/gate-source-update.mjs'
       - 'server/aerodatabox-occurrence.mjs'
       - 'scripts/regression-aerodatabox-occurrence.mjs'
@@ -31,6 +35,7 @@ on:
       - 'scripts/regression-radar-authority-followup.mjs'
       - 'scripts/regression-radar-availability-browser.mjs'
       - 'scripts/regression-radar-provider-provenance.mjs'
+      - 'scripts/regression-airlabs-explicit-utc.mjs'
       - 'scripts/regression-radar-receipt-preserved.mjs'
       - 'scripts/regression-reported-gate-cache-browser.mjs'
       - 'scripts/regression-radar-source-occurrence.mjs'
@@ -68,9 +73,18 @@ jobs:
       - run: npm ci
       - name: Simulated contract in three timezones (no network, no credentials)
         run: |
+          TZ=UTC node scripts/regression-radar-provider-cooldown.mjs
+          TZ=UTC node scripts/regression-radar-attempt-diagnostics.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-provider-cooldown.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-attempt-diagnostics.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-provider-cooldown.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-attempt-diagnostics.mjs
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          TZ=UTC node scripts/regression-airlabs-explicit-utc.mjs
+          TZ=America/Sao_Paulo node scripts/regression-airlabs-explicit-utc.mjs
+          TZ=Pacific/Auckland node scripts/regression-airlabs-explicit-utc.mjs
           node scripts/regression-aerodatabox-occurrence.mjs
           TZ=UTC node scripts/regression-radar-receipt-preserved.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-receipt-preserved.mjs
@@ -105,9 +119,18 @@ jobs:
       - name: Verify actual prepared Radar handoff, civil date and safe notices
         run: |
           node scripts/v139/apply.mjs
+          TZ=UTC node scripts/regression-radar-provider-cooldown.mjs
+          TZ=UTC node scripts/regression-radar-attempt-diagnostics.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-provider-cooldown.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-attempt-diagnostics.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-provider-cooldown.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-attempt-diagnostics.mjs
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          TZ=UTC node scripts/regression-airlabs-explicit-utc.mjs
+          TZ=America/Sao_Paulo node scripts/regression-airlabs-explicit-utc.mjs
+          TZ=Pacific/Auckland node scripts/regression-airlabs-explicit-utc.mjs
           node scripts/regression-aerodatabox-occurrence.mjs
           TZ=UTC node scripts/regression-radar-receipt-preserved.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-receipt-preserved.mjs
