@@ -42,7 +42,7 @@ export function radarOperationalConflicts(results) {
     }
     const raw = upper(value);
     if (field === 'status') return upper(cleanStatus(value)) || (EMPTY_VALUES.test(raw) || /aguardando|monitorando|n[aã]o confirmado/i.test(raw) ? '' : raw);
-    return raw; // Registration conflict semantics are unchanged.
+    return String(value || '').trim().toUpperCase(); // Preserve the original registration comparison exactly.
   };
   return RADAR_EVIDENCE_FIELDS.filter(field => new Set(results.filter(row => row?.ok).map(row => compare(field, row[field])).filter(Boolean)).size > 1);
 }

@@ -174,6 +174,8 @@ for (const rows of [[item(), item({ gate: 'Gate 12', status: 'Monitorando' })], 
   assert.deepEqual(radarEvidence.radarOperationalConflicts([...rows].reverse()), []);
   assert.equal(JSON.stringify(rows), before, 'comparison never mutates evidence or receipt');
 }
+assert.deepEqual(radarEvidence.radarOperationalConflicts([{ ok: true, registration: 'PR-ABC' }, { ok: true, registration: false }]), [], 'registration false retains original absence semantics');
+assert.deepEqual(radarEvidence.radarOperationalConflicts([{ ok: true, registration: 'PR  ABC' }, { ok: true, registration: 'PR ABC' }]), ['registration'], 'registration whitespace is not silently made equivalent');
 console.log('PASS real race: placeholders and canonical gate spellings, conservative positions and genuine conflicts, generic status');
 payloads.customStale = await scenario(['CREWCHECK_FLIGHT_STATUS_URL'], { custom: custom({ departureGateUpdate: { ...custom().departureGateUpdate, updatedAt: iso(now - RADAR_FIELD_FRESH_MS - 60000) } }) });
 assert.equal(payloads.customStale.operationalEvidenceGaps.gate, 'source-observation-stale');
