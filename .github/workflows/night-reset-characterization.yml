@@ -1,0 +1,39 @@
+name: Night reset characterization (no rule change)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/actRules.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/publishedNightJourneys.ts'
+      - 'scripts/v14359/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-night-reset-48h-characterization.mjs'
+      - '.github/workflows/night-reset-characterization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: night-reset-characterization-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  night-reset-characterization:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Madrugada reset characterization (prepared engine, synthetic)
+        run: node scripts/regression-night-reset-48h-characterization.mjs
