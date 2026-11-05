@@ -23,9 +23,9 @@ const history={OPERATIONAL_HISTORY_ENABLED:true,
  async recordOperationalGateObservation(_db,who,input,opts){assert.equal(who.owner,owner);assert.equal(opts.enabled,true);if(failWrite)throw Error('Synthetic write uncertainty');assert.equal(input.expectedScope.rosterRevision,revision);records.push(structuredClone(input));return {status:'baseline',stored:true};}};
 const start=(req,o)=>beginRadarOperationalHistory(req,o,{enabled:true,identify,loadRuntime:async()=>({history:{...history,OPERATIONAL_HISTORY_ENABLED:historyEnabled},authority}),clock:()=>now});
 const source=fs.readFileSync('server.mjs','utf8');const tree=ts.createSourceFile('server.mjs',source,99,true,ts.ScriptKind.JS);
-const names=['firstKnown','normalizeFlightRaw','buildFlightContext','publicRadarPayload','providerCustom','runRadarRace','handleRadar'];
+const names=['firstKnown','normalizeFlightRaw','buildFlightContext','publicRadarPayload','providerAvailable','providerCustom','runRadarRace','handleRadar'];
 const extract=names.map(name=>{const n=tree.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(n,name);return n.getText(tree);}).join('\n');
-const scope=vm.createContext({...policy,...fields,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FixedDate,URL,setTimeout,clearTimeout,Number,process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},
+const scope=vm.createContext({...policy,...fields,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:FixedDate,URL,setTimeout,clearTimeout,Number,radarHealth:new Map(),process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800',CREWCHECK_FLIGHT_STATUS_URL:'https://fixture.invalid/{flight}'}},
  beginRadarOperationalHistory:start,buildCanonicalRosterEvents,customGateSourceUpdate:p=>customGateSourceUpdate(p,now),
  envAny:()=> 'https://fixture.invalid/{flight}',jsonFetch:async()=>{calls++;late?.();return {response:{ok:true},payload:structuredClone(raw)};},
  providerFlightAware:async()=>other,providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,scoreRadar:r=>r.quality||40,

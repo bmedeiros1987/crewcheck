@@ -55,12 +55,12 @@ for(const kind of ['valid','valid-second-flight','gate-mismatch','future-proof',
  const req={headers:{authorization:'Bearer synthetic-A'}},capture=await beginRadarOperationalHistory(req,i,opts);assert.ok(capture);
  const raw={ok:true,...i,gate:'24',departureGateUpdate:{schema:'crewcheck.departure-gate-update.v1',...i,gate:'24',updatedAt:new Date(now-1000).toISOString()}};
  let customCalls=0,flightAwareCalls=0;
- const race=vm.createContext({...policy,...fields,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},URL,setTimeout,clearTimeout,process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},
+ const race=vm.createContext({...policy,...fields,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},URL,setTimeout,clearTimeout,radarHealth:new Map(),process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800',CREWCHECK_FLIGHT_STATUS_URL:'https://synthetic.invalid/{flight}'}},
   customGateSourceUpdate:p=>customGateSourceUpdate(p,now),ciriumRadarInjectionEnabled:()=>false,ciriumRadarProjection:()=>({}),configuredProviders:()=>[],
   envAny:()=> 'https://synthetic.invalid/{flight}',jsonFetch:async()=>{customCalls++;return {response:{ok:true},payload:structuredClone(raw)};},
   providerFlightAware:async()=>{flightAwareCalls++;return {ok:true,...i,provider:'flightaware',gate:'24',sourceReceivedAt:now-500};},
   providerAviationstack:async()=>null,providerAirLabs:async()=>null,providerAeroDataBox:async()=>null,scoreRadar:r=>r.provider==='flightaware'?80:40});
- vm.runInContext(extract(['firstKnown','publicRadarPayload','providerCustom','runRadarRace']),race);
+ vm.runInContext(extract(['firstKnown','publicRadarPayload','providerAvailable','providerCustom','runRadarRace']),race);
  const result=await race.runRadarRace({gateQueryEvidence:i,operationalHistory:capture,raw:i.flight,iata:i.flight},i.origin,i.destination,i.scheduledDepartureUtc);
  assert.equal(result.provider,'flightaware');assert.equal(result.gateUpdate?.provider,'custom');assert.equal(result.gateEvidenceReceivedAt,now);assert.equal(result.sourceReceivedAt,now-500);
  if(kind==='gate-mismatch')result.gateUpdate={...result.gateUpdate,gate:'25'};
