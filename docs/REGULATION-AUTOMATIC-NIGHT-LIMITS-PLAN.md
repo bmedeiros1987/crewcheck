@@ -1,6 +1,6 @@
 # Automatic night limits — isolated implementation checkpoint
 
-Base: dd20aefa0ac3402e4ece75d601f54a52cde3e730. Sole preparer: existing CrewCheck Work. Branch: fix/regulation-automatic-night-limits. This checkpoint changes no runtime and does not change the night-summary cards, reset characterization, cloud/native authentication, providers or production.
+Base: dd20aefa0ac3402e4ece75d601f54a52cde3e730. Sole preparer: existing CrewCheck Work. Branch: fix/regulation-automatic-night-limits. The initial 0f5a64bd reproduction checkpoint changed no runtime. The later candidate described below implements a bounded comparison and does not change the night-summary cards, reset characterization, cloud/native authentication, providers or production.
 
 ## Reproduced defect
 
@@ -16,7 +16,7 @@ The actual regulationAutomaticAssessment ignores publication history. The synthe
 6. Re-evaluate the same constraint after an admitted operational arrival replaces the scheduled forecast. Do not change provider timestamps, arrival versus engine-stop semantics, or add the manual delay twice.
 7. Midnight policy must be explicit: an exclusive midnight threshold is NOT a fabricated 30min tolerance. At minute-resolution, the latest representable end strictly before midnight is 23:59; subtract the parameterized postflight/tasks to obtain the display cut. Test exact midnight and seconds independently before finalizing this contract.
 
-## Gates still to implement/run
+## Original gate checklist (current results recorded below)
 
 Runtime implementation and green regression; second/third/fourth/fifth, PS/base/earlier OP, 168h/reset, incomplete/raw-normalized-serialized history, month boundary, 3 process timezones, different contractual/acclimatized zones, 30/45min postflight and tasks, operational replacement, A→B/revision/navigation; raw/prepared actual app paths and materializer idempotence; relevant engine regressions, TypeScript/build; independent exact-HEAD review, browser/Inter where officially available, CI. No merge/deploy authorization is inferred from this checkpoint.
 
@@ -31,3 +31,5 @@ Publication provenance prerequisite is reused verbatim from the already reviewed
 Implemented tests include the supplied case, second/third/fourth/fifth, PS/base/earlier OP, no fifth-night PS exemption, exact midnight, source presentation as 168h anchor versus first midnight touch, 47h59/48h Law/ACT free gap, raw/normalized/repeated/serialized histories, missing day/release/profile/base, lost orphan leg, explicit invalid retained evidence, 30/45min postflight/tasks and replacement by an operational projection without adding manual delay. No source timestamp is changed.
 
 Still NOT implemented/attested: operator GRF approval and Appendix-B applicability, Appendix-B acclimatized timezone, B117.29(a)(1) additional-duty restriction after four nights, B117.29(c) 06–08 presentation rule, and RBAC reset including two local nights. These cannot be inferred from a B.1 comparison/profile defaults. This is a bounded Law/ACT candidate for independent review, not completion of all regulatory regimes or clearance. Integration/publication remains on HOLD pending independent applicability review and the remaining app/browser/build/CI gates.
+
+Local review of e4293005 found ACT validity using a fixed BRT date before resolving the base timezone. Corrected to the contractual-base local date; original counterproof preserved by independent reviewer. Final candidate requires a new exact-SHA review. The first full build caught an exact JSX materializer anchor; prop order is corrected while preserving the validator unchanged. A later build-stage Node fetch of an already pinned OCR model failed DNS; the builder will use its existing supported --model-dir with locally preserved, hash-verified model bytes. No source/font/network guard is removed.

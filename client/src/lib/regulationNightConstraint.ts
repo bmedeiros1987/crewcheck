@@ -28,9 +28,9 @@ export function regulationNightConstraint({roster,journey,start,referenceEnd,pro
  // Do not infer operator GRF approval, Appendix B clock or an ACT from B.1.
  if(!profile||profile.role!=='cabin'||profile.confidence!=='alta'||!rule||profile.actName!==rule.actName||!profile.sourceFiles?.includes(rule.sourceFile))return {...result,reason:'Aplicabilidade do ACT/perfil não comprovada; B.1 não comprova GRF'};
  if(rule.nightOps.maxConsecutive!==2||rule.nightOps.maxIn168h!==4||rule.nightOps.resetAfterFreeHours!==48)return {...result,reason:'Regra ACT diferente do contrato implementado'};
- const scenarioDate=new Date(start-3*HOUR).toISOString().slice(0,10);if(scenarioDate<'2025-12-01'||scenarioDate>'2027-11-30')return {...result,reason:'Vigência do ACT não comprovada para a data'};
  if(roster.airline!=='LATAM')return {...result,reason:'Operador/ACT da publicação não comprovado'};
  const zone=airportTimeZone(roster.base);if(!zone)return {...result,reason:'Fuso da base contratual não comprovado'};result.zone=zone;result.applicability='supported_act_comparison';
+ const scenarioDate=localParts(start,zone).date;if(scenarioDate<'2025-12-01'||scenarioDate>'2027-11-30')return {...result,state:'unknown',reason:'Vigência do ACT não comprovada para a data',applicability:'unverified'};
  const events=buildCanonicalRosterEvents(roster),selectedIds=new Set(journey.map(e=>e.journeyId));
  const representedLegs=new Set(events.filter(e=>e.kind==='flight'&&e.leg).map(e=>legKey(e.publishedDay.date,e.leg!)));
  const representedActivities=new Set(events.filter(e=>e.kind==='duty').map(e=>activityKey(e.publishedDay)));

@@ -5711,7 +5711,7 @@ export default function Home() {
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
     {view === 'alerts' && <ReviewedAlerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
-    {view === 'regulation' && <ManualRegulationView nightRoster={alertRosterOwned(bundle.roster)?bundle.roster:null} compliance={compliance} scheduleDay={regulationDay} program={regulationEvent?.canonical} operationalArrival={operationalArrival}/>}
+    {view === 'regulation' && <ManualRegulationView compliance={compliance} nightRoster={alertRosterOwned(bundle.roster)?bundle.roster:null} scheduleDay={regulationDay} program={regulationEvent?.canonical} operationalArrival={operationalArrival}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
