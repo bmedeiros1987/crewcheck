@@ -11,6 +11,19 @@ on:
       - 'client/src/lib/themeRuntime.ts'
       - 'client/src/main.tsx'
       - 'client/src/pages/Home.tsx'
+      - 'server.mjs'
+      - 'server/weather/**'
+      - 'shared/weatherNoticeDetails.*'
+      - 'client/src/lib/alertReviewStore.ts'
+      - 'client/src/lib/operationalWeather*.ts'
+      - 'client/src/lib/rosterStartup.ts'
+      - 'client/src/lib/alertRosterOwnership.ts'
+      - 'client/src/lib/notificationPreferences.ts'
+      - 'client/src/components/pulse/**'
+      - 'shared/operational-weather-pulse.*'
+      - 'shared/weather-observation-source-time.*'
+      - 'shared/weather-station-overrides.*'
+      - 'scripts/regression-weather-pulse-lifecycle-browser.cjs'
       - 'client/src/components/navigation/OperationalLayoutSafety.tsx'
       - 'package.json'
       - 'package-lock.json'
@@ -80,6 +93,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
         run: node scripts/regression-weather-theme-browser.mjs
+      - name: Verify flight-window weather lifecycle with synthetic observations
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
+        run: node scripts/regression-weather-pulse-lifecycle-browser.cjs
       - name: Verify real Pulse touch targets in Chromium and WebKit
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
@@ -93,6 +110,7 @@ jobs:
           name: CrewCheck-weather-theme-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             artifacts/weather-theme
+            artifacts/weather-pulse-lifecycle
             artifacts/pulse-touch-targets
           if-no-files-found: warn
           retention-days: 7

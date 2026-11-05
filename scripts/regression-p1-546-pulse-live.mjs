@@ -5,6 +5,7 @@ import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-ha
 await import('./regression-pulse-mobile-navigation.mjs');
 
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+const weatherNotices = fs.readFileSync('client/src/lib/operationalWeatherNotices.ts', 'utf8');
 const runtime = fs.readFileSync('client/src/components/pulse/pulseRuntime.ts', 'utf8');
 const component = fs.readFileSync('client/src/components/pulse/CrewCheckPulse.tsx', 'utf8');
 const css = fs.readFileSync('client/src/components/pulse/crewcheck-pulse.css', 'utf8');
@@ -22,7 +23,7 @@ for (const marker of [
   "systemNotification: 'background'",
   "view: 'alerts', alert: identity",
 ]) {
-  assert.ok(home.includes(marker), 'integração Pulse ausente após prepare: ' + marker);
+  assert.ok((marker === "category: 'weather'" ? weatherNotices : home).includes(marker), 'integração Pulse ausente após prepare: ' + marker);
 }
 
 assert(home.includes("view === 'notifications' && <NotificationCenter"), 'single Menu notification editor mounted');
@@ -39,7 +40,7 @@ for (const forbidden of [
   assert.ok(!home.includes(forbidden), 'aviso rotineiro voltou a ocupar o Pulse: ' + forbidden);
 }
 assert.ok(home.includes("Portão alterado"), 'mudança confirmada de portão precisa alimentar o Pulse');
-assert.ok(home.includes("Meteorologia crítica") && home.includes("Meteorologia requer atenção"), 'severidade meteorológica existente precisa alimentar o Pulse');
+assert.ok(home.includes('useOperationalWeatherPulse(bundle, events);') && weatherNotices.includes("Meteorologia crítica") && weatherNotices.includes("Meteorologia requer atenção"), 'severidade meteorológica existente precisa alimentar o Pulse pela escala atual');
 assert.ok(home.includes("Bloqueio ou ocorrência crítica na rota"), 'ocorrência crítica de trânsito precisa alimentar o Pulse');
 
 // A publicação normal nunca pede permissão de notificação por conta própria.

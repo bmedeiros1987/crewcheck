@@ -13,7 +13,7 @@ function timestamp(value) {
   return typeof value === 'string' && value.trim() ? Date.parse(value) : NaN;
 }
 
-export function evaluateCriticalWeatherDelivery({ report, station, previous = {}, change, now } = {}) {
+export function evaluateWeatherObservation({ report, station, now } = {}) {
   const reject = (reason) => ({ accepted: false, shouldSend: false, reason });
   if (!Number.isFinite(now)) return reject('invalid_now');
   if (report?.ok !== true || report?.official !== true || !['redemet', 'aviationweather'].includes(report?.provider)) {
@@ -33,6 +33,15 @@ export function evaluateCriticalWeatherDelivery({ report, station, previous = {}
   }
   if (observedAt > now) return reject('future_observation');
   if (now - observedAt > WEATHER_OBSERVATION_MAX_AGE_MS) return reject('stale_observation');
+  return { accepted: true, observedAt: observed.toISOString(), expiresAt: observedAt + WEATHER_OBSERVATION_MAX_AGE_MS };
+}
+
+export function evaluateCriticalWeatherDelivery({ report, station, previous = {}, change, now } = {}) {
+  const reject = (reason) => ({ accepted: false, shouldSend: false, reason });
+  const observation = evaluateWeatherObservation({ report, station, now });
+  if (!observation.accepted) return observation;
+  const observedAt = Date.parse(observation.observedAt);
+  const observed = new Date(observedAt);
   const previousObservedAt = timestamp(previous.observedAt);
   if (Number.isFinite(previousObservedAt) && observedAt < previousObservedAt) return reject('older_observation');
   if (!change || !Number.isInteger(change.severity) || change.severity < 0 || change.severity > 3 || !change.fingerprint) {
@@ -56,4 +65,16 @@ export function evaluateCriticalWeatherDelivery({ report, station, previous = {}
         : cooldownActive && !severityIncreased ? 'cooldown'
           : firstRelevantObservation ? 'first_relevant_observation' : 'relevant_worsening';
   return { accepted: true, shouldSend, reason, firstObservation, observedAt: observed.toISOString() };
+}
+
+// Existing CrewCierge scheduling policy, not aircraft/weather minima.
+// Inputs are absolute canonical instants; a device-local clock is not evidence.
+export function weatherFlightWindow({ departure, arrival, role, now } = {}) {
+  const instant = value => typeof value === 'number' && Number.isFinite(value) ? value
+    : typeof value === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? Date.parse(value) : NaN;
+  const start = instant(departure), end = instant(arrival);
+  if (!Number.isFinite(now) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) return { eligible: false };
+  const bounds = role === 'origin' ? [start - 180 * 60_000, start + 30 * 60_000]
+    : role === 'destination' ? [end - 120 * 60_000, end + 45 * 60_000] : null;
+  return bounds ? { eligible: now >= bounds[0] && now <= bounds[1], opensAt: bounds[0], closesAt: bounds[1] } : { eligible: false };
 }
