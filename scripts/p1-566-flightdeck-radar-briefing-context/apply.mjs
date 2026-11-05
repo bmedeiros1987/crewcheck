@@ -97,14 +97,14 @@ update('client/src/pages/Home.tsx', (source) => {
     }
     radar = required(
       radar,
-      "<button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button>",
-      "<button onClick={openWeatherFromRadar}><CloudSun/> Meteorologia</button>",
+      "<button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))} aria-label=\"Meteorologia\"><CloudSun aria-hidden=\"true\"/> Meteo</button>",
+      "<button onClick={openWeatherFromRadar} aria-label=\"Meteorologia\"><CloudSun aria-hidden=\"true\"/> Meteo</button>",
       'handoff Radar → Meteorologia',
     );
     return required(
       radar,
-      'return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1>',
-      'return <><Brand back/><FlightDeckNavigationContext targetView="radar"/><section className="cz-panel-head"><h1>Radar de voos</h1>',
+      'return <><Brand back/><section className="cz-panel-head"><h1>Radar</h1>',
+      'return <><Brand back/><FlightDeckNavigationContext targetView="radar"/><section className="cz-panel-head"><h1>Radar</h1>',
       'faixa contextual do Radar',
     );
   }, 'RadarView');

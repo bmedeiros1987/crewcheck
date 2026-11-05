@@ -6,7 +6,7 @@ const start=home.indexOf('function FollowFlightPanel('),end=home.indexOf('functi
 assert.ok(start>0&&end>start);const code=ts.transpileModule(home.slice(start,end)+'\nexports.panel=FollowFlightPanel;exports.candidate=positioningFollowCandidate;exports.fromEvent=followCandidate;', {compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText;
 const data=new Map(),storage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};
 let owner='A',token='token-A',valid=false;const exports={};const h=(type,props,...children)=>({type,props:props||{},children});
-vm.runInNewContext(code,{exports,publishedGateDate,React:{createElement:h},followedFlight,followedFlightKey,readFollowedFlights,changeFollowedFlights,localStorage:storage,useState:()=>[0,()=>{}],useEffect(){},manualGateAccountKey:()=>owner,getStoredUser:()=>({id:owner}),getToken:()=>token,readRadarSnapshot:()=>valid?{source:'Synthetic source',updatedAt:Date.now()}:null,radarGateInfo:()=>valid?{gate:'A1',gateSource:'radar',status:'Scheduled',statusSource:'radar'}:{},toast:{error(){}},Date,Intl});
+vm.runInNewContext(code,{exports,Plus:()=>null,X:()=>null,ShieldCheck:()=>null,publishedGateDate,React:{createElement:h},followedFlight,followedFlightKey,readFollowedFlights,changeFollowedFlights,localStorage:storage,useState:()=>[0,()=>{}],useEffect(){},manualGateAccountKey:()=>owner,getStoredUser:()=>({id:owner}),getToken:()=>token,readRadarSnapshot:()=>valid?{source:'Synthetic source',updatedAt:Date.now()}:null,radarGateInfo:()=>valid?{gate:'A1',gateSource:'radar',status:'Scheduled',statusSource:'radar'}:{},toast:{error(){}},Date,Intl});
 const candidate=followedFlight({eventId:'synthetic',flight:'ZZ123',origin:'SSA',destination:'GRU',scheduledDepartureUtc:'2030-10-21T13:00:00Z',date:'2030-10-21'});
 const text=n=>n==null?'':Array.isArray(n)?n.map(text).join(' '):typeof n==='object'?text(n.children):String(n);
 const find=(n,p)=>Array.isArray(n)?n.flatMap(x=>find(x,p)):n&&typeof n==='object'?[...(p(n)?[n]:[]),...find(n.children,p)]:[];
@@ -16,8 +16,8 @@ let node=render();find(node,n=>n.type==='button'&&text(n).includes('Acompanhar')
 assert.equal(readFollowedFlights(storage,'A').length,1);
 node=render();assert.match(text(node),/Sem dados operacionais válidos/);assert.ok(!text(node).includes('Synthetic source'));
 valid=true;node=render();assert.match(text(node),/A1/);assert.match(text(node),/Synthetic source/);
-const stop=find(node,n=>n.type==='button'&&text(n)==='Parar')[0];owner='B';token='token-B';stop.props.onClick();assert.equal(readFollowedFlights(storage,'A').length,1);assert.equal(readFollowedFlights(storage,'B').length,0);
-owner='A';token='token-A';find(render(),n=>n.type==='button'&&text(n)==='Parar')[0].props.onClick();assert.equal(readFollowedFlights(storage,'A').length,0);
+const stop=find(node,n=>n.type==='button'&&n.props['aria-label']==='Parar acompanhamento de ZZ123 SSA para GRU')[0];owner='B';token='token-B';stop.props.onClick();assert.equal(readFollowedFlights(storage,'A').length,1);assert.equal(readFollowedFlights(storage,'B').length,0);
+owner='A';token='token-A';find(render(),n=>n.type==='button'&&n.props['aria-label']==='Parar acompanhamento de ZZ123 SSA para GRU')[0].props.onClick();assert.equal(readFollowedFlights(storage,'A').length,0);
 assert.ok(home.includes('candidate={positioningFollowCandidate(positioningRecord)}'));
 assert.ok(!home.slice(start,end).includes('fetch('));
 console.log('PASS actual panel: follow, reload, stop, stale handler across account/session, no valid cache, valid provenance, malformed positioning and zero network effects');
