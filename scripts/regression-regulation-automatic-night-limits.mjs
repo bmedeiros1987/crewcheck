@@ -10,7 +10,7 @@ try{
  const events=m.buildCanonicalRosterEvents({days:[day],year:2026,month:11,base:'BSB'}).filter(e=>e.kind==='flight');
  const ui=events.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));
  const c=m.regulationAutomaticContext(m.regulationProgramDay(ui,ui[0]),events[0]);
- const history={rank:'CCM',airline:'LATAM',base:'BSB',year:2026,month:11,days:Array.from({length:8},(_,i)=>{const n=i+29,d=new Date(Date.UTC(2026,9,n)),date=d.toISOString().slice(0,10).split('-').reverse().join('/');return {...day,date,type:'DO',legs:[]};})};
+ const history={rank:'CCM',airline:'LATAM',base:'BSB',year:2026,month:11,days:Array.from({length:10},(_,i)=>{const n=i+27,d=new Date(Date.UTC(2026,9,n)),date=d.toISOString().slice(0,10).split('-').reverse().join('/');return {...day,date,type:'DO',legs:[]};})};
  for(const n of [3,4]){const i=history.days.findIndex(d=>d.date===`0${n}/11/2026`);history.days[i]={...day,date:`0${n}/11/2026`,dutyReport:'19:00',dutyDebrief:'02:30',isNextDay:true,legs:[{...leg,presentationTime:'19:00',departureTime:'20:00',arrivalTime:'02:00',isNextDay:true}]};}
  history.days[history.days.findIndex(d=>d.date===day.date)]=day;
  const candidate={...c.form,presentation:'2026-11-05T14:53',plannedEnd:'2026-11-05T23:25'};
@@ -31,6 +31,7 @@ try{
  const direct=(h,overrides={})=>m.regulationNightConstraint({roster:h,journey:c.journey,start:Date.parse(candidate.presentation+candidate.offset),referenceEnd:Date.parse('2026-11-06T04:53:00Z'),projectedEnd:Date.parse('2026-11-06T03:30:00Z'),profile,workTypes:['OP'],...overrides});
  const psJourney=c.journey.map(e=>({...e,destination:'BSB',leg:{...e.leg,destination:'BSB',workType:'PS'}}));
  const ps=direct(history,{journey:psJourney,workTypes:['PS']});assert.equal(ps.thirdExtraException,true);assert.equal(ps.state,'below');assert.equal(direct(history,{workTypes:['PS']}).thirdExtraException,false,'non-base return has no exception');assert.equal(direct(history,{journey:psJourney,workTypes:['OP','PS']}).thirdExtraException,false,'earlier OP forbids exception');
+ assert.equal(direct(history,{journey:psJourney.map(e=>({...e,leg:{...e.leg,workType:'OP'}})),workTypes:['PS']}).thirdExtraException,false,'scenario edit cannot erase published OP for third-extra exception');
  const midnight=direct(history,{referenceEnd:Date.parse('2026-11-06T03:00:00Z')});assert.equal(midnight.state,'restricted');assert.equal(midnight.latestDutyEnd,'2026-11-06T02:59:00.000Z');assert.equal(direct(history,{referenceEnd:Date.parse('2026-11-06T02:59:00Z')}).state,'below');
  const makeNight=(date)=>({...day,date,dutyReport:'19:00',dutyDebrief:'02:30',isNextDay:true,legs:[{...leg,presentationTime:'19:00',departureTime:'20:00',arrivalTime:'02:00',isNextDay:true}]});
  const fourth=clone(history);for(const d of fourth.days)Object.assign(d,{type:'DO',legs:[]});for(const date of ['30/10/2026','01/11/2026','03/11/2026'])Object.assign(fourth.days.find(d=>d.date===date),makeNight(date));
@@ -48,6 +49,7 @@ try{
  const manaus=assess({...history,base:'MAO'});assert.equal(manaus.normalDutyEnd,'2026-11-06T03:59:00.000Z');assert.equal(manaus.engineStopLimit,'2026-11-06T03:29:00.000Z');assert.equal(manaus.night.zone,'America/Manaus');
  assert.equal(assess({...history,airline:'UNKNOWN'}).night.state,'unknown');
  assert.match(direct({...history,base:'MAO'},{start:Date.parse('2025-12-01T03:30:00Z')}).reason,/Vigência/,'validity uses contractual-base date, not BRT');
+ const anchorUnknown=clone(fifth);anchorUnknown.days=anchorUnknown.days.filter(d=>!['27/10/2026','28/10/2026'].includes(d.date));assert.equal(direct(anchorUnknown).state,'unknown','earliest visible activity is not a proven 168h anchor');
  const frozen=JSON.stringify(history);assess();assert.equal(JSON.stringify(history),frozen,'no mutation');
  console.log('PASS automatic night constraint: original 01:23/01:53/+148→23:29/23:59/+34, second/third/fourth/fifth, PS/base/earlierOP, full duty/postflight/tasks, operational replacement, missing provenance/profile/history, exact midnight and presentation-based168h; synthetic only');
 }finally{fs.rmSync(dir,{recursive:true,force:true});}

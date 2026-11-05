@@ -40,25 +40,29 @@ export function regulationNightConstraint({roster,journey,start,referenceEnd,pro
   return getRosterCodeDefinition(record.type)?.category!=='DAY_OFF'&&!representedActivities.has(activityKey(record as RosterDay));
  };
  const retainedMissing=(value:unknown):boolean=>!object(value)||(value.records!==undefined?(!Array.isArray(value.records)||!value.records.length||value.records.some(recordMissing)):recordMissing(value));
- const from=start-168*HOUR,firstDate=localParts(from,zone).date,lastDate=localParts(start,zone).date;
+ const from=start-168*HOUR,lastDate=localParts(start,zone).date;let firstDate=localParts(from,zone).date;
+ // Up to two preceding published days may prove the free gap that establishes
+ // an anchor. Never invent that anchor at the first activity we happen to see.
+ const availableDates=new Set(roster.days.filter(d=>!(d as any).continuityInferred).map(d=>dateKey(d.date)));for(let i=0;i<2;i++){const previous=new Date(Date.parse(firstDate+'T12:00Z')-DAY).toISOString().slice(0,10);if(!availableDates.has(previous))break;firstDate=previous;}
  const days=roster.days.filter(d=>!(d as any).continuityInferred&&dateKey(d.date)>=firstDate&&dateKey(d.date)<=lastDate);
  const dates=new Set(days.map(d=>dateKey(d.date)));
  for(let d=Date.parse(firstDate+'T12:00Z');d<=Date.parse(lastDate+'T12:00Z');d+=DAY){if(!dates.has(new Date(d).toISOString().slice(0,10)))return {...result,reason:'Histórico diário incompleto na janela anterior de 168h'};}
  if(days.some(recordMissing)||days.some(d=>Object.hasOwn(d,'publishedClockEvidence')&&retainedMissing((d as any).publishedClockEvidence))||Object.hasOwn(roster,'publishedActivityEvidence')&&retainedMissing((roster as any).publishedActivityEvidence))return {...result,reason:'Atividade publicada sem cobertura/temporização íntegra'};
+ const coverageStart=wall(firstDate,0,zone);if(coverageStart===null)return result;
  const groups=new Map<string,CanonicalRosterEvent[]>();for(const e of events){if(!['flight','duty'].includes(e.kind)||selectedIds.has(e.journeyId))continue;const group=groups.get(e.journeyId)||[];group.push(e);groups.set(e.journeyId,group);}
  const previous:{id:string;start:number;end:number;night:boolean;availability:boolean}[]=[];
- for(const [id,group] of groups){const selected=group[0],estimate=Date.parse(selected.startDateTime);if(estimate>=start||estimate<from-DAY)continue;const m=measureCanonicalDuty(events,selected.id);if(m?.state!=='available'||!m.start||!m.end)return {...result,reason:'Início/fim de jornada anterior não comprovado'};const s=Date.parse(m.start),end=Date.parse(m.end);if(end>start)return {...result,reason:'Jornadas publicadas sobrepostas'};if(end<from)continue;const touched=bands(s,end,zone);if(touched===null)return {...result,reason:'Transição do fuso sem extremos verificáveis'};const category=getRosterCodeDefinition(selected.publishedDay.type)?.category;previous.push({id,start:s,end,night:touched.length>0,availability:category==='STANDBY'||category==='RESERVE'});}
+ for(const [id,group] of groups){const selected=group[0],estimate=Date.parse(selected.startDateTime);if(estimate>=start||estimate<coverageStart-DAY)continue;const m=measureCanonicalDuty(events,selected.id);if(m?.state!=='available'||!m.start||!m.end)return {...result,reason:'Início/fim de jornada anterior não comprovado'};const s=Date.parse(m.start),end=Date.parse(m.end);if(end>start)return {...result,reason:'Jornadas publicadas sobrepostas'};if(end<coverageStart)continue;const touched=bands(s,end,zone);if(touched===null)return {...result,reason:'Transição do fuso sem extremos verificáveis'};const category=getRosterCodeDefinition(selected.publishedDay.type)?.category;previous.push({id,start:s,end,night:touched.length>0,availability:category==='STANDBY'||category==='RESERVE'});}
  previous.sort((a,b)=>a.start-b.start||a.id.localeCompare(b.id));
  // The Law/ACT 168h anchor is PRESENTATION, not first midnight touch.
  // A reset requires a proven activity-free gap; availability blocks that gap.
- const coverageStart=wall(firstDate,0,zone);if(coverageStart===null)return result;
  let busyEnd=coverageStart,anchor:number|null=null,consecutive=0,count=0;
- for(const j of previous){if(j.start-busyEnd>=48*HOUR){anchor=j.start;count=0;consecutive=0;}if(anchor===null)anchor=j.start;if(j.start-anchor>=168*HOUR){anchor=j.start;count=0;}if(!j.availability){if(j.night){count++;consecutive++;}else consecutive=0;}busyEnd=Math.max(busyEnd,j.end);}
- if(start-busyEnd>=48*HOUR){anchor=start;count=0;consecutive=0;}if(anchor===null)anchor=start;if(start-anchor>=168*HOUR){anchor=start;count=0;}
+ for(const j of previous){if(j.start-busyEnd>=48*HOUR){anchor=j.start;count=0;consecutive=0;}if(anchor!==null&&j.start-anchor>=168*HOUR){anchor=j.start;count=0;}if(!j.availability){if(j.night){count++;consecutive++;}else consecutive=0;}busyEnd=Math.max(busyEnd,j.end);}
+ if(start-busyEnd>=48*HOUR){anchor=start;count=0;consecutive=0;}if(anchor===null)return {...result,reason:'Âncora de apresentação/168h sem reinício comprovado'};if(start-anchor>=168*HOUR){anchor=start;count=0;}
  const end=referenceEnd??projectedEnd;if(end===null||!Number.isFinite(end)||end<start)return {...result,reason:'Encerramento da jornada não calculável'};
  const potential=bands(start,end,zone),projected=projectedEnd===null?null:bands(start,projectedEnd,zone);if(potential===null||projected===null&&projectedEnd!==null)return {...result,reason:'Intervalo/fuso do cenário não comprovado'};
  const finalDestination=journey.at(-1)?.destination;
- const extra=workTypes.length>0&&workTypes.every(t=>t==='PS')&&!!roster.base&&finalDestination===roster.base;
+ const publishedTypes=journey.map(e=>e.leg?.workType);
+ const extra=workTypes.length>0&&workTypes.length===publishedTypes.length&&workTypes.every(t=>t==='PS')&&publishedTypes.every(t=>t==='PS')&&!!roster.base&&finalDestination===roster.base;
  const thirdExtra=consecutive===2&&extra;
  const banConsecutive=consecutive>=2&&!thirdExtra,banWindow=count>=4;
  const forbidden=(banConsecutive||banWindow)?potential[0]:null;
