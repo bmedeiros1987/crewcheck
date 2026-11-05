@@ -1,9 +1,9 @@
 import { infobipCanonicalLinkDestination, infobipCanonicalLinkStatus } from './infobip-whatsapp-link-policy.mjs';
 import crypto from 'node:crypto';
-import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
+import {completeCanonicalWhatsAppLink, startCanonicalWhatsAppChallenge, lockCanonicalWhatsAppOwner, clearCanonicalWhatsAppChallenge} from './whatsapp-link-proof.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
 import {eraseWhatsAppAccountState} from './whatsapp-lifecycle.mjs';
-import { dbPool, requireIdentity, secureCompare } from './v139/common.mjs';
+import { dbPool, requireExistingIdentity, secureCompare } from './v139/common.mjs';
 
 const MAX_WEBHOOK_BYTES = 1_000_000;
 const MEMORY_DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
@@ -556,7 +556,7 @@ async function handleNotification(req, res) {
 
 async function handleLinkStart(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
-  const identity = await requireIdentity(req, res);
+  const identity = await requireExistingIdentity(req, res);
   if (!identity) return;
   let body = {};
   try {
@@ -572,25 +572,18 @@ async function handleLinkStart(req, res) {
     ? await infobipCanonicalLinkDestination()
     : normalizePhone(businessNumber());
   if (body.provider === 'infobip' && !number) return sendJson(res, 503, { ok: false, message: 'Recebimento restrito da Infobip ainda não está disponível para vincular. Nenhum código foi criado.' });
-  const db = await ensureWhatsAppTables(identity.db);
+  const db = identity.db;
   if (!db || !auditSecret()) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
 
-  await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=? OR expires_at <= UTC_TIMESTAMP(3)', [identity.email]);
-  let code = '';
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const candidate = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-    const hash = linkCodeHash(candidate);
-    try {
-      await db.query(
-        `INSERT INTO crewcheck_whatsapp_link_codes (email,code_hash,expires_at)
-         VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ${LINK_TTL_MINUTES} MINUTE))`,
-        [identity.email, hash],
-      );
-      code = candidate;
-      break;
-    } catch (error) {
-      if (String(error?.code || '') !== 'ER_DUP_ENTRY') throw error;
-    }
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  try {
+    await createInfobipSqlBudget(db)(c => startCanonicalWhatsAppChallenge(c, {
+      email: identity.email, publicId: identity.profile?.public_id, codeHash: linkCodeHash(code),
+    }));
+  } catch {
+    // Includes duplicate-code collision and ambiguous commit: never expose an
+    // unconfirmed challenge or retry an unknown transaction automatically.
+    return sendJson(res, 503, { ok: false, message: 'Não consegui gerar o código agora. Tente novamente.' });
   }
   if (!code) return sendJson(res, 503, { ok: false, message: 'Não consegui gerar o código agora. Tente novamente.' });
   const openUrl = number ? `https://wa.me/${number}?text=${encodeURIComponent(code)}` : '';
@@ -605,25 +598,26 @@ async function handleLinkStart(req, res) {
 
 async function handleLinkStatus(req, res, url) {
   if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
-  const identity = await requireIdentity(req, res);
+  const identity = await requireExistingIdentity(req, res);
   if (!identity) return;
   const provider=url?.searchParams.get('provider')||'';
   if(provider&&provider!=='infobip')return sendJson(res,400,{ok:false,message:'Provedor de vínculo inválido.'});
   const db = identity.db;
   if (!db) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
-  let rows;
-  try { [rows] = await db.query(
-    `SELECT phone_hash,phone_last4,consent_concierge,consent_alerts,linked_at,updated_at,revoked_at
-     FROM crewcheck_whatsapp_links WHERE email=? AND revoked_at IS NULL LIMIT 1`,
-    [identity.email],
-  ); } catch { return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' }); }
-  const link = rows[0];
+  let link;
+  try {
+    link = await createInfobipSqlBudget(db)(async c => {
+      await lockCanonicalWhatsAppOwner(c, identity.email, identity.profile?.public_id);
+      const [rows] = await c.query(
+        `SELECT phone_hash,phone_last4,consent_concierge,consent_alerts,linked_at,updated_at,revoked_at
+         FROM crewcheck_whatsapp_links WHERE email=? AND revoked_at IS NULL LIMIT 2 FOR UPDATE`, [identity.email]);
+      if (rows.length > 1) throw Error('WHATSAPP_LINK_INVARIANT');
+      return rows[0];
+    });
+  } catch { return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' }); }
   let diagnosis;
   if(provider==='infobip') {
-    let owners=[];
-    try {if(link)[owners]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 2',[identity.email]);}
-    catch {return sendJson(res,503,{ok:false,message:'Vínculo do WhatsApp temporariamente indisponível.'});}
-    diagnosis=await infobipCanonicalLinkStatus(link,{hashPhone:privateHash,ownerReady:owners.length===1&&Boolean(owners[0].public_id),ownerPublicId:owners.length===1?owners[0].public_id:undefined});
+    diagnosis=await infobipCanonicalLinkStatus(link,{hashPhone:privateHash,ownerReady:true,ownerPublicId:identity.profile.public_id});
   }
   return sendJson(res, 200, {
     ok: true,
@@ -638,16 +632,24 @@ async function handleLinkStatus(req, res, url) {
 
 async function handleUnlink(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
-  const identity = await requireIdentity(req, res);
+  const identity = await requireExistingIdentity(req, res);
   if (!identity) return;
-  const db = await ensureWhatsAppTables(identity.db);
+  const db = identity.db;
   if (!db) return sendJson(res, 503, { ok: false, message: 'Vínculo do WhatsApp temporariamente indisponível.' });
-  await db.query(
-    `UPDATE crewcheck_whatsapp_links SET revoked_at=CURRENT_TIMESTAMP(3),consent_concierge=0,consent_alerts=0,updated_at=CURRENT_TIMESTAMP(3) WHERE email=?`,
-    [identity.email],
-  );
-  await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?', [identity.email]);
-  try {await eraseWhatsAppAccountState(identity.email,{db});}
+  try {
+    await createInfobipSqlBudget(db)(async c => {
+      await lockCanonicalWhatsAppOwner(c, identity.email, identity.profile?.public_id);
+      await c.query(
+        `UPDATE crewcheck_whatsapp_links SET revoked_at=CURRENT_TIMESTAMP(3),consent_concierge=0,consent_alerts=0,updated_at=CURRENT_TIMESTAMP(3) WHERE email=?`,
+        [identity.email],
+      );
+      await c.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?', [identity.email]);
+      await clearCanonicalWhatsAppChallenge(c, identity.profile.public_id);
+    });
+  } catch {
+    return sendJson(res, 503, { ok: false, code: 'WHATSAPP_REVOCATION_PENDING', message: 'Não foi possível confirmar a desvinculação. Tente novamente.' });
+  }
+  try {await eraseWhatsAppAccountState(identity.email,{db,expectedPublicId:identity.profile.public_id});}
   catch {return sendJson(res,503,{ok:false,linked:false,code:'WHATSAPP_REVOCATION_PENDING',message:'Novas respostas foram bloqueadas; a conclusão da desvinculação está pendente.'});}
   return sendJson(res, 200, { ok: true, linked: false, message: 'WhatsApp desvinculado da sua conta.' });
 }
