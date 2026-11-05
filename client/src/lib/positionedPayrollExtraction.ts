@@ -24,7 +24,7 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
   const rows=page.geometry?.version===1?page.geometry.rows:null;
   const source=(r:PayrollGeometryRow,field:string):PayrollSource=>({page:page.page,origin:page.origin??'document-logical',line:r.line,field,text:r.cells.map(c=>c.text).join(' ')});
   if(!rows||page.origin!=='pdf-physical'){fail({page:page.page,origin:page.origin??'document-logical',line:1,field:'layout',text:''},'Página sem geometria PDF comprovada.');continue;}
-  let bounds:number[]|null=null,footer=false,recognized=false,afterTotals=false;
+  let bounds:number[]|null=null,footer=false,recognized=false,tableSeen=false;
   function group(row:PayrollGeometryRow,xs:number[]){
    const values=xs.map(()=>[] as string[]);let valid=true;
    for(const c of row.cells){const n=xs.findLastIndex(x=>c.x>=x-0.5);if(n<0||c.width===null||!Number.isFinite(c.x)||!Number.isFinite(c.width)||c.width<0||n+1<xs.length&&c.x+c.width>xs[n+1]+0.5){valid=false;continue;}values[n].push(c.text.trim());}
@@ -54,16 +54,16 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
     i+=headerRows;continue;
    }
    if(columns.every(name=>headingCells.some(c=>c.text===name))){
-    recognized=true;
+    recognized=true;tableSeen=true;
     const sorted=columns.map(name=>headingCells.filter(c=>c.text===name));
     if(sorted.some(c=>c.length!==1)||sorted.some((c,j)=>j>0&&c[0].x<=sorted[j-1][0].x)){fail(ref('layout'),'Cabeçalhos duplicados ou fora de ordem.');bounds=null;}else bounds=sorted.map(c=>c[0].x);
     continue;
    }
-   if(!bounds){if(afterTotals&&/\d+[.,]\d+/.test(text))fail(ref('layout'),'Conteúdo monetário não associado após os totais.');continue;}
+   if(!bounds){if(/\d+[.,]\d+|R\$|REDACT|REDIG|OCULTO|\*{2,}|\b(?:PROVENTOS?|DESCONTOS?|INSS|IRRF|TOTAIS)\b/.test(text))fail(ref('layout'),'Conteúdo financeiro sem cabeçalho de colunas; revisão obrigatória.');continue;}
    const grouped=group(row,bounds),[code,quantity,ratio,label,credit,debit]=grouped.values;
    if(/\bTOTAIS\b/.test(text)){
     if(!grouped.valid)fail(ref('totals'),'Totais atravessam colunas.');
-    else{readNumber(result.totals.gross,credit,ref('gross'));readNumber(result.totals.deductions,debit,ref('deductions'));}bounds=null;afterTotals=true;continue;
+    else{readNumber(result.totals.gross,credit,ref('gross'));readNumber(result.totals.deductions,debit,ref('deductions'));}bounds=null;continue;
    }
    if(!grouped.valid||!/^\d{1,8}$/.test(code)||!label){fail(ref('item'),'Rubrica sem vínculo geométrico completo.');continue;}
    const direction=credit&&!debit?'credit':debit&&!credit?'debit':'unknown';
@@ -74,7 +74,9 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
    if(quantity)readNumber(item.quantity!,quantity,ref('quantity'),'quantity');if(ratio)readNumber(item.printedRate!,ratio,ref('printedRate'),'rate');
    result.items.push(item);
   }
-  if(!recognized)fail({page:page.page,origin:page.origin??'document-logical',line:1,field:'layout',text:''},'Página adicional sem estrutura reconhecida; revisão obrigatória.');
+  // This supported layout requires a complete column header on every PDF page.
+  // Metadata alone cannot certify an unknown continuation as fully read.
+  if(!recognized||!tableSeen)fail({page:page.page,origin:page.origin??'document-logical',line:1,field:'layout',text:''},'Página adicional sem estrutura reconhecida; revisão obrigatória.');
  }
  for(const item of result.items)if(ready(result.competence))item.competence=result.competence.candidates[0].value;
  const fields=[result.competence,result.creditDate,result.monthlyBase,...Object.values(result.totals)];
