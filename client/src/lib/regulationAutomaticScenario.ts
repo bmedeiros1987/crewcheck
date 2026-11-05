@@ -5,6 +5,7 @@ import {regulationNightConstraint,nightDutyTouches} from './regulationNightConst
 import type {CrewRoster,RosterDay,FlightLeg} from './pdfParser';
 import type {CanonicalRosterEvent} from './canonicalRoster';
 import type {LegalProfileSummary} from './actRules';
+import {regulationOperationalInstant} from '../../../shared/regulationOperationalArrival.mjs';
 import {explicitInstant} from '../../../shared/regulationTemporalScenario.mjs';
 import {publishedDutyEndpoints} from './canonicalDutyMeasurement';
 
@@ -65,11 +66,11 @@ export function regulationAutomaticAssessment(context:ReturnType<typeof regulati
  const derivedEnd=context.plannedEndSource==='scheduled_arrival_plus_scenario_postflight'&&form.plannedEnd===context.form.plannedEnd
   ?context.scheduledArrival!==null&&minimumPost!==null&&post!==null&&post>=minimumPost&&tasks!==null?context.scheduledArrival+(post+tasks)*60_000:null:end;
  const validEnd=derivedEnd!==null&&stamp!==null&&derivedEnd>=stamp;
- const projected=operationalDutyEnd!==undefined?(operationalDutyEnd===null?null:explicitInstant(operationalDutyEnd)):validEnd&&delay!==null?derivedEnd!+delay*60_000:null;
+ const projected=operationalDutyEnd!==undefined?(operationalDutyEnd===null?null:regulationOperationalInstant(operationalDutyEnd)):validEnd&&delay!==null?derivedEnd!+delay*60_000:null;
  const night=regulationNightConstraint({roster,journey:context.journey,start:stamp,referenceEnd:normalEnd,projectedEnd:projected,profile,workTypes:classifications});
  const touches=normalEnd!==null&&stamp!==null?nightDutyTouches(stamp,normalEnd,roster?.base||context.journey[0]?.publishedDay.base||''):null;
  if(night.state==='restricted')normalEnd=normalEnd!==null&&night.latestDutyEnd?Math.min(normalEnd,Date.parse(night.latestDutyEnd)):null;
- else if(night.state==='unknown'&&touches!==false)normalEnd=null;
+ else if(night.state==='unknown'&&(roster!==undefined||touches!==false))normalEnd=null;
  const cut=normalEnd!==null&&finalOperating&&minimumPost!==null&&post!==null&&post>=minimumPost&&tasks!==null&&stamp!==null&&normalEnd-(post+tasks)*60_000>=stamp?normalEnd-(post+tasks)*60_000:null;
 
  const iso=(value:number|null)=>value===null?null:new Date(value).toISOString();
