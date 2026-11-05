@@ -1,0 +1,163 @@
+name: Roster history and revision reproduction
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/regulatoryHistory.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/compensationPolicy.ts'
+      - 'client/src/lib/financialForecastPeriods.ts'
+      - 'client/src/lib/nextFinancialPayment.ts'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'server/platform.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-roster-history-context-repro.mjs'
+      - 'scripts/regression-roster-revision-persistence-repro.mjs'
+      - 'scripts/regression-roster-sync-current-path-counterexamples.mjs'
+      - 'scripts/regression-roster-revision-sync-proposal.mjs'
+      - 'scripts/regression-roster-revision-reconcile-interleavings.mjs'
+      - 'scripts/regression-roster-revision-receipts.mjs'
+      - 'scripts/regression-roster-revision-legacy.mjs'
+      - 'scripts/regression-roster-revision-backfill.mjs'
+      - 'scripts/regression-roster-revision-rollback.mjs'
+      - 'scripts/lib/qa-module-closure.mjs'
+      - 'server/mysql-platform-adapter.mjs'
+      - 'migrations/20260715_003_aiven_mysql_full_platform.sql'
+      - 'docs/proposals/roster-revision-sync/**'
+      - 'scripts/regression-roster-active-swap-ui-browser.cjs'
+      - 'client/src/components/v1391/**'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - '.github/workflows/roster-history-repro.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roster-history-repro-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  roster-history-repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Revision proposal reconciliation interleavings and mutants (pure)
+        run: node scripts/regression-roster-revision-reconcile-interleavings.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Roster history context (prepared sources)
+        run: node scripts/regression-roster-history-context-repro.mjs
+      - name: Revised roster persistence and allowance cycle (prepared sources)
+        run: node scripts/regression-roster-revision-persistence-repro.mjs
+
+  roster-sync-disposable-mysql:
+    name: Roster sync counterexamples and revision proposal (disposable MySQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Start disposable MySQL without network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-roster-sync-qa-socket
+          docker run --detach --rm --name crewcheck-roster-sync-qa --network none --mount type=bind,source=/tmp/crewcheck-roster-sync-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_roster_revision_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-roster-sync-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-roster-sync-qa mysql --database=crewcheck_roster_revision_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-roster-sync-qa mysql --database=crewcheck_roster_revision_qa --execute='SELECT 1'
+          docker exec crewcheck-roster-sync-qa chmod 755 /var/run/mysqld
+      - name: Revision proposal (draft schema, reference protocol, device reconciliation)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-revision-sync-proposal.mjs
+      - name: Revision proposal operation receipts (no-op/ACK/replay/concurrency/atomicity, mutants)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-revision-receipts.mjs
+      - name: Revision proposal legacy compatibility (create-only, 428 + pending, explicit confirmation, mutants)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-revision-legacy.mjs
+      - name: Revision proposal backfill rehearsal (synthetic rows and bindings; crash, resume, concurrency, mutants)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-revision-backfill.mjs
+      - name: Revision proposal fail-closed rollback (write fence, old runtime guard, concurrent switch, mutants)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-revision-rollback.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Current path counterexamples (prepared client and handler, real SQL)
+        env:
+          CREWCHECK_ROSTER_SYNC_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-roster-sync-qa-socket/mysqld.sock
+        run: node scripts/regression-roster-sync-current-path-counterexamples.mjs
+
+  roster-active-swap-ui:
+    name: Active roster swap on the compiled app (synthetic, offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Build web
+        run: npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/swap-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/swap-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Active swap characterization (window, segregated months, finance, calendar, FlightDeck)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/swap-browser/package.json
+        run: node scripts/regression-roster-active-swap-ui-browser.cjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roster-active-swap-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/roster-active-swap
+          if-no-files-found: warn
