@@ -35,8 +35,21 @@ public final class ComplicationTextTest {
     public void gateShowsTheGateNumber() {
         ComplicationRendering rendering = ComplicationText.gate(WatchContextSnapshot.demo(NOW), NOW);
         assertEquals("PORTÃO", rendering.title);
-        assertEquals("P24", rendering.shortText);
+        assertEquals("24", rendering.shortText);
         assertTrue(rendering.longText.startsWith("PORTÃO 24"));
+    }
+
+    @Test
+    public void gatePreservesLegitimateLettersWithoutAddingADecorativePrefix() {
+        for (String gate : new String[]{"A22", "B12", "P22"}) {
+            WatchContextSnapshot snapshot = snapshot(json -> json.put("gate", gate));
+            ComplicationRendering rendering = ComplicationText.gate(snapshot, NOW);
+            assertEquals("PORTÃO", rendering.title);
+            assertEquals(gate, rendering.shortText);
+            assertTrue(rendering.longText.startsWith("PORTÃO " + gate));
+            assertEquals(gate, snapshot.gate);
+            assertEquals(gate, snapshot.toJson().optString("gate"));
+        }
     }
 
     @Test
