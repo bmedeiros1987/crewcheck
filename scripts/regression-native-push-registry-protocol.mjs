@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {nativeMutationPlan,NATIVE_PROJECT,NATIVE_PACKAGE} from '../server/native-push/registry.mjs';
+import {nativeProtocolMutation as parse,nativeProtocolAcknowledgement as ack,nativeProtocolHost,applyNativeProtocolMutation} from '../server/native-push/protocol-adapter.mjs';
+const identity={ownerId:'synthetic-owner-a',email:'native-a@example.test'};
+const wire={action:'register',projectId:NATIVE_PROJECT,package:NATIVE_PACKAGE,installationId:'synthetic-device-a',mutationId:'synthetic-operation-1',expectedRevision:0,expectedConsentRevision:0,generation:'1',tokenRevision:'1',consent:true,token:'SYNTHETIC_PROTOCOL_TOKEN_NOT_REAL'};
+let count=0;function check(fn){fn();count++;}
+const input=parse(identity,wire),record=nativeMutationPlan(null,input,1000).next;
+const summary=r=>({installationId:r.installationId,revision:r.revision,consentRevision:r.consentRevision,generation:r.generation,tokenRevision:r.tokenRevision,active:r.active,duplicate:false,registryConfirmed:true,received:null});
+check(()=>assert.equal(input.generation,1));
+check(()=>assert.equal(ack(input,summary(record)).registered,true));
+check(()=>assert.equal(ack(input,summary(record)).received,null));
+check(()=>assert(!JSON.stringify(ack(input,summary(record))).includes(wire.token)));
+for(const value of ['01','1.0','1e2',' 1','+1','-1','9007199254740992',true,null,1.1])check(()=>assert.throws(()=>parse(identity,{...wire,generation:value})));
+for(const patch of [{identity},{ownerId:identity.ownerId},{projectId:'other-project'},{package:'other.package'},{mutationId:undefined},{expectedRevision:undefined},{expectedRevision:Number.MAX_SAFE_INTEGER},{consent:false},{action:'rotate',consent:true},{token:'bad\ntoken'}])check(()=>assert.throws(()=>parse(identity,{...wire,...patch})));
+check(()=>assert.throws(()=>parse(null,wire)));
+for(const patch of [{registryConfirmed:false},{received:true},{revision:2},{consentRevision:0},{generation:2},{tokenRevision:2},{active:false},{installationId:'foreign-device'},{duplicate:undefined}])check(()=>assert.throws(()=>ack(input,{...summary(record),...patch})));
+check(()=>assert.equal(ack(input,{...summary(record),duplicate:true}).duplicate,true));
+const rotation=parse(identity,{...wire,action:'rotate',consent:false,mutationId:'synthetic-operation-2',expectedRevision:1,expectedConsentRevision:1,tokenRevision:'2',token:'SYNTHETIC_PROTOCOL_ROTATED_NOT_REAL'});
+const rotated=nativeMutationPlan(record,rotation,1100).next;
+check(()=>assert.equal(ack(rotation,summary(rotated)).consentRevision,1));
+check(()=>assert.equal(nativeMutationPlan(rotated,rotation,1200).duplicate,true));
+check(()=>assert.throws(()=>nativeMutationPlan(rotated,{...rotation,token:'SYNTHETIC_REUSED_ID_DIFFERENT_TOKEN'},1200),e=>e.code==='NATIVE_MUTATION_REUSED'));
+const revokeWire={...wire,action:'revoke',consent:false,token:undefined,mutationId:'synthetic-operation-3',expectedRevision:2,expectedConsentRevision:1,tokenRevision:'2'};
+const revoke=parse(identity,revokeWire),revoked=nativeMutationPlan(rotated,revoke,1300).next;
+check(()=>assert.equal(ack(revoke,summary(revoked)).revoked,true));
+check(()=>assert.equal(ack(revoke,summary(revoked)).registered,false));
+check(()=>assert.throws(()=>parse(identity,{...revokeWire,token:wire.token})));
+check(()=>assert.throws(()=>nativeMutationPlan(revoked,parse(identity,{...wire,mutationId:'synthetic-late-register',expectedRevision:3,expectedConsentRevision:2,tokenRevision:'2'}),1400),e=>e.code==='NATIVE_GENERATION_REVOKED'));
+// Invalid wire is rejected before touching DB or protection. Host OFF reads nothing.
+let accesses=0;const poison=new Proxy({}, {get(){accesses++;throw Error('unexpected I/O');}});
+await assert.rejects(()=>applyNativeProtocolMutation(poison,identity,{...wire,expectedRevision:undefined},poison));count++;
+assert.deepEqual(await nativeProtocolHost(poison),{enabled:false,configured:false,registered:false,received:null});count++;
+assert.equal(accesses,0);count++;
+console.log('PASS '+count+' native protocol wire/CAS/ACK/revoke/OFF synthetic checks');
