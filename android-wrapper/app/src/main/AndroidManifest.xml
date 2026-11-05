@@ -54,6 +54,7 @@
             </intent-filter>
         </activity>
         <receiver android:name=".CrewCheckNotificationReceiver" android:exported="false" />
+        <receiver android:name=".LocalAlarmReceiver" android:exported="false" />
         <receiver android:name=".StayAlarmReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
