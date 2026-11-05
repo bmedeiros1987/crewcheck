@@ -15,6 +15,7 @@ public final class NotificationLedger {
     public interface Device { long now(); void cancel(String key) throws Exception; void dismiss() throws Exception; }
     public interface Arm { void run(String epoch) throws Exception; }
     private final Store store; private final Device device;
+    static boolean cancellationCertain() { synchronized(LOCK) { return !uncertain; } }
     public NotificationLedger(Store store,Device device){this.store=store;this.device=device;}
     public boolean scope(String hint) {
         synchronized(LOCK) {
