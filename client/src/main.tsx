@@ -1,4 +1,5 @@
 import './lib/nativeNotificationCancellation';
+import './lib/androidPushHost';
 import './lib/stayAlarmHost';
 import './lib/crewcheckPremiumRuntime';
 import './lib/themeRuntime';
