@@ -1,0 +1,21 @@
+name: Groq transport OFF contracts
+on:
+  pull_request:
+    paths:
+      - 'server/concierge/groq-transport.mjs'
+      - 'scripts/regression-groq-transport-off.mjs'
+      - 'docs/concierge-groq-transport-off.md'
+      - '.github/workflows/groq-transport-off.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Synthetic injected HTTP only; ambient network forbidden
+        run: node --test scripts/regression-groq-transport-off.mjs
