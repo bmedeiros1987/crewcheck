@@ -140,3 +140,88 @@ Ele não:
 - prescreve tratamento.
 
 A escala canônica continua sendo responsabilidade do CrewCheck principal.
+
+## Validade por métrica e compatibilidade (candidato, sem ativação)
+
+`generatedAtEpochMs` é a hora da consulta, nunca prova da idade da medição. O
+contrato local v1 ganha metadados aditivos `metricValidity` e `validUntilEpochMs`:
+
+- Steps/Activity Summary representam a janela diária consultada no fuso da consulta;
+  a validade termina no primeiro entre fim desse dia e seis horas após a consulta.
+  Não se afirma que houve amostra nova no fim da janela.
+- Energy Score só é atual quando `energyDate` corresponde ao dia atual no
+  `energyZoneId` fornecido pela fonte (offset/zona, quando disponível). Sete dias
+  de busca não são sete dias de validade. Sem fuso comprovável, fica sem dado.
+- Sono mantém `sleepStartLocal`/`sleepEndLocal` para a representação local original;
+  esses valores nunca recebem o fuso atual por inferência. Instant/OffsetDateTime
+  fornecido pelo adaptador é preservado em `sleepStartInstant`/`sleepEndInstant` e
+  nos campos antigos. Sono sem fim absoluto não vira medição atual; fim absoluto
+  tem limite conservador de 24h, além das seis horas de validade da consulta.
+- Valor ausente/inválido/expirado é `null`, não zero. Zero medido continua zero.
+  As quatro permissões Samsung são independentes; somente categorias concedidas
+  são consultadas. Há nova leitura das concessões antes de exportar o resultado
+  e na fronteira do provider; falha em verificar acesso não devolve o cache.
+
+Phone e Companion compartilham o filtro puro. A tela não renova o TTL ao renderizar.
+O hint de troca de conta existente serve somente para invalidar consentimento de
+espelhamento e resultados pendentes; não autentica a conta Samsung nem vincula
+uma pessoa a medições. Na primeira associação do processo há revogação conservadora:
+é necessário conceder novamente o espelhamento. Não foi acrescentada permissão.
+Não há garantia de cancelamento de um put já aceito pelo Data Layer antes da
+revogação; a exclusão/retry existente permanece responsável pela limpeza.
+
+**Limite coordenado com a frente Watch:** o atual `CrewLifeSnapshot` v1 converte
+campo omitido em zero internamente. O novo telefone omite métricas sem dado e reduz
+o prazo global ao menor prazo das métricas incluídas, mas não altera esse parser.
+Distinguir zero/ausente em todas as superfícies Wear exige composição/revisão com
+seu proprietário. Telefone antigo também não interpreta os novos metadados; não
+se deve afirmar correção ponta a ponta em instalações de versões mistas.
+
+Fixtures executam o adaptador Java reflexivo real contra Samsung/grants/armazenamento
+sintéticos; testam ausência/zero, fonte antiga, concessão parcial/revogação, horários
+com offset, DST/fusos, parser Wear v1 inalterado e resultado atrasado A/logout/B.
+Não fazem chamadas Samsung/Health Connect, coleta de conta/dispositivo ou Data Layer.
+Sem o SDK proprietário/aparelho não se comprova quais accessors opcionais a versão
+instalada fornece; ausência de accessor falha fechada. Confirmar sono/energia atuais,
+revogação e troca de conta no aparelho continua gate físico antes de liberar.
+A variante Play principal mantém a exclusão Health Connect em store-policy.
+
+### Correções após revisão independente (mesma PR, HOLD)
+
+O cache web `crewcheck:life:*` usa envelope local com proprietário e schema 2;
+entradas anteriores sem proprietário são descartadas, sem migração para a conta
+atual. `main.tsx` instala um listener independente de Life para invalidar esses caches e
+o resumo em memória nos eventos canônicos de `authClient`, na fronteira global
+de sessão e em mudanças de autenticação entre abas, mesmo com Life desmontado.
+Leituras verificam proprietário/sessão vigente; callbacks capturam a geração antes
+da leitura. Esse owner local é um fence de privacidade, não autenticação Samsung.
+
+`lifeConcierge` conserva os metadados de validade, aplica-os em resumo e histórico
+fallback e mantém zero medido. Resumo Samsung substituído/revogado remove versões
+Samsung anteriores do histórico, inclusive quando o evento chega sem Life montado.
+A preparação canônica preserva esses checks em vez de reescrever o parser legado.
+
+Duração negativa é recusada com `isNegative()` antes de `toMinutes()`, inclusive
+menos de um minuto. A escolha do sono mais recente usa `Instant`: 08:00+02:00 é
+anterior a 07:30Z. Revogação parcial sanitiza também o cache criptografado persistido;
+se a gravação sanitizada falhar, não exporta esse cache e solicita limpeza local.
+
+Fixtures Java e web continuam sem SDK/API/dispositivo real. O gate de ownership
+MyCrewCare continua intacto: seu FAIL na PR de saúde exige decisão separada de
+composição/ownership; não é tratado como teste de saúde aprovado nem dispensado.
+
+### Sono manual: ausência e zero intencional
+
+O formulário começa com sono em branco. Salvar apenas passos/atividade não cria
+uma observação de sono zero. Um zero legado sem indicação de preenchimento é
+tratado como não informado, tanto na tela como no histórico do Concierge.
+
+A edição explícita do campo registra `sleepReported`; preencher zero conserva
+zero e essa indicação no resumo local e na ingestão. Limpar o campo ou informar
+um valor negativo não gera zero. Valores positivos manuais anteriores permanecem
+legíveis. O marcador expressa preenchimento local, não validação de sensor.
+
+A fixture executa o onChange real do sono, o saveManual real, escrita com owner,
+ingestManualSummary e as orientações reais da tela/Concierge. Cobre defaults com
+passos51, zero legado, zero intencional, positivo, limpar campo e negativo, antes
+e depois da preparação canônica, sem API ou dado de saúde real.

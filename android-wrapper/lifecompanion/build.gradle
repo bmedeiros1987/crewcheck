@@ -48,6 +48,7 @@ android {
     }
 
     sourceSets {
+        main.java.srcDir "../shared-health/src/main/java"
         main.res.srcDir generatedRes
     }
 

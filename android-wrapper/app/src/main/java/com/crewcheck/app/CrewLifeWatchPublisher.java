@@ -86,14 +86,8 @@ public final class CrewLifeWatchPublisher {
             return;
         }
 
-        String payload;
-        try {
-            payload = sanitizeCrewLife(rawJson, consent.categories());
-        } catch (Exception error) {
-            safeCallback.onResult(false, "invalid_crewlife", safeMessage(error));
-            return;
-        }
-        put(context, CREWLIFE_PATH, DATA_KEY_CREWLIFE_JSON, payload, safeCallback);
+        // v1 is no longer published: optional values cannot be represented safely there.
+        CrewLifeV2Phone.publish(context, rawJson, safeCallback);
     }
 
     public static void publishRoutine(Context context, String rawJson, Callback callback) {
@@ -138,15 +132,16 @@ public final class CrewLifeWatchPublisher {
         // o celular para de publicar na hora.
         WatchHealthConsent.revoke(app);
         WatchHealthConsent.setRevocationPending(app, true);
+        CrewLifeV2Phone.invalidate(app);
 
         RevocationRetry.run(
                 new String[]{CREWLIFE_PATH, ROUTINE_PATH},
                 wearableDeleter(app),
                 mainThreadScheduler(),
                 (allDeleted, failedPaths) -> {
-                    if (allDeleted) {
+                    if (allDeleted && CrewLifeV2Phone.remoteCleared(app)) {
                         WatchHealthConsent.setRevocationPending(app, false);
-                        safeCallback.onResult(true, "revoked", "Bem-estar removido do relógio.");
+                        safeCallback.onResult(true, "revoked", "Limpeza CrewLife confirmada; remoção de rotina solicitada.");
                         return;
                     }
                     safeCallback.onResult(
@@ -154,7 +149,7 @@ public final class CrewLifeWatchPublisher {
                             "revocation_incomplete",
                             "Consentimento revogado no celular, mas "
                                     + failedPaths
-                                    + " canal(is) não confirmaram a limpeza no relógio. Será repetido."
+                                    + " canal(is) ou ACK remoto pendente. Limpeza no relógio não confirmada."
                     );
                 }
         );
@@ -167,7 +162,15 @@ public final class CrewLifeWatchPublisher {
             if (callback != null) callback.onResult(true, "nothing_pending", "Nada pendente.");
             return;
         }
-        revoke(app, callback);
+        CrewLifeV2Phone.retry(app);
+        // Preserve the current stream/challenge across retries; do not reset an in-flight ACK.
+        RevocationRetry.run(new String[]{CREWLIFE_PATH, ROUTINE_PATH}, wearableDeleter(app), mainThreadScheduler(),
+                (allDeleted, failedPaths) -> {
+                    boolean confirmed = allDeleted && CrewLifeV2Phone.remoteCleared(app);
+                    if (confirmed) WatchHealthConsent.setRevocationPending(app, false);
+                    if (callback != null) callback.onResult(confirmed, confirmed ? "revoked" : "revocation_incomplete",
+                            confirmed ? "Limpeza CrewLife confirmada; remoção de rotina solicitada." : "Limpeza remota pendente.");
+                });
     }
 
     private static RevocationRetry.Deleter wearableDeleter(Context app) {

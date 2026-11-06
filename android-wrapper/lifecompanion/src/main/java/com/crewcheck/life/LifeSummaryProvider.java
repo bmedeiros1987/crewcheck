@@ -61,7 +61,11 @@ public final class LifeSummaryProvider extends ContentProvider {
         enforceTrustedCaller();
         if (uri == null || !"/v1/current".equals(uri.getPath())) return null;
         MatrixCursor cursor = new MatrixCursor(new String[]{"json"});
-        cursor.addRow(new Object[]{LifeSummaryStore.read(getContext())});
+        // Caller was validated above. Samsung must see the Companion identity, not
+        // the inbound phone Binder identity; always restore it before returning.
+        long identity = Binder.clearCallingIdentity();
+        try { cursor.addRow(new Object[]{SamsungHealthRuntime.authorizedCachedSummary(getContext())}); }
+        finally { Binder.restoreCallingIdentity(identity); }
         return cursor;
     }
 

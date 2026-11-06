@@ -23,6 +23,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { captureAuthSession } from '@/lib/authClient';
 import {
   buildLifeConciergeRecommendation,
   cancelLifeSession,
@@ -77,6 +78,7 @@ function elapsedLabel(active: ActiveSession, tick: number): string {
 }
 
 export default function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgram?: NextProgram | null; healthSummary?: HealthSummary; profile?: LifeProfile }) {
+  const healthSession = useMemo(() => captureAuthSession(), []);
   const [preferences, setPreferences] = useState<LifeAdaptivePreferences>(() => getLifeAdaptivePreferences());
   const [context, setContext] = useState<LifeRoutineContext>(() => getLifeRoutineContext());
   const [activeSession, setActiveSession] = useState<ActiveSession>(() => getActiveLifeSession());
@@ -87,6 +89,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   const [tick, setTick] = useState(Date.now());
 
   const refresh = useCallback(() => {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     setPreferences(getLifeAdaptivePreferences());
     setContext(getLifeRoutineContext());
     setActiveSession(getActiveLifeSession());
@@ -94,12 +97,15 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
 
   useEffect(() => {
     const listener = () => refresh();
+    const invalidate = () => setTick(Date.now());
+    window.addEventListener('crewcheck:life-cache-invalidated', invalidate);
     window.addEventListener('crewcheck:life-adaptive-update', listener);
     window.addEventListener('crewcheck:health-summary', listener);
     window.addEventListener('storage', listener);
     const timer = window.setInterval(() => setTick(Date.now()), 30_000);
     refresh();
     return () => {
+      window.removeEventListener('crewcheck:life-cache-invalidated', invalidate);
       window.removeEventListener('crewcheck:life-adaptive-update', listener);
       window.removeEventListener('crewcheck:health-summary', listener);
       window.removeEventListener('storage', listener);
@@ -110,12 +116,14 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   const recommendation = useMemo(() => buildLifeConciergeRecommendation(nextProgram), [context, nextProgram, tick]);
 
   function registerHydration() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     recordHydration(preferences.hydrationPortionMl);
     refresh();
     toast.success(`${preferences.hydrationPortionMl} ml registrados. O concierge ajustará o restante do dia.`);
   }
 
   function toggleSession(type: 'study' | 'exercise' | 'leisure') {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     if (activeSession) {
       if (activeSession.type !== type) {
         toast.info('Finalize a atividade em andamento antes de iniciar outra.');
@@ -133,6 +141,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   async function gymCheckIn() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const name = gymName.trim() || 'Academia';
     recordGymCheckIn(name, preferences.shareGymCheckins);
     recordLifeEvent({ type: 'exercise', status: 'completed', source: 'gym-checkin', durationMinutes: 0, note: `Check-in em ${name}` });
@@ -150,6 +159,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function savePreferences() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const saved = saveLifeAdaptivePreferences(preferences);
     setPreferences(saved);
     setContext(getLifeRoutineContext());
@@ -157,6 +167,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function scheduleReminders() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     const count = scheduleLifeRemindersForToday();
     const native = (window as any).CrewCheckNative || (window as any).AndroidCrewCheckNative;
     if (typeof native?.scheduleNotification === 'function') {
@@ -179,6 +190,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function runPrimaryAction() {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     if (recommendation.category === 'hydration') registerHydration();
     else if (recommendation.category === 'study') toggleSession('study');
     else if (recommendation.category === 'exercise') void gymCheckIn();
@@ -190,6 +202,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function sendFeedback(useful: boolean) {
+    if (!healthSession.token || !healthSession.isCurrent()) return;
     recordRecommendationFeedback(recommendation.id, useful);
     setFeedback(useful ? 'yes' : 'no');
     refresh();
@@ -199,6 +212,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   const hydrationPercent = Math.min(100, Math.round(context.hydration.progress * 100));
   const programLabel = nextProgram?.title ? `${nextProgram.title}${nextProgram.presentation ? ` · ${nextProgram.presentation}` : ''}` : 'Sem próxima programação completa';
 
+  if (!healthSession.token || !healthSession.isCurrent()) return null;
   return <section className="cc-life-ai-shell" aria-label="CrewCheck Life Concierge adaptativo">
     <header className="cc-life-ai-hero">
       <div className="cc-life-ai-orb"><Brain/><Sparkles/></div>
@@ -237,7 +251,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
         <button onClick={registerHydration}><GlassWater/><span><strong>Bebi água</strong><small>+{preferences.hydrationPortionMl} ml</small></span><Check/></button>
         <button className={activeSession?.type === 'study' ? 'active' : ''} onClick={() => toggleSession('study')}>{activeSession?.type === 'study' ? <Square/> : <Play/>}<span><strong>{activeSession?.type === 'study' ? 'Finalizar estudo' : 'Iniciar estudo'}</strong><small>cronômetro simples</small></span></button>
         <button className={activeSession?.type === 'leisure' ? 'active' : ''} onClick={() => toggleSession('leisure')}>{activeSession?.type === 'leisure' ? <Square/> : <Palmtree/>}<span><strong>{activeSession?.type === 'leisure' ? 'Finalizar lazer' : 'Registrar lazer'}</strong><small>tempo pessoal também conta</small></span></button>
-        {activeSession && <button className="danger-soft" onClick={() => { cancelLifeSession(); refresh(); toast.message('Sessão descartada.'); }}><Square/><span><strong>Descartar sessão</strong><small>não entra no aprendizado</small></span></button>}
+        {activeSession && <button className="danger-soft" onClick={() => { if (!healthSession.isCurrent()) return; cancelLifeSession(); refresh(); toast.message('Sessão descartada.'); }}><Square/><span><strong>Descartar sessão</strong><small>não entra no aprendizado</small></span></button>}
       </div>
     </section>
 
