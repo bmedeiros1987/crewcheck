@@ -125,3 +125,7 @@ html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v
 /* Source evidence stays a native disclosure, with a full-size touch/keyboard target. */
 html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-source-code>summary{min-height:48px!important;box-sizing:border-box!important;padding:12px 8px!important;cursor:pointer}
 html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-source-code>summary:focus-visible{outline:3px solid #3399bd;outline-offset:2px}
+/* Enlarged reading uses the full card width, rather than squeezing text beside a decorative icon. */
+@media(max-width:600px){html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-program-head-v1397{grid-template-columns:minmax(0,1fr)!important}html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-program-icon-v1397{display:none!important}}
+html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc-roster-program-head-v1397 h3,.cc-roster-flight-grid-v1397 b){color:#edf4fb!important}
+html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc-roster-program-head-v1397 small,.cc-roster-flight-grid-v1397 small){color:#c8d6e3!important;opacity:1!important}
