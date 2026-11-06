@@ -21,6 +21,7 @@ try {
  for(const subtitle of [repeatedFlight.subtitle+' · Horário a confirmar','Texto livre da operação','Apres. 09:30 · 10:00 → 11:00 · Brasília → São Paulo'])assert.equal(card({...repeatedFlight,subtitle}).detail,subtitle,'free text, warning or conflicting presentation remains verbatim');
  for(const canonical of [{...repeatedFlight.canonical,isNextDay:true},{...repeatedFlight.canonical,showPresentation:false},{...repeatedFlight.canonical,endDateTime:''},{...repeatedFlight.canonical,endDateTime:'2032-10-20T14:00:00Z'}])assert.equal(card({...repeatedFlight,canonical}).detail,repeatedFlight.subtitle,'rollover, connection and incomplete evidence are never simplified');
  assert.equal(card({...repeatedFlight,presentation:''}).detail,repeatedFlight.subtitle);
+ for(const values of [{arrival:'Horário a confirmar',subtitle:'Apres. 09:00 · 10:00 → Horário a confirmar · Brasília → São Paulo'},{departure:'10:05',subtitle:'Apres. 09:00 · 10:05 → 11:00 · Brasília → São Paulo'},{canonical:{...repeatedFlight.canonical,endDateTime:'2032-10-19T14:30:00Z'}}]){const pending={...repeatedFlight,...values};assert.equal(card(pending).detail,pending.subtitle,'invalid or inconsistent source clocks stay verbatim');}
  assert.equal(signature([repeatedFlight]),repeatedBefore,'condensing presentation never mutates published data');
 
  assert.deepEqual(source.map(mode),['journey-rest','stay','rest','operating','extra','reserve','standby','training','duty','journey-rest']);
