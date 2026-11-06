@@ -3,7 +3,7 @@ import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClass
 import { RosterActivityIcon, RosterLegend, useRosterCategoryFilter } from './RosterLegend';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
 import { rosterDisplayCompare, rosterDisplaySortInstant, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
 import { rosterDayAllowanceSummary } from '@/lib/rosterDayAllowanceSummary';
 import { peekPendingNavigationContext } from '@/lib/navigationContext';
@@ -13,6 +13,8 @@ import type { CrewRoster } from '../../lib/pdfParser';
 import {
   Banknote,
   GitCompareArrows,
+  SlidersHorizontal,
+  X,
   BedDouble,
   BriefcaseBusiness,
   Building2,
@@ -201,6 +203,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const currentMonth = isoFromDate(new Date()).slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(() => months.includes(currentMonth) ? currentMonth : months[0] || currentMonth);
   const [selectedDay, setSelectedDay] = useState('');
+  const optionsDialog = useRef<HTMLDialogElement>(null);
   const [focusedEventId,setFocusedEventId] = useState<string>();
   const [pendingRosterFocusIso, setPendingRosterFocusIso] = useState<string | null>(null);
   const [rosterFocusStatus, setRosterFocusStatus] = useState('');
@@ -309,7 +312,6 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     <V139Header title="Escala inteligente" detail="Programações e horários publicados."/>
     {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
-    <div className="cz-roster-actions cc-share-entry"><a className="cc-roster-changes-link" href="?view=perdiem&fmode=allowance&fscreen=changes" aria-label="Alterações" title="Alterações"><GitCompareArrows size={18} aria-hidden="true"/></a><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
 
       <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label>
@@ -317,8 +319,12 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p className="cc-roster-period-count" role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}</p>
     </section>
 
-    {/* Presentation choices are directly reachable. The legend remains the single category filter. */}
-    <div className="cc-roster-top-controls">
+    <div className="cc-roster-top-controls cc-roster-compact-actions">
+      <button type="button" className="cc-roster-options-trigger" aria-haspopup="dialog" onClick={()=>optionsDialog.current?.showModal()}><SlidersHorizontal aria-hidden="true"/><span>Visualização</span></button>
+      {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
+    </div>
+    <dialog ref={optionsDialog} className="cc-roster-options-dialog" aria-labelledby="cc-roster-options-title">
+      <header><h2 id="cc-roster-options-title">Visualização</h2><button type="button" autoFocus aria-label="Fechar visualização" onClick={()=>optionsDialog.current?.close()}><X aria-hidden="true"/></button></header>
     <section className="cc-roster-view-options cc-roster-view-toolbar" aria-label="Exibição da escala">
       <div className="cc-roster-layout-buttons" role="group" aria-label="Formato da escala">
         {([
@@ -335,40 +341,12 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       </div>
       {zoom === 'day' && <label className="cc-roster-direct-date">Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
     </section>
-    {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
-    </div>
+    <div className="cz-roster-actions cc-share-entry"><a className="cc-roster-changes-link" href="?view=perdiem&fmode=allowance&fscreen=changes" aria-label="Alterações" title="Alterações"><GitCompareArrows size={18} aria-hidden="true"/></a><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
+      <button type="button" className="cc-roster-options-done" onClick={()=>optionsDialog.current?.close()}>Ver escala</button>
+    </dialog>
     <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
 
     {categoryFilter.filter !== 'all' && !visibleEvents.length && <div className="cc-roster-filter-empty"><p>Nenhum item deste filtro no período selecionado.</p><button type="button" onClick={categoryFilter.reset}>Mostrar tudo</button></div>}
-
-    {/* The eye (values only) sits beside the month summary instead of taking a row of its own. */}
-    <div className="cc-roster-finance-row"><FinancialPrivacyToggle iconOnly/><details className="cc-roster-finance-summary">
-      <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
-      <section className="cc-roster-hero-v1397">
-      <div className="cc-roster-hero-copy-v1397">
-        <h2>Resumo do mês</h2>
-        <p>Cada programação preserva os dados da escala e exibe somente o que foi calculado pelas regras financeiras configuradas.</p>
-        <div className="cc-roster-hero-counts-v1397">
-          <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
-          <span><Plane/><b>{flights}</b> voos</span>
-          <span><Hotel/><b>{stays}</b> pernoites</span>
-          <span><Clock/><b>{readableHours(dutyHours)}</b> em programação</span>
-        </div>
-      </div>
-      <div className="cc-roster-money-overview-v1397">
-        <button type="button" onClick={() => setView('perdiem')}>
-          <span><Utensils/> Diárias previstas</span>
-          <strong>{financeAvailable ? money(perDiemTotal) : 'Indisponível'}</strong>
-          <small>{financeAvailable ? (pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis') : 'Financeiro disponível somente para a competência operacional ativa'}</small>
-        </button>
-        <button type="button" onClick={() => setView('salary')}>
-          <span><Route/> Produção por KM</span>
-          <strong>{financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</strong>
-          <small>{financeAvailable ? `${totalKm.toLocaleString('pt-BR')} km estimados no mês` : 'Selecione a competência operacional ativa para ver a memória financeira'}</small>
-        </button>
-      </div>
-    </section>
-    </details></div>
 
     {unconfirmed.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada">
       <h2>Data não confirmada</h2>
@@ -472,6 +450,35 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p>Estas programações têm data confirmada, mas não têm um instante confirmado para posicioná-las na sequência das jornadas. Estão listadas por data publicada.</p>
       <AimsRosterTable operationalEvents={allOrdered} events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
     </section>}
+
+    {/* The eye (values only) sits beside the month summary instead of taking a row of its own. */}
+    <div className="cc-roster-finance-row"><FinancialPrivacyToggle iconOnly/><details className="cc-roster-finance-summary">
+      <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
+      <section className="cc-roster-hero-v1397">
+      <div className="cc-roster-hero-copy-v1397">
+        <h2>Resumo do mês</h2>
+        <p>Cada programação preserva os dados da escala e exibe somente o que foi calculado pelas regras financeiras configuradas.</p>
+        <div className="cc-roster-hero-counts-v1397">
+          <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
+          <span><Plane/><b>{flights}</b> voos</span>
+          <span><Hotel/><b>{stays}</b> pernoites</span>
+          <span><Clock/><b>{readableHours(dutyHours)}</b> em programação</span>
+        </div>
+      </div>
+      <div className="cc-roster-money-overview-v1397">
+        <button type="button" onClick={() => setView('perdiem')}>
+          <span><Utensils/> Diárias previstas</span>
+          <strong>{financeAvailable ? money(perDiemTotal) : 'Indisponível'}</strong>
+          <small>{financeAvailable ? (pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis') : 'Financeiro disponível somente para a competência operacional ativa'}</small>
+        </button>
+        <button type="button" onClick={() => setView('salary')}>
+          <span><Route/> Produção por KM</span>
+          <strong>{financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</strong>
+          <small>{financeAvailable ? `${totalKm.toLocaleString('pt-BR')} km estimados no mês` : 'Selecione a competência operacional ativa para ver a memória financeira'}</small>
+        </button>
+      </div>
+    </section>
+    </details></div>
 
     {ordered.length > 0 && <footer className="cc-roster-estimate-note-v1397"><ShieldCheck/><p><strong>Estimativa conferível.</strong> Diárias e produção por KM usam as regras ACT, tarifas administrativas e dados aprendidos já configurados no CrewCheck. Não substituem o demonstrativo oficial.</p></footer>}
   </div>;

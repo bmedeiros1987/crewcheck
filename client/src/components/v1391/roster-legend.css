@@ -89,3 +89,23 @@ html .cz-app .cc-roster-card-heading>svg { color:var(--cc-roster-accent); }
 .cc-roster-direct-date{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.cc-roster-direct-date input{min-height:48px;min-width:0;max-width:100%;font:inherit}
 html[data-crew-theme=light] .cc-roster-view-toolbar{background:#f5f8fb;color:#18334a;border-color:#a8bed0}
 @media(max-width:600px){html[data-crew-text-size="200"] .cc-roster-layout-buttons,html[data-crew-text-size="200"] .cc-roster-direct-period{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-crew-text-size="200"] .cc-roster-direct-period>.cc-roster-layout-reset{grid-column:1/-1;flex-direction:row}}
+
+/* Content first: secondary presentation actions have one explicit, native modal. */
+.cc-roster-compact-actions{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.cc-roster-compact-actions>.cc-roster-filter{flex:1;min-width:140px}
+.cc-roster-options-trigger,.cc-roster-options-dialog button{min-height:48px;min-width:48px;font:inherit;color:inherit}
+.cc-roster-options-trigger{display:inline-flex;align-items:center;gap:6px;padding:8px;border:1px solid var(--ccr-line,#64748b);border-radius:10px;background:var(--ccr-panel-soft,#172537);color:var(--ccr-text,#edf4fb)}
+.cc-roster-options-trigger svg{width:20px;height:20px;flex-shrink:0}
+.cc-roster-options-dialog{box-sizing:border-box;width:min(520px,calc(100% - 24px));max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain;border:1px solid var(--ccr-line,#64748b);border-radius:16px;padding:12px;background:var(--ccr-panel,#172537);color:var(--ccr-text,#edf4fb)}
+.cc-roster-options-dialog:not([open]){display:none!important}
+.cc-roster-options-dialog::backdrop{background:rgba(0,0,0,.55)}
+.cc-roster-options-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.cc-roster-options-dialog h2{font-size:1.15em;margin:0}
+.cc-roster-options-dialog>header button{display:grid;place-items:center;border:1px solid currentColor;border-radius:8px;background:transparent}
+.cc-roster-options-done{width:100%;margin-top:12px}
+.cc-roster-options-dialog :focus-visible,.cc-roster-options-trigger:focus-visible{outline:3px solid #3399bd;outline-offset:2px}
+.cc-roster-options-dialog .cc-share-entry{display:flex;align-items:center;gap:8px;margin-top:12px}
+.cc-roster-options-dialog .cc-roster-changes-link{display:grid;place-items:center;min-width:48px;min-height:48px}
+html[data-crew-theme=light] .cc-roster-options-dialog,html[data-crew-theme=light] .cc-roster-options-trigger{background:#f5f8fb;color:#18334a;border-color:#a8bed0}
+.cc-roster-premium-v1397 .cc-roster-period-v1399>label{flex:1 1 180px}
+.cc-roster-premium-v1397 .cc-roster-period-v1399>button{min-height:48px!important;padding-inline:8px!important}

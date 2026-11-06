@@ -44,7 +44,7 @@ try {
   });
   await page.goto(origin + '/app');
   // Direct controls retain the existing guest/account preference contract.
-  const viewReady=async()=>{await page.locator('section.cc-roster-view-options').waitFor();};
+  const viewReady=async()=>{if(!await page.locator('.cc-roster-options-dialog').evaluate(d=>d.open))await page.getByRole('button',{name:'Visualização',exact:true}).click();await page.locator('section.cc-roster-view-options').waitFor();};
   const pick=async value=>{await viewReady();await page.locator(`[data-roster-layout-choice="${value}"]`).click();};
   await viewReady();
   const peer = await context.newPage();
@@ -110,9 +110,11 @@ try {
   for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const scale of [1,2]){
     await page.setViewportSize({width,height:900});
     await page.evaluate(({theme,scale})=>{document.documentElement.dataset.crewTheme=theme;document.documentElement.dataset.crewTextSize=String(scale*100);document.documentElement.style.setProperty('--cc-text-scale',String(scale));},{theme,scale});
-    const actions=page.locator('section.cc-roster-view-options');await actions.scrollIntoViewIfNeeded();
+    await viewReady();const actions=page.locator('section.cc-roster-view-options');await actions.scrollIntoViewIfNeeded();
     const geometry=await actions.evaluate(el=>({overflow:document.documentElement.scrollWidth>innerWidth+1,buttons:[...el.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect(),span=b.querySelector('span'),range=document.createRange();range.selectNodeContents(span);return {name:b.getAttribute('aria-label'),width:r.width,height:r.height,clipped:b.scrollWidth>b.clientWidth+1,labelLines:new Set([...range.getClientRects()].map(r=>Math.round(r.top))).size,icon:Boolean(b.querySelector('svg'))};})}));
     assert.equal(geometry.overflow,false,JSON.stringify({width,theme,scale,...geometry}));assert.ok(geometry.buttons.length===7&&geometry.buttons.every(b=>b.width>=48&&b.height>=48&&!b.clipped&&b.labelLines===1&&b.icon&&b.name),JSON.stringify({width,theme,scale,...geometry}));
+    await page.getByRole('button',{name:'Ver escala',exact:true}).click();await page.evaluate(()=>scrollTo(0,0));
+    const initial=await page.locator('[data-roster-iso]').first().boundingBox();assert.ok(initial&&initial.y<530,JSON.stringify({width,theme,scale,initial}));
     await page.screenshot({path:path.join(screenshots,`${width}-${theme}-${scale}-full-app-fallback.png`),fullPage:false});
     results.push(`full compiled app ${width}/${theme}/${scale}:direct48px actions, whole labels, no overflow; fallback-font evidence only`);
   }
