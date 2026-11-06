@@ -129,3 +129,6 @@ html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-source
 @media(max-width:600px){html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-program-head-v1397{grid-template-columns:minmax(0,1fr)!important}html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-program-icon-v1397{display:none!important}}
 html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc-roster-program-head-v1397 h3,.cc-roster-flight-grid-v1397 b){color:#edf4fb!important}
 html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc-roster-program-head-v1397 small,.cc-roster-flight-grid-v1397 small){color:#c8d6e3!important;opacity:1!important}
+/* Enlarged clock labels keep their font size; cells reflow rather than crushing words. */
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397{grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))!important}
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397 small{text-transform:none!important;letter-spacing:normal!important}
