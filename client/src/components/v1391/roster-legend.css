@@ -122,3 +122,6 @@ html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v
 
 /* Empty descriptive copy has no placeholder height; the page title is simply Escala. */
 .cc-roster-premium-v1397 .cc139-head>p:empty{display:none!important}
+/* Source evidence stays a native disclosure, with a full-size touch/keyboard target. */
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-source-code>summary{min-height:48px!important;box-sizing:border-box!important;padding:12px 8px!important;cursor:pointer}
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-source-code>summary:focus-visible{outline:3px solid #3399bd;outline-offset:2px}
