@@ -17,7 +17,6 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
-  ChevronDown,
   Clock,
   Coffee,
   Dumbbell,
@@ -25,12 +24,12 @@ import {
   Home,
   Hotel,
   LayoutGrid,
+  FileText,
   List,
   MapPin,
   Moon,
   Plane,
   RotateCcw,
-  SlidersHorizontal,
   Route,
   ShieldCheck,
   Sparkles,
@@ -318,26 +317,24 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p className="cc-roster-period-count" role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}</p>
     </section>
 
-    {/* Top controls: presentation (format, reset, month/day zoom) and the legend, which is the single
-        category filter (Tudo restores all). Both collapse independently; nothing repeats at the footer. */}
+    {/* Presentation choices are directly reachable. The legend remains the single category filter. */}
     <div className="cc-roster-top-controls">
-    <details className="cc-roster-view-options">
-      <summary><SlidersHorizontal aria-hidden="true"/><span>Exibição</span><small>{({ cards: 'Cards', list: 'Lista', aims: 'AIMS', calendar: 'Calendário' } as Record<string, string>)[layout] || 'Cards'} · {zoom === 'day' ? 'Dia' : 'Mês'}</small><ChevronDown className="cc-roster-disclosure" aria-hidden="true"/></summary>
-      <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
-        <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
-          <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">CrewCheck AIMS</option><option value="calendar">Calendário</option>
-        </select></label>
-        <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards', 'month')} disabled={layout === 'cards' && zoom === 'month'}><RotateCcw aria-hidden="true"/> Restaurar padrão</button>
-      </section>
-
-      <section className="cc-roster-zoom" aria-label="Zoom da escala">
-        <div role="group" aria-label="Escolher período de leitura">
-          <button type="button" aria-pressed={zoom === 'month'} onClick={() => chooseZoom('month')}>Mês completo</button>
-          <button type="button" aria-pressed={zoom === 'day'} onClick={() => chooseZoom('day')}>Dia ampliado</button>
-        </div>
-        {zoom === 'day' && <label>Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
-      </section>
-    </details>
+    <section className="cc-roster-view-options cc-roster-view-toolbar" aria-label="Exibição da escala">
+      <div className="cc-roster-layout-buttons" role="group" aria-label="Formato da escala">
+        {([
+          {value:'cards',label:'Cards',name:'Cards',Icon:LayoutGrid},
+          {value:'list',label:'Lista',name:'Lista',Icon:List},
+          {value:'aims',label:'AIMS',name:'CrewCheck AIMS',Icon:FileText},
+          {value:'calendar',label:'Agenda',name:'Calendário',Icon:CalendarDays},
+        ] as const).map(({value,label,name,Icon})=><button key={value} type="button" data-roster-layout-choice={value} aria-label={`Formato ${label}${label!==name?` · ${name}`:''}`} aria-pressed={layout===value} onClick={()=>choose(value)}><Icon aria-hidden="true"/><span>{label}</span></button>)}
+      </div>
+      <div className="cc-roster-direct-period" role="group" aria-label="Escolher período de leitura">
+        <button type="button" aria-label="Mês completo" aria-pressed={zoom==='month'} onClick={()=>chooseZoom('month')}><CalendarDays aria-hidden="true"/><span>Mês</span></button>
+        <button type="button" aria-label="Dia ampliado" aria-pressed={zoom==='day'} onClick={()=>chooseZoom('day')}><Clock aria-hidden="true"/><span>Dia</span></button>
+        <button className="cc-roster-layout-reset" type="button" aria-label="Restaurar padrão" onClick={()=>choose('cards','month')} disabled={layout==='cards'&&zoom==='month'}><RotateCcw aria-hidden="true"/><span>Padrão</span></button>
+      </div>
+      {zoom === 'day' && <label className="cc-roster-direct-date">Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
+    </section>
     {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
     </div>
     <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>

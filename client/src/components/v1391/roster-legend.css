@@ -74,3 +74,18 @@ html .cz-app .cc-roster-card-heading>svg { color:var(--cc-roster-accent); }
 
 :is(.cc-calendar-day,.cc-aims-activity,.cc-doc-token) .cc-roster-card-heading { display:flex; align-items:flex-start; gap:6px; }
 .cz-app[data-version] .cc14349-dayline-item.cc-roster-token[data-roster-mode] .cc14349-dayline-marker { color:var(--cc-roster-accent); background:rgba(var(--cc-roster-rgb),.12); }
+
+/* Direct view actions: short visible labels make icons understandable by touch. */
+.cc-roster-view-toolbar{display:grid;gap:8px;padding:10px;border:1px solid var(--ccr-line,#64748b);border-radius:12px;background:var(--ccr-panel-soft,#172537);color:var(--ccr-text,#edf4fb)}
+.cc-roster-layout-buttons{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.cc-roster-view-toolbar button{display:flex;align-items:center;justify-content:center;gap:6px;min-width:48px;min-height:48px;padding:8px;box-sizing:border-box;font:inherit;color:inherit;background:transparent;border:1px solid var(--ccr-line,#64748b);border-radius:10px;cursor:pointer;max-width:100%}
+.cc-roster-layout-buttons>button{flex-direction:column;gap:4px}
+.cc-roster-view-toolbar button svg{width:20px;height:20px;flex-shrink:0}
+.cc-roster-view-toolbar button span{white-space:normal;overflow-wrap:normal;line-height:1.25}
+.cc-roster-view-toolbar button[aria-pressed=true]{border-width:2px;outline:2px solid currentColor;outline-offset:-3px;font-weight:750}
+.cc-roster-view-toolbar button:focus-visible{outline:3px solid #3399bd;outline-offset:3px}
+.cc-roster-view-toolbar button:disabled{opacity:.6;cursor:default}
+.cc-roster-direct-period{display:flex;gap:6px;flex-wrap:wrap}.cc-roster-direct-period>button{flex:1 1 auto}
+.cc-roster-direct-date{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.cc-roster-direct-date input{min-height:48px;min-width:0;max-width:100%;font:inherit}
+html[data-crew-theme=light] .cc-roster-view-toolbar{background:#f5f8fb;color:#18334a;border-color:#a8bed0}
+@media(max-width:600px){html[data-crew-text-size="200"] .cc-roster-layout-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}}

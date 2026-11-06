@@ -24,6 +24,7 @@ on:
       - 'client/src/lib/rosterPresentation.ts'
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'scripts/regression-roster-legend*.mjs'
+      - 'scripts/regression-roster-direct-actions-browser.mjs'
       - 'scripts/regression-roster-font-diagnostics.mjs'
       - 'scripts/lib/roster-font-diagnostics.mjs'
       - 'scripts/lib/roster-inter-policy.mjs'
@@ -190,6 +191,10 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-fixed-navigation-headers.cjs
+      - name: Verify direct roster actions with synthetic fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-direct-actions-browser.mjs
       - name: Verify shared roster legend and filtering with shipping CSS (synthetic)
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -243,6 +248,7 @@ jobs:
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
             artifacts/roster-legend
+            artifacts/roster-direct-actions
             artifacts/demo-bootstrap
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
