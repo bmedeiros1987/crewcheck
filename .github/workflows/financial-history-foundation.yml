@@ -63,6 +63,7 @@ on:
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
       - 'scripts/regression-financial-ui-browser.cjs'
+      - 'scripts/regression-financial-reconciliation-day-coverage.mjs'
       - 'scripts/regression-financial-privacy-browser.cjs'
       - 'scripts/regression-static-module-mime.mjs'
       - 'server.mjs'
@@ -234,6 +235,11 @@ jobs:
           test "$component_status" -eq 0
           test "$app_status" -eq 0
           test "$notice_status" -eq 0
+      - name: Verify daily coverage in statement reconciliation (synthetic PDF)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-reconciliation-day-coverage.mjs
       - name: Save synthetic ACT notice screenshots
         if: always()
         uses: actions/upload-artifact@v4

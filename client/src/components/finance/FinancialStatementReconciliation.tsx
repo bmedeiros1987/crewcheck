@@ -2,7 +2,7 @@ import { useFinancialPrivacy } from './FinancialPrivacy';
 import { useEffect, useRef, useState } from 'react';
 import { getStoredUser, getToken } from '@/lib/authClient';
 import { financialRateSession, learnFinancialStatement, type StatementLearningResult } from '@/lib/financialStatementLearning';
-import { financialMonths, financialRowsInRange, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { financialMonths, financialRowsInRange, validFinancialDay, financialDayCoverage, allowanceSourceRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { summarizeForecastRows, allowancePendingInRange } from '@/lib/financialForecastPeriods';
 import FinancialStatementImporter, { extractPdfText } from './FinancialStatementImporter';
 import { projectAllowanceFxRows } from '@shared/financialFx.mjs';
@@ -11,7 +11,7 @@ import type { FxQuote } from '@/lib/financialFxReference';
 type Row = { iso:string; label:string; value:number; currency:string; convertedBRL:number|null; source:string; eventId?:string; rateSource?:string; rateVersion?:string; exchangeRate?:number|null; fxReferences?:FxQuote[]; calculationStart?:string; calculationEnd?:string };
 const owner = ()=>`${getStoredUser()?.id || getStoredUser()?.email || ''}:${getToken() || ''}`;
 const formatMoney = (value:number,currency='BRL')=>new Intl.NumberFormat('pt-BR',{style:'currency',currency}).format(value);
-export default function FinancialStatementReconciliation({ rows, unclassified, coveredMonths, requestRange, quotes, today }: { quotes?:Record<string,FxQuote>; today?:string; rows: Row[]; unclassified: Array<{iso:string;airport:string;pendingKind?:string}>; coveredMonths: string[]; requestRange: (range:FinancialRange)=>void }) {
+export default function FinancialStatementReconciliation({ rows, unclassified, coveredMonths, coveredDays, requestRange, quotes, today }: { quotes?:Record<string,FxQuote>; today?:string; rows: Row[]; unclassified: Array<{iso:string;airport:string;pendingKind?:string}>; coveredMonths: string[]; coveredDays: string[]; requestRange: (range:FinancialRange)=>void }) {
   const privacy = useFinancialPrivacy();
   const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
   const [document,setDocument]=useState<{owner:string; session:string; result:StatementLearningResult}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
@@ -30,7 +30,8 @@ export default function FinancialStatementReconciliation({ rows, unclassified, c
   const items:Row[]=quotes===undefined?scopedRows:projectAllowanceFxRows(scopedRows,quotes,today||new Date().toISOString().slice(0,10)),pending=allowancePendingInRange(unclassified,range),forecast=summarizeForecastRows(items,pending);
   useEffect(()=>{if(valid)requestRange(range);},[result?.periodStart,result?.periodEnd]);
   const missingMonths=financialMonths(range).filter(month=>!coveredMonths.includes(month));
-  const completeCoverage=Boolean(valid)&&missingMonths.length===0;
+  const dailyCoverage=financialDayCoverage(allowanceSourceRange(range),coveredDays);
+  const completeCoverage=Boolean(valid)&&missingMonths.length===0&&dailyCoverage.valid&&dailyCoverage.missingDays.length===0;
   const reported=result?.totals.deposited;
   const hasForeign=items.some(row=>row.currency!=='BRL');
   const fxReferences=[...new Map(items.flatMap(row=>(row.fxReferences||[]).map(quote=>[JSON.stringify([quote.base,quote.quote,quote.rate,quote.source,quote.asOf,quote.retrievedAt]),quote] as const))).values()];
@@ -42,7 +43,7 @@ export default function FinancialStatementReconciliation({ rows, unclassified, c
       <p>Total informado pelo documento: {Number.isFinite(reported)?money(reported!):'Indisponível'}. {hasForeign?'Estimativa à cotação de referência atual':'Previsão dos itens disponíveis no mesmo intervalo'}: {!completeCoverage||forecast.convertedTotalBRL===null?'Não calculável':money(forecast.convertedTotalBRL)}.</p>
       {hasForeign&&<div aria-label="Câmbio usado na estimativa">{fxReferences.map((quote,index)=><p key={index}>{quote.source} · referência {quote.asOf} · consulta {quote.retrievedAt||'não informada'}</p>)}{!fxReferences.length&&<p>Fonte e data de câmbio indisponíveis.</p>}<p>Diferença histórica indisponível: falta câmbio comparável documentado para os itens internacionais. A estimativa atual não comprova divergência do pagamento.</p></div>}
       {!hasForeign&&completeCoverage&&Number.isFinite(reported)&&forecast.convertedTotalBRL!==null&&<p>Diferença a conferir: {money(reported!-forecast.convertedTotalBRL)}. Não há ajuste automático ou abatimento de adiantamentos.</p>}
-      {!completeCoverage&&<p role="status">Cobertura incompleta do demonstrativo: {missingMonths.join(', ') || 'período inválido'}. Diferença indisponível; os itens presentes são parciais.</p>}
+      {!completeCoverage&&<p role="status">Cobertura incompleta do demonstrativo: {missingMonths.length?missingMonths.join(', '):dailyCoverage.missingDays.length?`${dailyCoverage.missingDays.length} data(s) sem publicação verificada`:'período inválido'}. Diferença indisponível; os itens presentes são parciais.</p>}
       <p>Conciliação ainda depende de verificar escala executada, revisões e todos os itens do documento. Igualdade de totais não comprova igualdade de itens nem recebimento.</p>
       {result.warnings.map(warning=><p key={warning}>{privacy.text(warning)}</p>)}
       <h3>Tarifas observadas no documento</h3>{result.rates.map(rate=><p key={rate.key}>{rate.label}: {money(rate.value,rate.currency)} · {rate.effectiveFrom} até {rate.effectiveTo || 'fim não informado'} · sem alteração da previsão</p>)}
