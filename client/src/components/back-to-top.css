@@ -1,0 +1,7 @@
+/* Reserve header space for the arrow instead of floating over page content. */
+.cz-app>.cz-global-header:has(>.cc-back-to-top){display:flex!important;align-items:center;gap:4px;padding-inline-end:4px;box-sizing:border-box}
+.cz-global-header:has(>.cc-back-to-top)>.cz-brand-row{flex:1 1 auto;min-width:0;width:auto!important}
+.cz-global-header>.cc-back-to-top{flex:0 0 48px;display:grid;place-items:center;width:48px;height:48px;min-width:48px;min-height:48px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
+.cz-global-header>.cc-back-to-top svg{width:24px;height:24px;pointer-events:none}
+.cz-global-header>.cc-back-to-top:focus-visible{outline:3px solid #3399bd;outline-offset:-3px}
+@media(max-width:400px){.cz-global-header:has(>.cc-back-to-top) .cz-brand-lockup small{display:none!important}}

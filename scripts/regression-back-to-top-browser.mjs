@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import {createRequire} from 'node:module';
+const require=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url);
+const {build}=require('esbuild'),{chromium}=require('playwright');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cc-top-'));
+const entry=path.join(dir,'entry.tsx');
+fs.writeFileSync(entry,`import React from 'react';import{createRoot}from'react-dom/client';import BackToTop from '${path.resolve('client/src/components/BackToTop.tsx')}';createRoot(document.getElementById('root')).render(<><main className="cz-app" data-view="roster"><div className="cz-global-header"><div className="cz-brand-row"><button id="back">Voltar</button><span>Marca</span></div></div><div id="content" style={{height:3000}}>Conteúdo sintético<button id="keep">Foco preservado</button></div><div id="nested" style={{height:80,overflow:'auto'}}><div style={{height:800}}>Tabela</div></div><dialog id="modal">Modal</dialog></main><BackToTop/></>);`);
+await build({entryPoints:[entry],bundle:true,outfile:path.join(dir,'bundle.js'),jsx:'automatic',nodePaths:[path.resolve('node_modules')],loader:{'.css':'css'}});
+fs.writeFileSync(path.join(dir,'index.html'),'<div id="root"></div><link rel="stylesheet" href="/bundle.css"><style>body{margin:0}.cz-global-header{position:fixed;top:0;left:0;width:100%;height:56px;background:white}.cz-brand-row{display:flex;align-items:center;justify-content:space-between;gap:8px}#content{padding-top:70px;box-sizing:border-box}</style><script src="/bundle.js"></script>');
+const server=http.createServer((req,res)=>{const file=path.join(dir,req.url==='/'?'index.html':req.url.slice(1));if(!file.startsWith(dir+path.sep)||!fs.existsSync(file))return res.writeHead(404).end();res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
+const browser=await chromium.launch({...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox']});
+try{for(const width of [320,390,1440]){
+ const page=await browser.newPage({viewport:{width,height:640},reducedMotion:'reduce'});let outside=0;await page.route('**/*',r=>{if(new URL(r.request().url()).origin!==origin){outside++;return r.abort();}return r.continue();});await page.goto(origin);const arrow=page.getByRole('button',{name:'Voltar ao topo',exact:true});assert.equal(await arrow.count(),0);
+ await page.locator('#keep').focus();await page.evaluate(()=>scrollTo(0,850));await arrow.waitFor();assert.equal(await page.evaluate(()=>document.activeElement.id),'keep','appearance never steals focus');
+ const geometry=await arrow.evaluate(b=>{const r=b.getBoundingClientRect(),h=b.parentElement.getBoundingClientRect(),brand=b.previousElementSibling.getBoundingClientRect();return{w:r.width,h:r.height,inside:r.top>=h.top&&r.bottom<=h.bottom&&r.right<=h.right,overlap:r.left<brand.right,text:b.textContent};});assert.ok(geometry.w>=48&&geometry.h>=48&&geometry.inside&&!geometry.overlap&&!geometry.text,JSON.stringify(geometry));
+ await page.evaluate(()=>document.querySelector('#modal').showModal());await arrow.waitFor({state:'detached'});await page.keyboard.press('Escape');await arrow.waitFor();
+ await arrow.focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>scrollY===0);await arrow.waitFor({state:'detached'});assert.equal(await page.evaluate(()=>document.activeElement.id),'back','activated arrow returns focus to header without scrolling');
+ await page.evaluate(()=>document.querySelector('#nested').scrollTop=600);await page.waitForTimeout(50);assert.equal(await arrow.count(),0,'nested scroll does not claim page action');
+ await page.evaluate(()=>{document.querySelector('#content').style.height='100px';document.querySelector('.cz-app').dataset.view='short';});await page.waitForTimeout(50);assert.equal(await arrow.count(),0,'short page has no action');
+ await page.evaluate(()=>{document.querySelector('#content').style.height='3000px';document.querySelector('.cz-app').dataset.view='alerts';scrollTo(0,850);});await arrow.waitFor();await page.evaluate(()=>{const menu=document.createElement('div');menu.className='cz-menu-overlay';document.body.append(menu);});await arrow.waitFor({state:'detached'});await page.evaluate(()=>document.querySelector('.cz-menu-overlay').remove());await arrow.waitFor();await page.evaluate(()=>{scrollTo(0,0);const app=document.querySelector('.cz-app');app.style.height='640px';app.style.overflow='auto';app.scrollTop=850;});await arrow.waitFor();await arrow.click();await page.waitForFunction(()=>document.querySelector('.cz-app').scrollTop===0);await arrow.waitFor({state:'detached'});assert.equal(outside,0);await page.close();
+}console.log('PASS shared header arrow:3 widths, real document scrolling, no overlay/focus theft, keyboard/reduced motion, modal/menu, nested scroll, short/long navigation; synthetic only');}finally{await browser.close();await new Promise(r=>server.close(r));fs.rmSync(dir,{recursive:true,force:true});}
