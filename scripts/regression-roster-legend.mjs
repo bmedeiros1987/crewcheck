@@ -15,6 +15,14 @@ const journey=make('journey','OTHER',{kind:'duty',canonical:{id:'journey',kind:'
 const source=[base,night,off,flight,extra,reserve,standby,training,unknown,journey];
 const deepFreeze=x=>{if(x&&typeof x==='object'){Object.freeze(x);Object.values(x).forEach(deepFreeze)}return x};deepFreeze(source);const before=signature(source);
 try {
+ const repeatedFlight=deepFreeze({...flight,origin:'BSB',destination:'GRU',subtitle:'Apres. 09:00 · 10:00 → 11:00 · Brasília → São Paulo',canonical:{...flight.canonical,kind:'flight',showPresentation:true,startDateTime:'2032-10-19T13:00:00Z',endDateTime:'2032-10-19T14:00:00Z'}});
+ const repeatedBefore=signature([repeatedFlight]);
+ assert.equal(card(repeatedFlight).detail,'Brasília → São Paulo','only the exact generated same-day repetition is condensed; city names remain');
+ for(const subtitle of [repeatedFlight.subtitle+' · Horário a confirmar','Texto livre da operação','Apres. 09:30 · 10:00 → 11:00 · Brasília → São Paulo'])assert.equal(card({...repeatedFlight,subtitle}).detail,subtitle,'free text, warning or conflicting presentation remains verbatim');
+ for(const canonical of [{...repeatedFlight.canonical,isNextDay:true},{...repeatedFlight.canonical,showPresentation:false},{...repeatedFlight.canonical,endDateTime:''},{...repeatedFlight.canonical,endDateTime:'2032-10-20T14:00:00Z'}])assert.equal(card({...repeatedFlight,canonical}).detail,repeatedFlight.subtitle,'rollover, connection and incomplete evidence are never simplified');
+ assert.equal(card({...repeatedFlight,presentation:''}).detail,repeatedFlight.subtitle);
+ assert.equal(signature([repeatedFlight]),repeatedBefore,'condensing presentation never mutates published data');
+
  assert.deepEqual(source.map(mode),['journey-rest','stay','rest','operating','extra','reserve','standby','training','duty','journey-rest']);
  assert.equal(mode({...flight,title:'PS EXTRA',leg:{workType:'OP'}}),'operating','formal workType beats residue');
  assert.equal(mode(make('care','ASB',{title:'Descanso',day:{type:'ASB',pairingCode:'VC'}})),'reserve','operational code beats residual care');

@@ -309,7 +309,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   }
 
   return <div className="cc-roster-premium-v1397">
-    <V139Header title="Escala inteligente" detail="Programações e horários publicados."/>
+    <V139Header title="Escala" detail=""/>
     {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
@@ -388,17 +388,18 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
               return <article key={`${event.id}:${allOrdered.indexOf(event)}:${eventIndex}`} className="cc-roster-program-v1397 cc-roster-event-v1394 cc-roster-token" data-roster-mode={mode} data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''} data-roster-event-id={event.id}>
                 <header className="cc-roster-program-head-v1397">
                   <span className="cc-roster-program-icon-v1397"><RosterActivityIcon mode={mode}/></span>
-                  <div><small>{carePresentation?.label || meta.label} · {formatDate(rosterLabelDate(event))}</small><h3>{card.title}</h3></div>
+                  <div>{(mode === 'operating' || mode === 'extra')
+                    ? <><h3>{card.context || 'Rota não informada'}</h3><small>{card.title} · {meta.label} · {formatDate(rosterLabelDate(event))}</small></>
+                    : <><small>{carePresentation?.label || meta.label} · {formatDate(rosterLabelDate(event))}</small><h3>{card.title}</h3></>}</div>
                   {hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
                 </header>
 
-                <details className="cc-roster-source-code"><summary>Dados da fonte</summary><small className="cc-roster-published-code">Código da fonte: {card.code}</small></details>
 
                 {(mode === 'operating' || mode === 'extra') && <div className="cc-roster-flight-grid-v1397">
                   {card.presentation && <span><small>Apresentação</small><b>{card.presentation}</b></span>}
                   <span><small>Partida{card.startDate && ` · ${card.startDate}`}</small><b>{card.start}</b></span>
                   <span><small>Chegada{card.endDate && ` · ${card.endDate}`}</small><b>{card.end}</b></span>
-                  {event.subtitle && <span className="wide"><small>Detalhes da etapa</small><b>{event.subtitle}</b></span>}
+                  {card.detail && <span className="wide"><small>Detalhes da etapa</small><b>{card.detail}</b></span>}
                 </div>}
 
                 {!(mode === 'operating' || mode === 'extra') && <div className="cc-roster-flight-grid-v1397 cc-roster-program-time-grid-v1397" aria-label="Horários publicados da programação">
@@ -409,6 +410,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
                 {card.nonOperational && <p className="cc-roster-summary-v1397">{card.note}{card.context && ` · ${card.context}`}{card.hotel && ` · Hotel: ${card.hotel}`}</p>}
                 {card.datesUnconfirmed && <p>Virada de dia indicada; datas a confirmar.</p>}
                 {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${event.departure || 'Horário a confirmar'} → ${event.arrival || 'Horário a confirmar'}`}</p>}
+
+                <details className="cc-roster-source-code"><summary>Dados da fonte</summary><small className="cc-roster-published-code">Código da fonte: {card.code}</small></details>
 
                 {(eventPerDiems.length > 0 || earning) && <section className="cc-roster-event-finance-v1397">
                   {eventPerDiems.length > 0 && <div className="cc-roster-meals-v1397">

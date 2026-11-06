@@ -119,3 +119,6 @@ html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc139-head{min-w
 html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc139-head h1{white-space:normal!important;overflow-wrap:anywhere!important;max-width:100%!important;height:auto!important;max-height:none!important;overflow:visible!important}
 html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc139-head h1,.cc-roster-options-trigger){color:#edf4fb!important}
 html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc139-head p,.cc-roster-period-count){color:#c8d6e3!important;opacity:1!important}
+
+/* Empty descriptive copy has no placeholder height; the page title is simply Escala. */
+.cc-roster-premium-v1397 .cc139-head>p:empty{display:none!important}
