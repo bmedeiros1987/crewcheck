@@ -2,7 +2,7 @@ import { filterRosterEvents, rosterCardPresentation, rosterProgramMode, rosterMo
 import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';
 import { RosterActivityIcon, RosterLegend, useRosterCategoryFilter } from './RosterLegend';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
-import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
+import { rosterDisplayCompare, rosterDisplaySortInstant, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
 import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
 import { rosterDayAllowanceSummary } from '@/lib/rosterDayAllowanceSummary';
@@ -265,8 +265,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const activeDay = selectedDay.startsWith(`${selectedMonth}-`) ? selectedDay : groups[0]?.iso || `${selectedMonth}-01`;
   const periodEvents = zoom === 'day' ? ordered.filter(event => isoOf(event) === activeDay) : ordered;
   const visibleEvents = filterRosterEvents(periodEvents, categoryFilter.filter);
-  const timedEvents = periodEvents.filter(event => Number.isFinite(dateOf(event).getTime()));
-  const civilOnlyEvents = visibleEvents.filter(event => !Number.isFinite(dateOf(event).getTime()));
+  const timedEvents = periodEvents.filter(event => rosterDisplaySortInstant(event) !== null);
+  const civilOnlyEvents = visibleEvents.filter(event => rosterDisplaySortInstant(event) === null);
   // Consecutive runs retain canonical chronology when published dates recur
   // across a journey-rest interval. The civil map above serves month metrics.
   const visibleGroups = timedEvents.reduce((runs, event) => {

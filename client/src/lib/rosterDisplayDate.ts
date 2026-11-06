@@ -63,7 +63,7 @@ export function rosterLabelDate(event: DisplayEvent): Date | null {
 /** Keep proven instants in canonical chronology. Civil-only items form a
  * separate class; never interleave them using an invented instant. Stable
  * sort preserves source order for equal instants and unconfirmed items. */
-function displaySortInstant(event: DisplayEvent): Date | null {
+export function rosterDisplaySortInstant(event: DisplayEvent): Date | null {
   if ((event.canonical?.kind || event.kind) === 'rest') {
     const day = event.canonical?.publishedDay || event.day;
     // Canonical 00:00 positioning is not a published start for a clockless
@@ -75,8 +75,8 @@ function displaySortInstant(event: DisplayEvent): Date | null {
 }
 export function rosterDisplayCompare(a: DisplayEvent, b: DisplayEvent): number {
   const aDay = rosterDisplayIso(a), bDay = rosterDisplayIso(b);
-  const aInstant = aDay ? displaySortInstant(a) : null;
-  const bInstant = bDay ? displaySortInstant(b) : null;
+  const aInstant = aDay ? rosterDisplaySortInstant(a) : null;
+  const bInstant = bDay ? rosterDisplaySortInstant(b) : null;
   const aClass = !aDay ? 2 : aInstant ? 0 : 1;
   const bClass = !bDay ? 2 : bInstant ? 0 : 1;
   if (aClass !== bClass) return aClass - bClass;
