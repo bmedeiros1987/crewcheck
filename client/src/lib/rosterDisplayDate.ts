@@ -2,7 +2,7 @@
  * instants require an explicitly supplied operational timezone. */
 export const ROSTER_DISPLAY_TIME_ZONE = 'Etc/GMT+3';
 type DisplayDay = { date?: string; dutyReport?: string | null; dutyReportSource?: string };
-type DisplayEvent = { kind?: string; operationalTimeZone?: string; date?: Date | string; day?: DisplayDay; canonical?: { kind?: string; date?: string; publishedDay?: DisplayDay; startDateTime?: string } };
+type DisplayEvent = { kind?: string | null; operationalTimeZone?: string; date?: Date | string; day?: DisplayDay; canonical?: { kind?: string | null; date?: string; publishedDay?: DisplayDay; startDateTime?: string } };
 const months: Record<string, number> = { JAN: 1, FEV: 2, FEB: 2, MAR: 3, ABR: 4, APR: 4, MAI: 5, MAY: 5, JUN: 6, JUL: 7, AGO: 8, AUG: 8, SET: 9, SEP: 9, OUT: 10, OCT: 10, NOV: 11, DEZ: 12, DEC: 12 };
 function publishedIso(raw?: string): string | null {
   const value = String(raw || '').trim();
