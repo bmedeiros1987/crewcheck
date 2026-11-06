@@ -25,6 +25,10 @@ on:
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'scripts/regression-roster-legend*.mjs'
       - 'scripts/regression-roster-direct-actions-browser.mjs'
+      - 'scripts/regression-back-to-top-browser.mjs'
+      - 'client/src/components/BackToTop.tsx'
+      - 'client/src/components/back-to-top.css'
+      - 'client/src/App.tsx'
       - 'scripts/regression-roster-font-diagnostics.mjs'
       - 'scripts/lib/roster-font-diagnostics.mjs'
       - 'scripts/lib/roster-inter-policy.mjs'
@@ -191,6 +195,10 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-fixed-navigation-headers.cjs
+      - name: Verify contextual shared back-to-top action (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-back-to-top-browser.mjs
       - name: Verify direct roster actions with synthetic fixtures
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json

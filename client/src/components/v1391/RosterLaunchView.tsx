@@ -320,7 +320,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     </section>
 
     <div className="cc-roster-top-controls cc-roster-compact-actions">
-      <button type="button" className="cc-roster-options-trigger" aria-haspopup="dialog" onClick={()=>optionsDialog.current?.showModal()}><SlidersHorizontal aria-hidden="true"/><span>Visualização</span></button>
+      <button type="button" className="cc-roster-options-trigger" aria-label="Exibir opções da escala" aria-haspopup="dialog" onClick={()=>optionsDialog.current?.showModal()}><SlidersHorizontal aria-hidden="true"/><span>Exibir</span></button>
       {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
     </div>
     <dialog ref={optionsDialog} className="cc-roster-options-dialog" aria-labelledby="cc-roster-options-title">
@@ -371,10 +371,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
           <header className="cc-roster-day-header-v1397">
             <time dateTime={group.iso}><b>{group.iso.slice(8).padStart(2, '0')}</b><span>{new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, month: 'short' }).format(group.date!)}</span></time>
             <div><small>{new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, weekday: 'long' }).format(group.date!)}</small><h2>{group.events.length} {group.events.length === 1 ? 'programação' : 'programações'}</h2></div>
-            {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397" aria-label="Totais do dia, sem filtro de categoria">
-              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPerDiemTotal === null ? 'Não calculável' : groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
-              {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{scopedFinance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
-            </div>}
+
           </header>
 
           <div className="cc-roster-programs-v1397">
@@ -439,6 +436,10 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
               </article>;
             })}
           </div>
+            {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397" aria-label="Totais do dia, sem filtro de categoria">
+              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPerDiemTotal === null ? 'Não calculável' : groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
+              {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{scopedFinance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
+            </div>}
         </section>;
       })}
 
