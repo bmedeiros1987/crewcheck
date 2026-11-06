@@ -1,7 +1,8 @@
 /** Presentation adapter for the existing canonical contract: published date first,
  * instants require an explicitly supplied operational timezone. */
 export const ROSTER_DISPLAY_TIME_ZONE = 'Etc/GMT+3';
-type DisplayEvent = { operationalTimeZone?: string; date?: Date | string; day?: { date?: string }; canonical?: { date?: string; publishedDay?: { date?: string }; startDateTime?: string } };
+type DisplayDay = { date?: string; dutyReport?: string | null; dutyReportSource?: string };
+type DisplayEvent = { kind?: string; operationalTimeZone?: string; date?: Date | string; day?: DisplayDay; canonical?: { kind?: string; date?: string; publishedDay?: DisplayDay; startDateTime?: string } };
 const months: Record<string, number> = { JAN: 1, FEV: 2, FEB: 2, MAR: 3, ABR: 4, APR: 4, MAI: 5, MAY: 5, JUN: 6, JUL: 7, AGO: 8, AUG: 8, SET: 9, SEP: 9, OUT: 10, OCT: 10, NOV: 11, DEZ: 12, DEC: 12 };
 function publishedIso(raw?: string): string | null {
   const value = String(raw || '').trim();
@@ -62,10 +63,20 @@ export function rosterLabelDate(event: DisplayEvent): Date | null {
 /** Keep proven instants in canonical chronology. Civil-only items form a
  * separate class; never interleave them using an invented instant. Stable
  * sort preserves source order for equal instants and unconfirmed items. */
+function displaySortInstant(event: DisplayEvent): Date | null {
+  if ((event.canonical?.kind || event.kind) === 'rest') {
+    const day = event.canonical?.publishedDay || event.day;
+    // Canonical 00:00 positioning is not a published start for a clockless
+    // day marker. Keep it in the existing civil-only presentation class.
+    if (!day?.dutyReport || !/^(?:[01]?\d|2[0-3]):[0-5]\d(?:\(\+\d+\))?$/.test(day.dutyReport.trim())
+      || ['estimated', 'absent', 'unknown'].includes(day.dutyReportSource || '')) return null;
+  }
+  return rosterStrictInstant(event.canonical?.startDateTime || event.date);
+}
 export function rosterDisplayCompare(a: DisplayEvent, b: DisplayEvent): number {
   const aDay = rosterDisplayIso(a), bDay = rosterDisplayIso(b);
-  const aInstant = aDay ? rosterStrictInstant(a.canonical?.startDateTime || a.date) : null;
-  const bInstant = bDay ? rosterStrictInstant(b.canonical?.startDateTime || b.date) : null;
+  const aInstant = aDay ? displaySortInstant(a) : null;
+  const bInstant = bDay ? displaySortInstant(b) : null;
   const aClass = !aDay ? 2 : aInstant ? 0 : 1;
   const bClass = !bDay ? 2 : bInstant ? 0 : 1;
   if (aClass !== bClass) return aClass - bClass;

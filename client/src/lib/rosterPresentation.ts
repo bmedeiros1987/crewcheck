@@ -143,7 +143,7 @@ export function rosterCardPresentation(event: RosterPresentationEvent, displayed
     : isJourneyRestScheduleActivity(event) ? 'Intervalo entre jornadas, não operacional. Não certifica descanso regulamentar.'
     : mode === 'stay' && (published.continuityInferred || day.continuityInferred) ? 'Pernoite inferido por continuidade entre jornadas.'
     : mode === 'rest' ? 'Dia preservado conforme a escala publicada.' : '';
-  return { category, mode, title, code, context, location, hotel, start, end, startDate, endDate, datesUnconfirmed, presentation, nonOperational, atBase, note };
+  return { category, mode, title, code, context, location, hotel, start, end, startDate, endDate, datesUnconfirmed, presentation, nonOperational, atBase, note: [note, mode === 'rest' && (start === '—' || end === '—') ? 'Horário não informado ou não confirmado; ordem na lista não define sequência.' : ''].filter(Boolean).join(' ') };
 }
 
 function stableData(value: any): any {
