@@ -88,4 +88,4 @@ html .cz-app .cc-roster-card-heading>svg { color:var(--cc-roster-accent); }
 .cc-roster-direct-period{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.cc-roster-direct-period>button{flex-direction:column;width:auto!important;min-width:48px!important;gap:4px;padding-inline:3px}
 .cc-roster-direct-date{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.cc-roster-direct-date input{min-height:48px;min-width:0;max-width:100%;font:inherit}
 html[data-crew-theme=light] .cc-roster-view-toolbar{background:#f5f8fb;color:#18334a;border-color:#a8bed0}
-@media(max-width:600px){html[data-crew-text-size="200"] .cc-roster-layout-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){html[data-crew-text-size="200"] .cc-roster-layout-buttons,html[data-crew-text-size="200"] .cc-roster-direct-period{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-crew-text-size="200"] .cc-roster-direct-period>.cc-roster-layout-reset{grid-column:1/-1;flex-direction:row}}

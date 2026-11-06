@@ -249,6 +249,7 @@ jobs:
             artifacts/fixed-headers
             artifacts/roster-legend
             artifacts/roster-direct-actions
+            artifacts/roster-layout-session
             artifacts/demo-bootstrap
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
