@@ -111,3 +111,6 @@ html[data-crew-theme=light] .cc-roster-options-dialog,html[data-crew-theme=light
 .cc-roster-premium-v1397 .cc-roster-period-v1399>button{min-height:48px!important;padding-inline:8px!important}
 @media(max-width:600px){.cc-roster-options-dialog .cc-roster-layout-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .cc-roster-compact-actions>.cc-roster-options-trigger{width:auto!important;flex:0 0 auto}
+/* The prepared app has a generic grid/full-width reset; preserve this one compact row. */
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-top-controls.cc-roster-compact-actions{display:flex!important;align-items:flex-start!important;flex-wrap:wrap!important;gap:8px!important}
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-compact-actions>.cc-roster-options-trigger{width:auto!important;min-width:48px!important;min-height:48px!important;flex:0 0 auto!important}

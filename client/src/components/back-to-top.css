@@ -2,3 +2,4 @@
 .cz-app>.cc-back-to-top{display:grid;place-items:center;width:48px;height:48px;min-width:48px;min-height:48px;margin:12px 0 12px auto;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer;scroll-margin-bottom:calc(var(--cc-fixed-footer-height,100px) + 16px)}
 .cz-app>.cc-back-to-top svg{width:24px;height:24px;pointer-events:none}
 .cz-app>.cc-back-to-top:focus-visible{outline:3px solid #3399bd;outline-offset:2px}
+html body #root .cz-app[data-version]>.cc-back-to-top{position:static!important;display:grid!important;place-items:center;width:48px!important;height:48px!important;min-width:48px!important;min-height:48px!important;padding:0!important;margin:12px 0 12px auto!important;border:0!important;background:transparent!important}
