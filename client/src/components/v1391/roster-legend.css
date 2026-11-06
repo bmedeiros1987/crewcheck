@@ -114,3 +114,8 @@ html[data-crew-theme=light] .cc-roster-options-dialog,html[data-crew-theme=light
 /* The prepared app has a generic grid/full-width reset; preserve this one compact row. */
 html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-top-controls.cc-roster-compact-actions{display:flex!important;align-items:flex-start!important;flex-wrap:wrap!important;gap:8px!important}
 html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-compact-actions>.cc-roster-options-trigger{width:auto!important;min-width:48px!important;min-height:48px!important;flex:0 0 auto!important}
+/* Preserve the roster heading at enlarged text; the generic shell used nowrap/low-contrast ink. */
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc139-head{min-width:0!important;max-width:100%!important}
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc139-head h1{white-space:normal!important;overflow-wrap:anywhere!important;max-width:100%!important;height:auto!important;max-height:none!important;overflow:visible!important}
+html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc139-head h1,.cc-roster-options-trigger){color:#edf4fb!important}
+html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc139-head p,.cc-roster-period-count){color:#c8d6e3!important;opacity:1!important}
