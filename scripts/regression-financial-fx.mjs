@@ -174,7 +174,7 @@ try {
   './FinancialStatementImporter':{default:()=>null,extractPdfText:()=>{throw Error('no real PDF in fixture');}},
  }).default;
  const base=Object.freeze({eventId:'synthetic-paid-period',iso:'2032-02-08',label:'Meal',value:20,currency:'USD',source:'synthetic historical entitlement'});
- const view=(rows,quotes)=>{stateIndex=0;return renderToStaticMarkup(Reconciliation({rows,quotes,today:'2032-02-09',unclassified:[],coveredMonths:['2032-02'],requestRange:()=>{}}));};
+ const view=(rows,quotes,coveredDays=['2032-02-08'])=>{stateIndex=0;return renderToStaticMarkup(Reconciliation({rows,quotes,today:'2032-02-09',unclassified:[],coveredMonths:['2032-02'],coveredDays,requestRange:()=>{}}));};
  for(const rate of ['5','6']) {
   const q={base:'USD',quote:'BRL',rate,asOf:'2032-02-08',retrievedAt:'2032-02-09T12:00:00Z',source:'synthetic current FX',method:'account_manual'};
   const rows=fxMath.projectAllowanceFxRows([base],{USD:q},'2032-02-09'),html=view(rows);
@@ -193,6 +193,8 @@ try {
  assert.doesNotMatch(scopedHtml,/Diferença a conferir/);
  const domestic=Object.freeze({...base,currency:'BRL',value:80,convertedBRL:80,exchangeRate:1});
  assert.match(view([domestic]),/Diferença a conferir/,'domestic same-unit comparison remains available');
+ assert.doesNotMatch(view([domestic],undefined,[]),/Diferença a conferir/,'month without daily publication cannot certify domestic comparison');
+ assert.match(view([domestic],undefined,[]),/Cobertura incompleta/);
  assert.doesNotMatch(view(fxMath.projectAllowanceFxRows([base],{},'2032-02-09')),/Diferença a conferir/);
  hidden=true;assert.doesNotMatch(view([domestic]),/R\$|80,00|20,00|100,00/,'privacy protects compared monetary amounts');
  hidden=false;reconciliationOwner='another-owner';assert.doesNotMatch(view([domestic]),/Total informado pelo documento/,'document never crosses account scope');
