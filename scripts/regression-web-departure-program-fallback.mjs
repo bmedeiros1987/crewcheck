@@ -15,6 +15,9 @@ function rawProjection(){
  const fakeFs={readFileSync:p=>{assert(files.has(p),'unexpected source read '+p);return files.get(p);},writeFileSync:(p,v)=>{assert(files.has(p),'unexpected source write '+p);files.set(p,v);}};
  const code=fs.readFileSync(process.env.DEPARTURE_APPLY_SOURCE||'scripts/home-standby-departure/apply.mjs','utf8');
  vm.runInNewContext(compile(code),{exports:{},require:name=>{if(name==='node:fs')return fakeFs;if(name==='./selected-context.mjs')return {repairSelectedDepartureContext};throw Error('unexpected dependency '+name);}});
+ const once=files.get('client/src/pages/Home.tsx');
+ vm.runInNewContext(compile(code),{exports:{},require:name=>{if(name==='node:fs')return fakeFs;if(name==='./selected-context.mjs')return {repairSelectedDepartureContext};throw Error('unexpected dependency '+name);}});
+ assert.equal(files.get('client/src/pages/Home.tsx'),once,'complete materializer is idempotent');
  return files.get('client/src/pages/Home.tsx');
 }
 const prepared=process.argv.includes('--prepared');

@@ -19,7 +19,8 @@ if (!home.includes(marker)) {
 }
 function AirportDeparture({ event, events, setView }: { event: ZeroLeg; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {`);
   home = home.replaceAll('isSmartDepartureEligible(event)', 'isAirportDepartureEligible(event)');
-  fs.writeFileSync(path, marker + '\n' + home);
+  home = marker + '\n' + home;
+  fs.writeFileSync(path, home);
 }
 
 const selectedContext = repairSelectedDepartureContext(home);
