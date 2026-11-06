@@ -107,18 +107,19 @@ try {
   await peer.evaluate(() => localStorage.clear());
   await expectLayout('cards', 'storage clear resets visitor');
   const screenshots=path.resolve(process.env.ROSTER_SESSION_EVIDENCE||'artifacts/roster-layout-session');fs.mkdirSync(screenshots,{recursive:true});
-  for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const scale of [1,2]){
-    await page.setViewportSize({width,height:900});
+  for(const width of [320,390,1440])for(const height of [640,900])for(const theme of ['light','dark'])for(const scale of [1,2]){
+    await page.setViewportSize({width,height});
     await page.evaluate(({theme,scale})=>{document.documentElement.dataset.crewTheme=theme;document.documentElement.dataset.crewTextSize=String(scale*100);document.documentElement.style.setProperty('--cc-text-scale',String(scale));},{theme,scale});
     await viewReady();const actions=page.locator('section.cc-roster-view-options');await actions.scrollIntoViewIfNeeded();
     const geometry=await actions.evaluate(el=>({overflow:document.documentElement.scrollWidth>innerWidth+1,buttons:[...el.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect(),span=b.querySelector('span'),range=document.createRange();range.selectNodeContents(span);return {name:b.getAttribute('aria-label'),width:r.width,height:r.height,clipped:b.scrollWidth>b.clientWidth+1,labelLines:new Set([...range.getClientRects()].map(r=>Math.round(r.top))).size,icon:Boolean(b.querySelector('svg'))};})}));
     assert.equal(geometry.overflow,false,JSON.stringify({width,theme,scale,...geometry}));assert.ok(geometry.buttons.length===7&&geometry.buttons.every(b=>b.width>=48&&b.height>=48&&!b.clipped&&b.labelLines===1&&b.icon&&b.name),JSON.stringify({width,theme,scale,...geometry}));
     await page.getByRole('button',{name:'Ver escala',exact:true}).click();await page.evaluate(()=>scrollTo(0,0));
     const initial=await page.locator('[data-roster-iso]').first().boundingBox();assert.ok(initial,JSON.stringify({width,theme,scale,initial}));if(scale===1)assert.ok(initial.y<530,JSON.stringify({width,theme,scale,initial}));else results.push(`200% first content y=${initial.y}; small-height initial visibility remains a separate measured exception, not hidden text`);
-    await page.screenshot({path:path.join(screenshots,`${width}-${theme}-${scale}-full-app-fallback.png`),fullPage:false});
+    const firstTitle=await page.locator('.cc-roster-program-head-v1397').first().boundingBox(),nav=await page.locator('.cz-bottom-nav').boundingBox();assert.ok(firstTitle&&nav);if(scale===1)assert.ok(firstTitle.y>=0&&firstTitle.y+firstTitle.height<=nav.y,JSON.stringify({width,height,theme,scale,firstTitle,nav}));
+    await page.screenshot({path:path.join(screenshots,`${width}-${height}-${theme}-${scale}-full-app-fallback.png`),fullPage:false});
     await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>scrollTo(0,1100));const top=page.getByRole('button',{name:'Voltar ao topo',exact:true});await top.waitFor();
     const topBox=await top.evaluate(b=>{const r=b.getBoundingClientRect(),h=b.parentElement.getBoundingClientRect(),brand=b.previousElementSibling.getBoundingClientRect();return {w:r.width,h:r.height,inside:r.top>=h.top&&r.bottom<=h.bottom&&r.right<=h.right,overlap:r.left<brand.right};});assert.ok(topBox.w>=48&&topBox.h>=48&&topBox.inside&&!topBox.overlap,JSON.stringify({width,theme,scale,topBox}));await top.focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>scrollY===0);await top.waitFor({state:'detached'});
-    results.push(`full compiled app ${width}/${theme}/${scale}:direct48px actions, whole labels, no overflow; fallback-font evidence only`);
+    results.push(`full compiled app ${width}x${height}/${theme}/${scale}:direct48px actions, whole labels, no overflow; fallback-font evidence only`);
   }
   console.log(JSON.stringify({ status: 'PASS', scope: 'full app, fictional demo, offline API fixtures, accelerated minute timers, synthetic account identities', results }, null, 2));
 } finally {
