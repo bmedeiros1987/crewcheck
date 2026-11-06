@@ -22,13 +22,30 @@ const EMPTY_VALUES = /^(|—|-|–|N\/?A|NA|TBD|TBA|UNKNOWN|NULL|UNDEFINED|A CON
 const POSITION_VALUES = /^(POSIÇÃO|POSICAO|POSITION|POS|STAND|STD|BOX|PARKING|PRK|SPOT|ESTANDE|BAY)(?=[\s\d.:#-]|$)/;
 const text = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const upper = value => text(value).toUpperCase();
+const gateText = value => upper(value).replace(/^(PORTÃO|PORTAO|GATE|PTO\.?)\s*/, '');
 export function normalizeRadarGate(value) {
-  const raw = upper(value).replace(/^(PORTÃO|PORTAO|GATE|PTO\.?)\s*/, '');
+  const raw = gateText(value);
   return EMPTY_VALUES.test(raw) || /CONFIRMAR|INFORMAD/.test(raw) || POSITION_VALUES.test(raw) || raw.length > 12 ? '' : raw;
 }
 const cleanStatus = value => { const raw = text(value); return raw && raw.length <= 80 && !EMPTY_VALUES.test(raw.toUpperCase()) && !/aguardando|monitorando|n[aã]o confirmado/i.test(raw) ? raw : ''; };
 const cleanRegistration = value => { const raw = upper(value); return raw.length >= 3 && raw.length <= 16 && /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(raw) && !EMPTY_VALUES.test(raw) && !/CONFIRM|INFORMAD/.test(raw) ? raw : ''; };
 const NORMALIZE = Object.freeze({ gate: normalizeRadarGate, status: cleanStatus, registration: cleanRegistration });
+
+// Comparison is not admission: positions and malformed nonempty values remain
+// disagreements, even though they cannot be displayed as a proved gate. Only
+// explicit absence/generic monitoring and canonical spellings are equivalent.
+export function radarOperationalConflicts(results) {
+  const compare = (field, value) => {
+    if (field === 'gate') {
+      const raw = gateText(value);
+      return normalizeRadarGate(value) || (EMPTY_VALUES.test(raw) || /CONFIRMAR|INFORMAD/.test(raw) ? '' : raw);
+    }
+    const raw = upper(value);
+    if (field === 'status') return upper(cleanStatus(value)) || (EMPTY_VALUES.test(raw) || /aguardando|monitorando|n[aã]o confirmado/i.test(raw) ? '' : raw);
+    return String(value || '').trim().toUpperCase(); // Preserve the original registration comparison exactly.
+  };
+  return RADAR_EVIDENCE_FIELDS.filter(field => new Set(results.filter(row => row?.ok).map(row => compare(field, row[field])).filter(Boolean)).size > 1);
+}
 
 export function radarEvidenceGapLabel(reason) {
   return GAP_LABELS[reason] || '';

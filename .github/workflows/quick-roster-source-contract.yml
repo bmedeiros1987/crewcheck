@@ -24,6 +24,7 @@ on:
       - 'shared/gate-query-day.mjs'
       - 'scripts/fixtures/owned-radar-http.mjs'
       - 'server.mjs'
+      - 'server/radar-attempt-diagnostics.mjs'
       - 'server/platform.mjs'
       - 'server/radar-publication-authority.mjs'
       - 'scripts/regression-p0-multichannel-roster-gate.mjs'
