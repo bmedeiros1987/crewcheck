@@ -149,9 +149,12 @@ const reconciliationNodes=reconciliationAst.statements.filter(node=>ts.isFunctio
 let stateIndex=0;
 const reconciliationContext=vm.createContext({...libs,React,useFinancialPrivacy:()=>({amount:value=>value,text:value=>value}),useEffect:()=>{},useRef:()=>({current:0}),useState:initial=>[stateIndex++===0?{owner:'synthetic:synthetic-token',session:'synthetic-session',result:{periodStart:'2032-08-01',periodEnd:'2032-08-05',paymentDate:null,totals:{deposited:1000},warnings:[],rates:[]}}:initial,()=>{}],getStoredUser:()=>({id:'synthetic'}),getToken:()=> 'synthetic-token',FinancialStatementImporter:()=>null});
 vm.runInContext(ts.transpileModule(reconciliationNodes.map(node=>node.getText(reconciliationAst).replace('export default ','')).join('\n')+'\nglobalThis.component=FinancialStatementReconciliation;',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,reconciliationContext);
-const reconciliationRows=context.subject.financeSnapshot(libs.parseAimsRoster(textFor())).perdiem.monthlyRows;
-function reconcile(pending){stateIndex=0;return renderToStaticMarkup(reconciliationContext.component({rows:reconciliationRows,unclassified:pending,coveredMonths:['2032-08'],requestRange:()=>{}}))}
+const reconciliationRoster=libs.parseAimsRoster(textFor());
+const reconciliationRows=context.subject.financeSnapshot(reconciliationRoster).perdiem.monthlyRows;
+const reconciliationDays=libs.nominalFinancialDays([reconciliationRoster,{year:2032,month:7,days:[{date:'31/07/2032',type:'DO',legs:[]}]}]);
+function reconcile(pending,coveredDays=reconciliationDays){stateIndex=0;return renderToStaticMarkup(reconciliationContext.component({rows:reconciliationRows,unclassified:pending,coveredMonths:['2032-08'],coveredDays,requestRange:()=>{}}))}
 assert.match(reconcile([]),/Diferença a conferir/,'complete comparison control remains available');
+assert.doesNotMatch(reconcile([],reconciliationDays.filter(day=>day!=='2032-08-03')),/Diferença a conferir/,'nominal month cannot replace missing daily evidence');
 for(const iso of ['', '2032-08-99']){const html=reconcile([{iso,airport:'',pendingKind:'source_coverage'}]);assert.match(html,/Não calculável/);assert.doesNotMatch(html,/Diferença a conferir/);}
 
 const report={synthetic:true,homeSha256:crypto.createHash('sha256').update(home).digest('hex'),scope:'AIMS source-flight coverage only; no real tariff, payment, salary, provider or browser claim',results};
