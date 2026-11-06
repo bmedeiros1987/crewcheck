@@ -5,8 +5,12 @@ import {execFileSync} from 'node:child_process';
 import ts from 'typescript';
 import * as policy from '../shared/gate-query-day.mjs';
 import {resolveOwnedGatePublication} from '../server/radar-publication-authority.mjs';
+import {beginRadarOperationalHistory,RADAR_OPERATIONAL_HISTORY_ENABLED} from '../server/concierge/radar-history-capture.mjs';
 import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs';
 prepareConciergeCanonicalBridge();
+assert.equal(RADAR_OPERATIONAL_HISTORY_ENABLED,false,'history capture remains OFF in this authority-only fixture');
+const forbidden=()=>assert.fail('OFF history touched auth/DB/runtime/clock');
+assert.equal(await beginRadarOperationalHistory({},null,{identify:forbidden,loadRuntime:forbidden,clock:forbidden}),null,'real OFF hook returns before effects');
 const {buildCanonicalRosterEvents}=await import('../server/concierge/generated/canonicalRoster.mjs');
 function extract(file,name){const text=process.env.RADAR_HISTORY_BASE?execFileSync('git',['show',process.env.RADAR_HISTORY_BASE+':'+file],{encoding:'utf8'}):fs.readFileSync(file,'utf8');const ast=ts.createSourceFile(file,text,99,true,ts.ScriptKind.JS);const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,name);return fn.getText(ast).replace(/^export\s+/,'');}
 const october={year:2026,month:10,crewId:'SYNTHETIC-A',base:'BSB',days:[{date:'31/10/2026',type:'VOO',dutyReport:'07:00',dutyDebrief:'10:00',legs:[{flightNumber:'LA4774',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'}]}]};
@@ -15,7 +19,7 @@ const canonical=buildCanonicalRosterEvents(october).find(x=>x.flightNumber==='LA
 const request={flight:'LA4774',origin:'BSB',destination:'GRU',departureDate:'2026-10-31',scheduledDepartureUtc:canonical.startDateTime};
 const row=(id,roster,active=false)=>({id,roster,roster_key:`${roster.year}-${String(roster.month).padStart(2,'0')}`,owner_email:'a@example.invalid',updated_at:'2026-10-26T12:00:00Z',active});
 let rows,owner,claims,reads,race,attempts,afterRead,atProvider,snapshot,now,selectedRequest,authenticated;
-const scope=vm.createContext({...policy,gateQueryDay:i=>policy.gateQueryDay(i,now),resolveOwnedGatePublication,buildCanonicalRosterEvents,URL,process:{env:{}},Date:class extends Date{static now(){return now;}},
+const scope=vm.createContext({beginRadarOperationalHistory,...policy,gateQueryDay:i=>policy.gateQueryDay(i,now),resolveOwnedGatePublication,buildCanonicalRosterEvents,URL,process:{env:{}},Date:class extends Date{static now(){return now;}},
  safeEmail:x=>String(x||'').trim().toLowerCase(),verifyJwt:()=>claims,requestToken:()=> 'synthetic',
  pool:async()=>({query:async(sql,args)=>{assert(sql.startsWith('SELECT '));assert(sql.includes('owner_email=$1'));assert.deepEqual(Array.from(args),['a@example.invalid']);reads++;afterRead?.(reads);return {rows:structuredClone(sql.includes('active=TRUE')?rows.filter(r=>r.active):rows)};}}),
  telegramRequestUser:()=>({email:owner,authenticated}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>String(x||'').trim().toLowerCase(),conciergeAccessMatches:()=>true,conciergeLoadSnapshot:async()=>snapshot,

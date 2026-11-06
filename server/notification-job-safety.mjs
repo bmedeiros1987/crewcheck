@@ -1,3 +1,4 @@
+import { OPERATIONAL_CHANGE_PREFIX, TELEGRAM_OPERATIONAL_CHANGE_ENABLED, dispatchTelegramOperationalChange } from './concierge/telegram-operational-change.mjs';
 import { createWakeupSpokenEnvelope, isReservedWakeupMessage } from './wakeup-spoken-program.mjs';
 import { BRIEFING_JOB_PREFIX, dispatchTelegramBriefing, TELEGRAM_OPERATIONAL_BRIEFING_ENABLED } from './concierge/telegram-briefing.mjs';
 // Safety boundary for the existing SQL notification queue. No new provider/queue.
@@ -46,7 +47,7 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   const phone = String(body.phone || body.mobile || '').trim();
   if ((channels.includes('telegram') && !chatId) || (channels.includes('telegram-call') && !username) || (channels.includes('phone-call') && !phone)) return sendJson(res, 400, { ok: false, message: 'Vínculo ou destinatário indisponível.' });
   const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
-  if (/^(cycle:|free-day:|operational-briefing:)/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
+  if (/^(cycle:|free-day:|operational-briefing:|operational-change:)/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
   let message = String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000);
   if (body.spokenProgram !== undefined && typeof body.spokenProgram !== 'boolean') return sendJson(res, 400, { ok: false, message: 'Confirme explicitamente o conteúdo deste alerta.' });
   if (body.spokenProgram === true) {
@@ -88,11 +89,12 @@ export async function safeCancelJob({ req, res, identity, readJson, dbPool, send
   return sendJson(res, inFlight ? 409 : 200, { ok: !inFlight, cancelled: result.affectedRows, inFlight, message: inFlight ? 'Envio já iniciou; não foi possível confirmar cancelamento.' : 'Cancelamento verificado; mensagens já aceitas não podem ser recolhidas.' });
 }
 
-export async function dispatchClaimedJob(db, selected, { deliver, findLink, now = Date.now(), operationalBriefingEnabled = TELEGRAM_OPERATIONAL_BRIEFING_ENABLED, clock = Date.now }) {
+export async function dispatchClaimedJob(db, selected, { deliver, findLink, now = Date.now(), operationalBriefingEnabled = TELEGRAM_OPERATIONAL_BRIEFING_ENABLED, clock = Date.now, operationalChangeEnabled = TELEGRAM_OPERATIONAL_CHANGE_ENABLED, readOperationalChangeSource }) {
   const [rows] = await db.query("SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE id=? AND status='processing' LIMIT 1", [selected.id]);
   const job = rows[0];
   if (!job) return { status: 'skipped' }; // cancellation after selection/claim
   if (/^operational-briefing:/i.test(String(job.job_key || ''))) return dispatchTelegramBriefing(db, job, { enabled: operationalBriefingEnabled, deliver, clock });
+  if (String(job.job_key || '').toLowerCase().startsWith(OPERATIONAL_CHANGE_PREFIX)) return dispatchTelegramOperationalChange(db, job, { enabled: operationalChangeEnabled, readSource: readOperationalChangeSource, deliver, clock });
   // Legacy/forged phone jobs have no durable verified recipient proof either.
   // Reject the whole combined job rather than silently dropping a selected channel.
   if (includesPhone(job.channel)) {
