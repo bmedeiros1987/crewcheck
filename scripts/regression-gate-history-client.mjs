@@ -24,6 +24,10 @@ globalThis.fetch=async()=>({ok:true,json:async()=>({ok:true,history:{...page,ide
 let release;globalThis.fetch=()=>new Promise(r=>{calls++;release=r;});const pending=actual.readGateHistoryPage(identity);values.set('crewcheck_auth_token','synthetic-B');values.set('crewcheck_auth_user',JSON.stringify({id:'synthetic-B'}));
 release({ok:true,json:()=>assert.fail('Late A response must be dropped before parsing under B')});await assert.rejects(pending,/sessão mudou/);
 globalThis.fetch=()=>assert.fail('Rendering history must not query a provider or API');
-const html=renderToStaticMarkup(React.createElement(actual.GateHistoryPanel,{event:{id:'fixture',flightNumber:identity.flight,origin:identity.origin,destination:identity.destination,canonical:{startDateTime:identity.scheduledDepartureUtc}}}));
+const fixture={id:'fixture',flightNumber:identity.flight,origin:identity.origin,destination:identity.destination,canonical:{startDateTime:identity.scheduledDepartureUtc}};
+assert.equal(actual.GATE_HISTORY_UI_ENABLED,false);
+assert.equal(renderToStaticMarkup(React.createElement(actual.GateHistoryPanel,{event:fixture})),'','Shipping OFF panel must render nothing');
+assert.equal(renderToStaticMarkup(React.createElement(actual.GateHistoryPanel,{event:fixture,enabled:false})),'');
+const html=renderToStaticMarkup(React.createElement(actual.GateHistoryPanel,{event:fixture,enabled:true}));
 assert.match(html,/Histórico de portões/);assert.match(html,/não confirmam portão atual/);assert.match(html,/Consultar histórico salvo/);
-assert.equal(calls,2);fs.rmSync(dir,{recursive:true,force:true});console.log('PASS actual history client/panel: exact identity, no implicit fetch/poll, authenticated local read, unavailable != empty, late A response dropped under B; synthetic only');
+assert.equal(calls,2);fs.rmSync(dir,{recursive:true,force:true});console.log('PASS actual history client/panel: shipping OFF renders nothing, exact identity, no implicit fetch/poll, authenticated local read, unavailable != empty, late A response dropped under B; synthetic only');

@@ -2,9 +2,13 @@ import {useEffect,useRef,useState} from 'react';
 import {originFlightDate} from '../../../../shared/gate-query-day.mjs';
 import {captureAuthSession} from '@/lib/authClient';
 import {type NextFlightLike} from '@/lib/nextFlightGate';
-import {readGateHistoryPage,type GateHistoryPage} from '@/lib/gateHistory';
+import {GATE_HISTORY_UI_ENABLED,readGateHistoryPage,type GateHistoryPage} from '@/lib/gateHistory';
 const clock=(value:string|null)=>value?new Date(value).toLocaleString('pt-BR',{timeZone:'UTC'})+' UTC':'Não fornecido';
-export function GateHistoryPanel({event}:{event:NextFlightLike}){
+// OFF renders nothing and mounts no hooks, listeners or requests.
+export function GateHistoryPanel({event,enabled=GATE_HISTORY_UI_ENABLED}:{event:NextFlightLike;enabled?:boolean}){
+ return enabled?<GateHistoryView event={event}/>:null;
+}
+function GateHistoryView({event}:{event:NextFlightLike}){
  const raw=event.canonical?.startDateTime||'';
  const planned=Number.isFinite(Date.parse(raw))?new Date(raw).toISOString():'';
  const identity={flight:String(event.flightNumber||'').replace(/\s+/g,'').toUpperCase(),origin:String(event.origin||''),destination:String(event.destination||''),departureDate:originFlightDate(planned,String(event.origin||'')),scheduledDepartureUtc:planned?new Date(planned).toISOString():''};

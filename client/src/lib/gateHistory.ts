@@ -1,4 +1,6 @@
 import {captureAuthSession} from './authClient';
+// Literal OFF while /api/radar-history and its backend gates are OFF: the Radar panel does not render.
+export const GATE_HISTORY_UI_ENABLED=false;
 export type GateHistoryIdentity={flight:string;origin:string;destination:string;departureDate:string;scheduledDepartureUtc:string};
 export type HistoricalGate={gate:string;provider:string;sourceUpdatedAt:string|null;observedAt:null;receivedAt:string;sequence:number;conflicted:boolean|null;outOfOrder?:boolean};
 export type GateHistoryPage={kind:'historical-gate-records';currentConfirmation:false;order:'recorded-sequence';identity:GateHistoryIdentity;cursor:number;nextCursor:number|null;total:number;observations:HistoricalGate[];legacy?:boolean;coverage?:'stored-current-previous-only'};

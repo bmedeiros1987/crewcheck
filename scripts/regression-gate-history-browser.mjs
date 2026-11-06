@@ -12,8 +12,10 @@ const compiled=await build({stdin:{contents:`
  const root=createRoot(document.getElementById('root'));
  window.account=owner=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_token','synthetic-'+owner);localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner}));window.dispatchEvent(new Event('crewcheck:auth-changed'));};
  window.logout=clearSession;
- window.select=iso=>root.render(<GateHistoryPanel event={{id:'synthetic-'+iso,flightNumber:'LA4774',origin:'BSB',destination:'AJU',canonical:{startDateTime:iso}}}/>);
- window.select('2099-10-31T15:00:00.000Z');
+ const event=iso=>({id:'synthetic-'+iso,flightNumber:'LA4774',origin:'BSB',destination:'AJU',canonical:{startDateTime:iso}});
+ window.select=iso=>root.render(<GateHistoryPanel event={event(iso)} enabled={true}/>);
+ window.shipping=iso=>root.render(<GateHistoryPanel event={event(iso)}/>);
+ window.shipping('2099-10-31T15:00:00.000Z');
  `,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,platform:'browser',format:'iife',jsx:'automatic',alias:{'@':process.cwd()+'/client/src'},define:{'process.env.NODE_ENV':'"test"'}});
 const html='<!doctype html><div id="root"></div><script>'+compiled.outputFiles[0].text.replaceAll('</script','<\\/script')+'</script>';
 const identity={flight:'LA4774',origin:'BSB',destination:'AJU',departureDate:'2099-10-31',scheduledDepartureUtc:'2099-10-31T15:00:00.000Z'};
@@ -45,6 +47,10 @@ try{
  });
  const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);
  const panel=page.getByRole('region',{name:'Histórico de portões'}),read=()=>panel.getByRole('button',{name:'Consultar histórico salvo',exact:true}).click();
+ // Shipping default: OFF renders no region/button and starts no request, even after an auth change.
+ await page.waitForFunction(()=>document.getElementById('root').childElementCount===0);assert.equal(await panel.count(),0);
+ await page.evaluate(()=>window.account('A'));assert.equal(await panel.count(),0);assert.equal(requests.length,0);
+ await page.evaluate(()=>window.select('2099-10-31T15:00:00.000Z'));
  await panel.getByRole('heading',{name:'Histórico de portões'}).waitFor();assert.equal(requests.length,0);
  await read();await panel.locator('li').nth(99).waitFor();assert.equal(await panel.locator('li').count(),100);
  assert.match(await panel.innerText(),/não confirmam portão atual/);
@@ -60,7 +66,7 @@ try{
  await page.evaluate(()=>window.account('B'));await releaseHeld();await page.waitForFunction(()=>!document.body.textContent.includes('Consultando…'));
  assert.equal(await panel.locator('li').count(),0);assert.equal(requests.length,before,'A late read must not start a B request');
  mode='normal';await read();await panel.locator('li').nth(99).waitFor();assert.match(await panel.locator('li').first().innerText(),/Portão 77/);assert.equal(requests.at(-1).token,'Bearer synthetic-B');
- await page.reload();await panel.getByRole('heading',{name:'Histórico de portões'}).waitFor();assert.equal(requests.length,before+1,'Reload must not fetch history implicitly');
+ await page.reload();await page.evaluate(()=>window.select('2099-10-31T15:00:00.000Z'));await panel.getByRole('heading',{name:'Histórico de portões'}).waitFor();assert.equal(requests.length,before+1,'Reload must not fetch history implicitly');
  await read();await panel.locator('li').nth(99).waitFor();assert.equal(requests.at(-1).token,'Bearer synthetic-B','Init script must preserve B on reload');
  mode='hold';started=new Promise(resolve=>{hold=resolve;});await read();await started;const oldOccurrenceCount=requests.length;
  await page.evaluate(()=>window.select('2099-11-01T15:00:00.000Z'));await releaseHeld();await page.waitForFunction(()=>!document.body.textContent.includes('Consultando…'));
@@ -69,5 +75,5 @@ try{
  await page.evaluate(()=>window.logout());try{await page.waitForFunction(()=>document.querySelectorAll('li').length===0);}catch(error){throw new Error('HISTORY_ACCOUNT_CLEAR: history must disappear on logout',{cause:error});}const beforeLogoutRead=requests.length;
  await read();await panel.getByText('Faça login para consultar o histórico.').waitFor();assert.equal(requests.length,beforeLogoutRead);
  assert.equal(unexpected,0);assert.deepEqual(errors,[]);
- console.log(JSON.stringify({status:'PASS',contract:'actual GateHistoryPanel + client + session fence in browser',timezone:process.env.TZ||'UTC',browser:await browser.version(),playwright:pwRequire('playwright/package.json').version,requests:requests.length,externalCalls:0,implicitFetch:false,coverage:['100+1 pagination','UTC clocks/missing source update','conflict/out-of-order labels','unavailable != empty','wrong occurrence refused','legacy paging','late A under B','reload preserves B','month change drops late response','logout'],visualGate:false,realInterValidated:false}));
+ console.log(JSON.stringify({status:'PASS',contract:'actual GateHistoryPanel + client + session fence in browser',timezone:process.env.TZ||'UTC',browser:await browser.version(),playwright:pwRequire('playwright/package.json').version,requests:requests.length,externalCalls:0,implicitFetch:false,coverage:['shipping OFF renders nothing','100+1 pagination','UTC clocks/missing source update','conflict/out-of-order labels','unavailable != empty','wrong occurrence refused','legacy paging','late A under B','reload preserves B','month change drops late response','logout'],visualGate:false,realInterValidated:false}));
 }finally{await browser?.close();}
