@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowUp } from 'lucide-react';
 import './back-to-top.css';
 
-// One action in the existing fixed header, never over the roster or bottom navigation.
+// One in-flow action at the end of long app pages: never floats over cards or navigation.
 // Only document/app-ancestor scrolling qualifies; a table or modal scroll cannot claim it.
 export default function BackToTop() {
   const [state, setState] = useState<{ header: HTMLElement; scroller: Element } | null>(null);
@@ -38,10 +38,11 @@ export default function BackToTop() {
     schedule();
     return () => { observer.disconnect(); document.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', schedule); cancelAnimationFrame(frame); };
   }, []);
-  if (!state) return null;
+  const host = state?.header.closest('.cz-app');
+  if (!state || !host) return null;
   return createPortal(<button type="button" className="cc-back-to-top" aria-label="Voltar ao topo" onClick={() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     state.scroller.scrollTo({ top: 0, behavior: reduce ? 'instant' : 'smooth' });
     state.header.querySelector<HTMLElement>('.cz-brand-row button')?.focus({ preventScroll: true });
-  }}><ArrowUp aria-hidden="true"/></button>, state.header);
+  }}><ArrowUp aria-hidden="true"/></button>, host);
 }
