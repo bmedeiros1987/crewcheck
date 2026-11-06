@@ -385,11 +385,11 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
               const eventPerDiems = perDiemForEvent(event);
               const earning = salaryByEvent.get(event.id);
 
-              return <article key={`${event.id}:${allOrdered.indexOf(event)}:${eventIndex}`} className="cc-roster-program-v1397 cc-roster-event-v1394 cc-roster-token" data-roster-mode={mode} data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''} data-roster-event-id={event.id}>
+              return <article key={`${event.id}:${allOrdered.indexOf(event)}:${eventIndex}`} className="cc-roster-program-v1397 cc-roster-event-v1394 cc-roster-token" data-roster-mode={mode} data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''} data-roster-event-id={event.id} aria-label={(mode === 'operating' || mode === 'extra') ? `${card.title} · ${card.context || 'Rota não informada'} · ${formatDate(rosterLabelDate(event))}` : undefined}>
                 <header className="cc-roster-program-head-v1397">
                   <span className="cc-roster-program-icon-v1397"><RosterActivityIcon mode={mode}/></span>
                   <div>{(mode === 'operating' || mode === 'extra')
-                    ? <><h3>{card.context || 'Rota não informada'}</h3><small>{card.title} · {meta.label} · {formatDate(rosterLabelDate(event))}</small></>
+                    ? <><h3>{card.context || 'Rota não informada'}</h3><small>{card.title} · {meta.label}{rosterDisplayIso(event) !== group.iso && ` · ${formatDate(rosterLabelDate(event))}`}</small></>
                     : <><small>{carePresentation?.label || meta.label} · {formatDate(rosterLabelDate(event))}</small><h3>{card.title}</h3></>}</div>
                   {hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
                 </header>
