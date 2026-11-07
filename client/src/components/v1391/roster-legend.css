@@ -132,8 +132,10 @@ html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-source
 html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc-roster-program-head-v1397 h3,.cc-roster-flight-grid-v1397 b){color:#edf4fb!important}
 html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-premium-v1397 :is(.cc-roster-program-head-v1397 small,.cc-roster-flight-grid-v1397 small){color:#c8d6e3!important;opacity:1!important}
 /* Enlarged clock labels keep their font size; cells reflow rather than crushing words. */
-html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397{grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))!important}
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397{grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))!important}
 html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397 small{text-transform:none!important;letter-spacing:normal!important}
+/* Noninteractive clock cells yield inset space, never font size, at enlarged reading. */
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397>span{padding-inline:8px!important}
 /* The period is a complete row, not a continuation beside the shell's floated back action. */
 html body #root .cz-app[data-version] .cc-roster-premium-v1397>.cc-roster-period-v1399{clear:both!important;width:100%!important;box-sizing:border-box}
 html[data-crew-theme=light] body #root .cz-app[data-version] .cc-roster-period-v1399>label>span{color:#536d80!important;opacity:1!important}
