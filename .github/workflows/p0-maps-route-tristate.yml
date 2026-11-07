@@ -7,6 +7,7 @@ on:
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'scripts/lib/roster-geometry-diagnostics.cjs'
       - 'client/src/pages/Home.tsx'
       - 'server.mjs'
       - 'client/src/lib/departureRouteState.ts'

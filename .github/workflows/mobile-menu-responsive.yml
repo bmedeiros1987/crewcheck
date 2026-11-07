@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'scripts/lib/roster-geometry-diagnostics.cjs'
       - 'client/src/styles/**'
       - 'client/src/components/preferences/**'
       - 'shared/timezone-choice*'

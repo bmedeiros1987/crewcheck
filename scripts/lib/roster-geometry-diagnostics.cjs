@@ -1,0 +1,12 @@
+// Failure-only, synthetic browser evidence. This does not decide acceptance.
+const fs=require('node:fs'),path=require('node:path');
+async function captureRosterGeometry({page,browser,selector,file,caseInfo}) {
+ const report={caseInfo,engine:browser.version(),viewport:page.viewportSize(),selector,warnings:[]};
+ try { report.layout=await page.evaluate(selector=>({userAgent:navigator.userAgent,dpr:devicePixelRatio,viewport:{innerWidth,innerHeight,clientWidth:document.documentElement.clientWidth,clientHeight:document.documentElement.clientHeight},fontFaces:[...document.fonts].map(f=>({family:f.family,status:f.status})),nodes:[...document.querySelectorAll(selector)].map(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(e);const dialog=e.closest('dialog');return {text:(e instanceof HTMLSelectElement?e.selectedOptions[0]?.textContent:e.textContent)?.slice(0,256),rect:{x:r.x,y:r.y,width:r.width,height:r.height},font:s.font,fontFamily:s.fontFamily,whiteSpace:s.whiteSpace,wordBreak:s.wordBreak,overflowWrap:s.overflowWrap,padding:[s.paddingLeft,s.paddingRight],clientWidth:e.clientWidth,scrollWidth:e.scrollWidth,clientHeight:e.clientHeight,scrollHeight:e.scrollHeight,textRects:[...range.getClientRects()].map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),dialog:dialog?{clientWidth:dialog.clientWidth,offsetWidth:dialog.offsetWidth,scrollHeight:dialog.scrollHeight,clientHeight:dialog.clientHeight,scrollbarGutter:getComputedStyle(dialog).scrollbarGutter}:null};})}),selector); } catch(e) {report.warnings.push('layout: '+e.message);}
+ let session;
+ try {session=await page.context().newCDPSession(page);await session.send('DOM.enable');await session.send('CSS.enable');const {root}=await session.send('DOM.getDocument');const {nodeIds}=await session.send('DOM.querySelectorAll',{nodeId:root.nodeId,selector});report.platformFonts=[];for(const nodeId of nodeIds){const {fonts}=await session.send('CSS.getPlatformFontsForNode',{nodeId});report.platformFonts.push(fonts);} } catch(e) {report.warnings.push('platform-fonts unavailable: '+e.message);} finally {await session?.detach().catch(()=>{});}
+ if(file) {try {fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(report,null,2));}catch(e){report.warnings.push('file: '+e.message);}}
+ console.error('ROSTER_GEOMETRY_DIAGNOSTIC '+JSON.stringify(report));
+ return report;
+}
+module.exports={captureRosterGeometry};
