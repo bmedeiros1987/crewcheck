@@ -14,6 +14,7 @@ on:
       - 'scripts/lib/aims-preaction-stability.cjs'
       - 'scripts/regression-aims-preaction-stability.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
+      - 'scripts/regression-roster-direct-actions-browser.mjs'
       - '.github/workflows/aims-document-browser.yml'
   workflow_dispatch:
 
@@ -26,7 +27,7 @@ concurrency:
 
 jobs:
   document-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -60,6 +61,11 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/aims-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/aims-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify accessible format choices, keyboard and persistence (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
+        run: |
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-direct-actions-browser.mjs
       - name: Verify synthetic document zoom, gestures, exact events and accessibility
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
@@ -74,5 +80,6 @@ jobs:
           path: |
             artifacts/aims-document
             artifacts/aims-document-app
+            artifacts/roster-direct-actions
           if-no-files-found: warn
           retention-days: 7
