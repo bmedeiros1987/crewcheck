@@ -5,7 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import {createRequire} from 'node:module';
 import {buildRosterLegendFixture} from './lib/roster-legend-fixture.mjs';
-const require=createRequire(import.meta.url),{beginLegendScrollProbe,finishLegendScrollProbe}=require('./lib/roster-geometry-diagnostics.cjs');
+const require=createRequire(import.meta.url),{beginLegendScrollProbe,finishLegendScrollProbe,captureRosterGeometry}=require('./lib/roster-geometry-diagnostics.cjs');
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const css=process.env.ROSTER_PRODUCTION_CSS;assert.ok(css&&fs.existsSync(css),'explicit shipping CSS required');
 const out=path.resolve(process.env.ROSTER_SCROLL_EVIDENCE||'artifacts/roster-legend-scroll'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'legend-scroll-'));fs.mkdirSync(out,{recursive:true});await buildRosterLegendFixture(path.join(dir,'app.js'));
@@ -29,7 +29,8 @@ try {
   const sourceBefore=await page.evaluate(()=>JSON.stringify(window.__initial));
   await strip.evaluate(beginLegendScrollProbe);await last.click();const report=await strip.evaluate(finishLegendScrollProbe);
   assert.equal(await page.evaluate(()=>JSON.stringify(window.__initial)),sourceBefore);
-  const result={width,theme,scale,engine:browser.version(),font:'installed DejaVu request; no Inter acquisition/acceptance',absoluteOK:absoluteOK(report),externalIntercepted:external,...report};results.push(result);fs.writeFileSync(path.join(out,`${width}-${theme}-${scale}.json`),JSON.stringify(result,null,2));
+  const fontReport=await captureRosterGeometry({page,browser,selector:'.cc-roster-filter-options>button:last-child>span',file:path.join(out,`${width}-${theme}-${scale}-font.json`),caseInfo:{phase:'after-original-measurement',width,theme,scale}});assert.ok(fontReport.platformFonts?.length===1&&fontReport.platformFonts[0].some(f=>/^DejaVu Sans/.test(f.familyName)&&f.glyphCount>0),'the requested installed fallback must actually render');
+  const result={width,theme,scale,engine:browser.version(),font:'installed DejaVu glyphs CDP verified after measurement; no Inter acquisition/acceptance',absoluteOK:absoluteOK(report),externalIntercepted:external,...report};results.push(result);fs.writeFileSync(path.join(out,`${width}-${theme}-${scale}.json`),JSON.stringify(result,null,2));
   await context.close();
  }
  // Counterproofs exercise the same collector, not a relative before/after substitute.
