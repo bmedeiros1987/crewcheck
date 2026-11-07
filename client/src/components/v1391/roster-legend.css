@@ -101,7 +101,7 @@ html[data-crew-theme=light] .cc-roster-view-toolbar{background:#f5f8fb;color:#18
 .cc-roster-options-dialog::backdrop{background:rgba(0,0,0,.55)}
 .cc-roster-options-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 .cc-roster-options-dialog h2{font-size:1.15em;margin:0}
-.cc-roster-options-dialog>header button{display:grid;place-items:center;border:1px solid currentColor;border-radius:8px;background:transparent}
+.cc-roster-options-dialog>header button{display:grid;place-items:center;border:1px solid currentColor;border-radius:8px;background:transparent;flex:0 0 48px!important;min-width:48px!important;min-height:48px!important;width:48px!important}
 .cc-roster-options-done{width:100%;margin-top:12px}
 .cc-roster-options-dialog :focus-visible,.cc-roster-options-trigger:focus-visible{outline:3px solid #3399bd;outline-offset:2px}
 .cc-roster-options-dialog .cc-share-entry{display:flex;align-items:center;gap:8px;margin-top:12px}
