@@ -117,6 +117,12 @@ try {
     const luminance=color=>{const channels=color.match(/[\d.]+/g).slice(0,3).map(Number).map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return channels.reduce((sum,n,i)=>sum+n*[.2126,.7152,.0722][i],0);};
     const ink=luminance(appearance.color),surface=luminance(appearance.background),contrast=(Math.max(ink,surface)+.05)/(Math.min(ink,surface)+.05);assert.ok(contrast>=4.5,JSON.stringify({theme,scale,width,appearance,contrast}));
 
+    const countAppearance=await page.locator('.cc-roster-period-count').evaluate(e=>{const st=getComputedStyle(e),panel=getComputedStyle(e.parentElement),base=getComputedStyle(document.querySelector('main.cz-app'));return {color:st.color,opacity:Number(st.opacity),panel:panel.backgroundColor,gradient:panel.backgroundImage,base:base.backgroundColor};});
+    const channels=color=>color.match(/[\d.]+/g).map(Number);
+    const blend=(foreground,background,opacity=1)=>{const a=channels(foreground),b=channels(background),alpha=(a[3]??1)*opacity;return `rgb(${a.slice(0,3).map((v,i)=>v*alpha+b[i]*(1-alpha)).join(',')})`;};
+    const stops=[...countAppearance.gradient.matchAll(/rgba?\([^)]*\)/g)].map(m=>m[0]);assert.equal(stops.length,2,'review the period surface if its two-stop gradient changes');
+    const countSurfaces=stops.map(stop=>blend(stop,blend(countAppearance.panel,countAppearance.base)));
+    const countContrast=Math.min(...countSurfaces.map(bg=>{const fg=blend(countAppearance.color,bg,countAppearance.opacity),a=luminance(fg),b=luminance(bg);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);}));assert.ok(countContrast>=4.5,JSON.stringify({theme,scale,width,countAppearance,countContrast}));
     assert.equal(await page.locator('.cc-roster-premium-v1397 .cc139-head h1').innerText(),'Escala');
     const title=await page.locator('.cc-roster-premium-v1397 .cc139-head h1').evaluate(h=>({left:h.getBoundingClientRect().left,right:h.getBoundingClientRect().right,overflow:h.scrollWidth-h.clientWidth,color:getComputedStyle(h).color}));assert.ok(title.left>=0&&title.right<=width&&title.overflow<=1,JSON.stringify({width,height,theme,scale,title}));if(theme==='dark')assert.equal(title.color,'rgb(237, 244, 251)','dark heading keeps its reviewed high-contrast ink');
     await viewReady();const actions=page.locator('section.cc-roster-view-options');await actions.scrollIntoViewIfNeeded();
@@ -130,7 +136,7 @@ try {
     await page.screenshot({path:path.join(screenshots,`${width}-${height}-${theme}-${scale}-full-app-fallback.png`),fullPage:false});
     await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>scrollTo(0,1100));const top=page.getByRole('button',{name:'Voltar ao topo',exact:true});await top.waitFor();await page.evaluate(()=>scrollTo(0,document.scrollingElement.scrollHeight));
     const topBox=await top.evaluate(b=>{const r=b.getBoundingClientRect(),nav=document.querySelector('.cz-bottom-nav').getBoundingClientRect();return {w:r.width,h:r.height,inside:r.top>=0&&r.bottom<=nav.top,pageEnd:b.parentElement.classList.contains('cz-app')&&b===b.parentElement.lastElementChild};});assert.ok(topBox.w>=48&&topBox.h>=48&&topBox.inside&&topBox.pageEnd,JSON.stringify({width,height,theme,scale,topBox}));await top.focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>scrollY===0);await top.waitFor({state:'detached'});
-    results.push(`theme ${theme}/${scale}: synchronized aliases; Exibir contrast=${contrast.toFixed(3)}:1`);
+    results.push(`theme ${theme}/${scale}: synchronized aliases; Exibir contrast=${contrast.toFixed(3)}:1; period summary >=${countContrast.toFixed(3)}:1`);
     results.push(`full compiled app ${width}x${height}/${theme}/${scale}:direct48px actions, whole labels, no overflow; fallback-font evidence only`);
   }
   console.log(JSON.stringify({ status: 'PASS', scope: 'full app, fictional demo, offline API fixtures, accelerated minute timers, synthetic account identities', results }, null, 2));
