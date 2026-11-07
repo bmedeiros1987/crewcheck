@@ -72,6 +72,7 @@ on:
       - 'client/src/lib/rosterPublication*.ts'
       - 'scripts/regression-financial-changes-browser.mjs'
       - 'scripts/regression-financial-changes-home-compiled.mjs'
+      - 'scripts/lib/roster-format-controls.cjs'
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/payrollPaymentComposition.ts'
