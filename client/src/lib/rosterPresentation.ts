@@ -162,7 +162,11 @@ export function rosterCardPresentation(event: RosterPresentationEvent, displayed
     && instantClock(event.canonical?.endDateTime, zone) === clockParts(end)
     && subtitle === `Apres. ${event.presentation} · ${event.departure} → ${event.arrival} · ${airportCity(event.origin)} → ${airportCity(event.destination)}`;
   const detail = repeatedClocks ? `${airportCity(event.origin)} → ${airportCity(event.destination)}` : subtitle;
-  return { category, mode, title, code, context, detail, location, hotel, start, end, durationKnown: Boolean(clockParts(start) && clockParts(end)), startDate, endDate, datesUnconfirmed, presentation, nonOperational, atBase, note: [note, mode === 'rest' && (start === '—' || end === '—') ? 'Horário não informado ou não confirmado; ordem na lista não define sequência.' : ''].filter(Boolean).join(' ') };
+  // A displayed legacy clock alone cannot turn different canonical scaffold instants into a duration.
+  const durationKnown = Boolean(clockParts(start) && clockParts(end))
+    && instantClock(event.canonical?.startDateTime, zone) === clockParts(start)
+    && instantClock(event.canonical?.endDateTime, zone) === clockParts(end);
+  return { category, mode, title, code, context, detail, location, hotel, start, end, durationKnown, startDate, endDate, datesUnconfirmed, presentation, nonOperational, atBase, note: [note, mode === 'rest' && (start === '—' || end === '—') ? 'Horário não informado ou não confirmado; ordem na lista não define sequência.' : ''].filter(Boolean).join(' ') };
 }
 
 function stableData(value: any): any {

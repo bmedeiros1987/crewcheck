@@ -469,7 +469,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
           <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
           <span><Plane/><b>{flights}</b> voos</span>
           <span><Hotel/><b>{stays}</b> pernoites</span>
-          <span><Clock/><b>{readableHours(dutyHours)}</b> {incompleteDutyTimes ? 'subtotal conhecido · Horários incompletos' : 'em programação'}</span>
+          <span><Clock/><b>{readableHours(dutyHours)}</b> {incompleteDutyTimes ? 'subtotal conhecido · Horários incompletos ou não reconciliados' : 'em programação'}</span>
         </div>
       </div>
       <div className="cc-roster-money-overview-v1397">
