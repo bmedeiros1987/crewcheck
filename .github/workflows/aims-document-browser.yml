@@ -15,6 +15,7 @@ on:
       - 'scripts/regression-aims-preaction-stability.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - 'scripts/regression-roster-direct-actions-browser.mjs'
+      - 'scripts/regression-roster-summary-browser.mjs'
       - '.github/workflows/aims-document-browser.yml'
   workflow_dispatch:
 
@@ -66,6 +67,7 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
         run: |
           ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-direct-actions-browser.mjs
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-summary-browser.mjs
       - name: Verify synthetic document zoom, gestures, exact events and accessibility
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
@@ -81,5 +83,6 @@ jobs:
             artifacts/aims-document
             artifacts/aims-document-app
             artifacts/roster-direct-actions
+            artifacts/roster-summary
           if-no-files-found: warn
           retention-days: 7

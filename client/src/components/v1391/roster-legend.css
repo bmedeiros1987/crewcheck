@@ -140,3 +140,9 @@ html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-peri
 /* At enlarged reading, the month picker keeps a complete row instead of sharing width with Hoje. */
 html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label{flex:1 1 100%!important;width:100%!important}
 html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label>select{flex:1 1 100%!important;width:100%!important}
+
+/* Keep the known duration atomic and coverage on its own natural line. */
+html body #root .cz-app[data-version] .cc-roster-finance-summary .cc-roster-hero-counts-v1397>.cc-roster-duty-summary{flex:1 1 100%!important;flex-wrap:wrap!important;align-items:baseline!important;min-width:0!important;max-width:100%!important;height:auto!important;max-height:none!important}
+html body #root .cz-app[data-version] .cc-roster-duty-summary>b{flex:0 0 auto!important;white-space:nowrap!important;word-break:normal!important;overflow-wrap:normal!important;line-height:1.4!important}
+html body #root .cz-app[data-version] .cc-roster-duty-summary>svg{flex:0 0 auto!important}
+html body #root .cz-app[data-version] .cc-roster-duty-summary>.cc-roster-duty-coverage{display:block!important;text-transform:inherit!important;letter-spacing:inherit!important;flex:1 1 100%!important;font:inherit!important;line-height:1.5!important;white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important;max-width:100%!important;height:auto!important;max-height:none!important;margin:0!important;padding:0!important}
