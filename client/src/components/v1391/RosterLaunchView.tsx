@@ -142,13 +142,14 @@ function formatDate(date: Date | null) {
 }
 
 function duration(event: RosterEvent) {
+  if (!rosterCardPresentation(event).durationKnown) return null;
   if (event.canonical?.kind === 'journey-rest') {
     const minutes = Number((event.canonical as any).restMinutes);
     return Number.isFinite(minutes) ? Math.max(0, minutes / 60) : 0;
   }
   const start = new Date(event.canonical?.startDateTime || 0);
   const end = new Date(event.canonical?.endDateTime || 0);
-  return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) ? Math.max(0, (end.getTime() - start.getTime()) / 3600000) : 0;
+  return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) ? Math.max(0, (end.getTime() - start.getTime()) / 3600000) : null;
 }
 
 // Shared presentation contract: source classification and published fields remain unchanged.
@@ -299,7 +300,9 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const perDiemSummary = scopedFinance?.perdiem?.monthlySummary ?? summarizeForecastRows(selectedPerDiemRows);
   const perDiemTotal = perDiemSummary.convertedTotalBRL;
   const pendingCurrencies = perDiemSummary.pendingCurrencies;
-  const dutyHours = ordered.filter((event) => !['stay', 'rest', 'journey-rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
+  const dutyDurations = ordered.filter((event) => !['stay', 'rest', 'journey-rest'].includes(workMode(event))).map(duration);
+  const dutyHours = dutyDurations.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  const incompleteDutyTimes = dutyDurations.some(value => value === null);
   const todayIso = isoFromDate(new Date());
 
   function goToday() {
@@ -391,7 +394,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
                   <div>{(mode === 'operating' || mode === 'extra')
                     ? <><h3>{card.context || 'Rota não informada'}</h3><small>{card.title} · {meta.label}{rosterDisplayIso(event) !== group.iso && ` · ${formatDate(rosterLabelDate(event))}`}</small></>
                     : <><small>{carePresentation?.label || meta.label} · {formatDate(rosterLabelDate(event))}</small><h3>{card.title}</h3></>}</div>
-                  {hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
+                  {hours !== null && hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
                 </header>
 
 
@@ -409,7 +412,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
 
                 {card.nonOperational && <p className="cc-roster-summary-v1397">{card.note}{card.context && ` · ${card.context}`}{card.hotel && ` · Hotel: ${card.hotel}`}</p>}
                 {card.datesUnconfirmed && <p>Virada de dia indicada; datas a confirmar.</p>}
-                {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${event.departure || 'Horário a confirmar'} → ${event.arrival || 'Horário a confirmar'}`}</p>}
+                {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${card.start === '—' ? 'Horário a confirmar' : card.start} → ${card.end === '—' ? 'Horário a confirmar' : card.end}`}</p>}
 
                 <details className="cc-roster-source-code"><summary>Dados da fonte</summary><small className="cc-roster-published-code">Código da fonte: {card.code}</small></details>
 
@@ -466,7 +469,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
           <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
           <span><Plane/><b>{flights}</b> voos</span>
           <span><Hotel/><b>{stays}</b> pernoites</span>
-          <span><Clock/><b>{readableHours(dutyHours)}</b> em programação</span>
+          <span><Clock/><b>{readableHours(dutyHours)}</b> {incompleteDutyTimes ? 'subtotal conhecido · Horários incompletos' : 'em programação'}</span>
         </div>
       </div>
       <div className="cc-roster-money-overview-v1397">

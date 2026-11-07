@@ -108,6 +108,14 @@ export function rosterCardPresentation(event: RosterPresentationEvent, displayed
   const flight = mode === 'operating' || mode === 'extra';
   let start = sourceClock(flight ? event.departure : published.dutyReport || day.dutyReport || published.startTime || day.startTime || event.departure);
   let end = sourceClock(flight ? event.arrival : published.dutyDebrief || day.dutyDebrief || published.endTime || day.endTime || event.arrival);
+  if (!flight && !nonOperational) {
+    // Canonical all-day bounds position clockless ground activities; they are
+    // not published work times. Read each endpoint from its source evidence.
+    start = sourceClock(published.dutyReport || day.dutyReport || published.startTime || day.startTime);
+    end = sourceClock(published.dutyDebrief || day.dutyDebrief || published.endTime || day.endTime);
+    if (['estimated', 'absent', 'unknown'].includes(published.dutyReportSource || day.dutyReportSource)) start = '—';
+    if (['estimated', 'absent', 'unknown'].includes(published.dutyDebriefSource || day.dutyDebriefSource)) end = '—';
+  }
   if (nonOperational) {
     const hasStart = published.dutyReport || day.dutyReport || published.startTime || day.startTime;
     const hasEnd = published.dutyDebrief || day.dutyDebrief || published.endTime || day.endTime;
@@ -135,7 +143,7 @@ export function rosterCardPresentation(event: RosterPresentationEvent, displayed
   const startDate = startBoundary.label, endDate = endBoundary.label;
   const startDay = rosterInstantIso(event.canonical?.startDateTime || '', zone), endDay = rosterInstantIso(event.canonical?.endDateTime || '', zone);
   const datesUnconfirmed = startBoundary.unconfirmed || endBoundary.unconfirmed || Boolean((event.canonical?.isNextDay || published.isNextDay || day.isNextDay) && (!startDay || !endDay));
-  const presentation = !nonOperational && event.canonical?.showPresentation !== false && event.presentation !== 'Conexão/Solo' && clockParts(String(event.presentation || ''))
+  const presentation = !nonOperational && (flight || Boolean(clockParts(start))) && event.canonical?.showPresentation !== false && event.presentation !== 'Conexão/Solo' && clockParts(String(event.presentation || ''))
     && !sameSourceClock(sourceClock(event.presentation), start) ? sourceClock(event.presentation) : '';
   const context = nonOperational ? location : event.origin && event.destination && event.origin !== event.destination ? `${event.origin} → ${event.destination}` : meaningful(event.origin || event.destination);
   const hotel = mode === 'stay' ? meaningful(event.hotel || published.hotel || day.hotel) : '';
@@ -154,7 +162,7 @@ export function rosterCardPresentation(event: RosterPresentationEvent, displayed
     && instantClock(event.canonical?.endDateTime, zone) === clockParts(end)
     && subtitle === `Apres. ${event.presentation} · ${event.departure} → ${event.arrival} · ${airportCity(event.origin)} → ${airportCity(event.destination)}`;
   const detail = repeatedClocks ? `${airportCity(event.origin)} → ${airportCity(event.destination)}` : subtitle;
-  return { category, mode, title, code, context, detail, location, hotel, start, end, startDate, endDate, datesUnconfirmed, presentation, nonOperational, atBase, note: [note, mode === 'rest' && (start === '—' || end === '—') ? 'Horário não informado ou não confirmado; ordem na lista não define sequência.' : ''].filter(Boolean).join(' ') };
+  return { category, mode, title, code, context, detail, location, hotel, start, end, durationKnown: Boolean(clockParts(start) && clockParts(end)), startDate, endDate, datesUnconfirmed, presentation, nonOperational, atBase, note: [note, mode === 'rest' && (start === '—' || end === '—') ? 'Horário não informado ou não confirmado; ordem na lista não define sequência.' : ''].filter(Boolean).join(' ') };
 }
 
 function stableData(value: any): any {

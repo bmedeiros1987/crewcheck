@@ -25,6 +25,8 @@ on:
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'scripts/regression-roster-legend*.mjs'
       - 'scripts/regression-roster-direct-actions-browser.mjs'
+      - 'scripts/regression-roster-layout-session-browser.mjs'
+      - 'scripts/regression-roster-published-ground-times.mjs'
       - 'scripts/regression-back-to-top-browser.mjs'
       - 'client/src/components/BackToTop.tsx'
       - 'client/src/components/back-to-top.css'
@@ -122,6 +124,7 @@ jobs:
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
           done
+          node scripts/regression-roster-published-ground-times.mjs
       - name: Record canonical hotel stylesheet before preparation
         run: sha256sum client/src/components/v1391/menu-personalization.css > "$RUNNER_TEMP/hotel-controls-css.sha256"
       # This regression prepares the full chain itself. Do not prepare twice.
@@ -134,6 +137,7 @@ jobs:
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
           done
+          node scripts/regression-roster-published-ground-times.mjs
       - name: Verify hotel stylesheet survives canonical preparation
         run: sha256sum -c "$RUNNER_TEMP/hotel-controls-css.sha256"
       - name: Preserve navigation inventory and source contracts
@@ -203,6 +207,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-direct-actions-browser.mjs
+      - name: Verify full roster theme, published times and modal targets (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-roster-layout-session-browser.mjs
       - name: Verify shared roster legend and filtering with shipping CSS (synthetic)
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json

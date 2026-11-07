@@ -35,7 +35,7 @@ try {
   const page = await context.newPage();
   // The demo roster starts tomorrow and spans five days in the month of its first
   // day; near month end its last day leaves the AIMS view. Pin a mid-month instant.
-  await page.clock.install({ time: new Date('2026-10-14T12:00:00-03:00') });
+  await page.clock.install({ time: new Date('2034-01-14T12:00:00-03:00') });
   await page.addInitScript(() => {
     localStorage.setItem('crewcheck_demo_mode_seen', '1');
     localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1');
@@ -123,6 +123,10 @@ try {
     const stops=[...countAppearance.gradient.matchAll(/rgba?\([^)]*\)/g)].map(m=>m[0]);assert.equal(stops.length,2,'review the period surface if its two-stop gradient changes');
     const countSurfaces=stops.map(stop=>blend(stop,blend(countAppearance.panel,countAppearance.base)));
     const countContrast=Math.min(...countSurfaces.map(bg=>{const fg=blend(countAppearance.color,bg,countAppearance.opacity),a=luminance(fg),b=luminance(bg);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);}));assert.ok(countContrast>=4.5,JSON.stringify({theme,scale,width,countAppearance,countContrast}));
+    const monthCaption=await page.locator('.cc-roster-period-v1399>label>span').evaluate(e=>({color:getComputedStyle(e).color,opacity:Number(getComputedStyle(e).opacity)}));
+    const captionContrast=Math.min(...countSurfaces.map(bg=>{const fg=blend(monthCaption.color,bg,monthCaption.opacity),a=luminance(fg),b=luminance(bg);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);}));assert.ok(captionContrast>=4.5,JSON.stringify({theme,scale,width,monthCaption,captionContrast}));
+    const monthSelect=await page.locator('.cc-roster-period-v1399 select').evaluate(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect(),c=document.createElement('canvas').getContext('2d');c.font=s.font;const text=e.selectedOptions[0].textContent,paint=s.textTransform==='capitalize'?text.replace(/\b\p{L}/gu,x=>x.toUpperCase()):text;return {text,font:parseFloat(s.fontSize),height:r.height,clientHeight:e.clientHeight,scrollHeight:e.scrollHeight,width:r.width,available:e.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight)-20,textWidth:c.measureText(paint).width};});
+    assert.match(monthSelect.text,/janeiro.*2034/i);assert.ok(monthSelect.clientHeight>=monthSelect.scrollHeight&&monthSelect.textWidth<=monthSelect.available+1,JSON.stringify({width,height,theme,scale,monthSelect}));
     assert.equal(await page.locator('.cc-roster-premium-v1397 .cc139-head h1').innerText(),'Escala');
     const title=await page.locator('.cc-roster-premium-v1397 .cc139-head h1').evaluate(h=>({left:h.getBoundingClientRect().left,right:h.getBoundingClientRect().right,overflow:h.scrollWidth-h.clientWidth,color:getComputedStyle(h).color}));assert.ok(title.left>=0&&title.right<=width&&title.overflow<=1,JSON.stringify({width,height,theme,scale,title}));if(theme==='dark')assert.equal(title.color,'rgb(237, 244, 251)','dark heading keeps its reviewed high-contrast ink');
     await viewReady();const actions=page.locator('section.cc-roster-view-options');await actions.scrollIntoViewIfNeeded();
@@ -139,7 +143,7 @@ try {
     await page.screenshot({path:path.join(screenshots,`${width}-${height}-${theme}-${scale}-full-app-fallback.png`),fullPage:false});
     await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>scrollTo(0,1100));const top=page.getByRole('button',{name:'Voltar ao topo',exact:true});await top.waitFor();await page.evaluate(()=>scrollTo(0,document.scrollingElement.scrollHeight));
     const topBox=await top.evaluate(b=>{const r=b.getBoundingClientRect(),nav=document.querySelector('.cz-bottom-nav').getBoundingClientRect();return {w:r.width,h:r.height,inside:r.top>=0&&r.bottom<=nav.top,pageEnd:b.parentElement.classList.contains('cz-app')&&b===b.parentElement.lastElementChild};});assert.ok(topBox.w>=48&&topBox.h>=48&&topBox.inside&&topBox.pageEnd,JSON.stringify({width,height,theme,scale,topBox}));await top.focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>scrollY===0);await top.waitFor({state:'detached'});
-    results.push(`theme ${theme}/${scale}: synchronized aliases; Exibir contrast=${contrast.toFixed(3)}:1; period summary >=${countContrast.toFixed(3)}:1`);
+    results.push(`theme ${theme}/${scale}: synchronized aliases; Exibir contrast=${contrast.toFixed(3)}:1; period summary >=${countContrast.toFixed(3)}:1; month caption >=${captionContrast.toFixed(3)}:1`);
     results.push(`full compiled app ${width}x${height}/${theme}/${scale}:direct48px actions and close hit-target, whole labels, no overflow; fallback-font evidence only`);
   }
   console.log(JSON.stringify({ status: 'PASS', scope: 'full app, fictional demo, offline API fixtures, accelerated minute timers, synthetic account identities', results }, null, 2));
