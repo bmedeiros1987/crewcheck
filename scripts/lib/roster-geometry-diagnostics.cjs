@@ -1,4 +1,4 @@
-// Failure-only, synthetic browser evidence. This does not decide acceptance.
+// Synthetic browser evidence. Diagnostics do not decide acceptance.
 const fs=require('node:fs'),path=require('node:path');
 async function captureRosterGeometry({page,browser,selector,file,caseInfo}) {
  const report={caseInfo,engine:browser.version(),viewport:page.viewportSize(),selector,warnings:[]};
@@ -10,3 +10,33 @@ async function captureRosterGeometry({page,browser,selector,file,caseInfo}) {
  return report;
 }
 module.exports={captureRosterGeometry};
+
+// Browser functions: the reset and post-click measurement occupy the original gate's positions.
+// No waits, scrolling repair, focus changes or relative acceptance are performed by diagnostics.
+function beginLegendScrollProbe(el) {
+ el.scrollTo({left:0,behavior:'instant'});
+ const nodes=[];for(let n=el;n;n=n.parentElement)nodes.push(n);
+ const target=el.lastElementChild,rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
+ const describe=e=>e?{tag:e.tagName,id:e.id,className:String(e.className||''),filter:e.getAttribute?.('data-roster-filter'),connected:e.isConnected}:null;
+ const snapshot=phase=>{
+  const now=performance.now(),chain=[];for(let n=el;n;n=n.parentElement)chain.push(n);
+  const ancestors=nodes.map((n,index)=>{const s=getComputedStyle(n);return {index,...describe(n),scrollLeft:n.scrollLeft,scrollTop:n.scrollTop,scrollWidth:n.scrollWidth,scrollHeight:n.scrollHeight,clientWidth:n.clientWidth,clientHeight:n.clientHeight,clientLeft:n.clientLeft,clientTop:n.clientTop,overflowX:s.overflowX,overflowY:s.overflowY,position:s.position,box:rect(n)};});
+  const scrolling=document.scrollingElement,s=getComputedStyle(target);
+  return {phase,at:now,timeOrigin:performance.timeOrigin,sameAncestors:chain.length===nodes.length&&chain.every((n,i)=>n===nodes[i]),ancestors,focus:describe(document.activeElement),target:describe(target),targetFocused:document.activeElement===target,targetBox:rect(target),targetFont:{font:s.font,fontFamily:s.fontFamily},viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null},document:{scrollX,scrollY,rootClientWidth:document.documentElement.clientWidth,rootScrollWidth:document.documentElement.scrollWidth,scrolling:describe(scrolling),scrollLeft:scrolling?.scrollLeft,scrollTop:scrolling?.scrollTop},ancestorsHorizontalZero:ancestors.slice(1).every(n=>n.scrollLeft===0)};
+ };
+ const events=[],record=event=>{if(event.target?.closest?.('button')===target)events.push(snapshot(event.type));};
+ for(const name of ['pointerdown','focusin','click'])document.addEventListener(name,record,{capture:true,passive:true});
+ window.__ccLegendScrollProbe={el,nodes,target,snapshot,baseline:snapshot('before-click-call'),events,cleanup:()=>{for(const name of ['pointerdown','focusin','click'])document.removeEventListener(name,record,true);}};
+}
+function finishLegendScrollProbe(el) {
+ // Keep these reads first and unchanged from the acceptance gate.
+ const moved=[];for(let n=el.parentElement;n;n=n.parentElement)if(n.scrollLeft)moved.push(n.className||n.tagName);
+ const b=el.lastElementChild.getBoundingClientRect(),r=el.getBoundingClientRect();
+ const sideways={scrollX:scrollX,moved,doc:document.documentElement.scrollWidth-innerWidth,visible:b.left>=r.left-.5&&b.right<=r.right+.5};
+ const probe=window.__ccLegendScrollProbe;
+ if(!probe||probe.el!==el)return {sideways,trace:{unavailable:'baseline strip identity missing'}};
+ const after=probe.snapshot('original-post-click-measurement'),trace={baseline:probe.baseline,events:probe.events,after};probe.cleanup();delete window.__ccLegendScrollProbe;
+ return {sideways,trace};
+}
+module.exports.beginLegendScrollProbe=beginLegendScrollProbe;
+module.exports.finishLegendScrollProbe=finishLegendScrollProbe;
