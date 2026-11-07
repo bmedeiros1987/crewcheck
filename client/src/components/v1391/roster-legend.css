@@ -155,3 +155,7 @@ html body #root .cz-app[data-version] .cc-roster-duty-summary>.cc-roster-duty-co
 html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397 small{white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important}
 /* Desktop cards may also be narrow; keep a whole presentation word without shrinking it. */
 @media(min-width:601px){html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397{grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr))!important}}
+/* The legend's summary must fit before any chip scrolls; state text wraps naturally. */
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-filter>details>summary{flex-wrap:wrap!important}
+/* Enlarged legend text gets a complete control row instead of a narrow slot beside Exibir. */
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-compact-actions>.cc-roster-filter{flex:1 1 100%!important;min-width:0!important}

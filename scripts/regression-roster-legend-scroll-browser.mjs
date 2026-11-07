@@ -12,7 +12,7 @@ const out=path.resolve(process.env.ROSTER_SCROLL_EVIDENCE||'artifacts/roster-leg
 const server=http.createServer((req,res)=>{if(req.url==='/app.js'){res.setHeader('content-type','text/javascript');return res.end(fs.readFileSync(path.join(dir,'app.js')));}if(req.url==='/style.css'){res.setHeader('content-type','text/css');return res.end(fs.readFileSync(css));}res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><div id="root"></div><script src="/app.js"></script>');});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
 const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
-const absoluteOK=({sideways,trace})=>Boolean(trace.baseline&&trace.after&&trace.baseline.sameAncestors&&trace.after.sameAncestors&&[trace.baseline,trace.after].every(s=>s.ancestorsHorizontalZero&&s.document.scrollX===0&&s.document.rootScrollWidth-s.viewport.width<=1)&&sideways.scrollX===0&&sideways.moved.length===0&&sideways.doc<=1&&sideways.visible&&trace.after.targetFocused&&trace.after.targetBox.left>=-1&&trace.after.targetBox.right<=trace.after.viewport.width+1&&trace.after.targetBox.top>=-1&&trace.after.targetBox.bottom<=trace.after.viewport.height+1&&trace.after.ancestors.slice(1).every(n=>!['auto','scroll','hidden','clip'].includes(n.overflowX)||(trace.after.targetBox.left>=n.box.left+n.clientLeft-1&&trace.after.targetBox.right<=n.box.left+n.clientLeft+n.clientWidth+1)));
+const absoluteOK=({sideways,trace})=>Boolean(trace.baseline&&trace.after&&trace.baseline.sameAncestors&&trace.after.sameAncestors&&[trace.baseline,trace.after].every(s=>s.ancestorsHorizontalZero&&s.ancestorsContained&&s.document.scrollX===0&&s.document.rootScrollWidth-s.viewport.width<=1)&&sideways.scrollX===0&&sideways.moved.length===0&&sideways.doc<=1&&sideways.visible&&trace.after.targetFocused&&trace.after.targetBox.left>=-1&&trace.after.targetBox.right<=trace.after.viewport.width+1&&trace.after.targetBox.top>=-1&&trace.after.targetBox.bottom<=trace.after.viewport.height+1&&trace.after.ancestors.slice(1).every(n=>!['auto','scroll','hidden','clip'].includes(n.overflowX)||(trace.after.targetBox.left>=n.box.left+n.clientLeft-1&&trace.after.targetBox.right<=n.box.left+n.clientLeft+n.clientWidth+1)));
 const results=[];let negatives;
 try {
  for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const scale of [1,2]){
@@ -33,12 +33,12 @@ try {
   await context.close();
  }
  // Counterproofs exercise the same collector, not a relative before/after substitute.
- const page=await browser.newPage();await page.setContent('<div id="ancestor" style="width:260px;height:120px;overflow:hidden"><div id="strip" style="display:flex;width:240px;overflow:auto"><button style="flex:0 0 180px">first</button><button style="flex:0 0 180px">last</button></div><div style="width:400px;height:1px"></div></div>');const strip=page.locator('#strip');
+ const page=await browser.newPage();await page.setContent('<div id="ancestor" style="width:260px;height:120px;overflow:hidden"><div id="strip" style="display:flex;width:240px;overflow:auto"><button style="flex:0 0 180px">first</button><button style="flex:0 0 180px">last</button></div></div>');const strip=page.locator('#strip');
  const sample=async mode=>{
-  await page.evaluate(()=>{document.querySelector('#ancestor').scrollLeft=0;});
-  if(mode==='bad-baseline-cleared')await page.evaluate(()=>document.querySelector('#ancestor').scrollLeft=3);
+  await page.evaluate(()=>{document.querySelector('#overflow-probe')?.remove();document.querySelector('#ancestor').scrollLeft=0;});
+  if(mode==='bad-baseline-cleared')await page.evaluate(()=>{const p=document.createElement('div');p.id='overflow-probe';p.style.width='400px';p.style.height='1px';document.querySelector('#ancestor').append(p);document.querySelector('#ancestor').scrollLeft=3;});
   await strip.evaluate(beginLegendScrollProbe);
-  await page.evaluate(mode=>{const a=document.querySelector('#ancestor'),s=document.querySelector('#strip'),b=s.lastElementChild;s.scrollLeft=s.scrollWidth;b.focus({preventScroll:true});if(mode==='bad-baseline-cleared')a.scrollLeft=0;if(mode==='ancestor-moved')a.scrollLeft=4;if(mode==='lost-focus')b.blur();},mode);
+  await page.evaluate(mode=>{const a=document.querySelector('#ancestor'),s=document.querySelector('#strip'),b=s.lastElementChild;s.scrollLeft=s.scrollWidth;b.focus({preventScroll:true});if(mode==='bad-baseline-cleared'){document.querySelector('#overflow-probe').remove();a.scrollLeft=0;}if(mode==='ancestor-moved'){const p=document.createElement('div');p.id='overflow-probe';p.style.width='400px';p.style.height='1px';a.append(p);a.scrollLeft=4;}if(mode==='lost-focus')b.blur();},mode);
   return strip.evaluate(finishLegendScrollProbe);
  };
  const valid=await sample('strip-only');assert.ok(absoluteOK(valid),'strip-only positive control');
