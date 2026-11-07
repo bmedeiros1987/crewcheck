@@ -2,6 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {chooseRosterFormat,assertRosterFormat}=require('./lib/roster-format-controls.cjs');
 const {createRequire}=require('node:module'),ts=require('typescript');
 const {stabilizeAimsPreAction}=require('./lib/aims-preaction-stability.cjs');
+const {installAimsScrollProbe,waitForAimsScrollAffordance}=require('./lib/aims-scroll-affordance.cjs');
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
 const out=path.resolve('artifacts/aims-document-app');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
@@ -18,7 +19,7 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.PL
 try{for(const theme of ['light','dark'])for(const size of [100,200])for(const width of [320,390]){
 const context=await browser.newContext({viewport:{width,height:844},isMobile:true,hasTouch:true,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
 await context.route('**/*',r=>{const url=new URL(r.request().url());return url.origin!==origin?r.abort():url.pathname.startsWith('/api/')?r.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'}):r.continue();});
-await context.addInitScript(seedScope.seed,{theme,kind:roster,amount:100});await context.addInitScript(size=>localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size)),size);
+await context.addInitScript(installAimsScrollProbe);await context.addInitScript(seedScope.seed,{theme,kind:roster,amount:100});await context.addInitScript(size=>localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size)),size);
 const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');window.dispatchEvent(new Event('resize'));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'}));});
 await chooseRosterFormat(page,'aims');await page.locator('.cc-doc-sheet').waitFor();assert.equal(await page.locator('.cc-doc-day').count(),29);
 await page.locator('.cc-doc-viewport').scrollIntoViewIfNeeded();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const canvasClearance=await page.locator('.cc-doc-viewport').evaluate(el=>{const r=el.getBoundingClientRect(),h=document.querySelector('.cz-global-header').getBoundingClientRect(),f=document.querySelector('body > nav.cz-bottom-nav').getBoundingClientRect();return {top:r.top,bottom:r.bottom,headerBottom:h.bottom,footerTop:f.top};});assert.ok(canvasClearance.top>=canvasClearance.headerBottom-1&&canvasClearance.bottom<=canvasClearance.footerTop+1,JSON.stringify({theme,size,width,canvasClearance}));
@@ -27,8 +28,8 @@ const focusBounds=[];for(const zoomLabel of ['Ajustar','100%']){await page.getBy
 // Read-only native event evidence: retain the pre-action baseline and 1px assertions.
 await page.evaluate(()=>{if(window.__aimsNativeTraceInstalled){window.__aimsNativeTrace=[];return;}window.__aimsNativeTraceInstalled=true;window.__aimsNativeTrace=[];for(const name of ['pointerdown','mousedown','focus','focusin','pointerup','mouseup','click','scroll'])document.addEventListener(name,event=>{const frame=document.querySelector('.cc-doc-viewport'),target=event.target;window.__aimsNativeTrace.push({event:name,y:scrollY,left:frame?.scrollLeft,top:frame?.scrollTop,active:document.activeElement?.getAttribute('data-roster-event-id')||document.activeElement?.className||document.activeElement?.tagName,target:target?.getAttribute?.('data-roster-event-id')||target?.className||target?.tagName,at:performance.now()});},{capture:true,passive:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).scrollIntoViewIfNeeded();
-// Document/app scrolling schedules the shared in-flow arrow; finish that render before the strict layout baseline.
-await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+// Observe the qualified scroller's arrow transition before the unchanged strict baseline.
+const affordance=await page.evaluate(waitForAimsScrollAffordance);console.log('AIMS observable scroll affordance',JSON.stringify({theme,size,width,zoomLabel,...affordance}));
 // Finish preparation before measuring the return baseline. Layout changes fail; only
 // scroll settling is allowed. A bounded wait cannot turn perpetual movement green.
 const preparation=await page.evaluate(stabilizeAimsPreAction);
