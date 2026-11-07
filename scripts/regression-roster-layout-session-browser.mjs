@@ -110,7 +110,13 @@ try {
   const screenshots=path.resolve(process.env.ROSTER_SESSION_EVIDENCE||'artifacts/roster-layout-session');fs.mkdirSync(screenshots,{recursive:true});
   for(const width of [320,390,1440])for(const height of [640,900])for(const theme of ['light','dark'])for(const scale of [1,2]){
     await page.setViewportSize({width,height});
-    await page.evaluate(({theme,scale})=>{document.documentElement.dataset.crewTheme=theme;document.documentElement.dataset.crewTextSize=String(scale*100);document.documentElement.style.setProperty('--cc-text-scale',String(scale));},{theme,scale});
+    await page.evaluate(({theme,scale})=>{localStorage.setItem('crewcheck_theme_mode',theme);window.dispatchEvent(new StorageEvent('storage',{key:'crewcheck_theme_mode'}));document.documentElement.dataset.crewTextSize=String(scale*100);document.documentElement.style.setProperty('--cc-text-scale',String(scale));},{theme,scale});
+    await page.waitForFunction(theme=>document.documentElement.dataset.crewTheme===theme&&document.documentElement.dataset.crewcheckTheme===theme,theme);
+    const appearance=await page.getByRole('button',{name:'Exibir opções da escala',exact:true}).evaluate(e=>({effective:document.documentElement.dataset.crewTheme,legacy:document.documentElement.dataset.crewcheckTheme,color:getComputedStyle(e).color,background:getComputedStyle(e).backgroundColor}));
+    assert.equal(appearance.effective,theme,'real theme runtime must apply requested appearance');assert.equal(appearance.legacy,theme,'theme aliases must agree before accepting visual evidence');
+    const luminance=color=>{const channels=color.match(/[\d.]+/g).slice(0,3).map(Number).map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return channels.reduce((sum,n,i)=>sum+n*[.2126,.7152,.0722][i],0);};
+    const ink=luminance(appearance.color),surface=luminance(appearance.background),contrast=(Math.max(ink,surface)+.05)/(Math.min(ink,surface)+.05);assert.ok(contrast>=4.5,JSON.stringify({theme,scale,width,appearance,contrast}));
+
     assert.equal(await page.locator('.cc-roster-premium-v1397 .cc139-head h1').innerText(),'Escala');
     const title=await page.locator('.cc-roster-premium-v1397 .cc139-head h1').evaluate(h=>({left:h.getBoundingClientRect().left,right:h.getBoundingClientRect().right,overflow:h.scrollWidth-h.clientWidth,color:getComputedStyle(h).color}));assert.ok(title.left>=0&&title.right<=width&&title.overflow<=1,JSON.stringify({width,height,theme,scale,title}));if(theme==='dark')assert.equal(title.color,'rgb(237, 244, 251)','dark heading keeps its reviewed high-contrast ink');
     await viewReady();const actions=page.locator('section.cc-roster-view-options');await actions.scrollIntoViewIfNeeded();
@@ -124,6 +130,7 @@ try {
     await page.screenshot({path:path.join(screenshots,`${width}-${height}-${theme}-${scale}-full-app-fallback.png`),fullPage:false});
     await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>scrollTo(0,1100));const top=page.getByRole('button',{name:'Voltar ao topo',exact:true});await top.waitFor();await page.evaluate(()=>scrollTo(0,document.scrollingElement.scrollHeight));
     const topBox=await top.evaluate(b=>{const r=b.getBoundingClientRect(),nav=document.querySelector('.cz-bottom-nav').getBoundingClientRect();return {w:r.width,h:r.height,inside:r.top>=0&&r.bottom<=nav.top,pageEnd:b.parentElement.classList.contains('cz-app')&&b===b.parentElement.lastElementChild};});assert.ok(topBox.w>=48&&topBox.h>=48&&topBox.inside&&topBox.pageEnd,JSON.stringify({width,height,theme,scale,topBox}));await top.focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>scrollY===0);await top.waitFor({state:'detached'});
+    results.push(`theme ${theme}/${scale}: synchronized aliases; Exibir contrast=${contrast.toFixed(3)}:1`);
     results.push(`full compiled app ${width}x${height}/${theme}/${scale}:direct48px actions, whole labels, no overflow; fallback-font evidence only`);
   }
   console.log(JSON.stringify({ status: 'PASS', scope: 'full app, fictional demo, offline API fixtures, accelerated minute timers, synthetic account identities', results }, null, 2));
