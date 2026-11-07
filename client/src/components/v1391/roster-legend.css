@@ -158,4 +158,4 @@ html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight
 /* The legend's summary must fit before any chip scrolls; state text wraps naturally. */
 html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-filter>details>summary{flex-wrap:wrap!important}
 /* Enlarged legend text gets a complete control row instead of a narrow slot beside Exibir. */
-html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-compact-actions>.cc-roster-filter{flex:1 1 100%!important;min-width:0!important}
+@media(max-width:600px){html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-compact-actions>.cc-roster-filter{flex:1 1 100%!important;min-width:0!important}}
