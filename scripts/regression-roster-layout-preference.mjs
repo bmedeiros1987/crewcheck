@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
+import vm from 'node:vm';
+import React from 'react';
 const code = ts.transpileModule(fs.readFileSync('client/src/lib/rosterLayoutPreference.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
 const { readRosterLayout: read, saveRosterLayout: save, rosterLayoutKey: key, readRosterZoom: zoom } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 const data = new Map();
@@ -34,8 +36,17 @@ assert.equal(save(storage,'A','cards'), true);
 assert.equal(read(storage,'A'), 'cards');
 const prepared = fs.readFileSync('client/src/components/v1391/RosterLaunchView.tsx','utf8');
 assert.ok(prepared.includes('data-roster-layout={layout}'), 'selector must survive canonical preparation');
-assert.match(prepared, /<select aria-label="Formato da escala" value=\{layout\}/, 'native picker exposes current value and accessible name');
-for (const layout of ['cards','list','aims','calendar']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
+// Evaluate the actual format control JSX, independent of select/button markup.
+// Browser companion verifies focus, keyboard activation, layout and reload.
+const ast=ts.createSourceFile('RosterLaunchView.tsx',prepared,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let formatControl;
+function findControl(node){if(ts.isJsxElement(node)&&node.openingElement.attributes.properties.some(p=>ts.isJsxAttribute(p)&&p.name.getText(ast)==='aria-label'&&p.initializer&&ts.isStringLiteral(p.initializer)&&p.initializer.text==='Formato da escala')){assert.equal(formatControl,undefined,'one format control');formatControl=node;}ts.forEachChild(node,findControl);}findControl(ast);assert.ok(formatControl,'named format control exists');
+const controls={};vm.runInNewContext(ts.transpileModule('export const render=(layout,choose)=>('+formatControl.getText(ast)+');',{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,{exports:controls,React,LayoutGrid:'svg',List:'svg',FileText:'svg',CalendarDays:'svg'});
+const names={cards:'Formato Cards',list:'Formato Lista',aims:'Formato AIMS · CrewCheck AIMS',calendar:'Formato Agenda · Calendário'};
+for(const selected of Object.keys(names)){
+ assert.equal(save(storage,'A',selected),true);const group=controls.render(read(storage,'A'),next=>assert.equal(save(storage,'A',next),true));assert.equal(group.props.role,'group');assert.equal(group.props['aria-label'],'Formato da escala');const buttons=React.Children.toArray(group.props.children);assert.equal(buttons.length,4,'four existing formats, no duplicate Document');
+ for(const [value,name]of Object.entries(names)){const button=buttons.find(b=>b.props['data-roster-layout-choice']===value);assert.ok(button,`format ${value} remains reachable`);assert.equal(button.type,'button');assert.equal(button.props.type,'button');assert.notEqual(button.props.disabled,true);assert.ok((button.props.tabIndex??0)>=0,'choice remains keyboard-focusable');assert.equal(button.props['aria-label'],name);assert.equal(button.props['aria-pressed'],value===selected);assert.equal(typeof button.props.onClick,'function');button.props.onClick();assert.equal(read(storage,'A'),value,'actual handler passes the selected format');assert.equal(read(storage,'B'),'cards','other account untouched');}
+}
+
 assert.ok(prepared.includes('<AimsDocumentView events={visibleEvents}'), 'AIMS uses the existing document projection');
 assert.ok(!prepared.includes('<option value="document">'), 'no duplicate Document option');
 // The calendar shows the filtered events, counts the whole period and keeps every operational event for details.

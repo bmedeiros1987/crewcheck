@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'scripts/lib/roster-geometry-diagnostics.cjs'
+      - 'scripts/lib/roster-format-controls.cjs'
       - 'client/src/styles/**'
       - 'client/src/components/preferences/**'
       - 'shared/timezone-choice*'
@@ -24,6 +26,14 @@ on:
       - 'client/src/lib/rosterPresentation.ts'
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'scripts/regression-roster-legend*.mjs'
+      - 'scripts/regression-roster-direct-actions-browser.mjs'
+      - 'scripts/regression-roster-summary-browser.mjs'
+      - 'scripts/regression-roster-layout-session-browser.mjs'
+      - 'scripts/regression-roster-published-ground-times.mjs'
+      - 'scripts/regression-back-to-top-browser.mjs'
+      - 'client/src/components/BackToTop.tsx'
+      - 'client/src/components/back-to-top.css'
+      - 'client/src/App.tsx'
       - 'scripts/regression-roster-font-diagnostics.mjs'
       - 'scripts/lib/roster-font-diagnostics.mjs'
       - 'scripts/lib/roster-inter-policy.mjs'
@@ -96,7 +106,7 @@ concurrency:
 
 jobs:
   menu-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Passing runs already take ~19.5 min (fixed-navigation-headers alone ~6.5 min);
     # a 20 min limit cancels green runs during the final steps or artifact upload.
     timeout-minutes: 35
@@ -117,6 +127,7 @@ jobs:
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
           done
+          node scripts/regression-roster-published-ground-times.mjs
       - name: Record canonical hotel stylesheet before preparation
         run: sha256sum client/src/components/v1391/menu-personalization.css > "$RUNNER_TEMP/hotel-controls-css.sha256"
       # This regression prepares the full chain itself. Do not prepare twice.
@@ -129,6 +140,7 @@ jobs:
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" node scripts/regression-roster-legend.mjs
           done
+          node scripts/regression-roster-published-ground-times.mjs
       - name: Verify hotel stylesheet survives canonical preparation
         run: sha256sum -c "$RUNNER_TEMP/hotel-controls-css.sha256"
       - name: Preserve navigation inventory and source contracts
@@ -190,6 +202,21 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-fixed-navigation-headers.cjs
+      - name: Verify contextual shared back-to-top action (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-back-to-top-browser.mjs
+      - name: Verify direct roster actions with synthetic fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: |
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-direct-actions-browser.mjs
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-summary-browser.mjs
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" ROSTER_SCROLL_EVIDENCE=artifacts/roster-legend/scroll-probe node scripts/regression-roster-legend-scroll-browser.mjs
+      - name: Verify full roster theme, published times and modal targets (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-roster-layout-session-browser.mjs
       - name: Verify shared roster legend and filtering with shipping CSS (synthetic)
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -243,6 +270,9 @@ jobs:
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
             artifacts/roster-legend
+            artifacts/roster-direct-actions
+            artifacts/roster-summary
+            artifacts/roster-layout-session
             artifacts/demo-bootstrap
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
