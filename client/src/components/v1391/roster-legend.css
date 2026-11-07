@@ -151,3 +151,5 @@ html body #root .cz-app[data-version] .cc-roster-finance-summary .cc-roster-hero
 html body #root .cz-app[data-version] .cc-roster-duty-summary>b{flex:0 0 auto!important;white-space:nowrap!important;word-break:normal!important;overflow-wrap:normal!important;line-height:1.4!important}
 html body #root .cz-app[data-version] .cc-roster-duty-summary>svg{flex:0 0 auto!important}
 html body #root .cz-app[data-version] .cc-roster-duty-summary>.cc-roster-duty-coverage{display:block!important;text-transform:inherit!important;letter-spacing:inherit!important;flex:1 1 100%!important;font:inherit!important;line-height:1.5!important;white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important;max-width:100%!important;height:auto!important;max-height:none!important;margin:0!important;padding:0!important}
+/* Published day-boundary labels remain complete; the cell grows with wrapped lines. */
+html body #root .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397 small{white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important}
