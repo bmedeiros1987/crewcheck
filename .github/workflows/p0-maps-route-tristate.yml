@@ -25,6 +25,11 @@ on:
       - 'scripts/regression-positioning-terminal-error-browser.mjs'
       - 'scripts/regression-route-incident-refresh.mjs'
       - 'scripts/regression-roster-layout-session-browser.mjs'
+      - 'scripts/regression-roster-months-browser.mjs'
+      - 'scripts/fixtures/roster-legend-app.tsx'
+      - 'scripts/lib/roster-legend-fixture.mjs'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/v1391/roster-legend.css'
       - 'scripts/v14387d/**'
       - 'scripts/p0-maps-route-tristate/**'
       - 'scripts/regression-p0-maps-route-tristate.mjs'
@@ -94,6 +99,7 @@ jobs:
           DEPARTURE_TEST_ORIGIN: http://127.0.0.1:4197
           DEPARTURE_EVIDENCE_FILE: ${{ runner.temp }}/departure-route-state.json
         run: |
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-months-browser.mjs
           node scripts/regression-roster-layout-session-browser.mjs
           node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 4197 --strictPort > "$RUNNER_TEMP/route-preview.log" 2>&1 &
           route_preview_pid=$!

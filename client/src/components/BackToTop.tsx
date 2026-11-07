@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowUp } from 'lucide-react';
 import './back-to-top.css';
@@ -6,7 +6,18 @@ import './back-to-top.css';
 // One in-flow action at the end of long app pages: never floats over cards or navigation.
 // Only document/app-ancestor scrolling qualifies; a table or modal scroll cannot claim it.
 export default function BackToTop() {
+  const button = useRef<HTMLButtonElement>(null);
   const [state, setState] = useState<{ header: HTMLElement; scroller: Element } | null>(null);
+  const keepOwnButtonAtEnd = () => {
+    const node = button.current;
+    const host = document.querySelector('.cz-app > .cz-global-header')?.closest('.cz-app');
+    if (node?.isConnected && host && node.parentElement === host && host.lastElementChild !== node) {
+      const focused = node === document.activeElement;
+      host.appendChild(node);
+      if (focused) node.focus({ preventScroll: true });
+    }
+  };
+  useLayoutEffect(keepOwnButtonAtEnd);
   useEffect(() => {
     let frame = 0;
     let scroller: Element | null = null;
@@ -31,7 +42,9 @@ export default function BackToTop() {
       else return;
       schedule();
     };
-    const observer = new MutationObserver(schedule);
+    // React may reinsert a sibling after this portal without rerendering it.
+    // Repair only our own connected node, before the next layout, without remounting.
+    const observer = new MutationObserver(() => { keepOwnButtonAtEnd(); schedule(); });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'aria-modal', 'data-view'] });
     document.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', schedule);
@@ -40,7 +53,7 @@ export default function BackToTop() {
   }, []);
   const host = state?.header.closest('.cz-app');
   if (!state || !host) return null;
-  return createPortal(<button type="button" className="cc-back-to-top" aria-label="Voltar ao topo" onClick={() => {
+  return createPortal(<button ref={button} type="button" className="cc-back-to-top" aria-label="Voltar ao topo" onClick={() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     state.scroller.scrollTo({ top: 0, behavior: reduce ? 'instant' : 'smooth' });
     state.header.querySelector<HTMLElement>('.cz-brand-row button')?.focus({ preventScroll: true });

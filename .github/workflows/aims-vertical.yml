@@ -11,6 +11,8 @@ on:
       - 'client/src/components/v1391/roster-layout.css'
       - 'client/src/lib/rosterPublication*.ts'
       - 'scripts/regression-aims-vertical-browser.mjs'
+      - 'scripts/regression-publication-import-flow.cjs'
+      - 'scripts/lib/roster-format-controls.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - '.github/workflows/aims-vertical.yml'
   workflow_dispatch:

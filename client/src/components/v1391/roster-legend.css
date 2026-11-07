@@ -85,6 +85,8 @@ html .cz-app .cc-roster-card-heading>svg { color:var(--cc-roster-accent); }
 .cc-roster-view-toolbar button[aria-pressed=true]{border-width:2px;outline:2px solid currentColor;outline-offset:-3px;font-weight:750}
 .cc-roster-view-toolbar button:focus-visible{outline:3px solid #3399bd;outline-offset:3px}
 .cc-roster-view-toolbar button:disabled{opacity:.6;cursor:default}
+/* Enlarged labels choose as many whole controls as fit the dialog, not the viewport. */
+html:is([data-crew-text-size="150"],[data-crew-text-size="200"]) body #root .cz-app[data-version] .cc-roster-options-dialog .cc-roster-layout-buttons{grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(4.25rem * var(--cc-text-scale,1))),1fr))!important}
 .cc-roster-direct-period{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.cc-roster-direct-period>button{flex-direction:column;width:auto!important;min-width:48px!important;gap:4px;padding-inline:3px}
 .cc-roster-direct-date{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.cc-roster-direct-date input{min-height:48px;min-width:0;max-width:100%;font:inherit}
 html[data-crew-theme=light] .cc-roster-view-toolbar{background:#f5f8fb;color:#18334a;border-color:#a8bed0}
@@ -140,6 +142,7 @@ html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-peri
 /* At enlarged reading, the month picker keeps a complete row instead of sharing width with Hoje. */
 html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label{flex:1 1 100%!important;width:100%!important}
 html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label>select{flex:1 1 100%!important;width:100%!important}
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label>select{padding-inline:0!important}
 
 /* Keep the known duration atomic and coverage on its own natural line. */
 html body #root .cz-app[data-version] .cc-roster-finance-summary .cc-roster-hero-counts-v1397>.cc-roster-duty-summary{flex:1 1 100%!important;flex-wrap:wrap!important;align-items:baseline!important;min-width:0!important;max-width:100%!important;height:auto!important;max-height:none!important}
