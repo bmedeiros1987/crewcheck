@@ -47,5 +47,5 @@ try {
  fs.writeFileSync(path.join(out,'counterproofs.json'),JSON.stringify({valid,negatives},null,2));await page.close();
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,engine:browser.version(),originalInterGateExecuted:false,results,negativeCount:negatives.length},null,2));
  assert.ok(results.every(r=>r.absoluteOK),'focused replay failures are evidence, not an Inter/140 verdict: '+JSON.stringify(results.filter(r=>!r.absoluteOK).map(r=>({width:r.width,theme:r.theme,scale:r.scale,sideways:r.sideways,before:r.trace.baseline.ancestors.filter(n=>n.scrollLeft),after:r.trace.after.ancestors.filter(n=>n.scrollLeft)}))));
- console.log('PASS12 focused real-component scroll cases and3 counterproofs; Chromium151/DejaVu is not original Inter140 acceptance');
+ console.log(`PASS12 focused real-component scroll cases and3 counterproofs; engine=${browser.version()}; fallback replay does not replace the original Inter gate`);
 }finally{await browser.close();await new Promise(r=>server.close(r));fs.rmSync(dir,{recursive:true,force:true});}
