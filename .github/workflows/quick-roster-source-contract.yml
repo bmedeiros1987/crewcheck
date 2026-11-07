@@ -17,6 +17,7 @@ on:
       - 'client/src/lib/databaseClient.ts'
       - 'scripts/regression-home-crossmonth-continuity.cjs'
       - 'scripts/regression-home-owned-radar-browser.cjs'
+      - 'scripts/lib/roster-format-controls.cjs'
       - 'scripts/lib/owned-radar-supervisor.cjs'
       - 'scripts/regression-owned-radar-supervisor.cjs'
       - 'client/src/pages/Home.tsx'
