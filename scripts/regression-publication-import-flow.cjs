@@ -1,5 +1,5 @@
 const { createRequire } = require('node:module');
-const {chooseRosterFormat}=require('./lib/roster-format-controls.cjs');
+const {chooseRosterFormat,openRosterViewOptions}=require('./lib/roster-format-controls.cjs');
 const { chromium } = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || __filename)('playwright');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const phase = process.argv[2] || 'after', out = path.resolve(process.env.PUBLICATION_EVIDENCE_DIR || 'artifacts/publication-import-flow');
@@ -82,12 +82,13 @@ syntheticPDF('partial', ['LA1234'], true);
         await p.clock.setFixedTime(new Date('2026-10-31T12:00:00Z'));
         await p.goto(origin + '/app');
         const read = () => p.evaluate(() => { const u = JSON.parse(localStorage.getItem('crewcheck_auth_user')); return JSON.parse(localStorage.getItem('crewcheck:publication-review:v1:' + u.id) || 'null'); });
-        const ui = async () => {
+        const ui = async ({openProgram=true}={}) => {
             await p.locator('.cz-app').waitFor();
             await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'roster' })));
-            await chooseRosterFormat(p,'aims',{close:false});
-            await p.getByLabel('Abrir programação publicada',{exact:true}).selectOption('0');
+            await chooseRosterFormat(p,'aims');
+            if(openProgram)await p.getByLabel('Abrir programação publicada',{exact:true}).selectOption('0');
             assert.equal(await p.locator('.cc-publication-history').count(), 0, 'history moved out of roster');
+            await openRosterViewOptions(p);
             await p.getByRole('link', { name: 'Alterações', exact: true }).click();
             await p.getByRole('heading', { name: 'Alterações', exact: true }).waitFor().catch(async error=>{console.error((await p.locator('body').innerText()).slice(-2500));throw error;});
             await p.getByRole('combobox', { name: 'Filtro financeiro', exact: true }).selectOption('month');
@@ -131,8 +132,7 @@ syntheticPDF('partial', ['LA1234'], true);
             assert.ok(s.unconfirmed.some(x => x.item.date === '2026-10-31'));
         const stable = JSON.stringify(s);
         await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'roster' })));
-        await openView(p);
-        await p.getByRole('combobox', { name: 'Formato da escala', exact: true }).selectOption('cards');
+        await chooseRosterFormat(p,'cards');
         await ui();
         assert.equal(JSON.stringify(await read()), stable);
         await p.reload();
@@ -186,13 +186,13 @@ syntheticPDF('partial', ['LA1234'], true);
         s = await read();
         assert.ok(s.history.some(x => x.kind === 'changed' && x.after.code === 'LA1234'));
         assert.ok(!s.history.some(x => x.kind === 'removed' || x.kind === 'added'));
-        const changedText = await ui();
+        // Inspecting the occurrence would legitimately create a seen receipt.
+        const changedText = await ui({openProgram:false});
         assert.match(changedText, /Não vista/);
         results.push({ name: 'new-version-known-flight-change', history: s.history, unknown: s.unknown, ui: changedText });
         // After the link's reload, inspect the actual roster DOM, not session cache or history.
         await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', {detail:'roster'})));
-        await openView(p);
-        await p.getByRole('combobox', {name:'Formato da escala',exact:true}).selectOption('aims');
+        await chooseRosterFormat(p,'aims');
         const refreshedFlight = p.locator('.cc-aims-document .cc-doc-overview').getByRole('button', {name:/LA1234, dia 2026-10-10/});
         await refreshedFlight.waitFor();
         assert.equal(await refreshedFlight.count(), 1, 'the selected roster renders the unique imported flight/date');
@@ -203,6 +203,7 @@ syntheticPDF('partial', ['LA1234'], true);
         await p.getByRole('heading', {name:'Alterações',exact:true}).waitFor();
         const change = s.history.find(x => x.kind === 'changed' && x.after.code === 'LA1234');
         assert.equal(change.seen, false, 'opening Alterações alone does not mark a change seen');
+        assert.equal((await read()).history.find(x=>x.id===change.id).seen,false,'current persisted receipt remains unread before explicit detail');
         const article = p.locator('.cc-financial-changes article').filter({has: p.getByRole('button', {name:/LA1234/})});
         await article.getByRole('button').click();
         const pair = article.locator('.cc-financial-change-pair');
