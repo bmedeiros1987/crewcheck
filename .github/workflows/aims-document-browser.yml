@@ -12,6 +12,7 @@ on:
       - 'scripts/regression-aims-document-browser.mjs'
       - 'scripts/regression-aims-document-app.cjs'
       - 'scripts/lib/aims-preaction-stability.cjs'
+      - 'scripts/lib/roster-format-controls.cjs'
       - 'scripts/regression-aims-preaction-stability.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - 'scripts/regression-roster-direct-actions-browser.mjs'
