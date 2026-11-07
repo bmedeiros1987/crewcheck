@@ -137,3 +137,6 @@ html body #root .cz-app[data-version] .cc-roster-premium-v1397>.cc-roster-period
 html[data-crew-theme=light] body #root .cz-app[data-version] .cc-roster-period-v1399>label>span{color:#536d80!important;opacity:1!important}
 html[data-crew-theme=dark] body #root .cz-app[data-version] .cc-roster-period-v1399>label>span{color:#c8d6e3!important;opacity:1!important}
 html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label>select{height:auto!important;min-height:calc(1.5em + 16px)!important;max-height:none!important}
+/* At enlarged reading, the month picker keeps a complete row instead of sharing width with Hoje. */
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label{flex:1 1 100%!important;width:100%!important}
+html[data-crew-text-size="200"] body #root .cz-app[data-version] .cc-roster-period-v1399>label>select{flex:1 1 100%!important;width:100%!important}
