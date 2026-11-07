@@ -7,6 +7,7 @@ async function verifyClockLabels(page,{width,theme,scale,out,browser}) {
    const e=clone(base);e.id=id;e.date=new Date(day+'T15:00:00Z');e.day={...e.day,date:day};
    e.departure=start;e.arrival=end;e.presentation='22:00';
    e.canonical={...e.canonical,id,date:day,publishedDay:{...e.canonical.publishedDay,date:day},startDateTime:startDay+'T'+start.slice(0,5)+':00-03:00',endDateTime:endDay+'T'+end.slice(0,5)+':00-03:00'};
+   if(e.kind==='flight')e.subtitle=`Apres. ${e.presentation} · ${start} → ${end} · ${e.origin} → ${e.destination}`;
    return e;
   };
   const night=make('clock-night','flight','23:00','01:00(+1)');night.flightNumber='QA9101';
