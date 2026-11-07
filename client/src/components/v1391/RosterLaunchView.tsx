@@ -317,7 +317,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
 
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
 
-      <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label>
+      <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month).replace(/ de (\d{4})$/, ' $1')}</option>)}</select></label>
       <button type="button" onClick={goToday}><Clock/> Hoje</button>
       <p className="cc-roster-period-count" role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}</p>
     </section>
