@@ -19,6 +19,7 @@ const events=[
  make('night-nohotel','PERNOITE_CONTINUIDADE',{kind:'stay',origin:'GRU',canonical:{date:'2032-10-19',kind:'stay',publishedDay:{type:'PERNOITE_CONTINUIDADE'}}}),
  make('off','DO',{presentation:'09:00'}),
  make('reserve','ASB',{presentation:'06:30',departure:'06:30',arrival:'12:30'}),
+ make('legacy-reserve','ASB',{presentation:'06:30',departure:'06:30',arrival:'12:30'}),
  make('standby','HSB',{departure:'06:00',arrival:'12:00'}),
  make('flight','FLIGHT',{kind:'flight',flightNumber:'TESTE 0001',origin:'GRU',destination:'GIG',departure:'10:00',arrival:'11:00'}),
  make('missing','',{origin:'',title:'Atividade sem dados'}),
@@ -31,7 +32,10 @@ const midnightAst=ts.createSourceFile('midnight.mjs',fs.readFileSync('scripts/re
 const midnightNodes=midnightAst.statements.filter(node=>ts.isVariableStatement(node)&&node.declarationList.declarations.some(item=>['leg','day','roster'].includes(item.name.getText(midnightAst))));assert.equal(midnightNodes.length,3);
 const midnightScope=vm.createContext({});vm.runInContext(midnightNodes.map(node=>node.getText(midnightAst)).join('\n')+'\nglobalThis.rosterFixture=roster;',midnightScope);
 const canonicalHarness=loadClientModules({prefix:'quick-roster-midnight-',stubs:TYPE_ONLY_PDF_PARSER_STUB,files:['client/src/lib/rosterContinuity.ts','client/src/lib/canonicalRoster.ts']});
-const canonicalMidnight=canonicalHarness.load('canonicalRoster').buildCanonicalRosterEvents(midnightScope.rosterFixture).find(event=>event.flightNumber==='LA9102');assert(canonicalMidnight);assert.equal(canonicalMidnight.startDateTime,'2026-10-05T03:05:00.000Z');assert.equal(canonicalMidnight.presentation,'23:18');canonicalHarness.cleanup();
+const canonicalMidnight=canonicalHarness.load('canonicalRoster').buildCanonicalRosterEvents(midnightScope.rosterFixture).find(event=>event.flightNumber==='LA9102');assert(canonicalMidnight);assert.equal(canonicalMidnight.startDateTime,'2026-10-05T03:05:00.000Z');assert.equal(canonicalMidnight.presentation,'23:18');const canonicalReserve=canonicalHarness.load('canonicalRoster').buildCanonicalRosterEvents({crewName:'SYNTHETIC',crewId:'900001',base:'BSB',rank:'CCM',airline:'LA',month:10,year:2032,rawText:'SYNTHETIC ONLY',days:[{date:'19/10/2032',type:'ASB',pairingCode:'ASB',dutyReport:'06:30',dutyDebrief:'12:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[],dutyHours:6,flyingHours:0,isNextDay:false,base:'BSB'}]}).find(event=>event.code==='ASB');
+assert(canonicalReserve,'real producer must retain the published reserve');assert.equal(canonicalReserve.publishedDay.dutyReport,'06:30');assert.equal(canonicalReserve.publishedDay.dutyDebrief,'12:30');
+events[events.findIndex(event=>event.id==='reserve')]={...canonicalReserve,id:'reserve',day:canonicalReserve.publishedDay,canonical:{...canonicalReserve,id:'reserve'}};
+canonicalHarness.cleanup();
 const midnightEvent={...canonicalMidnight,day:canonicalMidnight.publishedDay,canonical:canonicalMidnight};
 const midnightInputs=[midnightEvent,
  {...midnightEvent,id:'multi-day',canonical:{...canonicalMidnight,endDateTime:'2026-10-06T06:20:00.000Z'}},
@@ -64,6 +68,7 @@ try{for(const width of [320,390,430,768,1440])for(const theme of ['light','dark'
  assert.doesNotMatch(await card('night-nohotel').innerText(),/Hotel|Apresentação/);assert.equal(await card('night-nohotel').locator('.cc-home-roster-clock').innerText(),'Início\n—\nFim\n—');
  assert.equal(await card('off').locator('.cc-home-roster-copy>strong').innerText(),'Folga');assert.doesNotMatch(await card('off').innerText(),/Apresentação/);
  assert.equal(await card('reserve').getAttribute('data-card-tone'),'reserve');assert.match(await card('reserve').innerText(),/ASB/);assert.doesNotMatch(await card('reserve').innerText(),/Apresentação/);assert.match(await card('reserve').locator('.cc-home-roster-clock').innerText(),/06:30/);
+ assert.equal(await card('legacy-reserve').locator('.cc-home-roster-clock').innerText(),'Início\n—\nFim\n—','legacy clocks without published endpoints stay unknown');
  assert.equal(await card('standby').getAttribute('data-card-tone'),'standby');assert.equal(await card('flight').getAttribute('data-card-tone'),'flight');
  assert.doesNotMatch(await card('same-brt').innerText(),/dia seguinte/,'UTC midnight must not change BRT civil-day label');assert.doesNotMatch(await card('unproved-rollover').innerText(),/dia seguinte/,'Earlier end clock alone does not prove rollover');
  assert.equal(await card('bad-date').count(),0);assert.match(await page.locator('.cc-home-roster-unknown').innerText(),/1 atividade com data não confirmada/);

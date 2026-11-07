@@ -1,6 +1,5 @@
 const { createRequire } = require('node:module');
-// Format sits under the collapsed "Exibição" expander of the roster.
-const openView=async p=>{const d=p.locator('details.cc-roster-view-options');await d.waitFor({state:'attached'});if(!await d.evaluate(e=>e.open))await d.locator(':scope > summary').click();};
+const {chooseRosterFormat}=require('./lib/roster-format-controls.cjs');
 const { chromium } = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || __filename)('playwright');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const phase = process.argv[2] || 'after', out = path.resolve(process.env.PUBLICATION_EVIDENCE_DIR || 'artifacts/publication-import-flow');
@@ -86,8 +85,7 @@ syntheticPDF('partial', ['LA1234'], true);
         const ui = async () => {
             await p.locator('.cz-app').waitFor();
             await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'roster' })));
-            await openView(p);
-            await p.getByRole('combobox', { name: 'Formato da escala', exact: true }).selectOption('aims');
+            await chooseRosterFormat(p,'aims',{close:false});
             await p.getByLabel('Abrir programação publicada',{exact:true}).selectOption('0');
             assert.equal(await p.locator('.cc-publication-history').count(), 0, 'history moved out of roster');
             await p.getByRole('link', { name: 'Alterações', exact: true }).click();
