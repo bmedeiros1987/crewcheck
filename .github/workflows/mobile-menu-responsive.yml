@@ -27,6 +27,7 @@ on:
       - 'client/src/lib/scheduleActivityClassification.ts'
       - 'scripts/regression-roster-legend*.mjs'
       - 'scripts/regression-roster-direct-actions-browser.mjs'
+      - 'scripts/regression-roster-untimed-marker-order.mjs'
       - 'scripts/regression-roster-summary-browser.mjs'
       - 'scripts/regression-roster-layout-session-browser.mjs'
       - 'scripts/regression-roster-published-ground-times.mjs'
@@ -128,6 +129,7 @@ jobs:
             TZ="$TZ" node scripts/regression-roster-legend.mjs
           done
           node scripts/regression-roster-published-ground-times.mjs
+          node scripts/regression-roster-untimed-marker-order.mjs
       - name: Record canonical hotel stylesheet before preparation
         run: sha256sum client/src/components/v1391/menu-personalization.css > "$RUNNER_TEMP/hotel-controls-css.sha256"
       # This regression prepares the full chain itself. Do not prepare twice.
@@ -141,6 +143,7 @@ jobs:
             TZ="$TZ" node scripts/regression-roster-legend.mjs
           done
           node scripts/regression-roster-published-ground-times.mjs
+          node scripts/regression-roster-untimed-marker-order.mjs
       - name: Verify hotel stylesheet survives canonical preparation
         run: sha256sum -c "$RUNNER_TEMP/hotel-controls-css.sha256"
       - name: Preserve navigation inventory and source contracts

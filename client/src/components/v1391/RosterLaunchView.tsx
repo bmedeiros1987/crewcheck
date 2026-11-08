@@ -269,15 +269,28 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const periodEvents = zoom === 'day' ? ordered.filter(event => isoOf(event) === activeDay) : ordered;
   const visibleEvents = filterRosterEvents(periodEvents, categoryFilter.filter);
   const timedEvents = periodEvents.filter(event => rosterDisplaySortInstant(event) !== null);
-  const civilOnlyEvents = visibleEvents.filter(event => rosterDisplaySortInstant(event) === null);
+  const civilOnlyEvents = visibleEvents.filter(event => rosterDisplaySortInstant(event) === null && workMode(event) !== 'rest');
   // Consecutive runs retain canonical chronology when published dates recur
   // across a journey-rest interval. The civil map above serves month metrics.
-  const visibleGroups = timedEvents.reduce((runs, event) => {
+  const timelineGroups = timedEvents.reduce((runs, event) => {
     const iso = isoOf(event), previous = runs[runs.length - 1];
     if (previous?.iso === iso) previous.events.push(event);
     else runs.push({ iso, date: rosterLabelDate(event), events: [event] });
     return runs;
-  }, [] as { iso: string; date: Date | null; events: RosterEvent[] }[])
+  }, [] as { iso: string; date: Date | null; events: RosterEvent[] }[]);
+  // A published civil rest/vacation date is enough for its calendar placement,
+  // not for a work interval. Never sort a flight using an invented rest instant.
+  for (const event of periodEvents.filter(event => rosterDisplaySortInstant(event) === null && workMode(event) === 'rest')) {
+    const iso = isoOf(event);
+    let group = [...timelineGroups].reverse().find(item => item.iso === iso);
+    if (!group) {
+      group = { iso, date: rosterLabelDate(event), events: [] };
+      const next = timelineGroups.findIndex(item => item.iso > iso);
+      timelineGroups.splice(next < 0 ? timelineGroups.length : next, 0, group);
+    }
+    group.events.push(event);
+  }
+  const visibleGroups = timelineGroups
     .map(group => ({ ...group, allEvents: group.events, events: filterRosterEvents(group.events, categoryFilter.filter) }))
     .filter(group => group.events.length > 0);
   function selectDay(iso: string) {
@@ -396,8 +409,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
                     : <><small>{carePresentation?.label || meta.label} · {formatDate(rosterLabelDate(event))}</small><h3>{card.title}</h3></>}</div>
                   {hours !== null && hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
                 </header>
-
-
+                {mode === 'rest' && rosterDisplaySortInstant(event) === null && <p>Data publicada; ordem no dia não confirmada.</p>}
                 {(mode === 'operating' || mode === 'extra') && <div className="cc-roster-flight-grid-v1397">
                   {card.presentation && <span><small>Apresentação</small><b>{card.presentation}</b></span>}
                   <span><small>Partida{card.startDate && ` · ${card.startDate}`}</small><b>{card.start}</b></span>
