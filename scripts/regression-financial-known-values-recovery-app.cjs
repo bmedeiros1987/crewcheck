@@ -14,7 +14,7 @@ module.exports=async function recoveryChecks({browser,origin,seed,out}){
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));
   await page.locator('.cc-payment-hero').waitFor();
   assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/subtotal bruto estimado/,'hero cannot call incomplete inventory a full salary');
-  await page.getByRole('button',{name:'Detalhes do pagamento',exact:true}).click();
+  await page.getByRole('button',{name:'Extrato',exact:true}).click();
   const retry=page.getByRole('button',{name:'Tentar leitura novamente',exact:true});await retry.waitFor();
   const target=await retry.boundingBox();assert(target.width>=48&&target.height>=48,'48px retry target');
   const failedReads=reads;healthy=true;await retry.focus();assert(await retry.evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');
