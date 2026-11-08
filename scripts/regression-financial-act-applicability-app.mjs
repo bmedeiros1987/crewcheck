@@ -43,6 +43,9 @@ function seed({ owner }) {
   const days = Array.from({ length: 31 }, (_, i) => ({ date: String(i + 1).padStart(2, '0') + '/10/2026', dayOfWeek: 'SYN', type: 'DO', pairingCode: 'DO', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null, base: 'GRU', rawText: 'SYNTHETIC QA ONLY' }));
   const leg = (flightNumber, origin, destination, departureTime, arrivalTime) => ({ flightNumber, origin, destination, departureTime, arrivalTime, workType: 'OP', duration: 120, aircraftType: 'SYN' });
   days[19] = { ...days[19], type: 'FLIGHT', pairingCode: 'SYN-DOM', dutyReport: '08:00', dutyDebrief: '17:00', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYN1001', 'GRU', 'BSB', '10:00', '12:00'), leg('SYN1002', 'BSB', 'GRU', '14:00', '16:00')], dutyHours: 9, flyingHours: 4 };
+  // Preserve the reference assertions using actual published trip/overnight evidence.
+  days[21] = { ...days[21], type: 'FLIGHT', pairingCode: 'SYN-OUT', dutyReport: '09:00', dutyDebrief: '18:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNOUT', 'GRU', 'JFK', '10:00', '18:00')] };
+  days.push({ date: '22/10/2026', type: 'PERNOITE', pairingCode: 'SYN-STAY', base: 'JFK', dutyReport: '20:00', dutyDebrief: '08:00', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [] });
   days[22] = { ...days[22], type: 'FLIGHT', pairingCode: 'SYN-INT', base: 'JFK', dutyReport: '11:00', dutyDebrief: '21:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNUSD', 'JFK', 'GRU', '13:00', '21:00')], dutyHours: 10.5, flyingHours: 8 };
   const roster = { crewName: 'SYNTHETIC ACT', crewId: 'SYNTHETIC', base: 'GRU', rank: 'CC', airline: 'LA', month: 10, year: 2026, days, rawText: 'SYNTHETIC — NO REAL ROSTER' };
   localStorage.setItem('crewcheck_roster_choice_v1_' + owner, JSON.stringify({ owner, roster, selection: 'explicit', cacheSchema: 'p0-operational-date-anchor-v2', sourceFileName: 'Synthetic ACT only' }));
@@ -50,7 +53,7 @@ function seed({ owner }) {
 }
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = 'http://127.0.0.1:' + server.address().port;
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
 const cases = [], blocked = [], errors = [];
 try {
   for (const width of [390, 1440]) for (const role of ['cabin', 'pilot']) {

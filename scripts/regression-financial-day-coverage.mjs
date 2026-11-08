@@ -233,6 +233,54 @@ try{
  assert.deepEqual(libs.nominalFinancialDays(mixedDates),['2026-10-31','2026-11-02']);assert.equal(JSON.stringify(mixedDates),datesBefore,'nominal-date projection does not mutate source records');
  evidence.push({name:'nominal daily publication authority',foreignDONeverCertifies:true,inverseForeignDayRejected:true,genuineDOComplete:true,authorizedCarryRowsPreserved:true});
 
+ // User-reported LATAM cabin forecast rule: geography alone is not eligibility.
+ reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');libs.writeFinancialSetting('crewcheck_perdiem_rate_argentina','22');
+ const roundTrip={year:2026,month:11,crewId:'SYN01',crewName:'SYNTHETIC',rank:'CC',base:'GRU',airline:'LA',days:[{date:'08/11/2026',type:'FLIGHT',pairingCode:'SYNTHETIC-ROUND-TRIP',dutyReport:'09:00',dutyReportSource:'published',dutyDebrief:'17:30',dutyDebriefSource:'published',base:'GRU',legs:[{flightNumber:'LA9001',origin:'GRU',destination:'EZE',departureTime:'10:00',arrivalTime:'13:00',workType:'OP',presentationTime:'09:00'},{flightNumber:'LA9002',origin:'EZE',destination:'GRU',departureTime:'14:00',arrivalTime:'17:00',workType:'OP'}]}]};
+ const roundTripSource=JSON.stringify(roundTrip);
+ const cabinDeclaration=libs.planFinancialActChange({schema:1,ownerId:owner,revision:0,events:[]},0,{from:'2026-11-01',through:'2026-11-30',active:true,employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'});
+ values.set(libs.financialActStorageKey(owner),JSON.stringify(cabinDeclaration));
+ const tripForecast=source=>context.subject.calculatePerDiem(events(source),source,new Date('2026-11-08T12:00:00Z'));
+ const roundTripResult=tripForecast(roundTrip),roundTripLunch=roundTripResult.rows.find(row=>row.label==='Almoço');
+ assert.equal(roundTripLunch?.rateKey,'domestic','ROUND_TRIP_OVERNIGHT: same-day return to base without stay must not use foreign geography as international eligibility');
+ assert.equal(roundTripLunch.currency,'BRL');assert.equal(roundTripLunch.value,42);assert.equal(JSON.stringify(roundTrip),roundTripSource);
+ const copy=value=>JSON.parse(JSON.stringify(value));
+ const domestic=copy(roundTrip);domestic.days[0].legs.forEach(leg=>{if(leg.origin==='EZE')leg.origin='GIG';if(leg.destination==='EZE')leg.destination='GIG';});
+ assert.equal(tripForecast(domestic).rows.find(row=>row.label==='Almoço').value,42,'national control unchanged');
+ const pendingTrip=(source,message)=>{const result=tripForecast(source);assert(!result.rows.some(row=>row.label==='Almoço'),message);assert.equal(result.nativeSummary.complete,false,message);assert(result.unclassifiedItems.some(item=>/Elegibilidade internacional pendente|Intervalo operacional incompleto/.test(item.reason)),message);return result;};
+ const noReturn=copy(roundTrip);noReturn.days[0].legs.pop();pendingTrip(noReturn,'missing return cannot prove round trip or international eligibility');
+ const unknownClock=copy(roundTrip);unknownClock.days[0].legs[1].arrivalTime='';pendingTrip(unknownClock,'unconfirmed return clock remains pending');
+ const unknownReport=copy(roundTrip);unknownReport.days[0].dutyReport=null;unknownReport.days[0].dutyReportSource='absent';unknownReport.days[0].legs[0].presentationTime='';pendingTrip(unknownReport,'partial flight evidence cannot promote international eligibility');
+ const overnight=copy(roundTrip);overnight.days=[{...overnight.days[0],dutyDebrief:'13:30',legs:[overnight.days[0].legs[0]]},{date:'08/11/2026',type:'PERNOITE',pairingCode:'SYNTHETIC-STAY',base:'EZE',dutyReport:'18:00',dutyDebrief:'08:00',dutyReportSource:'published',dutyDebriefSource:'published',legs:[]},{...overnight.days[0],date:'09/11/2026',dutyReport:'13:00',dutyDebrief:'17:30',legs:[overnight.days[0].legs[1]]}];
+ assert(events(overnight).some(event=>event.kind==='stay'&&event.day.type==='PERNOITE'),'positive fixture has an actual source-published stay');
+ const overnightResult=tripForecast(overnight);assert.equal(overnightResult.rows.find(row=>row.label==='Almoço').value,22);assert.equal(overnightResult.rows.find(row=>row.label==='Almoço').currency,'USD');assert.match(overnightResult.rows.find(row=>row.label==='Almoço').source,/Pernoite internacional publicado/);
+ const conflictingStay=copy(roundTrip);conflictingStay.days.push({date:'08/11/2026',type:'PERNOITE',base:'EZE',dutyReport:'12:00',dutyDebrief:'18:00',dutyReportSource:'published',dutyDebriefSource:'published',legs:[]});pendingTrip(conflictingStay,'overlapping overnight that exceeds the return must not disappear from evidence');
+ const absentStayClocks=copy(conflictingStay);absentStayClocks.days[1].dutyReport=null;absentStayClocks.days[1].dutyDebrief=null;absentStayClocks.days[1].dutyReportSource='absent';absentStayClocks.days[1].dutyDebriefSource='absent';pendingTrip(absentStayClocks,'clockless overnight on trip date stays pending rather than vanishing');
+ const hotelOnly=copy(noReturn);hotelOnly.days[0].hotel='SYNTHETIC HOTEL';pendingTrip(hotelOnly,'hotel text is not a confirmed overnight or return');
+ const baseRest=copy(roundTrip);baseRest.days.push({date:'09/11/2026',type:'PERNOITE',base:'GRU',dutyReport:'00:00',dutyDebrief:'08:00',dutyReportSource:'published',dutyDebriefSource:'published',legs:[]});assert.equal(tripForecast(baseRest).rows.find(row=>row.label==='Almoço').rateKey,'domestic','rest at base after return does not promote the foreign excursion');
+ const adjacentBaseRest=copy(roundTrip);adjacentBaseRest.days.push({date:'08/11/2026',type:'PERNOITE',base:'GRU',dutyReport:'17:00',dutyDebrief:'23:00',dutyReportSource:'published',dutyDebriefSource:'published',legs:[]});assert.equal(tripForecast(adjacentBaseRest).rows.find(row=>row.label==='Almoço')?.rateKey,'domestic','base rest beginning exactly at return has no positive overlap with trip');
+ const midnight=copy(roundTrip);midnight.days[0].dutyReport='17:00';midnight.days[0].legs[0].presentationTime='17:00';midnight.days[0].legs[0].departureTime='18:00';midnight.days[0].legs[0].arrivalTime='21:00';midnight.days[0].legs[1].departureTime='22:00';midnight.days[0].legs[1].arrivalTime='01:00';midnight.days[0].dutyDebrief='01:30';
+ assert.equal(tripForecast(midnight).nativeSummary.complete,false,'midnight alone never proves an international overnight');
+ for(const source of [roundTrip,libs.normalizeRosterDays(roundTrip),copy(libs.normalizeRosterDays(roundTrip))])assert.equal(tripForecast(source).rows.find(row=>row.label==='Almoço').rateKey,'domestic','reimport/prepared source retains decision');
+ const duplicate=copy(roundTrip);duplicate.days.push(copy(duplicate.days[0]));assert.equal(tripForecast(duplicate).rows.filter(row=>row.label==='Almoço').length,0,'existing multi-record evidence gate remains pending rather than duplicating a meal');assert.equal(tripForecast(duplicate).nativeSummary.complete,false);
+ const conflict=copy(duplicate);conflict.days[1].legs[1].arrivalTime='18:00';pendingTrip(conflict,'conflicting original published records remain pending');
+ const boundaryTrip=copy(roundTrip);boundaryTrip.month=12;boundaryTrip.days[0].date='30/11/2026';boundaryTrip.days.push({date:'01/12/2026',type:'OFF',pairingCode:'OFF',base:'GRU',legs:[]});
+ assert.equal(tripForecast(boundaryTrip).rows.find(row=>row.label==='Almoço').rateKey,'domestic');assert.equal(tripForecast(boundaryTrip).monthlyRows.length,0,'foreign-month occurrence does not become nominal month payment');
+ const unknownStay=copy(overnight);unknownStay.days[1].dutyReportSource='estimated';pendingTrip(unknownStay,'estimated overnight clocks cannot prove eligibility');
+ const inferredStay=copy(overnight);inferredStay.days[1].continuityInferred=true;pendingTrip(inferredStay,'continuity inference alone is not an overnight source');
+ const wrongStay=copy(overnight);wrongStay.days[1].base='MVD';pendingTrip(wrongStay,'stay must belong to this actual route');
+ const badEnd=copy(roundTrip);badEnd.days[0].dutyDebriefSource='unknown';pendingTrip(badEnd,'unknown published release cannot certify trip closure');
+ const midnightBoundary=copy(midnight);midnightBoundary.month=12;midnightBoundary.days[0].date='30/11/2026';assert.equal(tripForecast(midnightBoundary).nativeSummary.complete,false,'competence crossing does not establish overnight');
+ assert.equal(libs.resolvePerDiemRule('GRU','EZE').rateKey,'argentina','global geography remains unchanged');
+ const dayRange={valid:true,start:'2026-11-08',end:'2026-11-08'},wholeMonth={valid:true,start:'2026-11-01',end:'2026-11-30'};
+ const scopedTrip=context.subject.scopedFinancialForecast([{roster:roundTrip,perdiem:roundTripResult}],dayRange,[]);assert.equal(scopedTrip.monthly,42);assert.equal(scopedTrip.nativeSummary.complete,true);
+ assert.equal(context.subject.scopedFinancialForecast([{roster:roundTrip,perdiem:roundTripResult}],wholeMonth,[]).monthly,null,'one known trip never certifies the full month');
+ values.delete(libs.financialActStorageKey(owner));pendingTrip(roundTrip,'manual tariff does not prove LATAM cabin applicability');
+ values.set(libs.financialActStorageKey(owner),JSON.stringify(cabinDeclaration));
+ login('synthetic-finance-B');assert.equal(tripForecast(roundTrip).rows.length,0,'account B inherits neither A scope nor A tariff');login(owner);
+ assert.equal(tripForecast(roundTrip).rows.find(row=>row.label==='Almoço').value,42,'return to account A restores only its own evidence');
+ assert.equal(JSON.stringify(roundTrip),roundTripSource,'calculator never writes source');
+ evidence.push({name:'synthetic international round trip without overnight',rate:roundTripLunch.rateKey,currency:roundTripLunch.currency,value:roundTripLunch.value});
+
  // Execute the actual Explorer body and its read-only source-loading effect.
  // Hook state is synthetic; selection, session checks, loader and fetch fence
  // are production code. Only allowance boundaries request the prior source.
