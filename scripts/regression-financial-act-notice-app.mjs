@@ -67,8 +67,12 @@ function seed({ owner, other, language, journalRaw, manual, throwOnJournal, inte
   const days = Array.from({ length: 31 }, (_, i) => ({ date: String(i + 1).padStart(2, '0') + '/10/2026', dayOfWeek: 'SYN', type: 'DO', pairingCode: 'DO', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null, base: 'GRU', rawText: 'SYNTHETIC QA ONLY' }));
   const leg = (flightNumber, origin, destination, departureTime, arrivalTime) => ({ flightNumber, origin, destination, departureTime, arrivalTime, workType: 'OP', duration: 120, aircraftType: 'SYN' });
   days[19] = { ...days[19], type: 'FLIGHT', pairingCode: 'SYN-DOM', dutyReport: '08:00', dutyDebrief: '17:00', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYN1001', 'GRU', 'BSB', '10:00', '12:00'), leg('SYN1002', 'BSB', 'GRU', '14:00', '16:00')], dutyHours: 9, flyingHours: 4 };
-  // Optional international day (synthetic JFK leg) so the ACT minimum reference has rows.
-  if (international) days[22] = { ...days[22], type: 'FLIGHT', pairingCode: 'SYN-INT', base: 'JFK', dutyReport: '11:00', dutyDebrief: '21:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNUSD', 'JFK', 'GRU', '13:00', '21:00')], dutyHours: 10.5, flyingHours: 8 };
+  // A positive foreign reference requires the published outbound, overnight and return.
+  if (international) {
+    days[21] = { ...days[21], type: 'FLIGHT', pairingCode: 'SYN-OUT', dutyReport: '09:00', dutyDebrief: '18:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNOUT', 'GRU', 'JFK', '10:00', '18:00')] };
+    days.push({ date: '22/10/2026', type: 'PERNOITE', pairingCode: 'SYN-STAY', base: 'JFK', dutyReport: '20:00', dutyDebrief: '08:00', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [] });
+    days[22] = { ...days[22], type: 'FLIGHT', pairingCode: 'SYN-INT', base: 'JFK', dutyReport: '11:00', dutyDebrief: '21:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNUSD', 'JFK', 'GRU', '13:00', '21:00')], dutyHours: 10.5, flyingHours: 8 };
+  }
   const roster = { crewName: 'SYNTHETIC ACT', crewId: 'SYNTHETIC', base: 'GRU', rank: 'CC', airline: 'LA', month: 10, year: 2026, days, rawText: 'SYNTHETIC — NO REAL ROSTER' };
   for (const id of [owner, other]) {
     localStorage.setItem('crewcheck_roster_choice_v1_' + id, JSON.stringify({ owner: id, roster, selection: 'explicit', cacheSchema: 'p0-operational-date-anchor-v2', sourceFileName: 'Synthetic ACT only' }));
