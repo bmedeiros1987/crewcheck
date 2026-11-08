@@ -18,7 +18,7 @@ module.exports=async function recoveryChecks({browser,origin,seed,out}){
   const retry=page.getByRole('button',{name:'Tentar leitura novamente',exact:true});await retry.waitFor();
   const target=await retry.boundingBox();assert(target.width>=48&&target.height>=48,'48px retry target');
   const failedReads=reads;healthy=true;await retry.focus();assert(await retry.evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');
-  await retry.waitFor({state:'hidden'});await page.locator('[data-financial-content-ready="true"]').waitFor();assert.equal(reads,failedReads+1,'one explicit retry, no automatic loop');
+  await retry.waitFor({state:'hidden'});await page.locator('.cc-financial-range[data-financial-content-ready="true"]').waitFor();assert.equal(reads,failedReads+1,'one explicit retry, no automatic loop');
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-hero').waitFor();
   assert.match(await page.locator('.cc-forecast-currencies').innerText(),/Trabalho · 14\/10\/2026 a 20\/10\/2026/);
   assert.match(await page.locator('.cc-forecast-currencies').innerText(),/Crédito previsto · 22\/10\/2026/);
