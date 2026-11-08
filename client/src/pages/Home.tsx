@@ -140,7 +140,7 @@ import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
 import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceReference';
 import FinancialActApplicability, { AllowanceMinimumReference } from '@/components/finance/FinancialActApplicability';
 import { readFinancialActApplicability, type FinancialActSnapshot } from '@/lib/financialActApplicability';
-import { resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type FinancialActPendingCause, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
+import { resolveLatamCabinAllowanceJourney, resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type FinancialActPendingCause, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
 import type { AllowanceSlot } from '@/lib/latamAllowanceCatalog';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
@@ -3694,8 +3694,10 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' | 'source_coverage' | 'allowance_reference'; sourceIssueId?: string; actCause?: FinancialActPendingCause; originIso?: string }> = aimsFlightSourceCoveragePending(roster, events);
   const usedRateKeys = new Set<PerDiemRateKey>();
   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date, partial = false) => {
-    const classification = resolveAllowanceOccurrenceGeography({ origin: event.origin, destination: event.destination, base: roster.base || '',
+    const geography = resolveAllowanceOccurrenceGeography({ origin: event.origin, destination: event.destination, base: roster.base || '',
       breakfastAtProvenBase: slot === 'breakfast', overrides: airportOverrides, classify: resolvePerDiemRule });
+    const classification = resolveLatamCabinAllowanceJourney({ geography, event, events, base: roster.base || '',
+      airline: roster.airline || '', date: iso, context: applicability, classify: resolvePerDiemRule });
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
       unclassifiedItems.push({ iso, originIso:rosterOperationalIso(calculationStart), airport: classification.airport, reason: classification.reason });
@@ -3734,7 +3736,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       currency: currency,
       // FX is projected separately from native entitlements using dated quotes.
       convertedBRL: currency === 'BRL' ? value : null,
-      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + (selected.reference ? classification.reason : 'Categoria geográfica da ocorrência; sem declaração de aplicabilidade do ACT por esta classificação.') + ' · ' + selected.reason + ' · vigência consultada em ' + iso
+      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + (classification !== geography ? classification.reason : selected.reference ? classification.reason : 'Categoria geográfica da ocorrência; sem declaração de aplicabilidade do ACT por esta classificação.') + ' · ' + selected.reason + ' · vigência consultada em ' + iso
         + ' · versão ' + selected.version + (selected.reference?.sourceUrls.length ? ' · fontes: ' + selected.reference.sourceUrls.join(' ; ') : '')
         + (classification.rateKey==='domestic'&&(slot==='breakfast'?cfg.personalReferences?.breakfast:cfg.personalReferences?.mainMeal)?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':''),
       airport: classification.airport,
