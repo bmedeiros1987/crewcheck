@@ -21,4 +21,3 @@ export function airportTimeZone(airport) {
   const code = String(airport || '').trim().toUpperCase();
   return reviewedAirportTimeZones[code]?.zone || baseTimeZone(code);
 }
-
