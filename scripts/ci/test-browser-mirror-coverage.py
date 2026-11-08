@@ -2,6 +2,17 @@
 from pathlib import Path
 import re
 
+def supported_browser_runner(job):
+    runners = re.findall(r'(?m)^    runs-on: ([^\n]+)$', job)
+    return len(runners) == 1 and runners[0] in {'ubuntu-latest', 'ubuntu-24.04'}
+
+
+for label in ['ubuntu-latest', 'ubuntu-24.04']:
+    assert supported_browser_runner('    runs-on: ' + label + '\n'), label
+for label in ['ubuntu-26.04', 'windows-latest', 'self-hosted', '[self-hosted, linux]', '']:
+    assert not supported_browser_runner('    runs-on: ' + label + '\n'), label
+assert not supported_browser_runner('    runs-on: ubuntu-latest\n    runs-on: ubuntu-24.04\n')
+
 count = 0
 for workflow in Path('.github/workflows').glob('*.yml'):
     text = workflow.read_text(encoding='utf-8')
@@ -12,7 +23,7 @@ for workflow in Path('.github/workflows').glob('*.yml'):
         if 'install --with-deps' not in job:
             continue
         count += 1
-        assert 'runs-on: ubuntu-latest' in job, workflow
+        assert supported_browser_runner(job), workflow
         first_install = job.index('install --with-deps')
         setup = job.index('name: Prefer Ubuntu archive for browser system dependencies')
         assert setup < first_install, workflow

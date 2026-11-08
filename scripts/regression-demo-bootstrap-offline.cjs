@@ -1,3 +1,4 @@
+const {chooseRosterFormat}=require('./lib/roster-format-controls.cjs');
 // Real compiled app, synthetic accounts/roster/publication, UTC month boundary.
 // A demo is allowed without an owner choice; an ignored automatic choice must
 // not be replaced by a demo while account bootstrap is unavailable.
@@ -48,8 +49,7 @@ const roster={crewName:'SYNTHETIC IMPORT',crewId:'900001',base:'BSB',rank:'CC',a
     await page.getByRole('heading',{name:'Não foi possível carregar o histórico',exact:true}).waitFor();
     assert.equal(await page.locator('.cc-aims-document').count(),0,'no demo/import roster is fabricated during failed bootstrap');
    }else{
-    const details=page.locator('details.cc-roster-view-options');if(!await details.evaluate(e=>e.open))await details.locator(':scope > summary').click();
-    await page.getByRole('combobox',{name:'Formato da escala',exact:true}).selectOption('aims');
+    await chooseRosterFormat(page,'aims');
     const flight=page.locator('.cc-aims-document .cc-doc-overview').getByRole('button',{name:selection==='none'?/CC ?101, dia 2026-11-01/:/LA1234, dia 2026-10-10/});
     await flight.waitFor();snapshot.renderedRoster=await flight.innerText();
     if(selection==='explicit')assert.match(snapshot.renderedRoster,/08:10[\s\S]*09:00/,'actual selected import retains its published clocks');

@@ -23,6 +23,10 @@ const input = [
  make('tomorrow','ASB',{day:{type:'ASB',date:nextDay},canonical:{id:'tomorrow',kind:'duty',date:nextDay,publishedDay:{type:'ASB',date:nextDay}}}),
  make('unconfirmed','ASB',{date:undefined,day:{type:'ASB',date:'invalid'},canonical:{id:'unconfirmed',kind:'duty',date:'invalid',publishedDay:{type:'ASB',date:'invalid'}}}),
 ];
+input.find(event=>event.id==='flight')!.canonical.showPresentation=true;
+input.find(event=>event.id==='flight')!.canonical.startDateTime=`${today}T13:00:00Z`;
+input.find(event=>event.id==='flight')!.canonical.endDateTime=`${today}T14:00:00Z`;
+(input.find(event=>event.id==='flight')! as any).subtitle='Apres. 09:00 · 10:00 → 11:00 · AAA → BBB';
 input.find(event=>event.id==='off')!.canonical.groundBeforeMinutes=120; // Deliberate residual operational metadata on formal DO.
 const freeze=(v:any):any=>{if(v&&typeof v==='object'){Object.freeze(v);Object.values(v).forEach(freeze)}return v;};freeze(input);
 const finance={perdiem:{rows:[{iso:today,label:'Refeição sintética',value:100,currency:'BRL',convertedBRL:100}]},salary:{configured:true,rows:[{id:'flight',timeKnown:true,distanceKnown:true,km:100,dayKm:100,nightKm:0,dayRateApplied:1,nightRateApplied:0,total:100},{id:'extra',timeKnown:true,distanceKnown:true,km:50,dayKm:50,nightKm:0,dayRateApplied:1,nightRateApplied:0,total:50}]}};

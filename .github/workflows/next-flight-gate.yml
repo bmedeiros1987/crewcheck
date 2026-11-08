@@ -62,7 +62,7 @@ permissions:
   contents: read
 jobs:
   simulated:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6

@@ -1,3 +1,4 @@
+const {chooseRosterFormat,closeRosterViewOptions}=require('./lib/roster-format-controls.cjs');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const { createRequire } = require('node:module');
 const { chromium } = createRequire(path.resolve(process.env.MENU_PLAYWRIGHT_PACKAGE || 'package.json'))('playwright');
@@ -15,7 +16,7 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
         return;
     } res.setHeader('content-type', /\.m?js$/.test(f) ? 'application/javascript' : f.endsWith('.css') ? 'text/css' : 'text/html'); res.end(fs.readFileSync(f)); });
     await new Promise(r => server.listen(0, '127.0.0.1', r));
-    const origin = 'http://127.0.0.1:' + server.address().port, browser = await chromium.launch({ headless: true });
+    const origin = 'http://127.0.0.1:' + server.address().port, browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}) });
     const store = new Map(), requests = [], snapshots = [];
     let active = null, holdNextHistory = false, heldHistory = null;
     try {
@@ -71,8 +72,7 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
         await p.clock.setFixedTime(new Date('2026-10-26T12:00:00Z'));
         await p.goto(origin + '/app?view=roster');
         await p.locator('.cz-app').waitFor();
-        async function snapshot(phase) { await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'roster' }))); const details = p.locator('details.cc-roster-view-options'); await details.waitFor(); if (!await details.evaluate(e => e.open))
-            await details.locator(':scope > summary').click(); await p.getByRole('combobox', { name: 'Formato da escala', exact: true }).selectOption('aims'); const s = await p.evaluate(() => { const a = JSON.parse(sessionStorage.getItem('crewcheck_roster') || 'null'), h = JSON.parse(localStorage.getItem('crewcheck_local_history_v11_continuity-qa') || '[]'); return { activeMonth: a?.roster?.month, activeDays: a?.roster?.days?.filter(d => d.legs?.length).map(d => ({ date: d.date, codes: d.legs.map(l => l.flightNumber) })), history: h.map(x => ({ month: x.roster?.month, crewId: x.roster?.crewId, dates: x.roster?.days?.filter(d => d.legs?.length).map(d => d.date) })) }; }); s.phase = phase; s.document = await p.locator('.cc-aims-document').innerText(); s.options = await p.getByLabel('Abrir programação publicada', { exact: true }).locator('option').allTextContents(); s.remote = [...store.values()].map(x => ({ month: x.summary.month, active: x.summary.isActive, crewId: x.summary.crewId })); s.visibleOct30 = s.document.includes('LA8130'); s.visibleOct31 = s.document.includes('LA8131'); snapshots.push(s); console.log(JSON.stringify({ phase, activeMonth: s.activeMonth, visibleOct30: s.visibleOct30, visibleOct31: s.visibleOct31, history: s.history.map(x => x.month), remote: s.remote.map(x => x.month) })); await p.screenshot({ path: out + '/' + phase + '.png', fullPage: true }); }
+        async function snapshot(phase) { await p.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'roster' }))); await chooseRosterFormat(p,'aims'); const s = await p.evaluate(() => { const a = JSON.parse(sessionStorage.getItem('crewcheck_roster') || 'null'), h = JSON.parse(localStorage.getItem('crewcheck_local_history_v11_continuity-qa') || '[]'); return { activeMonth: a?.roster?.month, activeDays: a?.roster?.days?.filter(d => d.legs?.length).map(d => ({ date: d.date, codes: d.legs.map(l => l.flightNumber) })), history: h.map(x => ({ month: x.roster?.month, crewId: x.roster?.crewId, dates: x.roster?.days?.filter(d => d.legs?.length).map(d => d.date) })) }; }); s.phase = phase; s.document = await p.locator('.cc-aims-document').innerText(); s.options = await p.getByLabel('Abrir programação publicada', { exact: true }).locator('option').allTextContents(); s.remote = [...store.values()].map(x => ({ month: x.summary.month, active: x.summary.isActive, crewId: x.summary.crewId })); s.visibleOct30 = s.document.includes('LA8130'); s.visibleOct31 = s.document.includes('LA8131'); snapshots.push(s); console.log(JSON.stringify({ phase, activeMonth: s.activeMonth, visibleOct30: s.visibleOct30, visibleOct31: s.visibleOct31, history: s.history.map(x => x.month), remote: s.remote.map(x => x.month) })); await p.screenshot({ path: out + '/' + phase + '.png', fullPage: true }); }
         for (const month of [10, 11]) {
             await p.locator('input[hidden][accept="application/pdf,.pdf"]').setInputFiles(fixture[month]);
             try {
@@ -146,10 +146,9 @@ const fixture = { 10: pdf(10, { 30: 'LA8130', 31: 'LA8131' }), 11: pdf(11, { 1: 
         assert.match(consumers.historicalDeparture,/LA8130/);
         assert.doesNotMatch(consumers.historicalDeparture,/LA8201/);
         await p.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'})));
-        const displayOptions=p.locator('details.cc-roster-view-options');
-        if(!await displayOptions.evaluate(e=>e.open)) await displayOptions.locator(':scope > summary').click();
-        await p.getByRole('combobox',{name:'Formato da escala',exact:true}).selectOption('cards');
-        await p.getByRole('button',{name:'Mês completo',exact:true}).click();
+        await chooseRosterFormat(p,'cards',{close:false});
+        await p.getByRole('dialog',{name:'Visualização',exact:true}).getByRole('button',{name:'Mês completo',exact:true}).click();
+        await closeRosterViewOptions(p);
         await p.getByRole('combobox',{name:'Mês',exact:true}).selectOption('2026-10');
         await p.locator('[data-roster-iso="2026-10-30"]').getByRole('button',{name:'Saída Inteligente',exact:true}).click();
         await p.waitForTimeout(1000);
