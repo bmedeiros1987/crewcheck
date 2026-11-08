@@ -15,11 +15,18 @@ export type PayrollSnapshot = {month:string;salary:PayrollSalary;publishedDays:s
 const inventoryPending='Inventário por rubrica e composição integral com DSR pendentes. Confirmar tarifas ou datas não comprova todas as parcelas; os valores conhecidos são um subtotal.';
 /** Consume the SAME canonical composition; a day list or a scalar total cannot
  * certify category completeness. No producer is manufactured by this adapter. */
+function componentSourceValid(item:SalaryProjection['components'][number]|undefined,owner:string,month:string){
+ const bounds=payrollMonthBounds(month);
+ return Boolean(item&&bounds&&item.ownerId===owner&&item.competence===month&&item.currency==='BRL'&&item.sourceId?.trim()&&Number.isSafeInteger(item.revision)&&item.revision>0&&validFinancialDay(item.effectiveFrom)&&validFinancialDay(item.effectiveTo)&&item.effectiveFrom<=bounds.start&&item.effectiveTo>=bounds.end);
+}
+function componentAmountValid(item:SalaryProjection['components'][number]|undefined){
+ return Boolean(item&&['estimated','confirmed'].includes(item.status)&&item.amountMinor!==null&&Number.isSafeInteger(item.amountMinor)&&Number(item.amountMinor)>=0);
+}
 function canonicalProjection(s:PayrollSalary|undefined,month:string){
  const d=s?.dsr,c=d?.composition;
  if(!d?.current||!d.isCurrent()||d.inventoryComplete!==true||c?.state!=='complete'||c.dsr?.state!=='complete'||c.competence!==month||!c.ownerId||!Number.isSafeInteger(c.grossMinor)||c.grossMinor<0)return null;
  const keys=['base','fixedAdditions','production','reserve','standby','chief','instructor'];
- if(d.components.length!==keys.length||keys.some(key=>{const matches=d.components.filter(item=>item.key===key);return matches.length!==1||matches[0].ownerId!==c.ownerId||matches[0].competence!==month||matches[0].currency!=='BRL'||matches[0].status==='unavailable'||!matches[0].sourceId||!Number.isSafeInteger(matches[0].revision)||matches[0].revision<1||!Number.isSafeInteger(matches[0].amountMinor)||Number(matches[0].amountMinor)<0||matches[0].amountMinor===null;}))return null;
+ if(d.components.length!==keys.length||keys.some(key=>{const matches=d.components.filter(item=>item.key===key);return matches.length!==1||!componentSourceValid(matches[0],c.ownerId,month)||!componentAmountValid(matches[0]);}))return null;
  const labels:Record<string,string>={base:'Salário-base',fixedAdditions:'Adicionais fixos informados',production:'Produção',reserve:'Reserva',standby:'Sobreaviso',chief:'Chefia',instructor:'Instrutoria'};
  const lines:PaymentLine[]=keys.map(key=>d.components.find(item=>item.key===key)!).map(item=>({iso:month,label:labels[item.key],currency:'BRL',value:Number(item.amountMinor)/100,source:item.sourceId}));
  if(!Number.isSafeInteger(c.dsr.amountMinor)||c.dsr.amountMinor<0)return null;
@@ -37,16 +44,19 @@ function observedProjection(s:PayrollSalary|undefined,month:string){
  if(!d)return null;
  const current=d.current&&d.isCurrent()&&Boolean(c?.ownerId)&&c?.competence===month;
  const lines:PaymentLine[]=Object.keys(labels).map(key=>{const parts=d.observedParts.filter(part=>part.key===key),sources=d.components.filter(part=>part.key===key);const amount=parts.length===1?parts[0].amountMinor:null;
-  const valid=current&&sources.length===1&&sources[0].ownerId===c.ownerId&&sources[0].competence===month&&Number.isSafeInteger(amount)&&Number(amount)>=0&&amount!==null;
+  const valid=current&&sources.length===1&&componentSourceValid(sources[0],c.ownerId,month)&&Number.isSafeInteger(amount)&&Number(amount)>=0&&amount!==null;
   return {iso:month,label:labels[key],currency:'BRL',value:valid?Number(amount)/100:null,partial:true,pendingReason:valid?'Parcela observada; inventário integral ainda não comprovado.':'Rubrica sem valor observado comprovado nesta conta e competência.',source:current?sources[0]?.sourceId||'Origem pendente':'Contexto financeiro alterado'};
  });
  return {owner:current?c.ownerId:null,lines};
 }
 function fixedProjection(s:PayrollSalary|undefined,month:string){
- const observed=observedProjection(s,month);if(!observed?.owner)return null;
- const lines=observed.lines.slice(0,2);
- if(['base','fixedAdditions'].some(key=>{const matches=s!.dsr!.components.filter(item=>item.key===key);return matches.length!==1||matches[0].amountMinor===null||!Number.isSafeInteger(matches[0].amountMinor)||Number(matches[0].amountMinor)<0||matches[0].status==='unavailable';}))return null;
- return lines.length===2&&lines.every(line=>line.value!==null)?{owner:observed.owner,lines}:null;
+ const d=s?.dsr,c=d?.composition;if(!d?.current||!d.isCurrent()||!c?.ownerId||c.competence!==month)return null;
+ const keys=['base','fixedAdditions'];
+ const parts=keys.map(key=>d.components.filter(item=>item.key===key));
+ if(parts.some(matches=>matches.length!==1||!componentSourceValid(matches[0],c.ownerId,month)||!componentAmountValid(matches[0])))return null;
+ // Contradictory observations never silently replace certified components.
+ if(parts.some(([part])=>{const observed=d.observedParts.filter(item=>item.key===part.key);return observed.length!==1||observed[0].amountMinor!==null&&observed[0].amountMinor!==part.amountMinor;}))return null;
+ return {owner:c.ownerId,lines:parts.map(([part],index)=>({iso:month,label:index===0?s!.config.baseLabel||'Salário-base':'Adicionais fixos informados',currency:'BRL',value:Number(part.amountMinor)/100,source:part.sourceId}))};
 }
 
 type Cycle = {operationalVariableMonth:string;fixedMonth:string;expectedCreditMonth:string};

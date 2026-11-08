@@ -61,6 +61,13 @@ try{
  const differentCycle={operationalVariableMonth:month,fixedMonth,expectedCreditMonth:'2027-01'};
  const cross=composePayrollPayment(differentCycle,[{month,salary:full,publishedDays:published},{month:fixedMonth,salary:{...salary,dsr:fixedDsr},publishedDays:[]}]);
  assert.deepEqual(nextPayrollPayment([cross],new Date('2027-01-01T12:00:00Z')).totals,{BRL:3156.36},'complete operational variables plus confirmed fixed components of another month do not require future variable inventory');
+ for(const change of [{currency:'USD'},{sourceId:''},{revision:0},{effectiveFrom:'2026-12-02'},{effectiveTo:'2026-11-30'},{competence:'2026-11'},{ownerId:'SYNTHETIC-B'}]){
+  const broken={...fixedDsr,components:fixedComponents.map(part=>part.key==='base'?{...part,...change}:part)};
+  const badCycle=composePayrollPayment(differentCycle,[{month,salary:full,publishedDays:published},{month:fixedMonth,salary:{...salary,dsr:broken},publishedDays:[]}]);
+  assert.equal(nextPayrollPayment([badCycle],new Date('2027-01-01T12:00:00Z')).totals,null,'invalid fixed source cannot certify a cycle: '+JSON.stringify(change));
+ }
+ const divergent={...fixedDsr,observedParts:fixedDsr.observedParts.map(part=>part.key==='base'?{...part,amountMinor:999999}:part)};
+ assert.equal(nextPayrollPayment([composePayrollPayment(differentCycle,[{month,salary:full,publishedDays:published},{month:fixedMonth,salary:{...salary,dsr:divergent},publishedDays:[]}])],new Date('2027-01-01T12:00:00Z')).totals,null,'conflicting observed and full fixed evidence remains pending');
  const foreignFixed={...fixedDsr,components:fixedComponents.map(c=>({...c,ownerId:'SYNTHETIC-B'})),composition:{...fixedDsr.composition,ownerId:'SYNTHETIC-B'}};
  const conflict=composePayrollPayment(differentCycle,[{month,salary:full,publishedDays:published},{month:fixedMonth,salary:{...salary,dsr:foreignFixed},publishedDays:[]}]);
  assert.equal(nextPayrollPayment([conflict],new Date('2027-01-01T12:00:00Z')).calculationTotals,null,'another account never supplies fixed components');

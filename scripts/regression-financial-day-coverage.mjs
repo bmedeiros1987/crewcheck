@@ -11,10 +11,10 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'financial-chain-'));
 const values=new Map(),requests=[],evidence=[];
 globalThis.localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k)};
 globalThis.window=new EventTarget();window.location={origin:'http://synthetic.invalid',hostname:'synthetic.invalid'};
-let inventory=[],documents={},defer=null,failRosterRead=false;
+let inventory=[],documents={},defer=null,failRosterRead=false,failInventoryRead=false;
 globalThis.fetch=async(url,init={})=>{
  const u=new URL(String(url),'http://synthetic.invalid');assert.equal(u.origin,'http://synthetic.invalid');assert.equal(init.method??'GET','GET','no writes allowed');
- requests.push(u.pathname);if(failRosterRead&&['/api/rosters/oct','/api/rosters/open'].includes(u.pathname)){throw new Error('Synthetic transport failed');}const authorized=new Headers(init.headers).get('authorization')==='Bearer synthetic-synthetic-finance-A';
+ requests.push(u.pathname);if(failInventoryRead&&u.pathname==='/api/rosters')throw new Error('Synthetic inventory transport failed');if(failRosterRead&&['/api/rosters/oct','/api/rosters/open'].includes(u.pathname)){throw new Error('Synthetic transport failed');}const authorized=new Headers(init.headers).get('authorization')==='Bearer synthetic-synthetic-finance-A';
  if(defer){const d=defer;defer=null;await d;}
  const payload=u.pathname==='/api/rosters'?{ok:true,rosters:authorized?inventory:[]}:u.pathname==='/api/rosters/active'?{ok:true,roster:null}:u.pathname.startsWith('/api/rosters/')?{ok:true,data:{roster:authorized?documents[decodeURIComponent(u.pathname.slice('/api/rosters/'.length))]:null,compliance:null,gym:[]}}:assert.fail('Unadmitted synthetic route '+u.pathname);
  return new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}});
@@ -281,6 +281,12 @@ try{
  assert.equal(JSON.stringify(roundTrip),roundTripSource,'calculator never writes source');
  evidence.push({name:'synthetic international round trip without overnight',rate:roundTripLunch.rateKey,currency:roundTripLunch.currency,value:roundTripLunch.value});
 
+ // The actual reader preserves offline local history and reports why remote
+ // coverage is unconfirmed; one call, no hidden retry or mutation.
+ reset();failInventoryRead=true;let offline=false;
+ await libs.listSavedRosters(72,false,{preserveRevisions:true,onUnavailable:()=>{offline=true;}});
+ assert.equal(offline,true);assert.equal(requests.filter(p=>p==='/api/rosters').length,1);
+ failInventoryRead=false;offline=false;await libs.listSavedRosters(72,false,{preserveRevisions:true,onUnavailable:()=>{offline=true;}});assert.equal(offline,false,'explicit new read can recover remote inventory');
  // Execute the actual Explorer body and its read-only source-loading effect.
  // Hook state is synthetic; selection, session checks, loader and fetch fence
  // are production code. Only allowance boundaries request the prior source.

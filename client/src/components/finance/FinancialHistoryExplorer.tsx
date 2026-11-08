@@ -75,10 +75,12 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);setRecovery(value=>({...value,source:false,inventory:false}));
     if(!owner||!crew)return;
     setBusy(true);setNotice('');
-    listSavedRosters(72,false,{preserveRevisions:true}).then(items=>{
+    let localFallback=false;
+    listSavedRosters(72,false,{preserveRevisions:true,onUnavailable:()=>{localFallback=true;}}).then(items=>{
       if(version!==epoch.current||session()!==owner)return;
-      const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);setCoverageReady(true);
-      if(items.length>=72)setNotice('Histórico limitado às 72 escalas retornadas; não representa todos os períodos da conta.');
+      const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);setCoverageReady(!localFallback);
+      if(localFallback){setRecovery(value=>({...value,inventory:true}));setNotice('Histórico remoto indisponível; fontes locais preservadas. Total do ciclo não confirmado.');}
+      if(!localFallback&&items.length>=72)setNotice('Histórico limitado às 72 escalas retornadas; não representa todos os períodos da conta.');
     }).catch(()=>{if(version===epoch.current&&session()===owner){setRecovery(value=>({...value,inventory:true}));setNotice('Não foi possível consultar outros meses. A escala selecionada continua disponível.');}})
       .finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
   },[owner,crew,initialMonth,roster,authRevision]);
