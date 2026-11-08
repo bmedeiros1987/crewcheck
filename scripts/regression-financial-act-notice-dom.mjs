@@ -38,7 +38,7 @@ async function suite(code) {
   try {
     w.eval(code);
     const panel = () => w.document.querySelector('[data-financial-act-context]');
-    const notice = () => /Confirme seus dados para calcular as diárias\./.test(panel()?.textContent || '');
+    const notice = () => /Aplicação do ACT pendente neste período\./.test(panel()?.textContent || '');
     const mount = async items => { await w.act(async () => w.mount(items)); };
 
     // No declaration, nothing in the period waits on it (e.g. an account value covers it): no notice.
@@ -84,7 +84,7 @@ async function suite(code) {
     w.localStorage.setItem(key, journal([event(1, '2026-01-01')]));
     w.localStorage.setItem('crewcheck_language', 'en');
     await mount(pending);
-    assert.match(panel_().textContent, /Confirm your details to calculate allowances\./, 'EN notice');
+    assert.match(panel_().textContent, /ACT application pending for this period\./, 'EN notice');
     const enReview = [...panel_().querySelectorAll('button')].find(button => button.textContent === 'Review details');
     assert.ok(enReview, 'EN review button'); await w.act(async () => enReview.click());
     const options = [...panel_().querySelectorAll('option')].map(option => option.textContent);
@@ -94,7 +94,7 @@ async function suite(code) {
     assert.equal(panel_().getAttribute('lang'), 'en');
     // Live switch back to Portuguese: no English left.
     await w.act(async () => { w.localStorage.setItem('crewcheck_language', 'pt'); w.dispatchEvent(new w.CustomEvent('crewcheck:language-change', { detail: { language: 'pt' } })); });
-    assert.match(panel_().textContent, /Confirme seus dados para calcular as diárias\./, 'live switch to PT');
+    assert.match(panel_().textContent, /Aplicação do ACT pendente neste período\./, 'live switch to PT');
     assert.doesNotMatch(fullText(), ENGLISH_UI, 'PT: no English interface text after the switch');
     assert.equal(panel_().getAttribute('lang'), 'pt-BR');
     // English beyond the initial form: the pending dates, preview, save and validation messages and

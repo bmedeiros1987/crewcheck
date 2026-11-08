@@ -11,10 +11,10 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'financial-chain-'));
 const values=new Map(),requests=[],evidence=[];
 globalThis.localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k)};
 globalThis.window=new EventTarget();window.location={origin:'http://synthetic.invalid',hostname:'synthetic.invalid'};
-let inventory=[],documents={},defer=null;
+let inventory=[],documents={},defer=null,failRosterRead=false;
 globalThis.fetch=async(url,init={})=>{
  const u=new URL(String(url),'http://synthetic.invalid');assert.equal(u.origin,'http://synthetic.invalid');assert.equal(init.method??'GET','GET','no writes allowed');
- requests.push(u.pathname);const authorized=new Headers(init.headers).get('authorization')==='Bearer synthetic-synthetic-finance-A';
+ requests.push(u.pathname);if(failRosterRead&&['/api/rosters/oct','/api/rosters/open'].includes(u.pathname)){throw new Error('Synthetic transport failed');}const authorized=new Headers(init.headers).get('authorization')==='Bearer synthetic-synthetic-finance-A';
  if(defer){const d=defer;defer=null;await d;}
  const payload=u.pathname==='/api/rosters'?{ok:true,rosters:authorized?inventory:[]}:u.pathname==='/api/rosters/active'?{ok:true,roster:null}:u.pathname.startsWith('/api/rosters/')?{ok:true,data:{roster:authorized?documents[decodeURIComponent(u.pathname.slice('/api/rosters/'.length))]:null,compliance:null,gym:[]}}:assert.fail('Unadmitted synthetic route '+u.pathname);
  return new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}});
@@ -286,28 +286,39 @@ try{
  // are production code. Only allowance boundaries request the prior source.
  reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
  const inventoryRows=await libs.listSavedRosters(72,false,{preserveRevisions:true});
- const explorerSource=fs.readFileSync(path.join(root,'client/src/components/finance/FinancialHistoryExplorer.tsx'),'utf8');
+ const explorerSource=fs.readFileSync(process.env.FINANCIAL_EXPLORER_SOURCE||path.join(root,'client/src/components/finance/FinancialHistoryExplorer.tsx'),'utf8');
  const explorerAst=ts.createSourceFile('FinancialHistoryExplorer.tsx',explorerSource,99,true,ts.ScriptKind.TSX);
  const explorerNodes=explorerAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&['session','FinancialHistoryExplorer'].includes(node.name?.text)||ts.isVariableStatement(node)&&node.declarationList.declarations.some(d=>['monthOf','label','formatMoney'].includes(d.name.getText(explorerAst))));
  async function explorer(mode,available=inventoryRows){
-  const callbacks=[],loaded=[{roster:nov,source:'synthetic'}];let index=0,renderState,updatedLoaded=loaded;
+  const callbacks=[],refs=[],loaded=[{roster:nov,source:'synthetic'}];let index=0,refIndex=0,renderState,updatedLoaded=loaded;
   const states=[0,0,available,[],loaded,true,[],false,''];
   const scope=vm.createContext({...libs,React,Date:FixtureDate,window,localStorage,
    CalendarDays:()=>null,PersistentFinancialHistory:()=>null,FinancialScreenContext:{Provider:()=>null},
    useFinancialPrivacy:()=>({hidden:false,amount:v=>v,text:v=>v}),
    useFinancialNavigation:()=>({context:{screen:'summary',kind:'custom',month:'2026-11',day:'2026-11-01',from:'2026-11-01',to:'2026-11-03',currency:'BRL',comparison:'month'},update:()=>{},navigate:()=>{},back:()=>{}}),
-   useMemo:fn=>fn(),useRef:initial=>({current:initial}),useEffect:fn=>callbacks.push(fn),
-   useState:initial=>{const position=index++;return[states[position],next=>{states[position]=typeof next==='function'?next(states[position]):next;if(position===4)updatedLoaded=states[position];}];},
+   useMemo:fn=>fn(),useRef:initial=>refs[refIndex++]??(refs[refIndex-1]={current:initial}),useEffect:fn=>callbacks.push(fn),
+   useState:initial=>{const position=index++;if(position>=states.length)states[position]=initial;return[states[position],next=>{states[position]=typeof next==='function'?next(states[position]):next;if(position===4)updatedLoaded=states[position];}];},
   });
   vm.runInContext(ts.transpileModule(explorerNodes.map(node=>node.getText(explorerAst).replace(/^export default /,'')).join('\n')+'\nglobalThis.Explorer=FinancialHistoryExplorer;',{compilerOptions:{target:99,jsx:ts.JsxEmit.React}}).outputText,scope);
-  scope.Explorer({roster:nov,calculate:roster=>({roster}),metric:()=>({}),mode,render:state=>{renderState=state;return null;}});
+  const render=()=>{index=0;refIndex=0;callbacks.length=0;scope.Explorer({roster:nov,calculate:roster=>({roster}),metric:()=>({}),mode,render:state=>{renderState=state;return null;}});};render();
   requests.length=0;const load=callbacks.find(fn=>fn.toString().includes('openSavedRoster'));assert(load,'actual source loading effect');load();
   for(let turn=0;turn<5;turn++)await new Promise(setImmediate);
-  return{requests:[...requests],state:renderState,loaded:updatedLoaded};
+  return{requests:[...requests],state:renderState,loaded:updatedLoaded,load,render,controls:()=>renderState.controls,loadedNow:()=>updatedLoaded};
  }
  let lookup=await explorer('allowance');assert.deepEqual(lookup.requests,['/api/rosters/oct']);assert(lookup.loaded.some(item=>item.roster.month===10));assert.deepEqual(Array.from(lookup.state.missing),['2026-10']);
  lookup=await explorer('salary');assert.deepEqual(lookup.requests,[],'salary source/competence contract unchanged');assert.deepEqual(Array.from(lookup.state.missing),[]);
  lookup=await explorer('allowance',inventoryRows.filter(item=>item.month===11));assert.deepEqual(lookup.requests,[]);assert.deepEqual(Array.from(lookup.state.missing),['2026-10'],'unavailable prior source is pending, not invented zero');
+ // Same-context recovery is an explicit UI action, never a retry loop.
+ const settle=async()=>{for(let turn=0;turn<5;turn++)await new Promise(setImmediate);};
+ const findRetry=node=>!node||typeof node!=='object'?null:node.type==='button'&&node.props.children==='Tentar leitura novamente'?node:React.Children.toArray(node.props?.children).map(findRetry).find(Boolean);
+ reset();failRosterRead=true;lookup=await explorer('allowance');
+ assert.equal(lookup.requests.filter(p=>p==='/api/rosters/oct').length,1);failRosterRead=false;assert(!lookup.loadedNow().some(item=>item.roster.month===10));
+ lookup.load();await settle();assert.equal(requests.filter(p=>p==='/api/rosters/oct').length,1,'failed requests do not loop automatically');
+ lookup.render();const retry=findRetry(lookup.controls());assert(retry,'read failure exposes an actual recovery button');retry.props.onClick();
+ lookup.load();await settle();assert.equal(requests.filter(p=>p==='/api/rosters/oct').length,2);assert(lookup.loadedNow().some(item=>item.roster.month===10),'same mounted context recovers without logout/remount');
+ lookup.render();assert(!findRetry(lookup.controls()),'successful recovery removes retry action');
+ reset();let finish;defer=new Promise(resolve=>finish=resolve);const old=explorer('allowance');await settle();login('synthetic-finance-B');finish();const stale=await old;await settle();assert(!stale.loadedNow().some(item=>item.roster.month===10),'late A result never enters B');
+ reset();
  evidence.push({name:'actual Explorer allowance source lookup',priorSourceRequested:true,salaryUnchanged:true,missingPriorUnknown:true,apiWrites:0});
  console.log(JSON.stringify({status:'PASS',timezone:process.env.TZ,evidence,sessionFence:'real reader rejects A→B with zero followup; B has no A settings',source:'real DB reader, canonical events, competence selector, ACT/owned resolver, Home calculator and range total; HTTP/storage/clock fixtures only; no tariff validation',externalRequests:0,apiWrites:0},null,2));
 }finally{fs.rmSync(dir,{recursive:true,force:true});}

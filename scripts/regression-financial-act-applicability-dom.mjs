@@ -9,7 +9,7 @@ try{
  const click=async text=>{const b=buttons().find(b=>b.textContent===text);assert(b,text);await w.act(async()=>b.click());};
  const select=async(index,value)=>{const el=w.document.querySelectorAll('[data-financial-act-context] select')[index];await w.act(async()=>{el.value=value;el.dispatchEvent(new w.Event('change',{bubbles:true}));});};
  // The notice follows the displayed period's pending items (prop), not the absence of any declaration event.
- assert.equal(raw(),null);assert.match(w.document.body.textContent,/Confirme seus dados para calcular as diárias\./);assert.match(w.document.body.textContent,/Empresa e ACT não confirmados para estas datas\./);
+ assert.equal(raw(),null);assert.match(w.document.body.textContent,/Aplicação do ACT pendente neste período\./);assert.match(w.document.body.textContent,/Empresa e ACT não confirmados para estas datas\./);
  await click('Preparar declaração sem gravar');assert.equal(raw(),null);assert.match(w.document.body.textContent,/Selecione empresa/);
  await select(1,'TAM_LINHAS_AEREAS_SA');await select(2,'cabin');await w.act(async()=>w.document.querySelector('input[type=checkbox]').click());
  await click('Preparar declaração sem gravar');assert.equal(raw(),null);assert(w.document.querySelector('[aria-label="Prévia da aplicação financeira"]'));

@@ -43,7 +43,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const [coverageReady,setCoverageReady]=useState(false);
   const [requestedPeriods,setRequestedPeriods]=useState<string[]>([]);
   const [busy,setBusy] = useState(false), [notice,setNotice] = useState('');
-  const epoch = useRef(0), fetching = useRef(new Set<string>());
+  const [recovery,setRecovery]=useState({revision:0,source:false,inventory:false});
+  const epoch = useRef(0), fetching = useRef(new Map<string,{epoch:number;state:'pending'|'failed'|'complete'}>());
   const account = String(getStoredUser()?.id || getStoredUser()?.email || '');
   const bound = useRef({ account, roster });
   if (roster !== bound.current.roster) bound.current = { account, roster };
@@ -65,20 +66,20 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     return()=>{window.removeEventListener('crewcheck:financial-config-changed',refresh);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
-    const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
+    const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setRecovery(value=>({...value,source:false,inventory:false}));setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
     window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);
     const storage=(event:StorageEvent)=>{if((event.key===null&&event.storageArea===localStorage)||['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key || ''))changed();};window.addEventListener('storage',storage);
     return ()=>{epoch.current++;window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
-    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);
+    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);setRecovery(value=>({...value,source:false,inventory:false}));
     if(!owner||!crew)return;
     setBusy(true);setNotice('');
     listSavedRosters(72,false,{preserveRevisions:true}).then(items=>{
       if(version!==epoch.current||session()!==owner)return;
       const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);setCoverageReady(true);
       if(items.length>=72)setNotice('Histórico limitado às 72 escalas retornadas; não representa todos os períodos da conta.');
-    }).catch(()=>{if(version===epoch.current&&session()===owner)setNotice('Não foi possível consultar outros meses. A escala selecionada continua disponível.');})
+    }).catch(()=>{if(version===epoch.current&&session()===owner){setRecovery(value=>({...value,inventory:true}));setNotice('Não foi possível consultar outros meses. A escala selecionada continua disponível.');}})
       .finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
   },[owner,crew,initialMonth,roster,authRevision]);
   useEffect(()=>{
@@ -86,16 +87,27 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     const wanted=[...sourceMonths(range),...(expanded?sourceMonths(comparisonRange):[]),...requestedPeriods], version=epoch.current;
     const requests=inventory.filter(item=>wanted.includes(`${item.year}-${String(item.month).padStart(2,'0')}`)&&!loaded.some(entry=>monthOf(entry.roster)===`${item.year}-${String(item.month).padStart(2,'0')}`)&&!fetching.current.has(item.id));
     if(!requests.length)return;
-    for(const item of requests)fetching.current.add(item.id);
+    const attempts=requests.map(item=>({item,token:{epoch:version,state:'pending' as 'pending'|'failed'|'complete'}}));
+    for(const {item,token} of attempts)fetching.current.set(item.id,token);
     setBusy(true);
     // Read-only history lookup: never activates, saves or changes the selected roster.
     Promise.allSettled(requests.map(async item=>({roster:(await openSavedRoster(item.id,item)).roster,source:item.sourceFileName || 'Histórico da escala'}))).then(results=>{
       if(version!==epoch.current||session()!==owner)return;
-      const accepted=results.flatMap(result=>result.status==='fulfilled'&&financialRosterCrewIdentity(result.value.roster)===crew?[result.value]:[]);
+      const accepted=results.flatMap((result,index)=>{
+        const {item,token}=attempts[index];if(fetching.current.get(item.id)!==token)return [];
+        const valid=result.status==='fulfilled'&&financialRosterCrewIdentity(result.value.roster)===crew;
+        token.state=valid?'complete':'failed';return valid&&result.status==='fulfilled'?[result.value]:[];
+      });
       setLoaded(previous=>[...previous,...accepted]);
-      if(results.some(result=>result.status==='rejected'))setNotice('Algumas escalas não estão disponíveis. Seus totais não foram presumidos.');
-    }).finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
-  },[owner,crew,inventory,expanded,kind,month,day,from,to,initialMonth,loaded,requestedPeriods,comparisonRange,mode]);
+      if(attempts.some(({token})=>token.state==='failed')){setRecovery(value=>({...value,source:true}));setNotice('Algumas escalas não estão disponíveis. Seus totais não foram presumidos.');}
+    }).finally(()=>{if(version===epoch.current&&session()===owner)setBusy([...fetching.current.values()].some(token=>token.epoch===version&&token.state==='pending'));});
+  },[owner,crew,inventory,expanded,kind,month,day,from,to,initialMonth,loaded,requestedPeriods,comparisonRange,mode,recovery.revision]);
+  const retryHistory=()=>{
+    if(busy||session()!==owner)return;
+    if(recovery.inventory){setAuthRevision(value=>value+1);return;}
+    for(const [id,token] of fetching.current)if(token.epoch===epoch.current&&token.state==='failed')fetching.current.delete(id);
+    setNotice('');setRecovery(value=>({revision:value.revision+1,source:false,inventory:false}));
+  };
   if(!owner || account !== bound.current.account)return <section className="cz-empty-real"><h1>Financeiro da sua conta</h1><p>Entre na conta proprietária e carregue sua escala para consultar valores. Visitantes não têm acesso financeiro.</p></section>;
   if(!validFinancialDay(initialMonth+'-01'))return <section className="cz-empty-real"><h1>Competência não informada</h1><p>Uma escala com mês e ano válidos é necessária.</p></section>;
   if(!crew)return <section className="cz-empty-real"><h1>Identificação da escala pendente</h1><p>Não foi possível vincular o histórico ao tripulante da escala selecionada.</p></section>;
@@ -121,6 +133,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
       {kind==='custom'&&<><label>Início<input type="date" aria-label="Início financeiro" value={from} onChange={event=>setFrom(event.target.value)}/></label><label>Fim<input type="date" aria-label="Fim financeiro" value={to} onChange={event=>setTo(event.target.value)}/></label></>}
       <p role="status">{range.valid?`Trabalho: ${range.start} até ${range.end}. `:'Informe um intervalo válido.'}{busy?' Consultando histórico…':''}</p>
       {missing.length>0&&<p>Sem escala para {missing.join(', ')}. Total do intervalo indisponível.</p>}
+      {(recovery.source||recovery.inventory)&&<button type="button" disabled={busy} onClick={retryHistory}>Tentar leitura novamente</button>}
       {(notice||conflicts.length>0)&&<p>{notice} {conflicts.length>0?'Revisões ambíguas em '+conflicts.join(', ')+': não somadas.':''}</p>}
     </section>
   </>;

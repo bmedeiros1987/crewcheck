@@ -84,8 +84,8 @@ function seed({ owner, other, language, journalRaw, manual, throwOnJournal, inte
 }
 
 const TEXT = {
-  pt: { notice: 'Confirme seus dados para calcular as diárias.', review: 'Revisar dados', summary: 'Confirmar ou revisar aplicação financeira do ACT', error: 'Não foi possível ler seus dados de diárias neste aparelho.', dates: 'Datas pendentes neste período:' },
-  en: { notice: 'Confirm your details to calculate allowances.', review: 'Review details', summary: 'Confirm or review the ACT financial application', error: 'Could not read your allowance details on this device.', dates: 'Pending dates in this period:' },
+  pt: { notice: 'Aplicação do ACT pendente neste período.', review: 'Revisar dados', summary: 'Confirmar ou revisar aplicação financeira do ACT', error: 'Não foi possível ler seus dados de diárias neste aparelho.', dates: 'Datas pendentes neste período:' },
+  en: { notice: 'ACT application pending for this period.', review: 'Review details', summary: 'Confirm or review the ACT financial application', error: 'Could not read your allowance details on this device.', dates: 'Pending dates in this period:' },
 };
 const OFFICIAL = /TAM Linhas Aéreas S\/A|LATAM Brasil|ABSA\/LATAM Cargo|\((Comissários|Pilotos|Lei 7\.064\/1982)\)/g;
 const PORTUGUESE = /\b(Confirme|Confirmar|Revisar|Datas|Declaração|declaração|Empresa|Não|Detalhes|Ação|Empregador|Perfil|Selecione|Declarar|Revogar|Comissários|Pilotos|Aplicar|Fim|Preparar|Histórico|período|aparelho|vínculo|Sem|abrange|titular)\b/;

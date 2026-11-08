@@ -32,6 +32,7 @@ async function requireRestoredOverviewFocus(page,timeout=10000){
 const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.'));
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});let writes=0;const blockedWrites=[],cases=[],errors=[];
 try{
+ await require('./regression-financial-known-values-recovery-app.cjs')({browser,origin,seed,out});
  const focusControl=await browser.newPage();await focusControl.setContent('<main class="cc-payment-overview" data-financial-screen="overview"><summary tabindex="0">Ajuda</summary><nav class="cc-financial-screen-links"><button>Extrato</button></nav></main>');
  await assert.rejects(()=>requireRestoredOverviewFocus(focusControl,150),e=>e.name==='TimeoutError','body focus cannot satisfy restoration');
  await focusControl.locator('summary').focus();await assert.rejects(()=>requireRestoredOverviewFocus(focusControl,150),e=>e.name==='TimeoutError','premature help focus cannot satisfy restoration');

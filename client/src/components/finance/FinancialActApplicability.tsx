@@ -23,7 +23,7 @@ const COPY = {
     unreadable: 'Não foi possível ler seus dados de diárias neste aparelho.',
     details: 'Detalhes',
     unreadableDetail: 'Declaração local indisponível ou inválida. Os dados foram preservados; referências pessoais válidas continuam independentes.',
-    notice: 'Confirme seus dados para calcular as diárias.',
+    notice: 'Aplicação do ACT pendente neste período.',
     review: 'Revisar dados',
     summary: 'Confirmar ou revisar aplicação financeira do ACT',
     pendingLabel: 'Pendências deste período',
@@ -60,7 +60,7 @@ const COPY = {
     unreadable: 'Could not read your allowance details on this device.',
     details: 'Details',
     unreadableDetail: 'Local declaration unavailable or invalid. Your data was preserved; valid personal references remain independent.',
-    notice: 'Confirm your details to calculate allowances.',
+    notice: 'ACT application pending for this period.',
     review: 'Review details',
     summary: 'Confirm or review the ACT financial application',
     pendingLabel: 'Pending items in this period',
@@ -170,7 +170,7 @@ export default function FinancialActApplicability({ pending = [] }: { pending?: 
   const messageText = message === 'incomplete' || message === 'saved' || message === 'notSaved' ? t[message] : message;
   return <section className={needsAction ? 'cz-toolbox cc-act-notice' : 'cc-act-discreet'} data-financial-act-context={snapshot.state} data-financial-act-pending={pendingDates.length} data-i18n-skip="true" lang={lang}>
     {needsAction && <>
-      <p role="status"><strong>{t.notice}</strong></p>
+      <p role="status"><strong>{t.notice}</strong> {pendingCauses.length===1?t.causes[pendingCauses[0]]:t.pendingLabel}</p>
       <button type="button" aria-expanded={open} onClick={() => setOpen(true)}>{t.review}</button>
     </>}
     <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>{t.summary}</summary>
