@@ -62,7 +62,10 @@ async function capture(page, name) {
  const context=await browser.newContext({viewport:{width,height:1000},serviceWorkers:'block'});
  await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/')&&!['/api/platform/finance/capture','/api/platform/finance/history','/api/platform/finance/upcoming'].includes(u.pathname))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
  const payload=roster(scenario);if(scenario==='multi')payload.days.find(day=>day.date==='01/03/2032').legs=[{flightNumber:'LA8000',origin:'BSB',destination:'JFK',departureTime:'11:00',arrivalTime:'20:00',workType:'OP'}];for(let i=25;i<=29;i++)payload.days.push({...day(String(i)+'/02/2032'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,dutyHours:0});
- await context.addInitScript(seed,{theme:'light',kind:payload,amount:123.45,history:[]});
+ // The reviewed February capture also requires the preceding published day:
+ // missing January is unknown, never an implicit rest/no-carry-in proof.
+ const priorSource={id:'synthetic-january-boundary',checksum:'synthetic-january-boundary',createdAt:'2032-01-31T00:00:00Z',sourceFileName:'Synthetic prior published rest',roster:{...roster('empty',1),days:[{...day('31/01/2032'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,dutyHours:0}]}};
+ await context.addInitScript(seed,{theme:'light',kind:payload,amount:123.45,history:[priorSource]});
  await context.addInitScript(()=>{const user=JSON.parse(localStorage.getItem('crewcheck_auth_user'));user.email='synthetic-a@example.invalid';user.crewId='900001';localStorage.setItem('crewcheck_auth_user',JSON.stringify(user));});
  const page=await context.newPage();page.setDefaultTimeout(15000);await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
  await page.locator('.cc-home-finance').waitFor().catch(async error=>{await page.screenshot({path:path.join(out,`canonical-${width}-${scenario}-entry-debug.png`),fullPage:true});console.error('Synthetic entry state:',await page.locator('body').innerText());throw error;});

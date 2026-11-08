@@ -38,24 +38,46 @@ assert.match(home, /function Departure\(\{ event, events, setView \}/, 'Departur
 const departureVacation = home.indexOf('if (vacationContextV14738 && !prepareVacationReturn)');
 const departurePlaceholder = home.indexOf('if (event.placeholder)', departureVacation);
 assert.ok(departureVacation >= 0 && departurePlaceholder > departureVacation, 'vacation state must win before "awaiting roster" in Departure');
-assert.match(home, /<Departure event=\{departureEvent\} events=\{departureContext\?\.programId \? rosterEvents : events\} setView=\{setView\}\/>/, 'Home router must preserve selected Departure event, contextual history and active global collection');
 assert.match(css, /cc-vacation-mode-v14738/, 'vacation UI must have isolated styling');
 assert.doesNotMatch(css, /@keyframes/i, 'vacation UI must not introduce attention-seeking animation');
 assert.match(prepare, /p2-738-vacation-work-first\/apply\.mjs/, 'canonical source preparation must reapply #738');
 
 const source = ts.createSourceFile('prepared-home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const departureRouters=[];
-function findDepartureRouter(node){
-  if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(source)==='Departure')departureRouters.push(node);
-  ts.forEachChild(node,findDepartureRouter);
+function assertDepartureRouting(text){
+  const ast=ts.createSourceFile('departure-router.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const routers=[];
+  function visit(node){
+    if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(ast)==='Departure')routers.push(node);
+    ts.forEachChild(node,visit);
+  }
+  visit(ast);assert.equal(routers.length,1,'one canonical Departure router');
+  const expression=name=>{
+    const attr=routers[0].attributes.properties.find(p=>ts.isJsxAttribute(p)&&p.name.getText(ast)===name);
+    const value=attr?.initializer;
+    assert.ok(value&&ts.isJsxExpression(value)&&value.expression,`real Departure ${name} binding`);
+    return value.expression;
+  };
+  const event=expression('event'),view=expression('setView');
+  assert.ok(ts.isIdentifier(event)&&event.text==='departureEvent','selected event cannot be replaced by a global fallback');
+  assert.ok(ts.isIdentifier(view)&&view.text==='setView','existing navigation handler is preserved');
+  const collection=new vm.Script('('+expression('events').getText(ast)+')');
+  const selected=new vm.Script('('+expression('contextSelected').getText(ast)+')');
+  const active=[{id:'SYNTHETIC-ACTIVE'}],history=[{id:'SYNTHETIC-HISTORY'}];
+  for(const departureContext of [null,{}, {programId:''}]){
+    const context={departureContext,events:active,rosterEvents:history};
+    assert.equal(collection.runInNewContext(context),active,'global entry retains active roster context');
+    assert.equal(selected.runInNewContext(context),false,'global entry is not an explicit historical selection');
+  }
+  const explicit={departureContext:{programId:'SYNTHETIC-HISTORY'},events:active,rosterEvents:history};
+  assert.equal(collection.runInNewContext(explicit),history,'explicit historical entry receives its own collection');
+  assert.equal(selected.runInNewContext(explicit),true,'explicit selection forbids borrowing unrelated standby');
 }
-findDepartureRouter(source);assert.equal(departureRouters.length,1,'one canonical Departure router');
-const collection=departureRouters[0].attributes.properties.find(p=>ts.isJsxAttribute(p)&&p.name.getText(source)==='events')?.initializer?.expression;
-assert.ok(collection,'real Departure collection expression');
-const chooseCollection=new vm.Script('('+collection.getText(source)+')');
-const activeDepartureEvents=[{id:'SYNTHETIC-ACTIVE'}],historicalDepartureEvents=[{id:'SYNTHETIC-HISTORY'}];
-for(const departureContext of [null,{}, {programId:''}])assert.equal(chooseCollection.runInNewContext({departureContext,events:activeDepartureEvents,rosterEvents:historicalDepartureEvents}),activeDepartureEvents,'global entry retains active roster context');
-assert.equal(chooseCollection.runInNewContext({departureContext:{programId:'SYNTHETIC-HISTORY'},events:activeDepartureEvents,rosterEvents:historicalDepartureEvents}),historicalDepartureEvents,'explicit historical entry receives its own collection');
+assertDepartureRouting(home);
+// Counterproofs: an added JSX prop is valid, but losing any context boundary is not.
+assert.throws(()=>assertDepartureRouting(home.replace(' contextSelected={Boolean(departureContext?.programId)}','')),/real Departure contextSelected binding/);
+assert.throws(()=>assertDepartureRouting(home.replace('event={departureEvent}','event={event}')),/selected event cannot/);
+assert.throws(()=>assertDepartureRouting(home.replace('events={departureContext?.programId ? rosterEvents : events}','events={events}')),/explicit historical entry/);
+assert.throws(()=>assertDepartureRouting(home.replace('contextSelected={Boolean(departureContext?.programId)}','contextSelected={true}')),/global entry is not/);
 
 const names = [
   'normalizeVacationCodeV14738',

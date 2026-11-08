@@ -1,6 +1,6 @@
-import { observedAllowancePeriods, rowsInObservedCycle, summarizeNativeForecastRows } from './financialForecastPeriods';
+import { observedAllowancePeriods, rowsInObservedCycle, summarizeNativeForecastRows, allowancePendingInRange } from './financialForecastPeriods';
 import { rosterOperationalIso, observedStatementCycle, rosterOperationalDateAt } from './compensationPolicy';
-import { financialMonths, validFinancialDay, type FinancialRange } from './financialHistoryPeriods';
+import { financialMonths, validFinancialDay, financialDayCoverage, allowanceSourceRange, type FinancialRange } from './financialHistoryPeriods';
 import {spBankDay} from '../../../shared/spBankCalendar2026.mjs';
 
 export type PaymentLine = { iso: string; label: string; currency: string; value: number | null; source: string; partial?:boolean;pendingReason?:string;expectedPaymentDate?:string;expectedPaymentTimezone?:string };
@@ -31,14 +31,14 @@ function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string;pendi
    // The producer knows which journey supplied this meal. Never infer that
    // relationship from a shared occurrence/payment date or display text.
    // Legacy rows without structured evidence remain explicitly unconfirmed.
-   const sourceIssue=pending.find(item=>item.pendingKind==='source_coverage'&&(!validFinancialDay(item.iso)||item.iso===row.iso));
+   const sourceIssue=pending.find(item=>item.pendingKind==='source_coverage'&&allowancePendingInRange([item],{start:row.iso,end:row.iso,kind:'custom',valid:true}).length>0);
    return {...row,partial:Boolean(sourceIssue)||row.partial!==false,...(sourceIssue?{pendingReason:sourceIssue.reason||'Cobertura da fonte da diária não verificada.'}:row.partial===undefined?{pendingReason:'Completude da origem da diária não comprovada.'}:{})};
   }
   const cycle=observedStatementCycle(rosterOperationalDateAt(row.iso,12),'roster_brt'),start=rosterOperationalIso(cycle.start),end=rosterOperationalIso(cycle.end);
   if(!cycles.has(start)){
-   let absent=false;for(const day=new Date(start+'T12:00:00Z');day.toISOString().slice(0,10)<=end;day.setUTCDate(day.getUTCDate()+1))if(!coveredDays?.includes(day.toISOString().slice(0,10)))absent=true;
+   const coverage=financialDayCoverage(allowanceSourceRange({start,end,kind:'custom',valid:true}),coveredDays),absent=!coverage.valid||coverage.missingDays.length>0;
    const missing=financialMonths({start,end,kind:'custom',valid:true}).some(month=>!covered.includes(month));
-   cycles.set(start,{date:observedBrlPaymentDate(rosterOperationalIso(cycle.payment)),partial:absent||missing||rowsInObservedCycle(pending,cycle).length>0||pending.some(item=>!validFinancialDay(item.iso))});
+   cycles.set(start,{date:observedBrlPaymentDate(rosterOperationalIso(cycle.payment)),partial:absent||missing||allowancePendingInRange(pending,{start,end,kind:'custom',valid:true}).length>0});
   }
   const item=cycles.get(start)!;return {...row,expectedPaymentDate:item.date||undefined,expectedPaymentTimezone:item.date?'America/Sao_Paulo':undefined,partial:item.partial||row.partial===true};
  });
@@ -49,14 +49,13 @@ export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:s
   // Never substitute the accumulating or selected month for that week's rows.
   const cycle = (observedBrlPaymentDate(rosterOperationalIso(periods.previous.payment))||rosterOperationalIso(periods.previous.payment)) >= today ? periods.previous : periods.accumulation;
   const range: FinancialRange = {start:rosterOperationalIso(cycle.start),end:rosterOperationalIso(cycle.end),kind:'custom',valid:true};
-  const lines = rowsInObservedCycle(rows, cycle), unknown = [...rowsInObservedCycle(pending, cycle), ...pending.filter(item=>!validFinancialDay(item.iso))];
+  const lines = rowsInObservedCycle(rows, cycle), unknown = allowancePendingInRange(pending,range);
   const missing = financialMonths(range).filter(month=>!covered.includes(month));
-  const absentDays:string[]=[];
-  for(let day=new Date(range.start+'T12:00:00Z');day.toISOString().slice(0,10)<=range.end;day.setUTCDate(day.getUTCDate()+1)){const iso=day.toISOString().slice(0,10);if(!coveredDays?.includes(iso))absentDays.push(iso);}
+  const {missingDays:absentDays} = financialDayCoverage(allowanceSourceRange(range),coveredDays);
   const summary = summarizeNativeForecastRows(lines, unknown);
   const issues = [
     ...(lines.some(line=>!validFinancialDay(line.iso)) ? ['Há datas inválidas na composição; confira a origem dos itens.'] : []),
-    ...(absentDays.length ? [`Há ${absentDays.length} dia(s) sem programação publicada comprovada neste ciclo. Confira a escala.`] : []),
+    ...(absentDays.length ? [`Há ${absentDays.length} dia(s) sem programação publicada comprovada para conferir a origem deste ciclo. Confira a escala.`] : []),
     ...(missing.length ? [`Falta conferir a escala de ${missing.join(', ')} para completar este ciclo.`] : []),
     ...(unknown.length ? [...new Set(unknown.map(item=>`${validFinancialDay(item.iso)?item.iso:'Data de origem pendente'} · ${item.reason||('Classificação ou tarifa pendente'+(item.airport?' em '+item.airport:''))}`))] : []),
     ...(!lines.length ? ['Nenhum item deste ciclo está disponível. Importe ou confira a escala correspondente.'] : []),
