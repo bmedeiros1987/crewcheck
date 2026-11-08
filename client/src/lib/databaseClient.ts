@@ -140,7 +140,12 @@ export async function listSavedRosters(limit = 72, strictHistory = false, option
     assertListSession();
     const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}&manager=1`);
     assertListSession();
-    if (!payload.ok || !Array.isArray(payload.rosters)) throw new Error('Resposta de histórico inválida.');
+    if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');
+    if (!payload.ok || !Array.isArray(payload.rosters)) {
+      options.onUnavailable?.();
+      assertListSession();
+      return normalizeSingleActiveSummary(local);
+    }
     let online = payload.rosters || [];
     if (!strictHistory && !online.some((item) => item.isActive)) {
       try {

@@ -69,7 +69,7 @@ export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:s
   const brlTiming=brlDate?`Pagamento previsto em ${brlDate.split('-').reverse().join('/')} · regra informada: quinta-feira, antecipada para quarta se bancos de SP fecharem na quinta. Ciclo estimado; não confirma crédito.`:'Data a confirmar · calendário bancário de SP não verificado para este ciclo BRL.';
   return {kind:'allowance',range,upcomingLines:datedAllowanceLines(rows,pending,covered,coveredDays),timing:'Data a confirmar',currencyTiming:{BRL:brlTiming,...foreignTiming},expectedPaymentDates:brlDate?{BRL:brlDate}:{},source:'Referência semanal observada do motor atual (quarta a terça). Datas estimadas pela regra informada e calendário bancário de SP; não há comprovação de recebimento.',lines,totals:issues.length ? null : summary.totalsByCurrency,calculationTotals:knownPaymentTotals(lines.filter(line=>validFinancialDay(line.iso))),calculationPartial:issues.length>0,issues,caption:'Diárias · valores na moeda original'};
 }
-export type PayrollCandidate = { creditMonth:string; operationalMonth:string; fixedMonth:string; range:FinancialRange; lines:PaymentLine[]; issues:string[] };
+export type PayrollCandidate = { creditMonth:string; operationalMonth:string; fixedMonth:string; range:FinancialRange; lines:PaymentLine[]; issues:string[];calculationTotals?:Record<string,number>|null };
 export function nextPayrollPayment(candidates: PayrollCandidate[], now = new Date()): NextPayment {
   const currentMonth=rosterOperationalIso(now).slice(0,7);
   const next=candidates.filter(item=>/^\d{4}-(0[1-9]|1[0-2])$/.test(item.creditMonth)&&item.creditMonth>=currentMonth).sort((a,b)=>a.creditMonth.localeCompare(b.creditMonth))[0];
@@ -79,5 +79,5 @@ export function nextPayrollPayment(candidates: PayrollCandidate[], now = new Dat
   const total=next.lines.reduce((sum,line)=>sum+(line.value??NaN),0);
   if(!Number.isFinite(total)&&!issues.length)issues.push('Não foi possível totalizar a composição deste ciclo.');
   const timing=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(next.creditMonth+'-01T12:00:00Z'));
-  return {kind:'payroll',range:next.range,timing:`Crédito esperado em ${timing}`,source:`Ciclo empresarial revisado nesta conta: variáveis de ${next.operationalMonth}, fixos da folha ${next.fixedMonth}. Dia exato e liquidação não confirmados.`,lines:next.lines,totals:issues.length?null:{BRL:total},calculationTotals:knownPaymentTotals(next.lines),calculationPartial:issues.length>0,issues,caption:'Folha · bruto estimado, antes dos descontos'};
+  return {kind:'payroll',range:next.range,timing:`Crédito esperado em ${timing}`,source:`Ciclo empresarial revisado nesta conta: variáveis de ${next.operationalMonth}, fixos da folha ${next.fixedMonth}. Dia exato e liquidação não confirmados.`,lines:next.lines,totals:issues.length?null:{BRL:total},calculationTotals:Object.prototype.hasOwnProperty.call(next,'calculationTotals')?next.calculationTotals:knownPaymentTotals(next.lines),calculationPartial:issues.length>0,issues,caption:'Folha · bruto estimado, antes dos descontos'};
 }

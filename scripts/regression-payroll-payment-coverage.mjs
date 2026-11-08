@@ -52,6 +52,8 @@ try{
  assert.equal(project({...full,dsr:{...dsr,components:components.map(c=>c.key==='reserve'?{...c,amountMinor:null}:c)}}).totals,null,'omitted zero is unknown');
  assert.equal(project({...full,dsr:{...dsr,components:components.map(c=>({...c,ownerId:'SYNTHETIC-B'}))}}).totals,null,'other account proof rejected');
  current=false;assert.equal(project(full).totals,null,'revoked/session/source revision fence immediately invalidates summary');current=true;
+ const overflow={...full,dsr:{...dsr,inventoryComplete:false,observedSubtotalMinor:null,observedParts:dsr.observedParts.map((part,index)=>index<3?{...part,amountMinor:Number.MAX_SAFE_INTEGER-1}:part)}};
+ const overflowed=project(overflow);assert.equal(overflowed.calculationTotals,null,'safe individual components cannot overflow the aggregate cent boundary');assert.equal(overflowed.totals,null);assert(overflowed.lines.filter(line=>line.value!==null).length>=3,'component observations survive an unavailable aggregate');
  const unprovedInstructor={...full,rows:[{...flight,total:9999}],dsr:{...dsr,inventoryComplete:false,observedParts:dsr.observedParts.map(p=>p.key==='instructor'?{...p,amountMinor:null}:p)}};
  assert.deepEqual(project(unprovedInstructor).calculationTotals,{BRL:3120},'global/raw instructor row total cannot enter canonical observed subtotal');
  assert.equal(project(unprovedInstructor).lines.find(line=>line.label==='Instrutoria').value,null);
