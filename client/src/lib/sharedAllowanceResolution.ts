@@ -137,7 +137,12 @@ export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | 
   const lastDay=trip.at(-1).day || trip.at(-1).canonical?.publishedDay || {};
   const lastPublished=lastDay.publishedClockEvidence || lastDay;
   if (!/^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(String(lastPublished.dutyDebrief || '')) || lastPublished.dutyDebriefSource !== 'published') return pending('encerramento publicado da viagem ausente.');
-  const stays=args.events.filter(event => event.kind === 'stay' && start(event) >= start(trip[0]) && end(event) <= end(trip.at(-1)));
+  const tripDates=new Set(trip.map(event => event.canonical?.date || event.day?.date));
+  const stays=args.events.filter(event => event.kind === 'stay' && (
+    Number.isFinite(start(event)) && Number.isFinite(end(event))
+      ? start(event) <= end(trip.at(-1)) && end(event) >= start(trip[0])
+      : tripDates.has(event.canonical?.date || event.day?.date)
+  ));
   const provedStays=stays.filter(stay => {
     const day=stay.day || stay.canonical?.publishedDay || {}, published=day.publishedClockEvidence || day;
     if (day.continuityInferred || !/^(PERNOITE|LAYOVER|ESTADIA)$/.test(String(day.type || '').toUpperCase())
