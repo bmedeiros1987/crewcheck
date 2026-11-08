@@ -140,7 +140,7 @@ export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | 
   const tripDates=new Set(trip.map(event => event.canonical?.date || event.day?.date));
   const stays=args.events.filter(event => event.kind === 'stay' && (
     Number.isFinite(start(event)) && Number.isFinite(end(event))
-      ? start(event) <= end(trip.at(-1)) && end(event) >= start(trip[0])
+      ? start(event) < end(trip.at(-1)) && end(event) > start(trip[0])
       : tripDates.has(event.canonical?.date || event.day?.date)
   ));
   const provedStays=stays.filter(stay => {
