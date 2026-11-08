@@ -133,7 +133,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
       {kind==='custom'&&<><label>Início<input type="date" aria-label="Início financeiro" value={from} onChange={event=>setFrom(event.target.value)}/></label><label>Fim<input type="date" aria-label="Fim financeiro" value={to} onChange={event=>setTo(event.target.value)}/></label></>}
       <p role="status">{range.valid?`Trabalho: ${range.start} até ${range.end}. `:'Informe um intervalo válido.'}{busy?' Consultando histórico…':''}</p>
       {missing.length>0&&<p>Sem escala para {missing.join(', ')}. Total do intervalo indisponível.</p>}
-      {(recovery.source||recovery.inventory)&&<button type="button" disabled={busy} onClick={retryHistory}>Tentar leitura novamente</button>}
+      {(recovery.source||recovery.inventory)&&<button type="button" className="cc-financial-retry" disabled={busy} onClick={retryHistory}>Tentar leitura novamente</button>}
       {(notice||conflicts.length>0)&&<p>{notice} {conflicts.length>0?'Revisões ambíguas em '+conflicts.join(', ')+': não somadas.':''}</p>}
     </section>
   </>;

@@ -21,11 +21,32 @@ function canonicalProjection(s:PayrollSalary|undefined,month:string){
  const keys=['base','fixedAdditions','production','reserve','standby','chief','instructor'];
  if(d.components.length!==keys.length||keys.some(key=>{const matches=d.components.filter(item=>item.key===key);return matches.length!==1||matches[0].ownerId!==c.ownerId||matches[0].competence!==month||matches[0].currency!=='BRL'||matches[0].status==='unavailable'||!matches[0].sourceId||!Number.isSafeInteger(matches[0].revision)||matches[0].revision<1||!Number.isSafeInteger(matches[0].amountMinor)||Number(matches[0].amountMinor)<0||matches[0].amountMinor===null;}))return null;
  const labels:Record<string,string>={base:'Salário-base',fixedAdditions:'Adicionais fixos informados',production:'Produção',reserve:'Reserva',standby:'Sobreaviso',chief:'Chefia',instructor:'Instrutoria'};
- const lines:PaymentLine[]=d.components.map(item=>({iso:month,label:labels[item.key],currency:'BRL',value:Number(item.amountMinor)/100,source:item.sourceId}));
+ const lines:PaymentLine[]=keys.map(key=>d.components.find(item=>item.key===key)!).map(item=>({iso:month,label:labels[item.key],currency:'BRL',value:Number(item.amountMinor)/100,source:item.sourceId}));
  if(!Number.isSafeInteger(c.dsr.amountMinor)||c.dsr.amountMinor<0)return null;
  lines.push({iso:month,label:'DSR',currency:'BRL',value:c.dsr.amountMinor/100,source:'Composição canônica da competência'});
  if(lines.reduce((sum,line)=>sum+Math.round(line.value!*100),0)!==c.grossMinor)return null;
  return {owner:c.ownerId,lines};
+}
+
+
+/** Observations have their own amounts: never recover unproven instructor pay
+ * from row.total or turn an empty category into zero. Detail by flight remains
+ * in the existing statement; payment composition follows canonical rubrics. */
+function observedProjection(s:PayrollSalary|undefined,month:string){
+ const d=s?.dsr,c=d?.composition,labels:Record<string,string>={base:s?.config.baseLabel||'Salário-base',fixedAdditions:'Adicionais fixos informados',production:'Produção',reserve:'Reserva',standby:'Sobreaviso',chief:'Chefia',instructor:'Instrutoria'};
+ if(!d)return null;
+ const current=d.current&&d.isCurrent()&&Boolean(c?.ownerId)&&c?.competence===month;
+ const lines:PaymentLine[]=Object.keys(labels).map(key=>{const parts=d.observedParts.filter(part=>part.key===key),sources=d.components.filter(part=>part.key===key);const amount=parts.length===1?parts[0].amountMinor:null;
+  const valid=current&&sources.length===1&&sources[0].ownerId===c.ownerId&&sources[0].competence===month&&Number.isSafeInteger(amount)&&Number(amount)>=0&&amount!==null;
+  return {iso:month,label:labels[key],currency:'BRL',value:valid?Number(amount)/100:null,partial:true,pendingReason:valid?'Parcela observada; inventário integral ainda não comprovado.':'Rubrica sem valor observado comprovado nesta conta e competência.',source:current?sources[0]?.sourceId||'Origem pendente':'Contexto financeiro alterado'};
+ });
+ return {owner:current?c.ownerId:null,lines};
+}
+function fixedProjection(s:PayrollSalary|undefined,month:string){
+ const observed=observedProjection(s,month);if(!observed?.owner)return null;
+ const lines=observed.lines.slice(0,2);
+ if(['base','fixedAdditions'].some(key=>{const matches=s!.dsr!.components.filter(item=>item.key===key);return matches.length!==1||matches[0].amountMinor===null||!Number.isSafeInteger(matches[0].amountMinor)||Number(matches[0].amountMinor)<0||matches[0].status==='unavailable';}))return null;
+ return lines.length===2&&lines.every(line=>line.value!==null)?{owner:observed.owner,lines}:null;
 }
 
 type Cycle = {operationalVariableMonth:string;fixedMonth:string;expectedCreditMonth:string};
@@ -66,15 +87,17 @@ export function composePayrollPayment(cycle:Cycle,snapshots:PayrollSnapshot[]):P
     ...(variable?.rows.map(row=>({iso:row.iso,label:`${row.flight} · ${row.route}`,currency:'BRL',value:rowReady(row)?row.total:null,pendingReason:!row.distanceKnown?'KM da rota não disponível no cálculo salarial. Coordenadas geográficas não comprovam quilometragem remuneratória.':!row.timeKnown?'Horários publicados ou fuso não comprovados para calcular esta parcela.':'Função ou tarifa salarial pendente.',source:row.source}))||[]),
     ...(['reserve','standby'] as const).map(key=>activityLine(variable,key,month,coverage.complete)),
   ];
-  const opProjection=canonicalProjection(variable,month),fixedProjection=canonicalProjection(fixed,cycle.fixedMonth);
- const canonical=opProjection&&fixedProjection&&opProjection.owner===fixedProjection.owner?[...fixedProjection.lines.filter(line=>['Salário-base','Adicionais fixos informados'].includes(line.label)),...opProjection.lines.filter(line=>!['Salário-base','Adicionais fixos informados'].includes(line.label))]:null;
+  const opProjection=canonicalProjection(variable,month),fixedParts=fixedProjection(fixed,cycle.fixedMonth);
+ const canonical=opProjection&&fixedParts&&opProjection.owner===fixedParts.owner?[...fixedParts.lines,...opProjection.lines.slice(2)]:null;
+ const opObserved=observedProjection(variable,month),fixedObserved=observedProjection(fixed,cycle.fixedMonth);
+ const observedLines=opObserved||fixedObserved?[...(fixedObserved?.lines.slice(0,2)||lines.slice(0,2)),...(opObserved?.lines.slice(2)||lines.slice(2))]:null;
  const issues=[
     ...(!canonical?[inventoryPending]:[]),
     ...(!coverage.complete?[`${month}: ${coverage.missing.length} dia(s) sem programação publicada. Importe ou confira a escala completa.`]:[]),
     ...(!variable?['Importe a escala operacional de '+month+'.']:!ready?['As variáveis do ciclo estão incompletas. Os fixos conhecidos continuam na composição.']:[]),
     ...(!fixed?.config.baseConfigured?['Confira os fixos da folha '+cycle.fixedMonth+'; eles não foram repetidos do mês operacional.']:[]),
   ];
-  return {creditMonth:cycle.expectedCreditMonth,operationalMonth:month,fixedMonth:cycle.fixedMonth,range:{start:month+'-01',end:payrollMonthBounds(cycle.fixedMonth)!.end,kind:'custom',valid:true},lines:canonical||lines,issues};
+  return {creditMonth:cycle.expectedCreditMonth,operationalMonth:month,fixedMonth:cycle.fixedMonth,range:{start:month+'-01',end:payrollMonthBounds(cycle.fixedMonth)!.end,kind:'custom',valid:true},lines:opObserved?.owner&&fixedObserved?.owner&&opObserved.owner!==fixedObserved.owner?lines.map(line=>({...line,value:null,pendingReason:'Contas de origem divergentes.'})):canonical||observedLines||lines,issues};
 }
 
 // Operational estimates are available without a reviewed CREDIT cycle. Never
@@ -91,7 +114,7 @@ export function composeOperationalPayrollEstimate(snapshot:PayrollSnapshot):Next
  ];
  const projection=canonicalProjection(s,month);
  const complete=Boolean(projection)&&coverage.complete&&tariffReady&&s.config.baseConfigured&&Number.isFinite(lines.reduce((sum,line)=>sum+(line.value??NaN),0))&&lines.every(line=>line.value!==null&&Number.isFinite(line.value)&&line.value>=0)&&!s.reserveAssessment.pendingCount&&!s.standbyAssessment.pendingCount;
- const displayLines=projection?.lines||lines;
+ const displayLines=projection?.lines||observedProjection(s,month)?.lines||lines;
  const known=knownPaymentTotals(displayLines);
  return {kind:'payroll',estimationBasis:'operational_month',range:{start:month+'-01',end:payrollMonthBounds(month)!.end,valid:true,kind:'month'},timing:'Mês de crédito a confirmar',source:'Motor canônico da escala; competência operacional, sem vínculo presumido com crédito.',lines:displayLines,totals:complete?known:null,calculationTotals:known,calculationPartial:!complete,issues:[...(!projection?[inventoryPending]:[]),'Ciclo de crédito não identificado. A estimativa da competência continua disponível; dia de pagamento, descontos e líquido não foram presumidos.',...(!s.config.baseConfigured?['Salário-base desta competência não informado. O subtotal não inclui essa parcela.']:[]),...(!s.config.fixedAdditionsConfigured?['Adicionais fixos desta competência não informados. O subtotal não inclui essa parcela.']:[]),...(!tariffReady?['Função ou tarifas salariais pendentes.']:[]),...(!coverage.complete?[`${coverage.missing.length} dia(s) sem cobertura publicada; subtotal parcial.`]:[]),...(s.rows.some(row=>!rowReady(row))?['Há parcelas de voo com distância, horários ou tarifa pendentes; apenas as parcelas conhecidas entram no subtotal.']:[]),...(s.reserveAssessment.pendingCount+s.standbyAssessment.pendingCount?[`${s.reserveAssessment.pendingCount+s.standbyAssessment.pendingCount} intervalo(s) de reserva/sobreaviso sem origem de horários comprovada.`]:[])],caption:complete?'Bruto estimado da competência · antes dos descontos':'Subtotal bruto estimado de parcelas conhecidas · antes dos descontos'};
 }

@@ -57,4 +57,15 @@ for(const [days,complete] of [[fullDays,true],[fullDays.slice(0,1),false],[Array
 }
 console.log('PASS actual net callers: full leap month vs1/29days, duplicate-day count and out-of-month coverage never invent complete net');
 
+// The actual producer's category observations, not a legacy row total, own
+// the payment subtotal. A global instructor flag is not owner-bound proof.
+Object.assign(cfg,{configured:true,baseConfigured:true,fixedAdditionsConfigured:true,basePay:2400,fixedAdditions:0,requiresManualFunction:false,instructorPerSector:19});
+c.storage={get:key=>key==='crewcheck_instructor'?'1':'0'};
+const auditedRoster={...roster,days:fullDays},produced=c.subject.calculateSalary([event('GRU')],auditedRoster);
+assert.equal(produced.rows[0].instructor,19);assert.equal(produced.dsr.observedParts.find(p=>p.key==='instructor').amountMinor,null);assert.equal(produced.dsr.inventoryComplete,false);assert(Number.isNaN(produced.gross));
+const paymentFile=path.join(adapterDir,'payment.cjs');await build({entryPoints:['client/src/lib/payrollPaymentComposition.ts'],bundle:true,platform:'node',format:'cjs',outfile:paymentFile});
+const {composeOperationalPayrollEstimate}=createRequire(import.meta.url)(paymentFile);
+const projected=composeOperationalPayrollEstimate({month:'2032-02',salary:produced,publishedDays:fullDays.map(d=>d.date)});
+assert.equal(projected.totals,null);assert.equal(projected.calculationPartial,true);assert.equal(Math.round(projected.calculationTotals.BRL*100),produced.dsr.observedSubtotalMinor,'actual Home and summary share the exact observed component subtotal');assert.equal(projected.lines.find(line=>line.label==='Instrutoria').value,null);
+console.log('PASS real producer to payment: scalar inputs and global instructor flag never certify inventory or inflate observed canonical subtotal');
 fs.rmSync(adapterDir,{recursive:true,force:true});

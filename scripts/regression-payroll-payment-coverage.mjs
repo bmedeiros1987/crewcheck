@@ -43,7 +43,7 @@ try{
  const composition=composeSalaryWithDsr({...source,components,componentsExcludeDsr:true,profile:{...source,company:'TAM',role:'cabin',regime:'NB',review:'confirmed',sourceKind:'owner_reviewed'},basisReview:{...source,review:'confirmed'}});
  assert.equal(composition.state,'complete');assert.equal(composition.grossMinor,315636);
  let current=true;
- const dsr={current:true,isCurrent:()=>current,inventoryComplete:true,composition,components};
+ const dsr={current:true,isCurrent:()=>current,inventoryComplete:true,composition,components,observedParts:components.map(({key,amountMinor})=>({key,amountMinor}))};
  const full={...withFlight,dsr};
  const project=salary=>composeOperationalPayrollEstimate({month,salary,publishedDays:published});
  assert.deepEqual(project(full).totals,{BRL:3156.36});assert.deepEqual(project(full).calculationTotals,{BRL:3156.36});assert.equal(project(full).lines.filter(line=>line.label==='DSR').length,1,'same canonical DSR once');
@@ -52,6 +52,18 @@ try{
  assert.equal(project({...full,dsr:{...dsr,components:components.map(c=>c.key==='reserve'?{...c,amountMinor:null}:c)}}).totals,null,'omitted zero is unknown');
  assert.equal(project({...full,dsr:{...dsr,components:components.map(c=>({...c,ownerId:'SYNTHETIC-B'}))}}).totals,null,'other account proof rejected');
  current=false;assert.equal(project(full).totals,null,'revoked/session/source revision fence immediately invalidates summary');current=true;
+ const unprovedInstructor={...full,rows:[{...flight,total:9999}],dsr:{...dsr,inventoryComplete:false,observedParts:dsr.observedParts.map(p=>p.key==='instructor'?{...p,amountMinor:null}:p)}};
+ assert.deepEqual(project(unprovedInstructor).calculationTotals,{BRL:3120},'global/raw instructor row total cannot enter canonical observed subtotal');
+ assert.equal(project(unprovedInstructor).lines.find(line=>line.label==='Instrutoria').value,null);
+ const fixedMonth='2026-12',fixedSource={...source,competence:fixedMonth,effectiveFrom:fixedMonth+'-01',effectiveTo:fixedMonth+'-31'};
+ const fixedComponents=components.map(c=>({...c,...fixedSource,amountMinor:['base','fixedAdditions'].includes(c.key)?c.amountMinor:null,status:['base','fixedAdditions'].includes(c.key)?'estimated':'unavailable'}));
+ const fixedDsr={...dsr,inventoryComplete:false,components:fixedComponents,composition:{...composition,competence:fixedMonth,state:'partial',grossMinor:null},observedParts:fixedComponents.map(({key,amountMinor})=>({key,amountMinor}))};
+ const differentCycle={operationalVariableMonth:month,fixedMonth,expectedCreditMonth:'2027-01'};
+ const cross=composePayrollPayment(differentCycle,[{month,salary:full,publishedDays:published},{month:fixedMonth,salary:{...salary,dsr:fixedDsr},publishedDays:[]}]);
+ assert.deepEqual(nextPayrollPayment([cross],new Date('2027-01-01T12:00:00Z')).totals,{BRL:3156.36},'complete operational variables plus confirmed fixed components of another month do not require future variable inventory');
+ const foreignFixed={...fixedDsr,components:fixedComponents.map(c=>({...c,ownerId:'SYNTHETIC-B'})),composition:{...fixedDsr.composition,ownerId:'SYNTHETIC-B'}};
+ const conflict=composePayrollPayment(differentCycle,[{month,salary:full,publishedDays:published},{month:fixedMonth,salary:{...salary,dsr:foreignFixed},publishedDays:[]}]);
+ assert.equal(nextPayrollPayment([conflict],new Date('2027-01-01T12:00:00Z')).calculationTotals,null,'another account never supplies fixed components');
  const sameMonthCycle={operationalVariableMonth:month,fixedMonth:month,expectedCreditMonth:'2026-12'};
  assert.deepEqual(nextPayrollPayment([composePayrollPayment(sameMonthCycle,[{month,salary:full,publishedDays:published}])],new Date('2026-12-01T12:00:00Z')).totals,{BRL:3156.36},'reviewed cycle consumes same composition, no legacy omission');
  console.log('PASS payroll coverage: empty/one-day/partial/duplicate/wrong-month/leap/full; known fixed and flight portions remain separate from complete forecast; no fabricated zero or duplicate supplements.');
