@@ -27,6 +27,7 @@ try{
   ['ambiguous',[[...header,'2032-09-10 a 2032-09-11'],['CAFE R$ 27,36','Total depositado na data 2032-09-18: R$ 27,36']],'conflict'],
   ['advance',[[...header,'Adiantamentos anteriores'],[...header,'CAFE R$ 99,00','Total depositado na data 2032-09-18: R$ 99,00']],'unavailable'],
   ['quantity',[[...header,'2032-09-09 QA9001 SYN SYN ALMOCO QTD 2 R$ 218,88','Total depositado na data 2032-09-18: R$ 218,88']],'conflict'],
+  ['quantity-tail',[[...header,'2032-09-09 QA9001 SYN SYN ALMOCO R$ 218,88 2','Total depositado na data 2032-09-18: R$ 218,88']],'conflict'],
  ]){
   await upload(pages,'SYNTHETIC-'+name+'.pdf');assert.equal(await page.locator('[data-allowance-occurrence-reconciliation]').getAttribute('data-allowance-occurrence-reconciliation'),state);await page.getByLabel(/Conferi que o documento pertence/).check();assert(await page.getByRole('button',{name:'Confirmar valores',exact:true}).isDisabled(),'ambiguous/historical source cannot be promoted after review checkbox');assert.equal(await bytes(),before,'previous owner record is unchanged');await page.getByRole('button',{name:'Descartar',exact:true}).click();assert.equal(await bytes(),before);
  }

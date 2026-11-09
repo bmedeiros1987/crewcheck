@@ -36,11 +36,15 @@ export function reconcileAllowanceOccurrences(pages:readonly PayrollPage[],from:
    if(dates.length>1){invalid=true;return;}
    if((line.match(/\b(CAFE|ALMOCO|JANTAR|CEIA|TAXI)\b/g)||[]).length!==matches.length){invalid=true;return;}
    if(/\bTOTAL\b/.test(line)){unresolved=true;ambiguous=true;return;}
-   // A matching line sum is not proof of unit price. Unsupported quantities,
-   // extended totals and multiple monetary columns require explicit review;
-   // never divide by a guessed count or adopt the extended amount as a rate.
-   if(/\b(QTD|QTDE|QUANTIDADE|QTE|SUBTOTAL|UNITARIO|UNITARIA)\b/.test(line)||(line.match(/R\$/g)||[]).length!==matches.length){invalid=true;return;}
-   if(matches.some(match=>!/^\s*[:·\-]?\s*(?:BRL\s*)?$/.test(match[0].slice(match[1].length,match[0].indexOf('R$')))||/\b\d+(?:[.,]\d+)?\s*(?:[X×]\s*)?$/.test(line.slice(0,match.index).replace(/\b\d{4}-\d{2}-\d{2}\b/g,' ')))){invalid=true;return;}
+   // Closed unit-line contract: optional date/flight/route prefix, explicit
+   // rubric-price pairs, and separators only. Unknown residual tokens before,
+   // between or after prices may be quantities/subtotals, not unit evidence.
+   const prefix=line.slice(0,matches[0].index);
+   const prefixValid=/^\s*(?:\d{4}-\d{2}-\d{2}\s+)?(?:[A-Z]{2,3}\s?\d{2,5}\s+[A-Z]{3}(?:\s+|\s*[→>\-]\s*)[A-Z]{3}\s+)?$/.test(prefix);
+   const separator=(value:string)=>/^\s*(?:BRL\s*)?(?:[;|·]\s*)?$/.test(value);
+   let cursor=matches[0].index||0,unitsValid=prefixValid;
+   for(const match of matches){const at=match.index||0;unitsValid=unitsValid&&separator(line.slice(cursor,at))&&/^\s*[:·\-]?\s*(?:BRL\s*)?$/.test(match[0].slice(match[1].length,match[0].indexOf('R$')));cursor=at+match[0].length;}
+   if(!unitsValid||!separator(line.slice(cursor))||(line.match(/R\$/g)||[]).length!==matches.length){invalid=true;return;}
    if(ambiguous){unresolved=true;invalid=true;return;}
    if(dates.length===1&&!validDay(dates[0])){date='';unresolved=true;return;}
    if(historical)return; // Historical advances are not current unit evidence.
