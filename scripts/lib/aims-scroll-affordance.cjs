@@ -1,4 +1,4 @@
-// Test-only readiness for the existing in-flow BackToTop update. Not a replacement
+// Test-only readiness for the floating BackToTop update. Not a replacement
 // for the strict AIMS layout/scroll stabilizer or the interaction return baseline.
 function installAimsScrollProbe() {
   if (window.__qaAimsScrollProbeInstalled) return;
@@ -21,11 +21,11 @@ async function waitForAimsScrollAffordance({timeoutMs=1500}={}) {
   const read=()=>{
     if(document.querySelector('dialog[open], [aria-modal="true"], .cz-menu-overlay, .cz-busy'))throw Error('AIMS arrow preparation requires closed overlays and completed busy state');
     const arrow=host.querySelector(':scope > .cc-back-to-top'),height=scroller===root?innerHeight:scroller.clientHeight;
-    const hostBox=host.getBoundingClientRect(),style=getComputedStyle(host),last=host.lastElementChild,lastStyle=last?getComputedStyle(last):null;
-    const flowEnd=last?last.getBoundingClientRect().bottom+parseFloat(lastStyle.marginBottom||'0')+parseFloat(style.paddingBottom||'0')+parseFloat(style.borderBottomWidth||'0'):null;
+    const hostBox=host.getBoundingClientRect(),style=getComputedStyle(host);
     const decorations=JSON.stringify([style.display,style.position,style.transform,style.boxSizing,style.minHeight,style.paddingTop,style.paddingBottom,style.borderTopWidth,style.borderBottomWidth]);
 
-    return {arrow,flowEnd,hostBottom:hostBox.bottom,decorations,expected:scroller.scrollTop>height&&scroller.scrollHeight>height*2,
+    if(arrow&&getComputedStyle(arrow).position!=='fixed')throw Error('Floating arrow must not enter document flow');
+    return {arrow,hostBottom:hostBox.bottom,decorations,expected:scroller.scrollTop>64&&scroller.scrollHeight>height+64,
       fixed:JSON.stringify({target:rect(target),frame:rect(viewport),pan:[viewport.scrollLeft,viewport.scrollTop],scroll:[scrollX,scrollY,scroller.scrollTop],zoom:document.querySelector('.cc-doc-toolbar output')?.textContent,children:originalChildren.map(rect)}),
       children:[...host.children].filter(e=>e!==arrow),doc:root.scrollHeight,hostHeight:host.getBoundingClientRect().height,hostScroll:host.scrollHeight,
       arrowRect:arrow?rect(arrow):null};
@@ -35,15 +35,10 @@ async function waitForAimsScrollAffordance({timeoutMs=1500}={}) {
     await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('AIMS arrow update did not complete within '+timeoutMs+'ms')),Math.max(1,timeoutMs-(performance.now()-start)));requestAnimationFrame(()=>{clearTimeout(timer);resolve();});});
     const current=read();
     if(current.fixed!==initial.fixed||current.decorations!==initial.decorations||current.children.length!==originalChildren.length||current.children.some((e,i)=>e!==originalChildren[i]))throw Error('AIMS layout or scroll changed unexpectedly before arrow completion');
-    const transition=current.arrow!==initialArrow,deltaDoc=current.doc-initial.doc,deltaHost=Math.round(current.hostHeight-initial.hostHeight),deltaScroll=current.hostScroll-initial.hostScroll;
-    // Accept no arbitrary extent change: only the identified arrow transition,
-    // with unchanged existing flow children and the measured host contribution.
-    if(deltaDoc||deltaHost||deltaScroll){
-      const sameLayoutUnit=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&Math.round(a*64)===Math.round(b*64);
-      const measurable=sameLayoutUnit(initial.hostBottom,initial.flowEnd)&&sameLayoutUnit(current.hostBottom,current.flowEnd);
-      const deltaFlow=measurable?Math.round(current.flowEnd-initial.flowEnd):NaN;
-      if(!transition||!measurable||deltaDoc!==deltaFlow||deltaDoc!==deltaHost||deltaDoc!==deltaScroll)throw Error('AIMS document extent changed without the measured arrow contribution');
-    }
+    const transition=current.arrow!==initialArrow,deltaDoc=current.doc-initial.doc,deltaHost=current.hostHeight-initial.hostHeight,deltaScroll=current.hostScroll-initial.hostScroll;
+    // A floating action contributes zero extent. Never accept an unrelated shift
+    // merely because its appearance/removal happened in the same interval.
+    if(deltaDoc||deltaHost||deltaScroll)throw Error('AIMS document extent changed during floating arrow update');
     const signature=JSON.stringify({expected:current.expected,present:Boolean(current.arrow),rect:current.arrowRect,doc:current.doc,host:current.hostHeight,scroll:current.hostScroll});
     stableFrames=signature===previous?stableFrames+1:1;previous=signature;
     if(Boolean(current.arrow)===current.expected&&stableFrames>=2)return {elapsedMs:performance.now()-start,present:Boolean(current.arrow),expected:current.expected,transition,deltaDoc,deltaHost,deltaScroll,stableFrames};
