@@ -3889,6 +3889,10 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     }
     const physicalIso=iso;
     const reference=latamSupperReference({event,slot,rateKey:classification.rateKey,iso,roster,context:applicability});
+    if(reference.pendingReason){
+      for(const candidate of new Set([physicalIso,reference.candidateIso].filter(Boolean)))unclassifiedItems.push({iso:candidate!,originIso:rosterOperationalIso(calculationStart),airport:classification.airport,reason:reference.pendingReason});
+      return;
+    }
     iso=reference.iso;
     // Entitlement dedup remains keyed by the physical meal window, even when
     // a documented financial reference belongs to the preceding cycle.

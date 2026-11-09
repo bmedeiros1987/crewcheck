@@ -208,7 +208,7 @@ export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | 
  * Only the documented Tuesday-flight/Wednesday-supper boundary is reassigned.
  * A Wednesday departure with Tuesday APZ remains Wednesday. No persistence,
  * entitlement, tariff or credit confirmation is created by this projection. */
-export function latamSupperReference(args:{event:any;slot:string;rateKey:string;iso:string;roster:{airline?:string;rank?:string};context:FinancialActSnapshot}):{iso:string;occurrenceIso?:string;referenceDateBasis?:'latam_observed_tuesday_flight_supper'} {
+export function latamSupperReference(args:{event:any;slot:string;rateKey:string;iso:string;roster:{airline?:string;rank?:string};context:FinancialActSnapshot}):{iso:string;occurrenceIso?:string;referenceDateBasis?:'latam_observed_tuesday_flight_supper';pendingReason?:string;candidateIso?:string} {
   const unchanged={iso:args.iso};
   if(args.slot!=='supper'||args.rateKey!=='domestic'||args.event.kind!=='flight'||args.event.salaryClockKnown===false
     ||!['LA','TAM','LATAM'].includes(String(args.roster.airline||'').trim().toUpperCase())
@@ -220,6 +220,7 @@ export function latamSupperReference(args:{event:any;slot:string;rateKey:string;
   const flightIso=rosterOperationalIso(departure),next=new Date(flightIso+'T12:00:00Z');
   if(next.getUTCDay()!==2||!scope.allowsMonth(flightIso.slice(0,7)))return unchanged;
   next.setUTCDate(next.getUTCDate()+1);
-  if(next.toISOString().slice(0,10)!==args.iso||rosterOperationalIso(arrival)!==args.iso)return unchanged;
+  if(next.toISOString().slice(0,10)!==args.iso)return unchanged;
+  if(rosterOperationalIso(arrival)!==args.iso)return {iso:args.iso,candidateIso:flightIso,pendingReason:'Competência da ceia pendente: a evidência observada cobre trecho com chegada na quarta; somente o encerramento após meia-noite não comprova a data de lançamento.'};
   return {iso:flightIso,occurrenceIso:args.iso,referenceDateBasis:'latam_observed_tuesday_flight_supper' as const};
 }
