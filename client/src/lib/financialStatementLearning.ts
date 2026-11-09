@@ -111,22 +111,10 @@ export function learnPerDiemStatement(text: string, sourceDocument: string,pages
   const end = period?.[2] || '';
   const fp = fingerprint(text);
   const observations = new Map<string, number[]>();
-  const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper', TAXI: 'taxi' };
-  const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const occurrencePages=pages||text.split('\f').map((text,index)=>({text,page:index+1,origin:'document-logical' as const}));
   const dated=reconcileAllowanceOccurrences(occurrencePages,start,end,null);
-  let invalidRate = false;
-  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA|TAXI)\b[^\n\r]{0,40}?R\$[^\S\n\r]*([^\s;:()]+)/gi)) {
-    const key = aliases[match[1].toUpperCase()];
-    const token = match[2];
-    const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
-    const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
-    if (!strict || !Number.isSafeInteger(cents) || cents < 0) { invalidRate = true; continue; }
-    const values = observations.get(key) || [];
-    values.push(cents / 100);
-    observations.set(key, values);
-  }
-  if(dated.datedRowsComplete){observations.clear();for(const row of dated.rows){const values=observations.get(row.rubric)||[];values.push(row.amountMinor/100);observations.set(row.rubric,values);}}
+  const invalidRate = dated.state==='conflict';
+  for(const row of dated.unitCandidates){const values=observations.get(row.rubric)||[];values.push(row.amountMinor/100);observations.set(row.rubric,values);}
   const rates: LearnedRate[] = [];
   const conflictingMeals: string[] = [];
   for (const [key, values] of observations) {
