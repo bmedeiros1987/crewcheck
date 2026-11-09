@@ -70,6 +70,8 @@ let browser;try{
   await page.evaluate(()=>window.renderAircraft('A320','OP'));
   await page.waitForFunction(()=>document.querySelector('[aria-label="Atividade da etapa 1"]').value==='OP');
   assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'simple','OP-only NB behavior preserved');
+  await page.getByLabel('Composição da tripulação',{exact:true}).click();
+  await page.keyboard.press('Escape'); // opening/cancelling a select is not a composition choice
   await page.getByLabel('Atividade da etapa 1',{exact:true}).selectOption('PS');
   assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','OP to PS revokes unedited automatic composition');
   await page.getByLabel('Atividade da etapa 1',{exact:true}).selectOption('OP');
