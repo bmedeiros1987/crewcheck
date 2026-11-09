@@ -78,8 +78,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     let localFallback=false;
     listSavedRosters(72,false,{preserveRevisions:true,onUnavailable:()=>{localFallback=true;}}).then(items=>{
       if(version!==epoch.current||session()!==owner)return;
-      const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);setCoverageReady(!localFallback);
-      if(localFallback){setRecovery(value=>({...value,inventory:true}));setNotice('Histórico remoto indisponível; fontes locais preservadas. Total do ciclo não confirmado.');}
+      const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);setCoverageReady(true);
+      if(localFallback){setRecovery(value=>({...value,inventory:true}));setNotice('Histórico remoto indisponível; consulta baseada nas fontes locais disponíveis.');}
       if(!localFallback&&items.length>=72)setNotice('Histórico limitado às 72 escalas retornadas; não representa todos os períodos da conta.');
     }).catch(()=>{if(version===epoch.current&&session()===owner){setRecovery(value=>({...value,inventory:true}));setNotice('Não foi possível consultar outros meses. A escala selecionada continua disponível.');}})
       .finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
