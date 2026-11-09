@@ -35,6 +35,7 @@ on:
       - 'scripts/regression-radar-authority-followup.mjs'
       - 'scripts/regression-radar-availability-browser.mjs'
       - 'scripts/regression-radar-cache-refresh-browser.mjs'
+      - 'scripts/p0-673-order-independent-window/apply.mjs'
       - 'scripts/regression-radar-provider-provenance.mjs'
       - 'scripts/regression-airlabs-explicit-utc.mjs'
       - 'scripts/regression-radar-receipt-preserved.mjs'

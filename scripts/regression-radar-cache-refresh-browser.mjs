@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
+import vm from 'node:vm';
 import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
@@ -13,8 +14,24 @@ const root=process.cwd(), tmp=fs.mkdtempSync(path.join(os.tmpdir(),'radar-cache-
 const baseline=process.env.RADAR_COUNTERPROOF_REF;
 const source=baseline?execFileSync('git',['show',baseline+':client/src/pages/Home.tsx'],{encoding:'utf8'}):fs.readFileSync('client/src/pages/Home.tsx','utf8');
 const ast=ts.createSourceFile('Home.tsx',source,99,true,ts.ScriptKind.TSX);
-const names=['RadarView','validatedRadarForEvent','radarGateInfo','radarFlightDateLabel','radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','readRadarSnapshot','saveRadarSnapshot','fetchRadarSnapshot','setBrowserRadarContext','browserRadarGeneration','invalidateBrowserRadarResponse','browserRadarSignature','readBrowserRadarSnapshot','browserRadarDisplayDeadline'];
+const names=['RadarView','validatedRadarForEvent','radarGateInfo','radarFlightDateLabel','radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','readRadarSnapshot','saveRadarSnapshot','browserRadarContextIsCurrent','fetchRadarSnapshot','setBrowserRadarContext','browserRadarGeneration','invalidateBrowserRadarResponse','browserRadarSignature','readBrowserRadarSnapshot','browserRadarDisplayDeadline','invalidateBrowserRadarWindow','syncBrowserRadarWindow','acceptBrowserRadarWindow','buildLegs','dedupeProjectedLegs','projectedFlightQuality','addMinutesToTime'];
 const functions=names.map(name=>{const n=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);if(!n&&baseline)return '';assert(n,name);return n.getText(ast)}).join('\n');
+// Exercise the actual materialized effect. Raw sources use the materializer's
+// own before-template in a memory filesystem; no production checkout is prepared.
+let windowSource=source;
+if(!source.includes('P0_673_RADAR_PRESENTATION_WINDOW')) {
+ const script=process.env.RADAR_WINDOW_COUNTERPROOF?execFileSync('git',['show','2d2b1bee:scripts/p0-673-order-independent-window/apply.mjs'],{encoding:'utf8'}):fs.readFileSync('scripts/p0-673-order-independent-window/apply.mjs','utf8');
+ const scriptAst=ts.createSourceFile('apply.mjs',script,99,true,ts.ScriptKind.JS);let before;
+ function find(n){if(ts.isVariableDeclaration(n)&&n.name.getText(scriptAst)==='before')before=n.initializer;ts.forEachChild(n,find)}find(scriptAst);assert(before);
+ const effectTemplate=Function('historyEvent','return '+before.getText(scriptAst))('crewcheck:roster-history-updated');
+ windowSource=source+'\n'+effectTemplate+"\n// saveRosterAnalysis({ roster, compliance: newCompliance, gym: newGym, sourceFileName: file.name } as any),";
+ const memoryFs={existsSync:()=>true,readFileSync:()=>windowSource,writeFileSync:(_p,value)=>{windowSource=value}};
+ vm.runInNewContext(script.replace("import fs from 'node:fs';",''),{fs:memoryFs,console:{log(){}}});
+}
+const windowStart=windowSource.indexOf('  const [rosterWindow, setRosterWindow]');
+const windowEnd=windowSource.indexOf('  }, [bundle.roster]);',windowStart);assert(windowStart>=0&&windowEnd>windowStart);
+const windowBlock=windowSource.slice(windowStart,windowEnd+'  }, [bundle.roster]);'.length);
+if(!process.env.RADAR_WINDOW_COUNTERPROOF){assert(windowBlock.indexOf('invalidateBrowserRadarWindow(primary')>=0&&windowBlock.indexOf('invalidateBrowserRadarWindow(primary')<windowBlock.indexOf('void openRosterDisplayWindow(primary)'));assert(windowBlock.includes('requestId === rosterWindowRequestRef.current) acceptBrowserRadarWindow'))}
 const followCandidate=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='followCandidate')?.getText(ast)||'';
 const globals=['browserRadarContext','browserRadarResponses','browserRadarInvalidations','radarQuerySerial'].map(name=>{
  const n=ast.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)===name));if(!n&&baseline)return '';assert(n,name);return n.getText(ast);
@@ -25,11 +42,16 @@ if(!baseline){const issuers=[];function visit(n,owner=''){if(ts.isFunctionDeclar
 
 const code=`import React,{useState,useEffect,useRef} from 'react';import {createRoot} from 'react-dom/client';import {Plane,ShieldCheck,Radar,Globe2,CloudSun} from 'lucide-react';
 import {followedFlight} from './shared/followedFlights.mjs';
+import {buildCanonicalRosterEvents,normalizeRosterDays} from '@/lib/canonicalRoster';
+import {sortRosterDisplayEvents} from '@/lib/rosterDisplayDate';
+import {alertRosterOwned} from '@/lib/alertRosterOwnership';
+import {startupKey,startupOwner} from '@/lib/rosterStartup';
 import {getStoredUser,getToken,getMe,captureAuthSession,authFetch} from '@/lib/authClient';import * as gate from '@/lib/nextFlightGate';
 import {beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission,setOperationalRadarContext} from '@/lib/operationalRadarAdmission';
 import {gateQueryDay,originFlightDate,publishedGateDate,radarResultDecision,radarSourceEpoch,gateQuerySuppressed} from './shared/gate-query-day.mjs';
 import {radarFailurePayload,radarAvailabilityLabel} from '@/lib/radarAvailability';
 const {canonicalFlightId,retainLatestGateEvidence,nextGateUpdateWatermark,RADAR_GATE_STALE_MS,manualGateAccountKey,manualGateIdentity,readManualGate,resolveNextFlightGate,radarSnapshotStorageKey,flightOperationalDate,gateChangeAlertAllowed}=gate;
+const pad2=n=>String(n).padStart(2,'0'),applyPresentationManagement=e=>e,city=x=>x,dateChip=d=>d.toISOString().slice(0,10),parseDate=day=>new Date(day.date.split('/').reverse().join('-')+'T12:00:00Z');
 const safe=(x,f='')=>x||f,normalizedAirlineCode=()=> 'LA',airlineNameFor=()=> 'Synthetic airline',Brand=()=>null,FlightDeckNavigationContext=()=>null,AirlineLogo=()=>null,ManualGateEditor=()=>null,FollowFlightPanel=()=>null;
 const storage={get:(k,d)=>localStorage.getItem(k)||d,set:(k,v)=>localStorage.setItem(k,v)},RADAR_CARD_CACHE_TTL_MS=21600000;
 const publishCrewCheckNotice=()=>{},publishCrewCheckPulse=()=>{},reconcileCrewCheckPulse=()=>window.saverSideEffect?.(),manualGateNoticeIdentity=()=>'',manualGateNoticeScope=()=>'',claimManualGateNotice=()=>false,eventStartDateTime=e=>new Date(e.canonical.startDateTime);
@@ -41,7 +63,9 @@ ${globals}
 ${followCandidate}
 ${functions}
 const events={one:{id:'SYNTHETIC-ONE',kind:'flight',flightNumber:'LA9001',origin:'BSB',destination:'CGH',day:{date:'20/10/2032'},canonical:{date:'20/10/2032',startDateTime:'2032-10-20T12:00:00.000Z'}},two:{id:'SYNTHETIC-TWO',kind:'flight',flightNumber:'LA9002',origin:'CGH',destination:'BSB',day:{date:'21/10/2032'},canonical:{date:'21/10/2032',startDateTime:'2032-10-21T12:00:00.000Z'}}};
-let selected=events.one;const app=createRoot(document.getElementById('root'));
+let selected=events.one;let windowCleanup=null;window.windowReads=[];const openRosterDisplayWindow=primary=>new Promise((resolve,reject)=>window.windowReads.push({primary,resolve,reject}));
+function mountPublication(primary){const bundle={roster:primary};const useState=()=>[primary,()=>{}],useRef=x=>({current:x}),useEffect=fn=>{windowCleanup=fn()};${windowBlock}}
+const app=createRoot(document.getElementById('root'));
 window.renderRadar=name=>{selected=events[name];app.render(<RadarView event={selected}/>)};
 window.unmountRadar=()=>app.render(<p>Unmounted</p>);
 window.key=()=>radarSnapshotKey(selected);
@@ -53,9 +77,20 @@ window.cache=(value,extra={})=>saveRadarSnapshot(selected,{ok:true,configured:tr
 window.removeCache=()=>{localStorage.removeItem(radarSnapshotKey(selected));window.signal()};
 window.fetchRadar=()=>{void fetchRadarSnapshot(selected,true).then(x=>window.lastAccepted=x)};
 window.repeatSavedDuringSaver=()=>{window.saverSideEffect=()=>{window.saverSideEffect=null;const before=localStorage.getItem(window.key());saveRadarSnapshot(selected,JSON.parse(before));localStorage.setItem(window.key(),before);window.repeatedSameBytes=before===localStorage.getItem(window.key())}};
+window.makePublication=which=>{const primary={crewId:'SYNTHETIC',crewName:'Synthetic',year:2032,month:11,base:'BSB',rank:'CC',airline:'LA',days:[{date:'01/11/2032',type:'VOO',dutyReport:'08:00',dutyReportSource:'published',dutyDebrief:'12:00',dutyDebriefSource:'published',legs:[{flightNumber:'LA9010',origin:'BSB',destination:'CGH',departureTime:'09:00',arrivalTime:'11:00',presentationTime:'08:00',workType:'OP'}]}]};
+ const past={...primary.days[0],date:'20/10/2032',legs:[{...primary.days[0].legs[0],flightNumber:which==='B'?'LA9002':'LA9001'}]};return {primary,publication:{...primary,revision:which,days:[past,...primary.days]}}};
+window.beginWindow=()=>{if(!window.windowFixture){window.windowFixture=window.makePublication('A');localStorage.setItem(startupKey(),JSON.stringify({owner:startupOwner(),roster:window.windowFixture.primary}));}mountPublication(window.windowFixture.primary)};
+window.refreshWindow=()=>window.dispatchEvent(new Event('crewcheck:roster-history-updated'));
+window.publicationContextReady=()=>Boolean(browserRadarContext.revision);
+window.beginInvalidIdentity=()=>{window.cancelWindow();window.windowFixture=window.makePublication('A');window.windowFixture.primary.crewId='';localStorage.setItem(startupKey(),JSON.stringify({owner:startupOwner(),roster:window.windowFixture.primary}));mountPublication(window.windowFixture.primary)};
+window.resolveWindow=(index,which='A',extra={})=>{const publication={...window.makePublication(which).publication,...extra};window.acceptedPublicationFixture=publication;window.windowReads[index].resolve(publication)};
+window.rejectWindow=index=>window.windowReads[index].reject(new Error('SYNTHETIC read failure'));
+window.cancelWindow=()=>windowCleanup?.();
+window.selectPublished=which=>{selected=buildLegs(window.makePublication(which).publication).find(e=>e.flightNumber===(which==='B'?'LA9002':'LA9001'));app.render(<RadarView event={selected}/>)};
+window.selectCurrent=()=>{selected=buildLegs(window.windowFixture.primary).find(e=>e.kind==='flight');app.render(<RadarView event={selected}/>)};
 window.revise=version=>{setBrowserRadarContext(version);window.renderRadar('one')};
 window.manual=()=>{gate.writeManualGate(localStorage,manualGateAccountKey(getStoredUser()),selected,{gate:'M1'},Date.now());window.signal()};
-window.switchAccount=async name=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));if(name){localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:name,name:'Synthetic',email:name+'@example.invalid'}));localStorage.setItem('crewcheck_auth_token','synthetic-'+name)}else{localStorage.removeItem('crewcheck_auth_user');localStorage.removeItem('crewcheck_auth_token')}window.dispatchEvent(new Event(name?'crewcheck:auth-changed':'crewcheck:auth-expired'));if(name){await getMe();setOperationalRadarContext(name.toLowerCase(),'synthetic-publication-v1');setBrowserRadarContext('synthetic-publication-v1')}window.renderRadar('one')};
+window.switchAccount=async (name,preserveSelection=false)=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));if(name){localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:name,name:'Synthetic',email:name+'@example.invalid'}));localStorage.setItem('crewcheck_auth_token','synthetic-'+name)}else{localStorage.removeItem('crewcheck_auth_user');localStorage.removeItem('crewcheck_auth_token')}window.dispatchEvent(new Event(name?'crewcheck:auth-changed':'crewcheck:auth-expired'));if(name){await getMe();setOperationalRadarContext(name.toLowerCase(),'synthetic-publication-v1');setBrowserRadarContext('synthetic-publication-v1')}if(preserveSelection)app.render(<RadarView event={selected}/>);else window.renderRadar('one')};
 window.rotateToken=async()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_token',getToken()+'-rotated');window.dispatchEvent(new Event('crewcheck:auth-changed'));await getMe();setBrowserRadarContext('synthetic-publication-v1');window.renderRadar('one')};
 (async()=>{await getMe();setOperationalRadarContext('synthetic-a','synthetic-publication-v1');setBrowserRadarContext('synthetic-publication-v1');window.renderRadar('one')})().catch(e=>{throw e});`;
 let server,browser;
@@ -123,7 +158,22 @@ try {
   // Reload keeps legacy disk, but loses the private registry. No gate until a
   // newly accepted authenticated response; disk bytes alone cannot reconstruct it.
   await page.reload();await page.waitForFunction(()=>window.requests?.length===1);await gateIs('Não confirmado');await reply(0,'30');await gateIs('30');
-  assert.deepEqual(errors,[]);assert.equal(providerRequests,0);results.push({timezoneId,cache12to14:true,sixMinuteContinuity:true,sourceExpiry:true,accountIsolation:true,staleFences:true,realProviderRequests:0});await ctx.close();
+  // Actual p0-673 effect + real auth/startup ownership + canonical constructor.
+  const beforeWindow=await count();await page.evaluate(()=>window.beginWindow());await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeWindow,'pending publication signal never queries');
+  await page.evaluate(()=>{window.unmountRadar();window.selectPublished('A')});await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeWindow,'initial Radar while window pending cannot query');await page.evaluate(()=>window.resolveWindow(0,'A'));await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeWindow,'accepted window does not itself query');await queryGate('40');await gateIs('40');
+  const sameEventPending=await start();await page.evaluate(()=>window.refreshWindow());await settle();await gateIs('Não confirmado');await reply(sameEventPending,'OLD-PUBLICATION');await gateIs('Não confirmado');
+  await page.evaluate(()=>window.resolveWindow(1,'A-republished'));await settle();await gateIs('Não confirmado');await queryGate('42');await gateIs('42');
+  const beforeCurrent=await count();await page.evaluate(()=>window.selectCurrent());await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeCurrent,'current publication on another origin day cannot query');await page.evaluate(()=>window.selectPublished('A'));await page.waitForFunction(n=>window.requests.length===n+1,beforeCurrent);await reply(beforeCurrent,'42');await gateIs('42');
+  // A→B selected publication: the former occurrence must be outside the new scope.
+  await page.evaluate(()=>window.refreshWindow());await page.evaluate(()=>window.resolveWindow(2,'B'));await settle();const beforeWrongScope=await count();await page.evaluate(()=>window.fetchRadar());await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeWrongScope,'old occurrence cannot query under another publication');
+  await page.evaluate(()=>window.selectPublished('B'));await page.waitForFunction(n=>window.requests.length===n+1,beforeWrongScope);await reply(beforeWrongScope,'44');await gateIs('44');
+  await page.evaluate(()=>{window.refreshWindow();window.refreshWindow()});await page.evaluate(()=>window.resolveWindow(3,'A'));await settle();await gateIs('Não confirmado');const beforeOutOfOrder=await count();await page.evaluate(()=>window.fetchRadar());await settle();assert.equal(await count(),beforeOutOfOrder,'out-of-order window must not reactivate scope');await page.evaluate(()=>window.resolveWindow(4,'B'));await settle();await queryGate('46');await gateIs('46');
+  await page.evaluate(()=>{window.acceptedPublicationFixture.revision='MUTATED-AFTER-ACCEPT';window.signal()});await settle();await gateIs('Não confirmado');
+  await page.evaluate(()=>window.refreshWindow());await page.evaluate(()=>window.rejectWindow(5));await settle();await gateIs('Não confirmado');const beforeFailure=await count();await page.evaluate(()=>window.fetchRadar());await settle();assert.equal(await count(),beforeFailure,'failed reconstruction cannot reuse old publication');
+  await page.evaluate(()=>window.refreshWindow());await page.evaluate(()=>window.cancelWindow());await page.evaluate(()=>window.resolveWindow(6,'B'));await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeFailure,'cancelled reconstruction cannot reactivate');
+  await page.evaluate(()=>window.beginWindow());const beforeAccountWindow=await count();await page.evaluate(()=>window.switchAccount('SYNTHETIC-B',true));await page.evaluate(()=>window.resolveWindow(7,'B'));await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeAccountWindow,'account switch + late publication cannot query');
+  const missingIdentityIndex=await page.evaluate(()=>window.windowReads.length);await page.evaluate(()=>window.beginInvalidIdentity());await page.evaluate(i=>window.resolveWindow(i,'A',{crewId:''}),missingIdentityIndex);await settle();assert.equal(await page.evaluate(()=>window.publicationContextReady()),false,'missing crew identity is not publication proof');
+  assert.deepEqual(errors,[]);assert.equal(providerRequests,0);results.push({timezoneId,cache12to14:true,historicalPublicationProvenance:true,sixMinuteContinuity:true,sourceExpiry:true,accountIsolation:true,staleFences:true,realProviderRequests:0});await ctx.close();
  }
  console.log('PASS actual RadarView cache refresh '+JSON.stringify(results));
 } finally {await browser?.close();if(server)await new Promise(r=>server.close(r));fs.rmSync(tmp,{recursive:true,force:true})}
