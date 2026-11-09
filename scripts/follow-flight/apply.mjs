@@ -16,14 +16,18 @@ if (!source.includes('function FollowFlightPanel(')) {
     setRevision(n => n + 1);
   }
   const selected = candidate && rows.some(item => followedFlightKey(item) === followedFlightKey(candidate));
-  return <section className="cz-toolbox" data-followed-flights="cache-only"><h2>Acompanhados</h2>{candidate && !selected && <button onClick={() => change(candidate, true)}>Acompanhar {candidate.flight} · {candidate.origin} → {candidate.destination}</button>}{!rows.length && <small>Nenhum voo selecionado</small>}{rows.map(item => {
+  return <section className="cz-toolbox cc-followed-list" data-followed-flights="cache-only"><h2>Acompanhados</h2>{candidate && !selected && <button className="cc-followed-add" onClick={() => change(candidate, true)}><Plus aria-hidden="true"/><span>Acompanhar <strong>{candidate.flight} · {candidate.origin} → {candidate.destination}</strong></span></button>}{!rows.length && <small>Nenhum voo selecionado</small>}{rows.map(item => {
     const event = { id: item.eventId, kind: 'flight', flightNumber: item.flight, origin: item.origin, destination: item.destination, day: { date: item.date }, canonical: { startDateTime: item.scheduledDepartureUtc, date: item.date } } as unknown as ZeroLeg;
     const snapshot = readRadarSnapshot(event);
     const info = radarGateInfo(event, snapshot);
     const gate = info.gateSource === 'radar' ? info.gate : '';
     const status = info.statusSource === 'radar' ? info.status : '';
-    return <article key={followedFlightKey(item)}><strong>{item.flight} · {item.origin} → {item.destination}</strong><span>{new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(item.scheduledDepartureUtc))} UTC</span><p>{status || 'Status sem dados'} · Portão {gate || 'sem dados'}</p>{snapshot && (gate || status) ? <small>Fonte: {(snapshot as RadarSnapshot & {source?:string}).source || 'não informada'} · recebida {new Intl.DateTimeFormat('pt-BR', {timeStyle:'short'}).format(new Date(Number(snapshot.updatedAt)))}</small> : <small>Sem dados operacionais válidos no cache</small>}<button aria-label={'Parar acompanhamento de ' + item.flight + ' ' + item.origin + ' para ' + item.destination} onClick={() => change(item, false)}>Parar</button></article>;
-  })}<details><summary>ℹ️</summary><small>Seleção local, separada da escala. Usa apenas dados já consultados e válidos; não cria consultas, reserva, bilhete nem alerta fora do app.</small></details></section>;
+    return <article className="cc-followed-row" key={followedFlightKey(item)}>
+      <div className="cc-followed-identity"><strong>{item.flight} · {item.origin} → {item.destination}</strong><time className="cc-followed-date" dateTime={item.scheduledDepartureUtc}>{new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(item.scheduledDepartureUtc))} UTC</time></div>
+      <p>{status || 'Status sem dados'} · Portão {gate || 'sem dados'}</p>
+      <div className="cc-followed-meta">{snapshot && (gate || status) ? <small>Fonte: {(snapshot as RadarSnapshot & {source?:string}).source || 'não informada'} · recebida {new Intl.DateTimeFormat('pt-BR', {timeStyle:'short'}).format(new Date(Number(snapshot.updatedAt)))}</small> : <small>Sem dados operacionais válidos no cache</small>}<button className="cc-followed-stop" aria-label={'Parar acompanhamento de ' + item.flight + ' ' + item.origin + ' para ' + item.destination} onClick={() => change(item, false)}><X aria-hidden="true"/> Parar</button></div>
+    </article>;
+  })}<details><summary aria-label="Sobre os voos acompanhados"><ShieldCheck aria-hidden="true"/> Sobre</summary><small>Seleção local, separada da escala. Usa apenas dados já consultados e válidos; não cria consultas, reserva, bilhete nem alerta fora do app.</small></details></section>;
 }
 function positioningFollowCandidate(record: any): FollowedFlight | null {
   if (!record || !Number.isFinite(Date.parse(record.departureAt))) return null;
