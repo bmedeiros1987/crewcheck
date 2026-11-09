@@ -27,6 +27,20 @@ const ctx = vm.createContext({ ...policy, Date:FakeDate, URLSearchParams, Map,
     return {ok:true,gate:'12',flight:q.get('flight'),origin:q.get('origin'),destination:q.get('destination'),scheduledDepartureUtc:q.get('scheduledDepartureUtc'),sourceReceivedAt:now}; },
   saveRadarSnapshot:(_event,payload)=>payload,
 });
+
+// Actual new Home dependencies; this legacy transport fixture has no accepted
+// publication context. Real browser ownership is covered by the dedicated suite.
+if (!ctx.captureAuthSession) ctx.captureAuthSession=()=>{const token=ctx.getToken(),owner=JSON.stringify(ctx.getStoredUser());return {token,owner,isCurrent:()=>token===ctx.getToken()&&owner===JSON.stringify(ctx.getStoredUser())}};
+ctx.storage ||= {get:()=> 'null'};
+ctx.radarSnapshotKey ||= event=>'unbound-transport-fixture:'+event.id;
+ctx.window ||= {dispatchEvent(){}};
+ctx.CustomEvent ||= class {};
+const presentationSource=fs.readFileSync(new URL('client/src/pages/Home.tsx',root),'utf8'),presentationAst=ts.createSourceFile('Home.tsx',presentationSource,99,true,ts.ScriptKind.TSX);
+if(presentationSource.includes('let browserRadarContext')) {
+const presentationDeclarations=['browserRadarContext','browserRadarResponses','browserRadarInvalidations'].map(name=>{const n=presentationAst.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(presentationAst)===name));assert(n,name);return n.getText(presentationAst)}).join('\n');
+const presentationFunctions=['browserRadarGeneration','browserRadarContextIsCurrent','browserRadarSignature'].map(name=>{const n=presentationAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(n,name);return n.getText(presentationAst)}).join('\n');
+vm.runInContext(ts.transpileModule(presentationDeclarations+'\n'+presentationFunctions,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,ctx);
+}
 vm.runInContext(ts.transpileModule(caller.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,ctx);
 const zones = {FLN:'America/Sao_Paulo',NAT:'America/Fortaleza',VIX:'America/Sao_Paulo',JFK:'America/New_York',LIS:'Europe/Lisbon'};
 const identity = (origin, departureDate='2032-10-14', scheduledDepartureUtc='2032-10-14T15:00:00Z') => ({flight:'LA100',origin,destination:'REC',departureDate,scheduledDepartureUtc});
