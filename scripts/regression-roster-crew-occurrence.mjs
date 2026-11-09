@@ -45,6 +45,12 @@ for(const permissions of [{roster:true},{roster:true,radar:true,hotels:true,pres
 }
 assert(privateRoster.days[0].legs[0].crew.length,'sharing does not mutate owner roster');
 const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');assert(home.includes('<FlightCrewDetails leg={event.leg} fallback={event.crew}/>'));assert(!home.includes("event.crew?.slice(0, 4)"));assert(!home.includes("event.crew?.slice(0, 8)"));
+const homeAst=ts.createSourceFile('Home.tsx',home,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+const financialFunctions=['normalizeCrewNameForFinance','currentUserNameTokens','firstCrewListed','userIsFirstCcm'].map(name=>{const n=homeAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(n,name);return n.getText(homeAst);}).join('\n');
+const financial=vm.createContext({getStoredUser:()=>({name:'FICTITIOUS OWNER'})});vm.runInContext(ts.transpileModule(financialFunctions,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,financial);
+const displayOnly={crew:['FICTITIOUS OWNER'],leg:{crewAssociation:'matched'}};
+assert.equal(financial.userIsFirstCcm(displayOnly,{crewName:'FICTITIOUS OWNER'}),false,'matching names cannot confirm CCM');
+assert.equal(financial.userIsFirstCcm({...displayOnly,leg:{crewAssociation:'matched',ccmBonusStatus:'confirmed'}},{}),true,'independent status retained');
 for(const file of ['RosterLaunchView.tsx','AimsRosterTable.tsx'])assert(fs.readFileSync('client/src/components/v1391/'+file,'utf8').includes('<FlightCrewDetails leg={event.leg}/>'),'real roster surfaces use selected leg');
 console.log('PASS synthetic crew occurrence association, no payroll authority, owner JSON and recursive visitor/share privacy');
 }finally{h.cleanup();}

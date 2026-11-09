@@ -73,6 +73,7 @@ jobs:
         run: |
           node scripts/regression-aims-vertical-browser.mjs
           node scripts/regression-roster-crew-browser.mjs
+          node scripts/regression-roster-crew-app-browser.mjs
       - name: Full app import to AIMS history regression
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
@@ -83,6 +84,7 @@ jobs:
           name: aims-vertical-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             artifacts/SYNTHETIC-roster-crew
+            artifacts/SYNTHETIC-roster-crew-app
             artifacts/aims-vertical
             artifacts/publication-import-flow
           if-no-files-found: warn

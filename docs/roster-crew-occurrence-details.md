@@ -9,3 +9,5 @@ Home preserva sua projeção crew:string[] para consumidores anteriores. Os deta
 PDF.js lê todas as páginas; os parsers recebem o texto completo. A prova sintética usa três páginas e percorre parsePDF, JSON e construção canônica. O armazenamento existente conserva os objetos de cada escala/conta/publicação; não há nova persistência, sync, transmissão ou aprendizado. A remoção recursiva de crew/ccmLead e o apagamento de rawText nos compartilhamentos permanecem no servidor. CalendarExport continua um export explícito do titular; não foi ampliado para visitantes, nem recebeu confirmação automática CCM.
 
 Os anexos pessoais não foram incorporados. Todo PDF, nome, matrícula, voo e screenshot de regressão é sintético. Portão, PS/#1325, #1310, #1292 e a projeção distinta da #893 ficam fora deste delta.
+
+Limite: server/rosterParser.mjs possui outro parser para fallback/Telegram e não lê esta tabela. Este incremento cobre parsePDF local, seus parsers e objetos persistidos; não afirma extração de tripulações pelo fallback do servidor.
