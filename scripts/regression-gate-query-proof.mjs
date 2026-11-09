@@ -1,3 +1,4 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 // Review regressions: actual canonical engine + actual handler/Concierge functions.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -39,7 +40,7 @@ const r=roster(),snapshot={email:'fictional-a',roster:r};const profile={email:'f
 let proven=true;const gateProof=()=>({version:1,provider:'custom',kind:'departure-gate-update',sourceUpdatedAt:new Date(now-60000).toISOString(),gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00.000Z'});
 const fake=async()=>{calls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z',...(proven?{gateUpdate:gateProof()}:{})};};
 const records=[{day:r.days[0],legs:r.days[0].legs}];
-const scope=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
+const scope=vm.createContext({beginRadarOperationalHistory,...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,ciriumRadarProjection:()=>({}),scoreRadar:()=>95,configuredProviders:()=>[],
  providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),telegramRequestUser:()=>({email:account,authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,

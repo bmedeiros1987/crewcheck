@@ -1,3 +1,4 @@
+import { beginRadarOperationalHistory, handleRadarGateHistory } from './server/concierge/radar-history-capture.mjs';
 import { radarAttemptDiagnostics } from './server/radar-attempt-diagnostics.mjs';
 import { runCiriumFlightAwareSequence, sequentialRadarProjection } from './server/radar-sequential.mjs';
 import { configureRadarPaidSources } from './server/radar-paid-sources.mjs';
@@ -225,6 +226,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     .replaceAll('{destination}', encodeURIComponent(destination || ''));
   const { response, payload, report = value => value } = await jsonFetch(apiUrl, { headers: { accept: 'application/json' } }, timeoutMs, 'custom', ctx?.gateQueryEvidence);
   if (!response.ok) return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte configurável sem dados agora.' });
+  const historyReceipt = ctx.operationalHistory?.captureCustom(payload, Date.now());
   return report({
     ok: true,
     configured: true,
@@ -232,6 +234,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
     gateUpdate: payload?.departureGateUpdate?.schema === 'crewcheck.departure-gate-update.v1' ? customGateSourceUpdate(payload) : null,
+    ...(Number.isFinite(historyReceipt) ? { sourceReceivedAt: historyReceipt } : {}),
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
     scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),
@@ -501,6 +504,7 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
     ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
   }
+  ctx.operationalHistory = await beginRadarOperationalHistory(req, ctx.gateQueryEvidence);
   if (authority.kind === 'platform' && !await ctx.radarReadAdmission())
     return sendJson(res, 200, { ...gateQuerySuppressed({reason: authorityCurrent() && gateQueryDay(ctx.gateQueryEvidence).allowed ? 'response-occurrence-changed' : 'response-context-expired'}), exportedToConcierge:false });
   const payload = await runRadarRace(ctx, origin, destination);
@@ -516,7 +520,9 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
   const info = findPublishedGateLeg(currentAuthority.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(currentAuthority.roster));
   if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
-  if (!payload.ok || payload.radarRouting === 'cirium-flightaware-v1') return sendJson(res,200,{...payload,exportedToConcierge:false});
+  if (!payload.ok) return sendJson(res,200,{...payload,exportedToConcierge:false});
+  await ctx.operationalHistory?.commit(payload);
+  if (payload.radarRouting === 'cirium-flightaware-v1') return sendJson(res,200,{...payload,exportedToConcierge:false});
   if (currentAuthority.snapshot) {
     const snapshot = currentAuthority.snapshot;
     conciergeApplyRadar(snapshot, info, payload);
@@ -4320,6 +4326,7 @@ if (url.pathname === '/api/telegram/link/start') return handleTelegramLinkStart(
   if (url.pathname === '/api/alarm/preview') return handleAlarmPreview(req, res, url);
   if (url.pathname === '/api/alarm/test') return handleAlarmTest(req, res, url);
   if (url.pathname === '/api/health') return sendJson(res, 200, { ok: true, app: 'CrewCheck', version:'14.1.7', reliability: true, platform: true, encoding: 'UTF-8', defaultTimezone: 'America/Sao_Paulo' });
+  if (url.pathname === '/api/radar-history') return handleRadarGateHistory(req,res,url);
   if (url.pathname === '/api/radar-flight') return handleRadar(req, res, url);
   if (url.pathname === '/api/radar-health') return handleRadarHealth(req, res, url);
   if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, message: 'Recurso operacional indisponível agora.' });

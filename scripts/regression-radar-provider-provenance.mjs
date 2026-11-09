@@ -1,3 +1,4 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,7 +16,7 @@ const {buildCanonicalRosterEvents}=await import(pathToFileURL(path.join(root,'se
 function functions(file,names,typescript=false){const source=fs.readFileSync(path.join(root,file),'utf8'),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,typescript?ts.ScriptKind.TSX:ts.ScriptKind.JS);return names.map(name=>{const n=ast.statements.find(x=>ts.isFunctionDeclaration(x)&&x.name?.text===name);assert(n,name);return typescript?ts.transpileModule(n.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText:n.getText(ast);}).join('\n');}
 const now=Date.parse('2032-10-14T12:00:00Z'),roster={year:2032,month:10,base:'GRU',days:[{date:'14/10/2032',type:'VOO',legs:[{flightNumber:'LA100',origin:'GRU',destination:'REC',departureTime:'09:00',arrivalTime:'11:00',gate:'24'}]}]};
 let body,channel='airlabs',writes=0;
-const scope=vm.createContext({...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,Date:class extends Date{static now(){return now;}},gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??now),URL,setTimeout,clearTimeout,process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},
+const scope=vm.createContext({beginRadarOperationalHistory,...policy,...injection,...radarEvidence,buildCanonicalRosterEvents,Date:class extends Date{static now(){return now;}},gateQueryDay:(x,t)=>policy.gateQueryDay(x,t??now),URL,setTimeout,clearTimeout,process:{env:{CREWCHECK_RADAR_TIMEOUT_MS:'800'}},
  envAny:keys=>channel==='airlabs'&&keys.includes('AIRLABS_API_KEY')?'OFFLINE_ONLY':channel==='custom'&&keys.includes('CREWCHECK_FLIGHT_STATUS_URL')?'https://fixture.invalid/{flight}':'',providerAvailable:()=>true,markProvider:()=>{},jsonFetch:async()=>({response:{ok:true},payload:body}),
  providerFlightAware:async()=>null,providerAviationstack:async()=>null,providerAeroDataBox:async()=>null,
  telegramRequestUser:()=>({email:'fixture@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,conciergeLoadSnapshot:async()=>({email:'fixture@example.invalid',roster}),conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{},conciergeSaveSnapshotAsync:async()=>{writes++;},sendJson:(_r,_s,p)=>p});

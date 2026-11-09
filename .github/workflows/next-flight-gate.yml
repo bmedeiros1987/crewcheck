@@ -26,6 +26,7 @@ on:
       - 'shared/airport-timezones.mjs'
       - 'server/platform.mjs'
       - 'server/radar-publication-authority.mjs'
+      - 'server/concierge/radar-history-capture.mjs'
       - 'scripts/regression-radar-owned-history.mjs'
       - 'server/v1403/premium-helpers.snippet'
       - 'client/src/lib/radarAvailability.ts'

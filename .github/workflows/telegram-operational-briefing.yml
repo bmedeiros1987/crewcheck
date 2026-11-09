@@ -11,6 +11,38 @@ on:
       - 'server/v139/notificationStateDeletion.mjs'
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/tests/*briefing*.mjs'
+      - 'server.mjs'
+      - 'scripts/regression-radar-operational-history.mjs'
+      - 'scripts/tests/operational-history.test.mjs'
+      - 'scripts/tests/operational-history-archive.test.mjs'
+      - 'scripts/tests/operational-history-pages.test.mjs'
+      - 'scripts/tests/radar-history-all-occurrences.test.mjs'
+      - 'scripts/regression-gate-history-client.mjs'
+      - 'scripts/regression-gate-history-browser.mjs'
+      - 'scripts/regression-radar-history-paid-capture.mjs'
+      - 'scripts/regression-radar-history-diagnostics-composition.mjs'
+      - 'server/radar-attempt-diagnostics.mjs'
+      - 'scripts/fixtures/operational-history-fixture.mjs'
+      - 'client/src/lib/gateHistory.ts'
+      - 'client/src/lib/authClient.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/rosterPublicationReview.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'client/src/lib/rosterDisplayDate.ts'
+      - 'shared/gate-query-day.mjs'
+      - 'shared/radar-field-evidence.mjs'
+      - 'server/radar-publication-authority.mjs'
+      - 'server/v139/common.mjs'
+      - 'client/src/components/nextflight/GateHistoryPanel.tsx'
+      - 'scripts/gate-history/**'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-operational-history-mysql.mjs'
+      - 'scripts/tests/telegram-operational-change.test.mjs'
+      - 'scripts/regression-telegram-operational-change-mysql.mjs'
       - 'scripts/regression-telegram-briefing-mysql.mjs'
       - 'scripts/regression-operational-briefing-browser.mjs'
       - 'scripts/regression-briefing-concierge-composition.mjs'
@@ -35,9 +67,18 @@ jobs:
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs scripts/tests/operational-history-pages.test.mjs scripts/tests/radar-history-all-occurrences.test.mjs
+          node scripts/regression-gate-history-client.mjs
+          node scripts/regression-radar-history-paid-capture.mjs
+          TZ=UTC node scripts/regression-radar-history-diagnostics-composition.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-history-diagnostics-composition.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-history-diagnostics-composition.mjs
+          node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-wakeup-spoken-program.mjs
+          node scripts/regression-elevenlabs-call-deadlines.mjs
       - name: Start existing disposable notification QA pattern without network
         run: |
           mkdir -p /tmp/crewcheck-notification-qa-socket
@@ -68,8 +109,36 @@ jobs:
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+      - name: Operational change stale-reader counterproof (isolated database only)
+        run: |
+          set +e
+          node scripts/regression-telegram-operational-change-mysql.mjs > "$RUNNER_TEMP/change-old-snapshot.log" 2>&1
+          result=$?
+          set -e
+          test "$result" -ne 0
+          grep 'CHANGE_STALE_SOURCE_RACE: current read must cancel committed revision' "$RUNNER_TEMP/change-old-snapshot.log"
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+          CREWCHECK_QA_OLD_CHANGE_SOURCE_READ: '1'
+      - name: Actual history reader old-snapshot counterproof
+        run: |
+          set +e
+          node scripts/regression-operational-history-mysql.mjs > "$RUNNER_TEMP/history-old-snapshot.log" 2>&1
+          result=$?
+          set -e
+          test "$result" -ne 0
+          cat "$RUNNER_TEMP/history-old-snapshot.log"
+          grep 'HISTORY_STALE_READ: durable observation must be current after owner wait' "$RUNNER_TEMP/history-old-snapshot.log"
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+          CREWCHECK_QA_OLD_HISTORY_READ: '1'
       - name: Real SQL consent, competing claims and uncertain outcome
-        run: node scripts/regression-telegram-briefing-mysql.mjs
+        run: |
+          node scripts/regression-telegram-briefing-mysql.mjs
+          node scripts/regression-telegram-operational-change-mysql.mjs
+          node scripts/regression-operational-history-mysql.mjs
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
@@ -93,6 +162,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/briefing-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/briefing-browser/node_modules/playwright/cli.js" install --with-deps chromium
           node scripts/regression-operational-briefing-browser.mjs
+          node scripts/regression-gate-history-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json
@@ -101,11 +171,23 @@ jobs:
         run: |
           node scripts/v139/apply.mjs
           node scripts/p1-concierge-journey/compile.mjs
-          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs
+          node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs scripts/tests/telegram-operational-change.test.mjs scripts/tests/operational-history.test.mjs scripts/tests/operational-history-archive.test.mjs scripts/tests/operational-history-pages.test.mjs scripts/tests/radar-history-all-occurrences.test.mjs
+          node scripts/regression-gate-history-client.mjs
+          node scripts/regression-radar-history-paid-capture.mjs
+          TZ=UTC node scripts/regression-radar-history-diagnostics-composition.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-history-diagnostics-composition.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-history-diagnostics-composition.mjs
+          node scripts/regression-radar-operational-history.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
+          node scripts/regression-wakeup-call-delivery.mjs
+          node scripts/regression-wakeup-spoken-program.mjs --prepared
+          node scripts/regression-elevenlabs-call-deadlines.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
+          node scripts/regression-telegram-operational-change-mysql.mjs
+          node scripts/regression-operational-history-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
+          node scripts/regression-gate-history-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/briefing-browser/package.json

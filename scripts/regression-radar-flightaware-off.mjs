@@ -1,3 +1,4 @@
+import {beginRadarOperationalHistory} from '../server/concierge/radar-history-capture.mjs';
 // FlightAware OFF everywhere (dot review of 8833d4b5e, P1): FlightAware is not licensed for
 // distribution, so no entry point may reach its transport unless RADAR_FLIGHTAWARE_FALLBACK_ENABLED
 // is exactly 'true', and with the paid Flex routing on only through its budget guard. Also: a
@@ -29,7 +30,7 @@ const faRow = { ident: 'LAN100', ident_iata: 'LA100', scheduled_out: '2032-10-14
 
 function scopeWith(env, { jsonFetch, snapshotLoad } = {}) {
   const calls = [], legacy = [], saves = [];
-  const scope = vm.createContext({
+  const scope = vm.createContext({beginRadarOperationalHistory,
     ...policy, ...radarEvidence, buildCanonicalRosterEvents, URL, Map, Promise,
     Date: class extends Date { constructor(...a) { super(...(a.length ? a : [now])); } static now() { return now; } },
     gateQueryDay: (i, t) => policy.gateQueryDay(i, t ?? now), radarResultDecision: (p, i, t, m) => policy.radarResultDecision(p, i, t ?? now, m),
