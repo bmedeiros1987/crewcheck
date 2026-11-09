@@ -24,7 +24,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   changesDetails?:ReactNode;
   roster: CrewRoster; calculate: (roster: CrewRoster) => S; metric: (snapshot: S) => Record<string, number>;
   rangeMetric?: (snapshot: S, range: FinancialRange) => Record<string, number>;
-  mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode; coverageReady: boolean; requestRange: (range:FinancialRange)=>void }) => ReactNode;
+  mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>;availableMonths:string[];selectReferenceMonth:(month:string,explicit?:boolean)=>void; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode; coverageReady: boolean; requestRange: (range:FinancialRange)=>void }) => ReactNode;
   periodMetric?: (snapshots: S[], range: FinancialRange, missing: string[]) => Record<string,number>;
   weeks?: (snapshots: S[], range: FinancialRange) => Array<{ range: FinancialRange; value: string }>;
 }) {
@@ -86,7 +86,12 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   },[owner,crew,initialMonth,roster,authRevision]);
   useEffect(()=>{
     if(!owner||!crew)return;
-    const wanted=[...sourceMonths(range),...(expanded?sourceMonths(comparisonRange):[]),...requestedPeriods], version=epoch.current;
+    // Salary needs the adjacent published source to project the next credit.
+    // This only requests an existing owned publication; no period policy or
+    // employment scope is inferred until that source is actually loaded.
+    const adjacent:string[]=[];
+    if(mode==='salary'&&validFinancialDay(initialMonth+'-01')){const previous=new Date(initialMonth+'-01T12:00:00Z');previous.setUTCMonth(previous.getUTCMonth()-1);adjacent.push(previous.toISOString().slice(0,7));}
+    const wanted=[...sourceMonths(range),...(expanded?sourceMonths(comparisonRange):[]),...requestedPeriods,...adjacent], version=epoch.current;
     const requests=inventory.filter(item=>wanted.includes(`${item.year}-${String(item.month).padStart(2,'0')}`)&&!loaded.some(entry=>monthOf(entry.roster)===`${item.year}-${String(item.month).padStart(2,'0')}`)&&!fetching.current.has(item.id));
     if(!requests.length)return;
     const attempts=requests.map(item=>({item,token:{epoch:version,state:'pending' as 'pending'|'failed'|'complete'}}));
@@ -163,5 +168,5 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Toque no mês para consultar o período.'}</p>
     {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Datas de trabalho · não são datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
   </section>;
-  return <FinancialScreenContext.Provider value={{screen,range,changesDetails,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(sourceMonths(range))})}</FinancialScreenContext.Provider>;
+  return <FinancialScreenContext.Provider value={{screen,range,changesDetails,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,availableMonths:months.filter(month=>!conflicts.includes(month)),selectReferenceMonth:(value,explicit=false)=>{if(!explicit&&kind!=='month')return;if(months.includes(value)&&!conflicts.includes(value)){if(month!==value)setMonth(value);if(kind!=='month')setKind('month');}},range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(sourceMonths(range))})}</FinancialScreenContext.Provider>;
 }

@@ -24,6 +24,7 @@ const COPY = {
     details: 'Detalhes',
     unreadableDetail: 'Declaração local indisponível ou inválida. Os dados foram preservados; referências pessoais válidas continuam independentes.',
     notice: 'Aplicação do ACT pendente neste período.',
+    preset: 'Previsão · padrão LATAM Brasil/comissários. Vínculo individual e recebimento não confirmados; valores pessoais revisados têm prioridade.',
     review: 'Revisar dados',
     summary: 'Confirmar ou revisar aplicação financeira do ACT',
     pendingLabel: 'Pendências deste período',
@@ -61,6 +62,7 @@ const COPY = {
     details: 'Details',
     unreadableDetail: 'Local declaration unavailable or invalid. Your data was preserved; valid personal references remain independent.',
     notice: 'ACT application pending for this period.',
+    preset: 'Forecast · LATAM Brasil cabin crew default. Individual employment and receipt are unconfirmed; reviewed personal values take priority.',
     review: 'Review details',
     summary: 'Confirm or review the ACT financial application',
     pendingLabel: 'Pending items in this period',
@@ -113,7 +115,7 @@ const ALLOWANCE_LABELS_EN: Record<string, string> = { 'Café': 'Breakfast', 'Alm
 /** Applicability only: no personal amount, receipt, payroll or employer verification is saved.
  * `pending` are the displayed period's items that wait on this declaration (from the forecast);
  * the notice depends on them, not on whether any declaration event exists. */
-export default function FinancialActApplicability({ pending = [] }: { pending?: readonly { iso: string; actCause?: FinancialActPendingCause }[] }) {
+export default function FinancialActApplicability({ pending = [],preset=false }: { pending?: readonly { iso: string; actCause?: FinancialActPendingCause }[];preset?:boolean }) {
   const privacy = useFinancialPrivacy(), currentSession = activeSession(), t = useActCopy();
   const lang = t === COPY.pt ? 'pt-BR' : 'en';
   const longDay = (iso: string) => formatDay(iso, lang, true);
@@ -170,6 +172,7 @@ export default function FinancialActApplicability({ pending = [] }: { pending?: 
   // Messages are stored as keys so a language switch never leaves a sentence in the other language.
   const messageText = message === 'incomplete' || message === 'saved' || message === 'notSaved' ? t[message] : message;
   return <section className={needsAction ? 'cz-toolbox cc-act-notice' : 'cc-act-discreet'} data-financial-act-context={snapshot.state} data-financial-act-pending={pendingDates.length} data-i18n-skip="true" lang={lang}>
+    {preset&&!needsAction&&<p data-financial-preset="system-default-TAM-cabin">{t.preset}</p>}
     {needsAction && <>
       <p role="status"><strong>{t.notice}</strong> {pendingCauses.length===1?t.causes[pendingCauses[0]]:t.pendingLabel}</p>
       <button type="button" aria-expanded={open} onClick={() => setOpen(true)}>{t.review}</button>

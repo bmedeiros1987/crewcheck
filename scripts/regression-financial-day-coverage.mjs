@@ -51,7 +51,8 @@ try{
  };
  context.buildLegs=events;
  const capture=(name,r)=>evidence.push({name,monthly:r.result.monthly,complete:r.result.nativeSummary.complete,rows:r.result.rows.length,missing:r.missing,conflicts:r.conflicts,paymentTotals:r.payment.totals,paymentPartial:r.payment.calculationPartial,pending:r.result.unclassifiedItems.map(i=>({iso:i.iso,kind:i.pendingKind,cause:i.actCause??null}))});
- reset();let r=await run();assert.equal(r.result.monthly,null);assert(r.result.unclassifiedItems.length>0);assert(r.result.unclassifiedItems.every(i=>i.actCause==='act_missing'));capture('missing ACT and owner rates',r);
+ reset();let r=await run();assert.equal(Math.round(r.result.monthly*100),76608);assert.equal(r.result.nativeSummary.complete,true);assert(r.result.rows.every(i=>i.value===109.44&&i.rateSource==='system_default:admin_enterprise_reference'));assert.equal(values.has(libs.financialActStorageKey(owner)),false);capture('configured LATAM cabin default without saving personal declaration',r);
+ reset();documents.oct={...oct,rank:''};documents.nov={...nov,rank:''};r=await run();assert.equal(r.result.monthly,null);assert(r.result.unclassifiedItems.length>0);assert(r.result.unclassifiedItems.every(i=>i.actCause==='act_missing'));capture('unknown role cannot inherit configured LATAM cabin default',r);
  reset();assert.equal(libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','0'),true);r=await run();assert.equal(r.result.monthly,0);assert.equal(r.payment.totals?.BRL,0);assert.equal(r.result.nativeSummary.complete,true);assert.equal(r.result.rows.length,7);assert(r.result.rows.every(i=>i.value===0));assert.equal(r.result.unclassifiedItems.length,0);capture('explicit owned zero',r);
  reset();const journal={schema:1,ownerId:owner,revision:0,events:[]};const declaration=libs.planFinancialActChange(journal,0,{from:'2026-10-01',through:'2026-10-31',active:true,employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'});assert(declaration);values.set(libs.financialActStorageKey(owner),JSON.stringify(declaration));r=await run();assert.equal(r.result.monthly,null);assert(r.result.rows.some(i=>i.iso.startsWith('2026-10')));assert(r.result.unclassifiedItems.some(i=>i.iso.startsWith('2026-11')&&i.actCause==='act_expired'));capture('ACT declaration ends at month boundary',r);
  reset();const rate=(from,to,value,fingerprint)=>({key:'per_diem.lunch',label:'SYNTHETIC ONLY',unit:'meal',value,currency:'BRL',sourceDocument:'synthetic.pdf',sourceFingerprint:fingerprint,confidence:'high',valueOrigin:'printed',confirmed:true,effectiveFrom:from,effectiveTo:to});assert.equal(libs.saveConfirmedFinancialRates(libs.mergeConfirmedRates([], [rate('2026-10-01','2026-10-31',42,'synthetic-oct'),rate('2026-11-01','2026-11-30',84,'synthetic-nov')])),true);r=await run();assert.equal(r.result.monthly,4*42+3*84);assert(r.result.rows.filter(i=>i.iso.startsWith('2026-10')).every(i=>i.value===42));assert(r.result.rows.filter(i=>i.iso.startsWith('2026-11')).every(i=>i.value===84));capture('reviewed account rates resolved by occurrence month, not active month',r);
@@ -274,9 +275,9 @@ try{
  const dayRange={valid:true,start:'2026-11-08',end:'2026-11-08'},wholeMonth={valid:true,start:'2026-11-01',end:'2026-11-30'};
  const scopedTrip=context.subject.scopedFinancialForecast([{roster:roundTrip,perdiem:roundTripResult}],dayRange,[]);assert.equal(scopedTrip.monthly,42);assert.equal(scopedTrip.nativeSummary.complete,true);
  assert.equal(context.subject.scopedFinancialForecast([{roster:roundTrip,perdiem:roundTripResult}],wholeMonth,[]).monthly,null,'one known trip never certifies the full month');
- values.delete(libs.financialActStorageKey(owner));pendingTrip(roundTrip,'manual tariff does not prove LATAM cabin applicability');
+ values.delete(libs.financialActStorageKey(owner));pendingTrip({...roundTrip,rank:''},'manual tariff does not prove LATAM cabin applicability for an unknown role');assert.equal(tripForecast(roundTrip).rows.find(row=>row.label==='Almoço').value,42,'configured LATAM cabin model retains personal domestic tariff precedence without creating a declaration');
  values.set(libs.financialActStorageKey(owner),JSON.stringify(cabinDeclaration));
- login('synthetic-finance-B');assert.equal(tripForecast(roundTrip).rows.length,0,'account B inherits neither A scope nor A tariff');login(owner);
+ login('synthetic-finance-B');const defaultB=tripForecast(roundTrip);assert(defaultB.rows.every(row=>row.rateSource==='system_default:admin_enterprise_reference'&&row.currency==='BRL'&&[109.44,27.36].includes(row.value)),'B may use the configured product default, never A scope or A private tariff');assert.equal(values.has(libs.financialActStorageKey('synthetic-finance-B')),false);assert.equal(tripForecast({...roundTrip,rank:''}).rows.length,0,'unknown-role B inherits neither A scope nor A private tariff');login(owner);
  assert.equal(tripForecast(roundTrip).rows.find(row=>row.label==='Almoço').value,42,'return to account A restores only its own evidence');
  assert.equal(JSON.stringify(roundTrip),roundTripSource,'calculator never writes source');
  evidence.push({name:'synthetic international round trip without overnight',rate:roundTripLunch.rateKey,currency:roundTripLunch.currency,value:roundTripLunch.value});
@@ -289,7 +290,8 @@ try{
  failInventoryRead=false;offline=false;await libs.listSavedRosters(72,false,{preserveRevisions:true,onUnavailable:()=>{offline=true;}});assert.equal(offline,false,'explicit new read can recover remote inventory');
  // Execute the actual Explorer body and its read-only source-loading effect.
  // Hook state is synthetic; selection, session checks, loader and fetch fence
- // are production code. Only allowance boundaries request the prior source.
+ // are production code. Allowance boundaries and salary credit projection
+ // request their adjacent published source without activating it.
  reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
  const inventoryRows=await libs.listSavedRosters(72,false,{preserveRevisions:true});
  const explorerSource=fs.readFileSync(process.env.FINANCIAL_EXPLORER_SOURCE||path.join(root,'client/src/components/finance/FinancialHistoryExplorer.tsx'),'utf8');
@@ -312,7 +314,7 @@ try{
   return{requests:[...requests],state:renderState,loaded:updatedLoaded,load,render,controls:()=>renderState.controls,loadedNow:()=>updatedLoaded};
  }
  let lookup=await explorer('allowance');assert.deepEqual(lookup.requests,['/api/rosters/oct']);assert(lookup.loaded.some(item=>item.roster.month===10));assert.deepEqual(Array.from(lookup.state.missing),['2026-10']);
- lookup=await explorer('salary');assert.deepEqual(lookup.requests,[],'salary source/competence contract unchanged');assert.deepEqual(Array.from(lookup.state.missing),[]);
+ lookup=await explorer('salary');assert.deepEqual(lookup.requests,['/api/rosters/oct'],'salary credit projection reads its adjacent publication exactly once');assert(lookup.loaded.some(item=>item.roster.month===10));assert.deepEqual(Array.from(lookup.state.missing),[],'loading payment origins does not change the selected reference scope');
  lookup=await explorer('allowance',inventoryRows.filter(item=>item.month===11));assert.deepEqual(lookup.requests,[]);assert.deepEqual(Array.from(lookup.state.missing),['2026-10'],'unavailable prior source is pending, not invented zero');
  // Same-context recovery is an explicit UI action, never a retry loop.
  const settle=async()=>{for(let turn=0;turn<5;turn++)await new Promise(setImmediate);};

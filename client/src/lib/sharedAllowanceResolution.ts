@@ -3,6 +3,7 @@ import { financialJourneyGroupKey } from './financialJourneyGrouping';
 import { rosterOperationalIso } from './compensationPolicy';
 import { roundCurrencyAmount } from './financialAmounts';
 import { financialActAt, type FinancialActSnapshot } from './financialActApplicability';
+import {financialPresetScope} from './payrollProjectionPeriods';
 import { resolveLatamAllowanceReference, validAllowanceDay, type AllowanceCategory, type AllowanceCurrency, type AllowanceSlot, type LatamAllowanceReference } from './latamAllowanceCatalog';
 
 export type OwnedAllowanceValue = { value: number; source: 'learned' | 'personal_reference' | 'manual'; description: string; version: string };
@@ -17,7 +18,7 @@ export type ResolvedAllowanceSlot = {
  * adoption or currency-only foreign-rate promotion takes place here. */
 export function resolveSharedAllowanceSlot(args: {
   category: AllowanceCategory; slot: AllowanceSlot; date: string; context: FinancialActSnapshot;
-  owned: OwnedAllowanceValue | null; archiveIssue?: string | null;
+  owned: OwnedAllowanceValue | null; archiveIssue?: string | null;roster?:{airline?:string;rank?:string};
 }): ResolvedAllowanceSlot {
   const pending = (reason: string, reference: LatamAllowanceReference | null = null): ResolvedAllowanceSlot => ({
     kind: 'pending', value: null, currency: reference?.currency || null, source: 'pending', version: '', reason, reference,
@@ -34,7 +35,9 @@ export function resolveSharedAllowanceSlot(args: {
   const context = args.context;
   const selection = context.history && ['ready', 'missing'].includes(context.state) && context.ownerId === context.history.ownerId && context.isCurrent()
     ? financialActAt(context.history, args.date) : null;
-  if (!selection || selection.state !== 'applicable') {
+  const preset=selection?.state==='missing'&&context.history?.events.length===0&&args.roster?financialPresetScope(args.roster,context):null;
+  const defaultProfile=preset?.basis==='system_default'&&preset.allowsMonth(args.date.slice(0,7))?preset:null;
+  if ((!selection || selection.state !== 'applicable')&&!defaultProfile) {
     const actCause: FinancialActPendingCause = context.state === 'invalid' ? 'act_invalid'
       : context.state === 'unavailable' ? 'act_unavailable'
       : selection?.state === 'revoked' ? 'act_revoked'
@@ -47,11 +50,12 @@ export function resolveSharedAllowanceSlot(args: {
       : 'Empresa e ACT não confirmados para esta data. Confirme a aplicação financeira uma vez para o período.';
     return { ...pending(reason), actCause };
   }
-  const reference = resolveLatamAllowanceReference({ role: selection.event.role, category: args.category, slot: args.slot, date: args.date });
+  const role=selection?.state==='applicable'?selection.event.role:defaultProfile!.role;
+  const reference = resolveLatamAllowanceReference({ role, category: args.category, slot: args.slot, date: args.date });
   if (reference.amountMinor === null || !reference.calculableReference) return pending(reference.reason, reference);
   return { kind: reference.state === 'resolved_enterprise_reference' ? 'forecast' : 'reference',
-    value: reference.amountMinor / 100, currency: reference.currency, source: reference.sourceKind || 'pending',
-    version: reference.version + ':' + selection.event.role, reason: reference.reason, reference };
+    value: reference.amountMinor / 100, currency: reference.currency, source: (defaultProfile?'system_default:':'')+(reference.sourceKind || 'pending'),
+    version: reference.version + ':' + role+(defaultProfile?':system-default-TAM-cabin':''), reason: (defaultProfile?'Padrão de cálculo LATAM Brasil/comissários; vínculo individual não confirmado. ':'')+reference.reason, reference };
 }
 
 /** Reference-only subtotal. Never substitute this for an enterprise forecast total. */
@@ -95,15 +99,17 @@ export function resolveAllowanceOccurrenceGeography<T extends { rateKey: string 
  * No hotel text, civil midnight or inferred journey-rest proves an overnight. */
 export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | null; airport: string; reason: string }>(args: {
   geography: T; event: any; events: readonly any[]; base: string; airline: string; date: string;
-  context: FinancialActSnapshot; classify: (origin: string, destination: string, overrides: any) => T;
+  context: FinancialActSnapshot; classify: (origin: string, destination: string, overrides: any) => T;roster?:{airline?:string;rank?:string};
 }): T {
   const { geography, context } = args;
   if (!['flight','stay'].includes(args.event.kind) || !geography.rateKey || geography.rateKey === 'domestic' || !['LA','TAM','LATAM'].includes(String(args.airline || '').trim().toUpperCase())) return geography;
   const pending = (reason: string): T => ({ ...geography, rateKey: null, reason: 'Elegibilidade internacional pendente: ' + reason });
   const selection = ['ready','missing'].includes(context.state) && context.history && context.ownerId === context.history.ownerId && context.isCurrent()
     ? financialActAt(context.history, args.date) : null;
-  if (selection?.state !== 'applicable') return pending('contexto financeiro LATAM não confirmado para esta conta/data.');
-  if (selection.event.role !== 'cabin') return geography; // No extrapolation to pilots/other regimes.
+  const preset=selection?.state==='missing'&&context.history?.events.length===0&&args.roster?financialPresetScope(args.roster,context):null;
+  const defaultProfile=preset?.basis==='system_default'&&preset.allowsMonth(args.date.slice(0,7))?preset:null;
+  if (selection?.state !== 'applicable'&&!defaultProfile) return pending('contexto financeiro LATAM não confirmado para esta conta/data.');
+  if (selection?.state==='applicable'&&selection.event.role !== 'cabin') return geography; // No extrapolation to pilots/other regimes.
   const base = String(args.base || '').trim().toUpperCase();
   if (args.classify(base, base, {}).rateKey !== 'domestic') return pending('base nacional não comprovada.');
   const start = (event: any) => Date.parse(event.canonical?.startDateTime || '');
