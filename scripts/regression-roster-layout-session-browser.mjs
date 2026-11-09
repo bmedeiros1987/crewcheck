@@ -58,19 +58,31 @@ async function prepareRosterScroll(page, target) {
   finally { clearTimeout(timer); }
 }
 
-// Measurement starts AFTER preparation. No scrolling or settling is allowed
-// here: even a 1px excursion that returns to the baseline is a gate failure.
-function beginRosterArrowWindow() {
+// Measurement starts after top preparation, before the single normalized80
+// stimulus. No further scrolling/settling is allowed; observed excursions fail
+// even after returning to baseline. Sampling does not prove unobserved states.
+function beginRosterArrowWindow({target}={}) {
   const root=document.scrollingElement,header=document.querySelector('.cz-app > .cz-global-header'),host=header.closest('.cz-app');
   const anchors=[...host.children].filter(el=>!el.classList.contains('cc-back-to-top'));
-  const box=el=>{const r=el.getBoundingClientRect();return [r.left+scrollX,r.top+scrollY,r.width,r.height];};
+  const box=el=>{const r=el.getBoundingClientRect();return r.width||r.height?[r.left+scrollX,r.top+scrollY,r.width,r.height]:[0,0,0,0];};
   const read=()=>({scroll:[scrollX,scrollY,root.scrollTop],extent:[root.scrollHeight,host.getBoundingClientRect().height,host.scrollHeight],anchors:anchors.map(box),
     ancestors:[...function*(el){while(el){yield el;el=el.parentElement;}}(header.parentElement)].map(el=>[el.tagName,el.scrollLeft,el.scrollTop,el.scrollHeight,el.clientHeight])});
-  const baseline=read();let violation=null,samples=0,frames=0,frame=0,active=true;
+  const baseline=read();
+  // Normalize ONLY the deliberate document stimulus, keeping content geometry
+  // from BEFORE it. Arrow-induced shifts cannot become an accepted baseline.
+  if(target!==undefined){
+    if(root.scrollHeight-root.clientHeight<target)throw Error('Arrow stimulus cannot reach requested destination');
+    baseline.scroll=[0,target,target];
+    const ancestors=[...function*(el){while(el){yield el;el=el.parentElement;}}(header.parentElement)];
+    baseline.ancestors=baseline.ancestors.map((row,index)=>ancestors[index]===root?[row[0],0,target,row[3],row[4]]:row);
+  }
+  let violation=null,samples=0,frames=0,frame=0,active=true;
   const check=()=>{samples+=1;const current=read();if(JSON.stringify(current)!==JSON.stringify(baseline)&&!violation)violation={baseline,current};};
   const tick=()=>{if(!active)return;frames+=1;check();frame=requestAnimationFrame(tick);};
   document.addEventListener('scroll',check,true);frame=requestAnimationFrame(tick);
   window.__rosterArrowWindow={read:()=>({baseline,current:read(),violation,samples,frames}),finish:()=>{check();active=false;cancelAnimationFrame(frame);document.removeEventListener('scroll',check,true);return {violation,samples,frames};}};
+  if(target!==undefined)scrollTo({left:0,top:target,behavior:'instant'});
+  check();return window.__rosterArrowWindow.read();
 }
 // Real browser, synthetic documents: these counterproofs run in the same engine
 // as the app gate, not in a mock scroll implementation used to claim success.
@@ -119,6 +131,15 @@ async function verifyRosterScrollPreparation(browser) {
     await page.evaluate(beginRosterArrowWindow);await page.evaluate(()=>document.querySelector('.cz-app').style.paddingTop='1px');await new Promise(resolve=>setTimeout(resolve,50));
     await page.evaluate(()=>document.querySelector('.cz-app').style.paddingTop='');await new Promise(resolve=>setTimeout(resolve,50));
     const changed=await page.evaluate(()=>window.__rosterArrowWindow.finish());assert.ok(changed.violation,'strict window rejects layout changes even after restoration');
+  } finally { await page.close(); }
+  page=await fixture();
+  try {
+    await prepareRosterScroll(page,0);
+    await page.evaluate(()=>{const original=scrollTo;window.scrollTo=function(...args){const result=original.apply(this,args);document.querySelector('.cz-app').style.transform='translateY(1px)';return result;};});
+    const shifted=await page.evaluate(beginRosterArrowWindow,{target:80});
+    assert.deepEqual(shifted.current.extent,shifted.baseline.extent,'transition counterproof deliberately preserves document/host heights');
+    assert.ok(shifted.violation,'content shifted during arrow transition is rejected before it can enter the baseline');
+    await page.evaluate(()=>window.__rosterArrowWindow.finish());
   } finally { await page.close(); }
   results.push('scroll preparation counterproofs: insufficient extent, unreachable target, 1px drift and strict movement/layout rejection; no repeated positioning');
 }
@@ -247,7 +268,7 @@ try {
     const cardReading=await page.locator('.cc-roster-program-head-v1397').first().evaluate(el=>{const h=el.querySelector('h3'),small=el.querySelector('small'),st=getComputedStyle(small),canvas=document.createElement('canvas').getContext('2d');canvas.font=st.font;const words=small.textContent.toUpperCase().split(/\s+/);return {titleColor:getComputedStyle(h).color,activityColor:st.color,activityWidth:small.getBoundingClientRect().width,widestWord:Math.max(...words.map(w=>canvas.measureText(w).width+Math.max(0,w.length-1)*(parseFloat(st.letterSpacing)||0))),icon:getComputedStyle(el.querySelector('.cc-roster-program-icon-v1397')).display};});if(theme==='dark'){assert.equal(cardReading.titleColor,'rgb(237, 244, 251)');assert.equal(cardReading.activityColor,'rgb(200, 214, 227)');}if(width<=600&&scale===2){assert.equal(cardReading.icon,'none','only the redundant decorative icon yields width at enlarged reading');assert.ok(cardReading.widestWord<=cardReading.activityWidth+1,JSON.stringify({width,height,theme,scale,cardReading}));}
     {const timeLabels=await page.locator('.cc-roster-flight-grid-v1397').first().evaluate(el=>[...el.querySelectorAll('small')].map(e=>{const st=getComputedStyle(e),c=document.createElement('canvas').getContext('2d');c.font=st.font;const text=st.textTransform==='uppercase'?e.textContent.toUpperCase():e.textContent;return {text,width:e.getBoundingClientRect().width,widest:Math.max(...text.split(/\s+/).map(w=>c.measureText(w).width+Math.max(0,w.length-1)*(parseFloat(st.letterSpacing)||0))),font:parseFloat(st.fontSize)};}));const key=`${width}:${height}:${theme}`;if(scale===1)clockLabelFonts.set(key,timeLabels.map(x=>x.font));else {const original=clockLabelFonts.get(key);assert.ok(original&&original.length===timeLabels.length);if(process.env.ROSTER_FALLBACK_FONT||!timeLabels.every(x=>x.widest<=x.width+1)){const report=await captureRosterGeometry({page,browser,selector:'.cc-roster-flight-grid-v1397 small',file:path.join(screenshots,`${width}-${height}-${theme}-${scale}-clock-font-evidence.json`),caseInfo:{width,height,theme,scale,timeLabels}});if(process.env.ROSTER_FALLBACK_FONT)assert.ok(report.platformFonts?.length&&report.platformFonts.every(fonts=>fonts.some(font=>/^DejaVu Sans/.test(font.familyName)&&font.glyphCount>0)),'requested installed fallback actually renders');}assert.ok(timeLabels.every((x,i)=>x.widest<=x.width+1&&x.font>=original[i]*2-.1),JSON.stringify({width,height,theme,scale,timeLabels,original}));}}
     await page.screenshot({path:path.join(screenshots,`${width}-${height}-${theme}-${scale}-full-app-fallback.png`),fullPage:false});
-    const beforeArrow=await page.evaluate(()=>({doc:document.scrollingElement.scrollHeight,host:document.querySelector('.cz-app').getBoundingClientRect().height}));await prepareRosterScroll(page,80);await page.evaluate(beginRosterArrowWindow);const top=page.getByRole('button',{name:'Voltar ao topo',exact:true});await top.waitFor().catch(async error=>{
+    const beforeArrow=await page.evaluate(()=>({doc:document.scrollingElement.scrollHeight,host:document.querySelector('.cz-app').getBoundingClientRect().height}));const stimulus=await page.evaluate(beginRosterArrowWindow,{target:80});assert.deepEqual(stimulus.current.scroll,[0,80,80],'single measured stimulus reaches document80');const top=page.getByRole('button',{name:'Voltar ao topo',exact:true});await top.waitFor().catch(async error=>{
       // Preserve the original timeout; diagnostics do not retry or scroll again.
       let timer;try {const after=await Promise.race([page.evaluate(()=>{const read=(includeControls=false)=>{const root=document.scrollingElement,header=document.querySelector('.cz-app > .cz-global-header'),arrow=document.querySelector('.cc-back-to-top'),nav=document.querySelector('body > nav.cz-bottom-nav[aria-label="Navegação principal"]'),active=document.activeElement;return {now:performance.now(),visibility:document.visibilityState,focused:document.hasFocus(),scroll:[scrollX,scrollY],root:{top:root.scrollTop,height:root.scrollHeight,client:root.clientHeight,scrollBehavior:getComputedStyle(root).scrollBehavior,overflow:getComputedStyle(root).overflowY},viewport:{width:innerWidth,height:innerHeight,visualTop:visualViewport?.offsetTop,visualHeight:visualViewport?.height},editing:Boolean(active?.matches('input, textarea, select, [contenteditable="true"]')),active:active?.tagName+':'+(active?.getAttribute('aria-label')||active?.textContent?.trim().slice(0,80)),blocked:[...document.querySelectorAll('dialog[open], [aria-modal="true"], .cz-menu-overlay, .cz-busy, .cc-play-update-notice')].map(el=>el.tagName+'.'+el.className),header:header?.getBoundingClientRect().toJSON(),nav:nav?.getBoundingClientRect().toJSON(),arrow:arrow?{box:arrow.getBoundingClientRect().toJSON(),position:getComputedStyle(arrow).position,display:getComputedStyle(arrow).display,visibility:getComputedStyle(arrow).visibility,opacity:getComputedStyle(arrow).opacity,last:arrow===arrow.parentElement.lastElementChild}:null,controls:includeControls?[...document.querySelectorAll('button, a, input, select, textarea, summary, [role=button], label[for]')].filter(el=>el!==arrow).map(el=>({name:el.getAttribute('aria-label')||el.textContent?.trim().slice(0,80),box:el.getBoundingClientRect().toJSON(),visibility:getComputedStyle(el).visibility,pointer:getComputedStyle(el).pointerEvents})).filter(x=>x.box.width>0&&x.box.height>0&&x.box.top<innerHeight&&x.box.bottom>0&&x.box.right>innerWidth-64):undefined,ancestors:header?[...function*(el){while(el){yield el;el=el.parentElement}}(header)].map(el=>({tag:el.tagName,class:el.className,top:el.scrollTop,height:el.scrollHeight,client:el.clientHeight,overflow:getComputedStyle(el).overflowY})):[]};}; return {...read(true), strictWindow: window.__rosterArrowWindow?.read()};}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('diagnostic read timeout')),2000)})]);console.log('SYNTHETIC_ARROW_TRACE '+JSON.stringify({outcome:'timeout',engine:browser.version(),width,height,theme,scale,baselineExtent:beforeArrow,requestedScroll:80,after}));}catch(diagnostic){console.log('SYNTHETIC_ARROW_TRACE '+JSON.stringify({outcome:'timeout',diagnostic:String(diagnostic)}));}finally{clearTimeout(timer)}throw error;
     });assert.deepEqual(await page.evaluate(()=>({doc:document.scrollingElement.scrollHeight,host:document.querySelector('.cz-app').getBoundingClientRect().height})),beforeArrow,'floating arrow never changes document extent');await page.screenshot({path:path.join(screenshots,`${width}-${height}-${theme}-${scale}-arrow-80px.png`),fullPage:false});
@@ -258,7 +279,7 @@ try {
   // A genuinely ineligible runtime must still fail the original visibility wait
   // even after a successful, stable 80px preparation. Never blur to make it pass.
   await page.evaluate(()=>{const input=document.createElement('input');input.id='qa-arrow-editing';input.setAttribute('aria-label','SYNTHETIC editing counterproof');input.style.position='fixed';document.body.append(input);input.focus({preventScroll:true});});
-  await prepareRosterScroll(page,80);await page.evaluate(beginRosterArrowWindow);
+  await prepareRosterScroll(page,0);const hiddenStimulus=await page.evaluate(beginRosterArrowWindow,{target:80});assert.deepEqual(hiddenStimulus.current.scroll,[0,80,80]);
   await assert.rejects(()=>page.getByRole('button',{name:'Voltar ao topo',exact:true}).waitFor(),error=>error.name==='TimeoutError');
   assert.equal(await page.evaluate(()=>scrollY),80);
   assert.equal(await page.evaluate(()=>document.activeElement===document.getElementById('qa-arrow-editing')),true);
