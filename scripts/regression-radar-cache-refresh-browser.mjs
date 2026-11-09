@@ -15,6 +15,7 @@ const source=baseline?execFileSync('git',['show',baseline+':client/src/pages/Hom
 const ast=ts.createSourceFile('Home.tsx',source,99,true,ts.ScriptKind.TSX);
 const names=['RadarView','validatedRadarForEvent','radarGateInfo','radarFlightDateLabel','radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','readRadarSnapshot','saveRadarSnapshot','fetchRadarSnapshot','setBrowserRadarContext','browserRadarGeneration','invalidateBrowserRadarResponse','browserRadarSignature','readBrowserRadarSnapshot','browserRadarDisplayDeadline'];
 const functions=names.map(name=>{const n=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);if(!n&&baseline)return '';assert(n,name);return n.getText(ast)}).join('\n');
+const followCandidate=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='followCandidate')?.getText(ast)||'';
 const globals=['browserRadarContext','browserRadarResponses','browserRadarInvalidations','radarQuerySerial'].map(name=>{
  const n=ast.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)===name));if(!n&&baseline)return '';assert(n,name);return n.getText(ast);
 }).join('\n');
@@ -23,6 +24,7 @@ assert(recordType||baseline);
 if(!baseline){const issuers=[];function visit(n,owner=''){if(ts.isFunctionDeclaration(n))owner=n.name?.text||'';if(ts.isCallExpression(n)&&n.expression.getText(ast)==='browserRadarResponses.set')issuers.push(owner);ts.forEachChild(n,c=>visit(c,owner))}visit(ast);assert.deepEqual(issuers,['fetchRadarSnapshot'],'only the accepted authenticated fetch may mint presentation ownership')}
 
 const code=`import React,{useState,useEffect,useRef} from 'react';import {createRoot} from 'react-dom/client';import {Plane,ShieldCheck,Radar,Globe2,CloudSun} from 'lucide-react';
+import {followedFlight} from './shared/followedFlights.mjs';
 import {getStoredUser,getToken,getMe,captureAuthSession,authFetch} from '@/lib/authClient';import * as gate from '@/lib/nextFlightGate';
 import {beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission,setOperationalRadarContext} from '@/lib/operationalRadarAdmission';
 import {gateQueryDay,originFlightDate,publishedGateDate,radarResultDecision,radarSourceEpoch,gateQuerySuppressed} from './shared/gate-query-day.mjs';
@@ -36,6 +38,7 @@ window.requests=[];const nativeFetch=window.fetch.bind(window);window.fetch=(url
 ${recordType?.getText(ast)||''}
 ${baseline?'const setBrowserRadarContext=()=>{};':''}
 ${globals}
+${followCandidate}
 ${functions}
 const events={one:{id:'SYNTHETIC-ONE',kind:'flight',flightNumber:'LA9001',origin:'BSB',destination:'CGH',day:{date:'20/10/2032'},canonical:{date:'20/10/2032',startDateTime:'2032-10-20T12:00:00.000Z'}},two:{id:'SYNTHETIC-TWO',kind:'flight',flightNumber:'LA9002',origin:'CGH',destination:'BSB',day:{date:'21/10/2032'},canonical:{date:'21/10/2032',startDateTime:'2032-10-21T12:00:00.000Z'}}};
 let selected=events.one;const app=createRoot(document.getElementById('root'));
@@ -76,7 +79,7 @@ try {
   const count=()=>page.evaluate(()=>window.requests.length);
   const start=async()=>{const n=await count();await page.evaluate(()=>window.fetchRadar());await page.waitForFunction(n=>window.requests.length===n+1,n);return n};
   const queryGate=async(gate,extra={})=>{const n=await start();await reply(n,gate,extra);return n};
-  await page.waitForFunction(()=>window.requests?.length===1);await gateIs('Não confirmado');
+  await page.waitForFunction(()=>window.requests?.length===1).catch(async error=>{console.error(JSON.stringify({errors,body:await page.locator('body').innerText()}));throw error});await gateIs('Não confirmado');
   await reply(0,'12');await gateIs('12');
   await queryGate('14');await gateIs('14');assert.equal(await page.evaluate(()=>window.radarListeners.size),1);
   const beforeSignals=await count();
