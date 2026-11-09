@@ -1,0 +1,26 @@
+name: Google Calendar session continuity
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/googleCalendarOAuthBridge.ts'
+      - 'client/src/lib/authClient.ts'
+      - 'scripts/regression-google-calendar-session-fence.mjs'
+      - '.github/workflows/google-calendar-session-fence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  session-continuity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-google-calendar-session-fence.mjs
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-google-calendar-session-fence.mjs
+      - run: npx tsc --noEmit

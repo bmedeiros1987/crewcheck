@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { CREWCHECK_PUSH_ENABLED, pushEventKey, validPushEnvelope } from '../../shared/crewcheckPushContract.mjs';
 // No provider is loaded, no environment flag activates sends, and no credentials
 // are read. Repository/provider are injected only by isolated regression fixtures.
@@ -6,11 +7,19 @@ export async function dispatchMockPush({ repository, mockProvider, installation,
   const eligible = () => validPushEnvelope(envelope) && Number.isFinite(now) && Date.parse(envelope.expiresAt) > now && installation?.active === true && installation.ownerId === envelope.ownerId && installation.installationId === envelope.installationId && installation.revision === envelope.consentRevision && context?.ownerId === envelope.ownerId && context?.sourceVerified === true && context?.eligible === true && context?.consent === true;
   if (!eligible()) return { status: 'blocked', received: null };
   const key = pushEventKey(envelope.ownerId, envelope.eventKey, envelope.installationId, envelope.consentRevision);
-  return repository.transaction(key, async record => {
+  const claimId = randomUUID();
+  const claim = await repository.transaction(key, async record => {
     if (record.status) return { status: record.status, received: null };
     if (!await repository.isCurrent(installation, context)) return { status: 'revoked', received: null };
     if (Date.parse(envelope.expiresAt) <= clock() || !await repository.isCurrent(installation, context)) return { status: 'expired_or_revoked', received: null };
-    await record.save({ status: 'dispatching', key });
+    await record.save({ status: 'dispatching', key, claimId });
+    return { claimId };
+  });
+  if (!claim?.claimId) return claim;
+  // The first transaction commits before any provider I/O. A crash/rollback in
+  // this second transaction leaves dispatching durable and cannot resend.
+  return repository.transaction(key, async record => {
+    if (record.status !== 'dispatching' || record.claimId !== claimId) return { status: 'uncertain', received: null };
     if (Date.parse(envelope.expiresAt) <= clock() || !await repository.isCurrent(installation, context)) { await record.save({status:'expired_or_revoked',key}); return {status:'expired_or_revoked',received:null}; }
     try {
       const result = await mockProvider.send(envelope);

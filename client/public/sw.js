@@ -1,4 +1,4 @@
-importScripts('/crewcheck-push-offline.js');
+importScripts('/crewcheck-gate-receiver-offline.js','/crewcheck-push-offline.js');
 const CREWCHECK_UPDATE_BUILD_ID='__CREWCHECK_UPDATE_BUILD_ID__';
 const CREWCHECK_UPDATE_ENTRY='__CREWCHECK_UPDATE_ENTRY__';
 const CREWCHECK_UPDATE_ASSETS=[];
@@ -36,9 +36,16 @@ function isSameOriginAsset(value) {
   }
 }
 
+function hasPrivateCachePolicy(response) {
+  return /(?:^|,)\s*private(?:\s|,|=|$)/i.test(response.headers.get('cache-control') || '')
+    || /(?:^|,)\s*(?:authorization|cookie|\*)\s*(?:,|$)/i.test(response.headers.get('vary') || '');
+}
 async function precachePreparedShell() {
   const cache = await caches.open(CACHE_NAME);
+  // Preserve the build-owned pair even when every fetch hits the prepared shell.
+  await caches.open(RUNTIME_CACHE);
   const indexResponse = await fetch('/', { cache: 'no-store' });
+  if (hasPrivateCachePolicy(indexResponse)) throw new Error('Private update entry response');
   if (!indexResponse.ok) throw new Error(`CrewCheck shell unavailable (${indexResponse.status})`);
   const html = await indexResponse.clone().text();
   if(/^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID)&&!(await matchesBuildHtml(indexResponse)))throw new Error('Announced worker build does not match served entry');
@@ -60,6 +67,7 @@ async function precachePreparedShell() {
     if (url === '/' || url === '/index.html') return;
     const response = await fetch(url, { cache: 'no-store' });
     if(!response.ok)throw new Error('Incomplete update download');
+    if(hasPrivateCachePolicy(response))throw new Error('Private update asset response');
     if(/\.(?:m?js)(?:\?|$)/.test(url)&&!/(?:java|ecma)script/.test(response.headers.get('content-type')||''))throw new Error('Update script was not served');
     if(/\.css(?:\?|$)/.test(url)&&!/(?:text\/css)/.test(response.headers.get('content-type')||''))throw new Error('Update stylesheet was not served');
     await cache.put(url, response.clone());
@@ -169,6 +177,7 @@ async function cleanupRetiredBuildCaches(arrivingClientId = '') {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
+    await withBuildCacheLock(purgeUnsafeRuntimeEntries);
     await cleanupRetiredBuildCaches();
     const openPages=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     if(openPages.length===0)await cleanupSharedPdfs();
@@ -202,6 +211,75 @@ function isApiRequest(url) {
   return url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/');
 }
 
+// Privacy boundary: generic runtime caching is for public static assets only.
+function isPublicBuildRequest(request) {
+  const url = new URL(request.url);
+  return request.method === 'GET' && url.origin === self.location.origin
+    && !['authorization','proxy-authorization','cookie','x-api-key','x-auth-token'].some(name => request.headers?.has(name))
+    && [...url.searchParams.keys()].every(name => ['v','brand'].includes(name))
+    && (url.pathname === '/manifest.json' || (/^(?:\/assets\/|\/icons\/|\/fonts\/)/.test(url.pathname)
+      && /\.(?:m?js|css|woff2?|ttf|png|jpe?g|webp|svg|ico|mp3|mp4|ogg|wav|webm|json)$/.test(url.pathname)));
+}
+function isPublicRuntimeRequest(request) {
+  const pathname = new URL(request.url).pathname;
+  return isPublicBuildRequest(request) && (pathname === '/manifest.json' || !/\.(?:mp3|mp4|ogg|wav|webm|json)$/.test(pathname));
+}
+function isPublicAssetType(request, response, listedShell = false) {
+  const pathname = new URL(request.url).pathname;
+  const type = (response?.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (pathname === '/manifest.json') return type === 'application/json' || type === 'application/manifest+json';
+  if (/\.json$/.test(pathname)) return listedShell && type === 'application/json';
+  if (/\.m?js$/.test(pathname)) return /^(?:text|application)\/(?:javascript|ecmascript)$/.test(type);
+  if (/\.css$/.test(pathname)) return type === 'text/css';
+  // The production static server uses octet-stream for public binary assets.
+  // Only exact shell-manifest membership may authorize that compatibility path.
+  if (listedShell && type === 'application/octet-stream'
+      && /\.(?:woff2?|ttf|png|jpe?g|webp|svg|ico|mp3|mp4|ogg|wav|webm)$/.test(pathname)) return true;
+  if (/\.(?:mp3|mp4|ogg|wav|webm)$/.test(pathname)) return listedShell && /^(?:audio|video)\//.test(type);
+  if (/\.(?:woff2?|ttf)$/.test(pathname)) return /^(?:font\/|application\/(?:font|x-font))/.test(type);
+  return /^image\//.test(type);
+}
+function isPublicRuntimeResponse(request, response) {
+  return isPublicRuntimeRequest(request) && isPublicAssetType(request, response) && response?.status === 200
+    && /(?:^|,)\s*(?:public|max-age\s*=)/i.test(response.headers.get('cache-control') || '')
+    && response.type !== 'opaque' && !response.redirected
+    && !/(?:^|,)\s*(?:no-store|private)(?:\s|,|=|$)/i.test(response.headers.get('cache-control') || '')
+    && !hasPrivateCachePolicy(response);
+}
+const BUILD_CACHE_NAME_PATTERN = /^crewcheck-v[\d.]+-(?:offline-)?(?:shell|runtime)(?:-[a-zA-Z0-9]+)*$/;
+async function matchPublicBuildAsset(request) {
+  // Keep prior build chunks, but never search shared-PDF, OCR or arbitrary origin caches.
+  if (!isPublicBuildRequest(request)) return undefined;
+  const names = await caches.keys();
+  for (const name of new Set([CACHE_NAME, RUNTIME_CACHE, ...names.filter(name => BUILD_CACHE_NAME_PATTERN.test(name))])) {
+    const cache = await caches.open(name);
+    // Inspect the stored request as well: Cache.match ignores Authorization by default.
+    for (const stored of await cache.keys(request)) {
+      const response = await cache.match(stored);
+      const isShell = /-(?:offline-)?shell(?:-|$)/.test(name);
+      const ready = isShell ? await cache.match(UPDATE_READY_KEY) : null;
+      const manifest = ready ? await ready.json().catch(() => null) : null;
+      const listed = Array.isArray(manifest?.urls) && manifest.urls.some(value => new URL(value, self.location.origin).href === request.url);
+      // Prepared shell downloads deliberately use no-store; only explicitly listed
+      // public build assets may use that exception, never generic runtime entries.
+      const shellSafe = isShell && listed && isPublicBuildRequest(stored)
+        && isPublicAssetType(stored, response, true) && response?.status === 200 && !response.redirected
+        && !hasPrivateCachePolicy(response);
+      if (shellSafe || (isPublicRuntimeResponse(stored, response) && isPublicRuntimeResponse(request, response))) return response;
+    }
+  }
+}
+async function purgeUnsafeRuntimeEntries() {
+  // Scoped entry deletion only; no whole-cache deletion or shared-PDF/roster mutation.
+  for (const name of await caches.keys()) {
+    if (!/^crewcheck-v[\d.]+-(?:offline-)?runtime(?:-[a-zA-Z0-9]+)*$/.test(name)) continue;
+    const cache = await caches.open(name);
+    for (const request of await cache.keys()) {
+      if (!isPublicRuntimeResponse(request, await cache.match(request))) await cache.delete(request);
+    }
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -214,6 +292,9 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET') return;
 
+  // OCR owns a verified public-model cache; never duplicate it in runtime caches.
+  if (url.pathname.startsWith('/ocr/')) return;
+
   if (url.pathname.startsWith(SHARED_PDF_ROUTE)) {
     event.respondWith((async () => {
       await cleanupSharedPdfs();
@@ -223,6 +304,11 @@ self.addEventListener('fetch', (event) => {
       await cache.delete(request);
       return response;
     })());
+    return;
+  }
+
+  if (['authorization','proxy-authorization','cookie','x-api-key','x-auth-token'].some(name => request.headers?.has(name))) {
+    event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => Response.error()));
     return;
   }
 
@@ -247,7 +333,7 @@ self.addEventListener('fetch', (event) => {
       await cleanupRetiredBuildCaches(arrivingClientId).catch(() => undefined);
       try {
         const response = await fetch(request, { cache: 'no-store' });
-        if (response.ok && /^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID) && (await matchesBuildHtml(response))) {
+        if (response.ok && !hasPrivateCachePolicy(response) && /^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID) && (await matchesBuildHtml(response))) {
           const cache = await caches.open(CACHE_NAME);
           await cache.put('/', response.clone());
           await cache.put('/index.html', response.clone());
@@ -262,16 +348,14 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith((async () => {
-    const shell = await caches.open(CACHE_NAME);
-    const runtime = await caches.open(RUNTIME_CACHE);
-    // Preserve old chunks used by still-open forms/tabs after explicit activation.
-    const cached = (await shell.match(request)) || (await runtime.match(request)) || (await caches.match(request));
+    const cached = await matchPublicBuildAsset(request);
     if (cached) return cached;
+    const runtime = await caches.open(RUNTIME_CACHE);
 
     try {
       const response = await fetch(request, { cache: 'no-store' });
-      if (response && response.status === 200) {
-        await runtime.put(request, response.clone());
+      if (isPublicRuntimeResponse(request, response)) {
+        await runtime.put(new Request(request.url), response.clone());
         await trimCache(RUNTIME_CACHE);
       }
       return response;

@@ -9,3 +9,6 @@ android-wrapper/lifecompanion/libs/*.aar
 # Verified local result of the legacy source preparation pipeline.
 .crewcheck-source-preparation.json
 .crewcheck-source-preparation.json.tmp
+
+# Pinned public OCR assets generated and hash-verified at build time.
+/client/public/ocr/

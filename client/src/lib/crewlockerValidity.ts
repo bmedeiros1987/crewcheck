@@ -2,7 +2,7 @@
 export type ValidityDate = { kind: 'exact'; value: string } | { kind: 'month'; value: string } | { kind: 'permanent' } | { kind: 'unknown' };
 export type ValidityEntry = {
   id: string; revision: number; category: 'license' | 'rating' | 'medical' | 'other'; label: string;
-  expiry: ValidityDate; confirmed: boolean; origin: 'manual' | 'proposed';
+  expiry: ValidityDate; confirmed: boolean; origin: 'manual' | 'proposed' | 'pdf_text';
   sourceCheck: 'pending' | 'verified' | 'invalid'; signatureCheck: 'unknown' | 'verified' | 'invalid';
   fitnessCheck: 'not_assessed'; supersededBy?: string;
 };
@@ -38,7 +38,7 @@ export function validateEntries(value: unknown): asserts value is ValidityEntry[
   for (const v of value) {
     if (!v || typeof v.id !== 'string' || !v.id || ids.has(v.id) || !Number.isInteger(v.revision) || v.revision < 1
       || !['license','rating','medical','other'].includes(v.category) || typeof v.label !== 'string' || !v.label.trim() || v.label.length > 100
-      || !isValidityDate(v.expiry) || typeof v.confirmed !== 'boolean' || !['manual','proposed'].includes(v.origin)
+      || !isValidityDate(v.expiry) || typeof v.confirmed !== 'boolean' || !['manual','proposed','pdf_text'].includes(v.origin)
       || !['pending','verified','invalid'].includes(v.sourceCheck) || !['unknown','verified','invalid'].includes(v.signatureCheck)
       || v.fitnessCheck !== 'not_assessed' || (v.expiry.kind === 'permanent' && v.category !== 'license')
       || (v.supersededBy !== undefined && (typeof v.supersededBy !== 'string' || v.supersededBy === v.id))) throw new Error('Revise os registros de validade.');

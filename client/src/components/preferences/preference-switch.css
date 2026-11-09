@@ -1,0 +1,12 @@
+.cc-preference-switch{position:relative;display:inline-block!important;flex:0 0 48px;width:48px;height:44px;min-width:48px;vertical-align:middle}
+.cc-preference-switch>input[type=checkbox]{position:absolute;inset:0;display:block;width:48px!important;height:44px!important;min-height:44px!important;min-width:48px!important;margin:0!important;padding:0!important;opacity:0;cursor:pointer;z-index:1}
+.cc-preference-switch>.cc-preference-switch-track{position:absolute;inset:8px 0;display:block;border:1px solid #718096;border-radius:999px;background:#526173;pointer-events:none;box-sizing:border-box;transition:background .15s ease}
+.cc-preference-switch-track::before{content:'';position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0005;transition:transform .15s ease}
+.cc-preference-switch>input:checked+.cc-preference-switch-track{background:#137c44;border-color:#137c44}
+.cc-preference-switch>input:checked+.cc-preference-switch-track::before{transform:translateX(20px)}
+.cc-preference-switch>input:focus-visible+.cc-preference-switch-track{outline:3px solid #00a9d2;outline-offset:3px}
+.cc-preference-switch>input:disabled{cursor:default}
+.cc-preference-switch>input:disabled+.cc-preference-switch-track{opacity:.5}
+fieldset:disabled .cc-preference-switch-track{opacity:.5}
+@media(prefers-reduced-motion:reduce){.cc-preference-switch-track,.cc-preference-switch-track::before{transition:none}}
+@media(forced-colors:active){.cc-preference-switch>.cc-preference-switch-track{border-color:ButtonText;background:Canvas}.cc-preference-switch-track::before{background:ButtonText}.cc-preference-switch>input:checked+.cc-preference-switch-track{background:Highlight;border-color:Highlight}}

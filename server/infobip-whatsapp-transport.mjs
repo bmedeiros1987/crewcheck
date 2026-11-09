@@ -43,14 +43,15 @@ async function responseJson(response) {
 
 // No default fetch, network agent or environment lookup. The production entry
 // stays hard OFF; exercise() is explicit dependency-injected test plumbing.
-export function createInfobipTextTransport({ baseUrl, sender, apiKey, request, timeoutMs = 5_000 }) {
+export function createInfobipTextTransport(options) { return buildTransport(options,false); }
+// Same bounded request implementation; no synthetic entrypoint on this surface.
+export function createInfobipProductionTextTransport(options) { return buildTransport(options,true); }
+function buildTransport({ baseUrl, sender, apiKey, request, timeoutMs = 5_000 }, production) {
   if (typeof request !== 'function' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5_000) throw Error('INFOBIP_CONFIGURATION');
   origin(baseUrl);
   if (!phone(sender) || typeof apiKey !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(apiKey)) throw Error('INFOBIP_CONFIGURATION');
   const configuration = Object.freeze({baseUrl, sender, apiKey});
-  return {
-    send: async () => ({status: INFOBIP_WHATSAPP_RELEASE_ENABLED ? 'blocked' : 'disabled'}),
-    async exercise(proposal, {signal: externalSignal} = {}) {
+  async function sendRequest(proposal,{signal:externalSignal}={}) {
       let built;
       try { built = buildInfobipTextRequest(proposal, configuration); }
       catch { return {status: 'blocked'}; }
@@ -75,6 +76,8 @@ export function createInfobipTextTransport({ baseUrl, sender, apiKey, request, t
         })]);
       } catch { return {status: 'uncertain'}; }
       finally { clearTimeout(timer); externalSignal?.removeEventListener('abort', abort); }
-    },
+  }
+  return production ? Object.freeze({send:sendRequest}) : {
+    send:async()=>({status:INFOBIP_WHATSAPP_RELEASE_ENABLED?'blocked':'disabled'}),exercise:sendRequest,
   };
 }

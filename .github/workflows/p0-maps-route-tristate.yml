@@ -4,17 +4,32 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'scripts/lib/roster-geometry-diagnostics.cjs'
       - 'client/src/pages/Home.tsx'
       - 'server.mjs'
       - 'client/src/lib/departureRouteState.ts'
       - 'client/src/components/v1391/useRosterLayout.ts'
       - 'scripts/v139/apply.mjs'
+      - 'scripts/follow-flight/**'
+      - 'shared/followedFlights.*'
+      - 'scripts/regression-followed-flights*.mjs'
+      - 'scripts/departure-roster-projection/**'
+      - 'scripts/regression-departure-roster-projection*.mjs'
+      - 'shared/departureRosterProjection.*'
       - 'scripts/p1-departure-route-state/**'
       - 'scripts/regression-departure-route-*.mjs'
       - 'scripts/regression-departure-positioning-terminal.mjs'
       - 'scripts/regression-positioning-terminal-error-browser.mjs'
       - 'scripts/regression-route-incident-refresh.mjs'
       - 'scripts/regression-roster-layout-session-browser.mjs'
+      - 'scripts/regression-roster-months-browser.mjs'
+      - 'scripts/fixtures/roster-legend-app.tsx'
+      - 'scripts/lib/roster-legend-fixture.mjs'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/v1391/roster-legend.css'
       - 'scripts/v14387d/**'
       - 'scripts/p0-maps-route-tristate/**'
       - 'scripts/regression-p0-maps-route-tristate.mjs'
@@ -30,7 +45,7 @@ permissions:
 
 jobs:
   route-tristate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -55,11 +70,24 @@ jobs:
           node scripts/regression-departure-route-state.mjs
           node scripts/regression-departure-route-effects.mjs
           node scripts/regression-departure-positioning-terminal.mjs
+          node scripts/regression-followed-flights.mjs
+          node scripts/regression-followed-flights-ui.mjs
+          node scripts/regression-departure-roster-projection.mjs
+          node scripts/regression-departure-roster-projection-ui.mjs
           node scripts/regression-v14-3-34-positioning-radar-cache.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Vite production build
         run: npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated Chromium test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/route-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -71,6 +99,7 @@ jobs:
           DEPARTURE_TEST_ORIGIN: http://127.0.0.1:4197
           DEPARTURE_EVIDENCE_FILE: ${{ runner.temp }}/departure-route-state.json
         run: |
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-months-browser.mjs
           node scripts/regression-roster-layout-session-browser.mjs
           node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 4197 --strictPort > "$RUNNER_TEMP/route-preview.log" 2>&1 &
           route_preview_pid=$!
@@ -81,3 +110,4 @@ jobs:
           done
           node scripts/regression-departure-route-state-browser.mjs
           node scripts/regression-positioning-terminal-error-browser.mjs
+          node scripts/regression-followed-flights-browser.mjs

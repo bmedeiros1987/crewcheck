@@ -20,7 +20,7 @@ assert.equal(read([record(8, { expectedPaymentDate: '2033-02-21', amountMinor: n
 assert.equal(read([record(8, { expectedPaymentDate: '2031-12-21', amountMinor: 'invalid' }), record(9)]).state, 'available', 'rejected historical record is scoped outside horizon');
 let result = read([record(1), record(2, { ownerId: 'b@example.invalid', amountMinor: 999999 })]);
 assert.equal(result.events.length, 1); assert(!JSON.stringify(result).includes('999999'));
-assert(!JSON.stringify(result).includes('sourceId')); assert(!JSON.stringify(result).includes('history'));
+assert.equal(result.events[0].sourceId, record(1).sourceId); assert.equal(result.events[0].revision, 1); assert(!JSON.stringify(result).includes('history'));
 const multi = [record(1), record(2, { currency: 'JPY', amountMinor: 500, expectedPaymentDate: '2032-12-22' }),
   record(3, { currency: 'KWD', amountMinor: 1234, expectedPaymentDate: '2032-12-23' }), record(4, { expectedPaymentDate: '2032-12-24' })];
 result = read(multi); assert.equal(result.events.length, 3); assert.equal(result.hasMore, true);

@@ -41,6 +41,7 @@ const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].m
 assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
 import React, {useState,useEffect,useMemo} from 'react';
+import {alertText} from '@/lib/alertExperienceText';
 import PresentationStayManagerView from '@/components/v1391/PresentationStayManagerView';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
@@ -53,8 +54,9 @@ import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/pl
 import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
 import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
-import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor} from '@/lib/stayEditorNavigation';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
+import {readStayOperationalProjection} from '@/lib/stayOperationalProjection';
 import {getToken} from '@/lib/authClient';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
@@ -104,7 +106,7 @@ try {
         return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, stays: [], items: [], address: null }) });
       });
       const page = await context.newPage();
-      page.on('pageerror', error => errors.push(error.message));
+      page.on('pageerror', error => { errors.push(error.message); console.error('Browser exception:',error.message); });
       await page.goto(origin + (view === 'presentation' ? '/presentation' : '/'));
       if (view === 'hotels') await page.locator('.cc-hotel-catalog-disclosure > summary').click();
       else await page.getByRole('textbox', { name: 'Aeroporto/local', exact: true }).fill('ZZZ');

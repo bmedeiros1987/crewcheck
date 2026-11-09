@@ -11,7 +11,7 @@ export function wakeupSelectionReadiness(channels, readiness) {
   const selected = normalizeWakeupChannels(channels);
   if (!selected?.length) return {ready:false,channel:null,reason:'Escolha pelo menos um meio. Nenhum despertador foi ativado.'};
   if (selected.length > 1) return {ready:false,channel:null,reason:'Seleção múltipla salva como preferência. O envio combinado ainda não está disponível neste fluxo.'};
-  if (selected[0] === 'phone-call') return {ready:false,channel:null,reason:'Agendamento de ligação telefônica pendente de número verificado e autorização neste fluxo. O teste manual é separado.'};
+  if (selected[0] === 'phone-call') return {ready:false,channel:null,reason:readiness?.phoneCall?.reason === 'phone_binding_unavailable' ? 'Agendamento de ligação indisponível: falta vínculo de telefone verificado no servidor para esta conta. O teste manual é separado.' : 'Agendamento de ligação telefônica pendente de número verificado e autorização neste fluxo. O teste manual é separado.'};
   if (selected[0] === 'telegram-call') return {ready:false,channel:null,reason:'Agendamento de ligação via Telegram pendente de vínculo, franquia e autorização neste fluxo. O teste manual é separado.'};
   if (readiness?.telegramConfigured !== true || readiness?.telegramLinked !== true) return {ready:false,channel:null,reason:readiness ? 'Mensagem Telegram indisponível: confira a configuração e o vínculo desta conta na central.' : 'Disponibilidade desta conta ainda não verificada. Reconecte para consultar.'};
   return {ready:true,channel:'telegram',reason:'Mensagem Telegram disponível para solicitar agendamento. Aceitação não confirma entrega nem despertar.'};

@@ -41,6 +41,7 @@ const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].m
 assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
 import React, {useState,useEffect,useMemo} from 'react';
+import PresentationStayManagerView from '@/components/v1391/PresentationStayManagerView';
 import {alertText} from '@/lib/alertExperienceText';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
@@ -56,6 +57,7 @@ import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
 import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
+import {readStayOperationalProjection} from '@/lib/stayOperationalProjection';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
 import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';
@@ -68,7 +70,7 @@ const events=[event('next',24,'BSB','Hotel sintético em Brasília','14:00'),eve
 window.hotelNavigation=[];
 window.addEventListener('crewcheck:set-view',e=>window.hotelNavigation.push(e.detail));
 window.applyHotelTheme=setCrewCheckThemePreference;
-function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel="Voltar ao FlightDeck"/></InternalHeaderFrame><HotelsView events={events}/></main><BottomNav view="hotels" setView={view=>window.hotelNavigation.push(view)} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
+function App(){const [view,setView]=useState('hotels');useEffect(()=>{const navigate=e=>setView(e.detail);window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel={view==='presentation'?'Voltar ao pernoite':'Voltar ao FlightDeck'} onMenu={view==='presentation'?returnFromStayProgramEditor:undefined}/></InternalHeaderFrame>{view==='presentation'?<PresentationStayManagerView events={events} embedded/>:<HotelsView events={events}/>}</main><BottomNav view={view} setView={setView} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
 await build({ stdin: { contents: entry, loader: 'tsx', resolveDir: process.cwd() }, bundle: true, platform: 'browser', format: 'esm', jsx: 'automatic', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, MODE: 'test', BASE_URL: '/' }) } });
@@ -85,6 +87,8 @@ const server = http.createServer((req, res) => {
 });
 const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url);
 const engines = require('playwright');
+const selectedEngines=(process.env.MENU_BROWSER_ENGINES||'chromium,webkit').split(',');
+assert(selectedEngines.length&&selectedEngines.every(engine=>['chromium','webkit'].includes(engine)),'Only explicitly selected supported browser engines');
 const results = [];
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
@@ -132,10 +136,10 @@ async function inspect(page, name) {
     const disclosure = page.locator('.cc-hotel-catalog-disclosure > summary');
     await disclosure.click();
     await page.getByRole('button', { name: 'Informar manualmente', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Nome do hotel', exact: true }).fill('Hotel sintético de teste');
-    await page.getByRole('button', { name: i ? 'Fechar cadastro' : 'Cancelar', exact: true }).click();
-    await page.locator('.cz-manual-hotel-form').waitFor({ state: 'detached' });
-    await disclosure.click();
+    await page.getByRole('textbox', { name: 'Hotel', exact: true }).fill('Hotel sintético de teste');
+    await page.getByRole('button', { name: 'Voltar ao pernoite', exact: true }).first().click();
+    await page.getByRole('heading', { name: 'Hotéis e pernoites', exact: true }).waitFor();
+    assert.equal(await page.locator('.cc-stay-editor-header').count(),0,'Returning closes the actual canonical editor without saving');
   }
   await page.locator('.cc-stay-more > summary').last().click();
   await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
@@ -148,11 +152,11 @@ async function inspect(page, name) {
   await page.locator('.cc-stay-more > summary').last().click();
   await page.getByRole('button', { name: 'Voltar ao FlightDeck', exact: true }).click();
   assert.equal(await page.evaluate(() => window.hotelNavigation.at(-1)), 'cockpit', 'Actual Brand retains Back event');
-  results.push({ name, metrics, longOption, checks: ['spacing', 'focus clearance', 'keyboard reset', 'long option', 'repeated manual edit/cancel/close', 'footer scroll clearance', 'Brand Back event'] });
+  results.push({ name, metrics, longOption, checks: ['spacing', 'focus clearance', 'keyboard reset', 'long option', 'repeated canonical edit/return without save', 'footer scroll clearance', 'Brand Back event'] });
 }
 try {
-  for (const engine of ['chromium', 'webkit']) {
-    const browser = await engines[engine].launch({ headless: true });
+  for (const engine of selectedEngines) {
+    const browser = await engines[engine].launch({ headless: true, ...(engine==='chromium'&&process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}) });
     try {
       for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
         const context = await browser.newContext({ viewport, isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
@@ -180,13 +184,12 @@ try {
           const disclosure = page.locator('.cc-hotel-catalog-disclosure > summary');
           await disclosure.click();
           await page.getByRole('button', { name: 'Informar manualmente', exact: true }).click();
-          const input = page.getByRole('textbox', { name: 'Nome do hotel', exact: true });
+          const input = page.getByRole('textbox', { name: 'Hotel', exact: true });
           await input.focus();
           await page.setViewportSize({ width: 390, height: 420 });
           await input.fill('Teclado simulado pela redução do viewport');
-          await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+          await page.getByRole('button', { name: 'Voltar ao pernoite', exact: true }).first().click();
           await page.setViewportSize({ width: 390, height: 844 });
-          await disclosure.click();
           await inspect(page, `${engine}-keyboard-resize-restored`);
         }
         assert.deepEqual(errors, [], 'Actual component renders without browser exceptions');
@@ -199,5 +202,5 @@ try {
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), scope: 'Actual prepared HotelsView/Brand/BottomNav and full Vite CSS, synthetic event/API/account data. Rotation and keyboard-height simulation; physical Android overlays and nonzero safe-area emulation are not claimed.', results }, null, 2));
   await new Promise(resolve => server.close(resolve));
 }
-assert.equal(results.length, 16, 'Complete Chromium/WebKit viewport/theme/rotation/keyboard matrix');
-console.log('PASS: all 16 prepared hotel control layout and interaction cases');
+assert.equal(results.length, selectedEngines.length*8, 'Complete selected viewport/theme/rotation/keyboard matrix; default CI runs16Chromium/WebKit cases');
+console.log(`PASS: all ${results.length} prepared hotel control layout and interaction cases (${selectedEngines.join(',')}); default CI includes Chromium+WebKit`);

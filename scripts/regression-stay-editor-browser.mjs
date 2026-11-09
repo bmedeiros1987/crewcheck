@@ -29,6 +29,7 @@ import {createRoot} from 'react-dom/client';
 import Presentation from '@/components/v1391/PresentationStayManagerView';
 import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
+import {readStayOperationalProjection} from '@/lib/stayOperationalProjection';
 import {getToken} from '@/lib/authClient';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';

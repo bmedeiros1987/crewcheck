@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {vacationPaymentTiming} from '../shared/financialVacationTiming.mjs';
+const input={ownerId:'synthetic-A',plan:{ownerId:'synthetic-A',revision:2,startDate:'2032-11-01'},lawApplicable:true};
+const run=(startDate,override={})=>vacationPaymentTiming({...input,plan:{...input.plan,startDate},...override});
+assert.equal(run('2032-11-01').deadlineDate,'2032-10-30');
+assert.equal(run('2032-11-01').expectedDepositDate,null);assert.equal(run('2032-11-01').paymentConfirmed,false);
+assert.equal(run('2032-03-01').deadlineDate,'2032-02-28');
+assert.equal(run('2031-03-01').deadlineDate,'2031-02-27');
+assert.equal(run('2032-01-01').deadlineDate,'2031-12-30');
+assert.equal(run('2032-11-08').deadlineDate,'2032-11-06','Saturday deadline stays Saturday; no bank-day roll');
+assert.equal(run(null).deadlineDate,null);assert.equal(run('2032-11').deadlineDate,null);
+for(const invalid of ['2031-02-29','2032-02-30','2032-13-01','01/11/2032','2032-11-01T00:00:00Z'])assert.equal(run(invalid).deadlineDate,null);
+assert.equal(run('2032-11-01',{ownerId:'synthetic-B'}).deadlineDate,null);
+assert.equal(run('2032-11-01',{lawApplicable:false}).deadlineDate,null);
+assert.equal(run('2032-11-01',{plan:{...input.plan,revision:0}}).deadlineDate,null);
+assert.equal(vacationPaymentTiming().deadlineDate,null);
+const before=JSON.stringify(input);vacationPaymentTiming(input);assert.equal(JSON.stringify(input),before);
+console.log('PASS vacation legal deadline: civil date minus two calendar days, month-only unavailable, leap/year/weekend boundaries, owner/revision/applicability, no deposit or payment inference; synthetic only');

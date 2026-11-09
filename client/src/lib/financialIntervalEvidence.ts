@@ -1,3 +1,6 @@
+// Source inventory and surviving interval evidence share the financial boundary.
+export { aimsFlightSourceCoveragePending } from './aimsFlightSourceCoverage';
+
 /** Published wall clocks, not finite canonical fallback instants, establish
  * forecast completeness. This never establishes a payment confirmation. */
 const validClock = (value: unknown) => /^(?:[01]?\d|2[0-3]):[0-5]\d(?:\(\+\d+\))?$/.test(String(value || ''));

@@ -1,9 +1,11 @@
 import { CIRIUM_SKY_PRODUCTION_ENABLED, productionCiriumSkyTransport, runCiriumSkyRadar } from './cirium-sky-transport.mjs';
 import { evaluateCiriumRadar } from './cirium-radar-provider.mjs';
+import { ciriumFlexRadarOptions } from './radar-paid-sources.mjs';
 
-// Production remains hard OFF; no HTTP/env activation or credential reads.
+// Sky stays hard OFF (Contract Plan). The Commercial Plan's Flex Flight Status is the
+// sequential primary only with CIRIUM_FLEX_RADAR_ENABLED=true; otherwise undefined.
 export function defaultCiriumRadarOptions() {
-  return CIRIUM_SKY_PRODUCTION_ENABLED ? { enabled: true, transport: productionCiriumSkyTransport() } : undefined;
+  return CIRIUM_SKY_PRODUCTION_ENABLED ? { enabled: true, transport: productionCiriumSkyTransport(), flightAwareFallback: true } : ciriumFlexRadarOptions();
 }
 export function ciriumRadarInjectionEnabled(options) { return options?.enabled === true; }
 export function ciriumRadarRegistration() { return { key: 'cirium-sky', available: false, state: 'disabled' }; }
@@ -38,5 +40,6 @@ export async function runCiriumRadarInjection(identity, options, requestedFlight
 export function ciriumRadarProjection(item) {
   if (item.provider !== 'cirium-sky') return {};
   return { provider: item.provider, providerState: item.providerState, canonicalReadOnly: true,
+    arrivalMilestones:item.arrivalMilestones||null, statusCode:typeof item.statusCode==='string'?item.statusCode:'', departureDate:item.departureDate||'',
     occurrenceKey: item.occurrenceKey || '', provenance: item.provenance || null, updatedAt: item.updatedAt || null };
 }

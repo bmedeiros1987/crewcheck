@@ -21,7 +21,7 @@ for (const marker of [
   '/api/airport-board?',
   '/api/flight-status?',
   "status: 'none'",
-  'Mantido o posicionamento no dia anterior.',
+  'Nenhuma opção confirmada nos dados consultados.',
   'discoverSameDayPositioningFlight(event, plan.originAirport.code',
   "'POSICIONAMENTO A CONFIRMAR'",
   'data-departure-v14334="true"',

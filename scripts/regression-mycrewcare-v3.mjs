@@ -16,6 +16,7 @@ import {
 import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersistentSession.mjs';
 import { MYCREWCARE_BACKGROUND_CAPABILITY, planMyCrewCareSync } from '../shared/myCrewCareSyncPolicy.mjs';
 import { createMyCrewCareNativeAdapter } from '../shared/myCrewCareNativeAdapter.mjs';
+import { myCrewCareObservedStatus } from '../shared/myCrewCareObservedContract.mjs';
 
 const NOW = Date.parse('2026-10-09T12:00:00Z');
 const context = Object.freeze({
@@ -76,6 +77,127 @@ class MemoryStorage {
   write(accountId, value) { this.values.set(accountId, value); }
   clear(accountId) { this.values.delete(accountId); }
 }
+
+class TrackedStorage extends MemoryStorage {
+  constructor() { super(); this.writes = 0; this.clears = 0; }
+  write(accountId, value) { this.writes += 1; super.write(accountId, value); }
+  clear(accountId) { this.clears += 1; super.clear(accountId); }
+}
+
+test('explicit import veto blocks normalized hotel, pickup, cancellation and confirmed-empty envelopes', async () => {
+  const hotel = { direction: 'hotel_only', confirmation: 'confirmed', status: 'published',
+    airport: stay.airport, pairingId: stay.pairingId, hotelName: record.hotelName,
+    reservationStartAt: stay.startAt, reservationEndAt: stay.endAt };
+  for (const records of [[record], [hotel], [{ ...record, status: 'cancelled' }], []]) {
+    const storage = new TrackedStorage();
+    const session = createMyCrewCarePersistentSession({
+      adapter: { read: async request => envelope(request, records, { operationalImportAllowed: false }) },
+      storage, now: () => NOW,
+    });
+    session.setContext(context, [stay]); session.setAutomatic(true);
+    assert.equal(await session.sync(), false);
+    assert.equal(storage.writes, 0); assert.equal(storage.clears, 0); assert.equal(storage.values.size, 0);
+    assert.equal(session.hotel(stay.id), null); assert.equal(session.pickup(stay.id), null);
+    assert.equal(session.state().connected, false); assert.equal(session.state().hasCachedData, false);
+    assert.equal(session.state().lastSuccessfulSyncAt, null);
+    assert.equal(session.state().lastError, 'session-expired');
+  }
+});
+
+test('vetoed refresh preserves prior verified cache and watermark without new writes or removal', async () => {
+  for (const restored of [false, true]) {
+    for (const records of [[{ ...record, hotelName: 'Vetoed hotel', status: 'changed' }],
+      [{ ...record, status: 'cancelled' }], []]) {
+      const storage = new TrackedStorage();
+      let clock = NOW;
+      let veto = false;
+      const adapter = { read: async request => envelope(request, veto ? records : [record], {
+        observedAt: new Date(clock).toISOString(), ...(veto ? { operationalImportAllowed: false } : {}),
+      }) };
+      const create = () => {
+        const session = createMyCrewCarePersistentSession({ adapter, storage, now: () => clock });
+        session.setContext(context, [stay]); session.setAutomatic(true);
+        return session;
+      };
+      let session = create();
+      assert.equal(await session.sync(), true); // Legacy valid contract without the optional field.
+      clock += 20 * 60_000;
+      if (restored) { session = create(); assert.equal(await session.restore(), true); }
+      const before = { raw: storage.read(context.accountId), writes: storage.writes,
+        hotel: session.hotel(stay.id), pickup: session.pickup(stay.id), changes: session.state().changes };
+      veto = true;
+      assert.equal(await session.sync(), false);
+      assert.equal(storage.writes, before.writes); assert.equal(storage.clears, 0);
+      assert.equal(storage.read(context.accountId), before.raw);
+      assert.deepEqual(session.hotel(stay.id), before.hotel);
+      assert.deepEqual(session.pickup(stay.id), before.pickup);
+      assert.deepEqual(session.state().changes, before.changes);
+      assert.equal(session.hotel(stay.id).dataState, 'cached');
+      assert.equal(session.state().status, 'reconnect-required');
+      assert.equal(session.state().connected, false);
+      assert.equal(session.state().lastSuccessfulSyncAt, new Date(NOW).toISOString());
+      assert.equal(session.state().lastError, 'session-expired');
+      veto = false;
+      assert.equal(await session.sync(), true);
+      assert.equal(storage.writes, before.writes + 1);
+    }
+  }
+});
+
+test('an import-allowed boolean cannot substitute envelope authentication or valid records', async () => {
+  const invalid = [
+    { schemaVersion: 1 }, { requestId: 'unrelated-request' },
+    { context: { ...context, accountId: 'other-account' } }, { authenticated: false },
+    { providerSubject: 'other-subject' }, { url: 'https://example.invalid/LATAM/mytravel.aspx' },
+    { error: 'unverified' }, { observedAt: 'invalid' },
+    { observedAt: new Date(NOW + 30_001).toISOString() },
+    { observedAt: new Date(NOW - 15 * 60_000 - 1).toISOString() },
+    { records: undefined }, { records: [], emptyConfirmed: false },
+    { records: [{ ...record, status: 'planned' }] }, { records: [{ ...record, status: 'unknown' }] },
+    { records: [record, { ...record, time: '05:20' }] },
+  ];
+  for (const extra of invalid) {
+    const storage = new TrackedStorage();
+    const session = createMyCrewCarePersistentSession({
+      adapter: { read: async request => envelope(request, [record], { ...extra, operationalImportAllowed: true }) },
+      storage, now: () => NOW,
+    });
+    session.setContext(context, [stay]); session.setAutomatic(true);
+    assert.equal(await session.sync(), false, JSON.stringify(extra));
+    assert.equal(storage.writes, 0); assert.equal(storage.clears, 0);
+    assert.equal(session.hotel(stay.id), null); assert.equal(session.pickup(stay.id), null);
+    assert.equal(session.state().connected, false);
+  }
+});
+
+test('raw PLANNED observation is never operational and native cancellation still stops sync', async () => {
+  const observation = { schemaVersion: 1, operationalImportAllowed: false,
+    status: myCrewCareObservedStatus('PLANNED'), timeZone: null,
+    airport: stay.airport, pairingId: stay.pairingId, hotelName: record.hotelName };
+  assert.deepEqual(observation.status, { raw: 'PLANNED', display: 'Planejada' });
+  for (const allowed of [undefined, false, true]) {
+    for (const raw of [true, false]) {
+      const storage = new TrackedStorage();
+      const adapter = { read: async request => raw
+        ? { ...observation, operationalImportAllowed: allowed }
+        : envelope(request, [observation], { operationalImportAllowed: allowed }) };
+      const session = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+      session.setContext(context, [stay]); session.setAutomatic(true);
+      assert.equal(await session.sync(), false); assert.equal(storage.writes, 0);
+      assert.equal(session.hotel(stay.id), null); assert.equal(session.pickup(stay.id), null);
+      assert.equal(session.state().connected, false);
+    }
+    const storage = new TrackedStorage();
+    const session = createMyCrewCarePersistentSession({
+      adapter: { read: async request => envelope(request, [record], { cancelled: true, operationalImportAllowed: allowed }) },
+      storage, now: () => NOW,
+    });
+    session.setContext(context, [stay]); session.setAutomatic(true);
+    assert.equal(await session.sync(), false);
+    assert.equal(session.state().automatic, false); assert.equal(session.state().connected, false);
+    assert.equal(storage.writes, 0);
+  }
+});
 
 test('travel URL is exact and HTTPS-only', () => {
   assert.equal(isMyCrewCareTravelUrl('https://api2.apicrewcare.com/LATAM/mytravel.aspx'), true);

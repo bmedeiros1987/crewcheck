@@ -66,6 +66,25 @@ export function captureAuthSession() {
 }
 
 
+// Local read admission only. A stored identity/token or successful unrelated API
+// response cannot mint this capability; only this module's canonical getMe can.
+export type ConfirmedGetMe = Readonly<{owner:string;verifiedAt:number}>;
+const confirmedGetMeRecords = new WeakMap<object,{session:ReturnType<typeof captureAuthSession>;request:number;deadline:number;start:number}>();
+let confirmedGetMe: ConfirmedGetMe | null = null;
+let getMeReadGeneration = 0;
+export function isConfirmedGetMeCurrent(value: unknown): value is ConfirmedGetMe {
+  if (!value || typeof value !== 'object') return false;
+  const record=confirmedGetMeRecords.get(value),cap=value as ConfirmedGetMe;
+  const age=Date.now()-cap.verifiedAt;
+  return Boolean(record && value===confirmedGetMe && record.request===getMeReadGeneration
+    && record.session.token && record.session.isCurrent() && cap.owner===record.session.owner
+    && age>=0 && age<300_000 && performance.now()>=record.start && performance.now()<record.deadline);
+}
+export function captureConfirmedGetMe(): ConfirmedGetMe | null {
+  return isConfirmedGetMeCurrent(confirmedGetMe) ? confirmedGetMe : null;
+}
+
+
 export function crewcheckAuthHeader(extra: Record<string, string> = {}): Record<string, string> {
   const token = getToken();
   return { ...extra, ...(token ? { authorization: `Bearer ${token}` } : {}) };
@@ -294,6 +313,9 @@ const GET_ME_TIMEOUT_MS = 10_000;
 
 export async function getMe(options: { isCurrent?(): boolean; onSessionExpired?(): void } = {}): Promise<AuthUser> {
   const session = captureAuthSession();
+  const readStart=typeof performance!=='undefined'?performance.now():NaN;
+  const readGeneration=++getMeReadGeneration;
+  confirmedGetMe=null;
   const isCurrent = () => Boolean(session.token) && session.isCurrent() && (options.isCurrent?.() ?? true);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GET_ME_TIMEOUT_MS);
@@ -301,7 +323,7 @@ export async function getMe(options: { isCurrent?(): boolean; onSessionExpired?(
     // An aborted fetch rejects inside jsonFetch's own try/catch and is classified as
     // backend_unavailable there, the same as any other network failure - a slow backend
     // must fail fast into "try again", not hang the app shell indefinitely.
-    const payload = await jsonFetch<{ ok: boolean; user: AuthUser }>('/api/auth/me', { signal: controller.signal }, { isCurrent, isSameSession: session.isCurrent, onExpired: options.onSessionExpired });
+    const payload = await jsonFetch<{ ok: boolean; authenticated?: boolean; stayAlarmLease?:{serverNow:number;sessionExpiresAt:number}; user: AuthUser }>('/api/auth/me', { signal: controller.signal }, { isCurrent, isSameSession: session.isCurrent, onExpired: options.onSessionExpired });
     if (!isCurrent()) throw new AuthClientError('Session changed.', 0, 'STALE_SESSION', null, 'other');
     localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
     const verifiedOwner = String(payload.user?.id || payload.user?.email || '').trim().toLowerCase();
@@ -309,6 +331,16 @@ export async function getMe(options: { isCurrent?(): boolean; onSessionExpired?(
       // An authoritative identity upgrade (for example email -> stable ID)
       // starts a fresh consumer generation instead of releasing the old one.
       window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
+    }
+    const verifiedPrimitive = typeof payload.user?.id==='string' && payload.user.id.trim()
+      ? payload.user.id.trim().toLowerCase() : typeof payload.user?.email==='string' ? payload.user.email.trim().toLowerCase() : '';
+    const lease=payload.stayAlarmLease;
+    const horizon=lease&&Number.isSafeInteger(lease.serverNow)&&Number.isSafeInteger(lease.sessionExpiresAt)?Math.min(300_000,lease.sessionExpiresAt-lease.serverNow):NaN;
+    if(Number.isFinite(readStart)&&Number.isFinite(horizon)&&horizon>0&&performance.now()<readStart+horizon && payload.ok===true && payload.authenticated===true && payload.user && !Array.isArray(payload.user) && verifiedPrimitive
+      && verifiedPrimitive===session.owner && isCurrent() && readGeneration===getMeReadGeneration
+      && !['visitor','guest'].includes(payload.user.role||'')) {
+      const cap=Object.freeze({owner:verifiedPrimitive,verifiedAt:Date.now()});
+      confirmedGetMeRecords.set(cap,{session,request:readGeneration,deadline:readStart+horizon,start:readStart});confirmedGetMe=cap;
     }
     return payload.user;
   } finally {

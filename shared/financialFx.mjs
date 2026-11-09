@@ -28,4 +28,15 @@ export function estimateAllowanceBrl({lines,quotes={},today,incomplete=false}={}
   for(const line of lines){const key=line.id;if(typeof key!=='string'||!key||seen.has(key)){partial=true;return {state:'incomplete',amountMinor:null,items:[]};}seen.set(key,true);const amount=majorNumberToMinor(line.value,line.currency);let result=amount===null?{state:'invalid',amountMinor:null}:convertFinancialMinor({amountMinor:amount,from:line.currency,to:'BRL',quotes,today});if(dates.size>1&&line.currency!=='BRL')result={state:'incompatible_dates',amountMinor:null};items.push({...line,originalMinor:amount,convertedMinor:result.amountMinor,state:result.state,references:result.references||[]});if(result.amountMinor===null)partial=true;else{sum+=result.amountMinor;known++;if(!Number.isSafeInteger(sum))return {state:'incomplete',amountMinor:null,items};}}
   return {state:partial?'partial':'available',amountMinor:known?sum:null,items};
 }
+/** Ephemeral forecast projection using the same validated quote set as the
+ * calculator/Home estimate. Original native amounts and source rows stay intact. */
+export function projectAllowanceFxRows(rows,quotes,today) {
+  const estimate=estimateAllowanceBrl({lines:rows.map((row,index)=>({...row,id:String(index)})),quotes,today});
+  return rows.map((row,index)=>{
+    const item=estimate.items[index];
+    const reference=item?.references?.[0],rate=reference?quoteRatio(reference,row.currency):null;
+    return {...row,convertedBRL:item?.convertedMinor===null||item?.convertedMinor===undefined?null:item.convertedMinor/100,
+      exchangeRate:row.currency==='BRL'?1:rate?Number(rate.n)/Number(rate.d):null,fxReferences:item?.references||[]};
+  });
+}
 export {decimalToMinor};

@@ -70,7 +70,7 @@ try {
   const terminalClock = await page.evaluate(() => Date.now());
   boardMode = 'error';
   await Promise.all(pendingBoards.splice(0).map(request => request.abort('failed')));
-  await page.waitForFunction(() => document.body.innerText.includes('Radar temporariamente indisponível'));
+  await page.waitForFunction(() => document.body.innerText.includes('Consulta indisponível'));
   [searchKey, search] = await page.evaluate(() => {
     const key = Object.keys(localStorage).find(key => key.startsWith('crewcheck_positioning_search:'));
     return [key, JSON.parse(localStorage.getItem(key))];
@@ -79,8 +79,8 @@ try {
   assert.equal(Date.parse(search.expiresAt) - Date.parse(search.checkedAt), 1800000);
   await page.clock.setSystemTime(terminalClock);
   await capture('Departure: terminal Radar error');
-  assert.equal(await departureLabel().innerText(), 'Dia anterior', 'terminal Radar error must retain previous-day plan');
-  assert.match(await page.locator('.cz-depart-when').innerText(), /10 de janeiro de 2030/);
+  assert.equal(await departureLabel().innerText(), 'Confirmar posicionamento', 'failed lookup must remain unresolved');
+  assert.match(await page.locator('.cz-depart-when').innerText(), /11 de janeiro de 2030/);
   routeError = true;
   await page.clock.fastForward(65000);
   await page.waitForFunction(() => document.querySelector('[data-departure-route-state="stale"]'));
@@ -92,17 +92,17 @@ try {
   const remaining = await page.evaluate(expires => Date.parse(expires) - Date.now(), search.expiresAt);
   await page.clock.fastForward(remaining - 60000);
   await go('departure');
-  await waitLabel(departureLabel(), 'Dia anterior', 'departure');
+  await waitLabel(departureLabel(), 'Confirmar posicionamento', 'departure');
   assert.equal(boardCalls, callsAfterError, '30-minute error cache must prevent repeat lookup');
   await capture('Departure: error cache at minute 29');
   await go('cockpit');
-  await waitLabel(smartLabel(), 'Dia anterior', 'smart');
+  await waitLabel(smartLabel(), 'Confirmar posicionamento', 'smart');
   await capture('Home SmartCard: cached error');
   await page.clock.fastForward(120000);
   await go('cockpit');
   await waitLabel(smartLabel(), 'Confirmar posicionamento', 'smart');
   await capture('Home SmartCard: expired cache, lookup not yet started');
-  for (const [status, expected] of [['checking', 'Confirmar posicionamento'], ['none', 'Dia anterior'], ['error', 'Dia anterior']]) {
+  for (const [status, expected] of [['checking', 'Confirmar posicionamento'], ['none', 'Confirmar posicionamento'], ['error', 'Confirmar posicionamento']]) {
     await setSearch(status);
     await go('cockpit');
     await waitLabel(smartLabel(), expected, 'smart');

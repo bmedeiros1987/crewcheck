@@ -1,3 +1,5 @@
+import {resolveOwnedGatePublication} from '../server/radar-publication-authority.mjs';
+import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -5,6 +7,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import {build} from 'esbuild';
 import * as policy from '../shared/gate-query-day.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs';
 assert.match(fs.readFileSync('.github/workflows/next-flight-gate.yml','utf8'), /^\s+- ['"]client\/src\/lib\/authClient\.ts['"]\s*$/m, 'real authClient changes must trigger the Radar workflow');
 prepareConciergeCanonicalBridge();
@@ -13,10 +16,10 @@ function extract(file,names){const text=fs.readFileSync(file,'utf8'),ast=ts.crea
 let now=Date.parse('2032-10-14T12:00:00Z');
 class FixedDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
 const leg={flightNumber:'LA3981',origin:'CPV',destination:'GRU',departureTime:'09:00',arrivalTime:'11:00',duration:2};
-const roster={year:2032,month:10,base:'CPV',days:[{date:'14/10/2032',type:'VOO',dutyReport:'08:00',dutyDebrief:'11:30',legs:[leg]}]};
+const roster={crewId:'SYNTHETIC-A',year:2032,month:10,base:'CPV',days:[{date:'14/10/2032',type:'VOO',dutyReport:'08:00',dutyDebrief:'11:30',legs:[leg]}]};
 const identity={flight:'LA3981',origin:'CPV',destination:'GRU',departureDate:'2032-10-14',scheduledDepartureUtc:'2032-10-14T12:00:00Z'};
 let rows,queries,providerCalls,writes,claims,poolAvailable,lateChange,snapshot;
-const scope=vm.createContext({...policy,Date:FixedDate,buildCanonicalRosterEvents,gateQueryDay:i=>policy.gateQueryDay(i,now),setTimeout,clearTimeout,process:{env:{}},
+const scope=vm.createContext({resolveOwnedGatePublication,...policy,...radarEvidence,Date:FixedDate,buildCanonicalRosterEvents,gateQueryDay:i=>policy.gateQueryDay(i,now),setTimeout,clearTimeout,process:{env:{}},
  safeEmail:s=>String(s||'').trim().toLowerCase(),verifyJwt:()=>claims,requestToken:r=>r.token,
  pool:async()=>poolAvailable?{query:async(sql,args)=>{queries.push({sql,args});if(queries.length===2)lateChange?.();return {rows};}}:null,
  telegramRequestUser:()=>({email:'a@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:s=>String(s||'').trim().toLowerCase(),
@@ -25,9 +28,9 @@ const scope=vm.createContext({...policy,Date:FixedDate,buildCanonicalRosterEvent
 for(const name of ['providerFlightAware','providerCustom','providerAviationstack','providerAirLabs','providerAeroDataBox'])scope[name]=async()=>{providerCalls++;return {ok:true,gate:'46',...identity,departure:identity.scheduledDepartureUtc};};
 vm.runInContext(extract('server.mjs',['normalizeFlightRaw','buildFlightContext']),scope);
 vm.runInContext(extract('server/platform.mjs',['loadOwnedPlatformRoster'])+extract(process.env.RADAR_HELD_SERVER||'server.mjs',['runRadarRace','handleRadar']),scope);
-function reset(){rows=[{id:'published-A',owner_email:'a@example.invalid',updated_at:'2032-10-14T10:00:00Z',roster:structuredClone(roster)}];queries=[];providerCalls=0;writes=0;claims={email:'a@example.invalid'};poolAvailable=true;lateChange=null;snapshot=null;now=Date.parse('2032-10-14T12:00:00Z');}
+function reset(){rows=[{id:'published-A',roster_key:'2032-10',active:true,owner_email:'a@example.invalid',updated_at:'2032-10-14T10:00:00Z',roster:structuredClone(roster)}];queries=[];providerCalls=0;writes=0;claims={email:'a@example.invalid'};poolAvailable=true;lateChange=null;snapshot=null;now=Date.parse('2032-10-14T12:00:00Z');}
 const url=()=>new URL('https://fixture.invalid/api/radar-flight?'+new URLSearchParams({...identity,email:'foreign@example.invalid',force:'1'}));
-reset();let result=await scope.handleRadar({token:'mock-signed-A'}, {}, url());assert.equal(result.ok,true,'authenticated app uses owned active publication without Concierge snapshot');assert(providerCalls>0);assert.equal(result.exportedToConcierge,false);assert.equal(writes,0);assert.equal(queries.length,2);assert(queries.every(q=>q.args[0]==='a@example.invalid'&&q.sql.includes('owner_email=$1')),'URL email never chooses source owner');
+reset();let result=await scope.handleRadar({token:'mock-signed-A'}, {}, url());assert.equal(result.ok,true,'authenticated app uses owned active publication without Concierge snapshot');assert(providerCalls>0);assert.equal(result.exportedToConcierge,false);assert.equal(writes,0);assert.equal(queries.length,3);assert(queries.every(q=>q.args[0]==='a@example.invalid'&&q.sql.includes('owner_email=$1')),'URL email never chooses source owner');
 reset();claims={email:'foreign@example.invalid'};result=await scope.handleRadar({token:'mock-foreign'}, {}, url());assert.equal(result.httpStatus,401);assert.equal(providerCalls,0);assert.equal(queries.length,0);
 reset();claims={email:'a@example.invalid',aud:'crewcheck-visitor',role:'visitor'};result=await scope.handleRadar({token:'mock-visitor'}, {}, url());assert.equal(result.httpStatus,403);assert.equal(providerCalls,0);assert.equal(queries.length,0);
 reset();rows[0].owner_email='foreign@example.invalid';result=await scope.handleRadar({token:'mock-A'}, {}, url());assert.equal(result.httpStatus,403);assert.equal(providerCalls,0);
@@ -56,7 +59,22 @@ const previous={window:globalThis.window,localStorage:globalThis.localStorage,se
 try{
  const values=new Map();globalThis.localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k)};globalThis.sessionStorage={removeItem:()=>{}};globalThis.window=Object.assign(new EventTarget(),{location:{origin:'https://fixture.invalid'}});
  const code=await build({stdin:{contents:"export * from './client/src/lib/radarAvailability';export * from './client/src/lib/authClient';",resolveDir:process.cwd()},bundle:true,platform:'node',format:'cjs',write:false});const m={exports:{}};Function('module','exports',code.outputFiles[0].text)(m,m.exports);const auth=m.exports;
- const client=vm.createContext({...policy,...auth,URLSearchParams,Map,Date:FixedDate,gateQueryDay:i=>policy.gateQueryDay(i,now),manualGateAccountKey:u=>u?.id||'local',manualGateIdentity:()=> 'synthetic-occurrence',readRadarSnapshot:()=>null,telegramConciergeIdentity:()=>({}),radarQuerySerial:new Map(),RADAR_GATE_STALE_MS:1800000,saveRadarSnapshot:()=>{throw Error('Negative response must not be cached');}});vm.runInContext(extract(process.env.RADAR_HELD_HOME || 'client/src/pages/Home.tsx',['fetchRadarSnapshot']),client);
+ const radarAdmission=await loadRadarReadAdmission();
+ const client=vm.createContext({...radarAdmission,...policy,...auth,URLSearchParams,Map,Date:FixedDate,gateQueryDay:i=>policy.gateQueryDay(i,now),manualGateAccountKey:u=>u?.id||'local',manualGateIdentity:()=> 'synthetic-occurrence',readRadarSnapshot:()=>null,telegramConciergeIdentity:()=>({}),radarQuerySerial:new Map(),RADAR_GATE_STALE_MS:1800000,saveRadarSnapshot:()=>{throw Error('Negative response must not be cached');}});
+// Actual new Home dependencies; this legacy transport fixture has no accepted
+// publication context. Real browser ownership is covered by the dedicated suite.
+if (!client.captureAuthSession) client.captureAuthSession=()=>{const token=client.getToken(),owner=JSON.stringify(client.getStoredUser());return {token,owner,isCurrent:()=>token===client.getToken()&&owner===JSON.stringify(client.getStoredUser())}};
+client.storage ||= {get:()=> 'null'};
+client.radarSnapshotKey ||= event=>'unbound-transport-fixture:'+event.id;
+client.window ||= {dispatchEvent(){}};
+client.CustomEvent ||= class {};
+const presentationSource=fs.readFileSync(process.env.RADAR_HELD_HOME || 'client/src/pages/Home.tsx','utf8'),presentationAst=ts.createSourceFile('Home.tsx',presentationSource,99,true,ts.ScriptKind.TSX);
+if(presentationSource.includes('let browserRadarContext')) {
+const presentationDeclarations=['browserRadarContext','browserRadarResponses','browserRadarInvalidations'].map(name=>{const n=presentationAst.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(presentationAst)===name));assert(n,name);return n.getText(presentationAst)}).join('\n');
+const presentationFunctions=['browserRadarGeneration','browserRadarContextIsCurrent','browserRadarSignature'].map(name=>{const n=presentationAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(n,name);return n.getText(presentationAst)}).join('\n');
+vm.runInContext(ts.transpileModule(presentationDeclarations+'\n'+presentationFunctions,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,client);
+}
+vm.runInContext(extract(process.env.RADAR_HELD_HOME || 'client/src/pages/Home.tsx',['fetchRadarSnapshot']),client);
  const event={id:'synthetic',kind:'flight',flightNumber:'LA3981',origin:'CPV',destination:'GRU',canonical:{startDateTime:identity.scheduledDepartureUtc}};now=Date.parse('2032-10-14T12:00:00Z');
  for(const status of [200,401,403,503]){
   values.set('crewcheck_auth_token','synthetic-A');values.set('crewcheck_auth_user',JSON.stringify({id:'A'}));globalThis.fetch=async()=>new Response(JSON.stringify({ok:false,code:status===401?'AUTH_REQUIRED':'TEST',querySuppressed:true,queryReason:'origin-timezone-unverified',gate:'DO-NOT-DISPLAY',quality:100}),{status,headers:{'content-type':'application/json'}});

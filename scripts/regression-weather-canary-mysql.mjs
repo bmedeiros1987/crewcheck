@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import mysql from 'mysql2/promise';
+import { financialLedgerErasureStatements } from '../server/financial-ledger-erasure.mjs';
 import * as policy from '../server/weather/monitor-readiness.mjs';
 import { evaluateCriticalWeatherDelivery } from '../server/weather/critical-observation.mjs';
+import { formatWeatherNoticeDetails } from '../shared/weatherNoticeDetails.mjs';
 
 // Deliberately no URL/host/password option: this script may only use the named
 // disposable CI socket. It cannot consume DATABASE_URL or reach production TCP.
@@ -234,6 +236,33 @@ try {
     } finally { connection.release(); }
   });
 
+  await run('tracked financial erasure rolls back and commits all four tables for only its owner', async () => {
+    const tables = ['crewcheck_financial_channel_consents', 'crewcheck_financial_source_observations', 'crewcheck_financial_revisions', 'crewcheck_financial_heads'];
+    const statements = financialLedgerErasureStatements(EMAIL);
+    assert.deepEqual(statements, tables.map(table => [`DELETE FROM ${table} WHERE owner_id=$1`, [EMAIL]]));
+    for (const file of ['migrations/20261017_020_financial_ledger_mysql.sql', 'migrations/20261020_021_financial_channel_preparation_mysql.sql']) {
+      for (const sql of fs.readFileSync(file, 'utf8').split(';').map(value => value.trim()).filter(Boolean)) await pool.query(sql);
+    }
+    const other = EMAIL + '.other';
+    for (const table of tables) await pool.query(`TRUNCATE TABLE ${table}`);
+    for (const owner of [EMAIL, other]) {
+      const entry = '1'.repeat(64);
+      await pool.query('INSERT INTO crewcheck_financial_channel_consents(owner_id,conversation_id,revision,consent) VALUES(?,?,1,?)', [owner, '12345678', '{}']);
+      await pool.query('INSERT INTO crewcheck_financial_source_observations(owner_id,entry_id,revision,source_fingerprint,source_as_of_ms,recorded_at_ms,evidence_digest) VALUES(?,?,1,?,1,2,?)', [owner, entry, '2'.repeat(64), '3'.repeat(64)]);
+      await pool.query('INSERT INTO crewcheck_financial_revisions(owner_id,entry_id,revision,idempotency_key,request_hash,snapshot,receipt) VALUES(?,?,1,?,?,?,?)', [owner, entry, 'synthetic-erasure', '4'.repeat(64), '{}', '{}']);
+      await pool.query('INSERT INTO crewcheck_financial_heads(owner_id,entry_id,latest_revision) VALUES(?,?,1)', [owner, entry]);
+    }
+    const count = async (table, owner) => { const [[row]] = await pool.query(`SELECT COUNT(*) AS n FROM ${table} WHERE owner_id=?`, [owner]); return row.n; };
+    const connection = await pool.getConnection();
+    const erase = async () => { for (const [sql, parameters] of statements) await connection.query(sql.replace(/\$1/g, '?'), parameters); };
+    try {
+      await connection.query('BEGIN'); await erase(); await connection.query('ROLLBACK');
+      for (const table of tables) { assert.equal(await count(table, EMAIL), 1, `${table}: rollback retains target`); assert.equal(await count(table, other), 1, `${table}: rollback retains other`); }
+      await connection.query('BEGIN'); await erase(); await connection.query('COMMIT');
+      for (const table of tables) { assert.equal(await count(table, EMAIL), 0, `${table}: target erased`); assert.equal(await count(table, other), 1, `${table}: prefix-sharing other owner survives`); }
+    } finally { await connection.query('ROLLBACK'); connection.release(); }
+  });
+
   await run('actual canary cycle persists intent and never repeats accepted-but-uncommitted send after restart', async () => {
     const f = await reset(), sent = [];
     const observed = new Date(NOW - 300_000);
@@ -246,7 +275,7 @@ try {
       weatherAlertStateKey: () => 'weather-alert:synthetic',
       fetchAviationWeatherReport: async () => ({ ok: true, official: true, provider: 'redemet', source: 'Synthetic', station: 'SBGR', observedAt: observed.toISOString(), raw: `SBGR ${group}Z 09015KT 2000 TSRA BKN008 18/17 Q1013` }),
       criticalWeatherChange: () => ({ critical: false, severity: 2, reasons: ['synthetic severe weather'], fingerprint: 'synthetic-risk' }),
-      evaluateCriticalWeatherDelivery, criticalWeatherMonitorMemory: new Map(),
+      evaluateCriticalWeatherDelivery, formatWeatherNoticeDetails, criticalWeatherMonitorMemory: new Map(),
       sendTelegramMessage: async (chatId, text) => { sent.push({ chatId, text }); return { ok: true }; }, Date, Map,
     };
     vm.createContext(context);

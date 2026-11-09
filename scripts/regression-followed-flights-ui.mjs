@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
+import {publishedGateDate} from '../shared/gate-query-day.mjs';
+import {followedFlight,followedFlightKey,readFollowedFlights,changeFollowedFlights} from '../shared/followedFlights.mjs';
+const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
+const start=home.indexOf('function FollowFlightPanel('),end=home.indexOf('function RadarView(',start);
+assert.ok(start>0&&end>start);const code=ts.transpileModule(home.slice(start,end)+'\nexports.panel=FollowFlightPanel;exports.candidate=positioningFollowCandidate;exports.fromEvent=followCandidate;', {compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText;
+const data=new Map(),storage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};
+let owner='A',token='token-A',valid=false;const exports={};const h=(type,props,...children)=>({type,props:props||{},children});
+vm.runInNewContext(code,{exports,publishedGateDate,React:{createElement:h},followedFlight,followedFlightKey,readFollowedFlights,changeFollowedFlights,localStorage:storage,useState:()=>[0,()=>{}],useEffect(){},manualGateAccountKey:()=>owner,getStoredUser:()=>({id:owner}),getToken:()=>token,readRadarSnapshot:()=>valid?{source:'Synthetic source',updatedAt:Date.now()}:null,radarGateInfo:()=>valid?{gate:'A1',gateSource:'radar',status:'Scheduled',statusSource:'radar'}:{},toast:{error(){}},Date,Intl});
+const candidate=followedFlight({eventId:'synthetic',flight:'ZZ123',origin:'SSA',destination:'GRU',scheduledDepartureUtc:'2030-10-21T13:00:00Z',date:'2030-10-21'});
+const text=n=>n==null?'':Array.isArray(n)?n.map(text).join(' '):typeof n==='object'?text(n.children):String(n);
+const find=(n,p)=>Array.isArray(n)?n.flatMap(x=>find(x,p)):n&&typeof n==='object'?[...(p(n)?[n]:[]),...find(n.children,p)]:[];
+const render=()=>exports.panel({candidate});
+assert.equal(exports.candidate({departureAt:'bad'}),null);
+let node=render();find(node,n=>n.type==='button'&&text(n).includes('Acompanhar'))[0].props.onClick();
+assert.equal(readFollowedFlights(storage,'A').length,1);
+node=render();assert.match(text(node),/Sem dados operacionais válidos/);assert.ok(!text(node).includes('Synthetic source'));
+valid=true;node=render();assert.match(text(node),/A1/);assert.match(text(node),/Synthetic source/);
+const stop=find(node,n=>n.type==='button'&&text(n)==='Parar')[0];owner='B';token='token-B';stop.props.onClick();assert.equal(readFollowedFlights(storage,'A').length,1);assert.equal(readFollowedFlights(storage,'B').length,0);
+owner='A';token='token-A';find(render(),n=>n.type==='button'&&text(n)==='Parar')[0].props.onClick();assert.equal(readFollowedFlights(storage,'A').length,0);
+assert.ok(home.includes('candidate={positioningFollowCandidate(positioningRecord)}'));
+assert.ok(!home.slice(start,end).includes('fetch('));
+console.log('PASS actual panel: follow, reload, stop, stale handler across account/session, no valid cache, valid provenance, malformed positioning and zero network effects');
+
+assert.equal(exports.fromEvent({id:'iso-event',flightNumber:'ZZ123',origin:'SSA',destination:'GRU',day:{date:'21/10/2030'},canonical:{date:'2030-10-21',startDateTime:'2030-10-21T13:00:00Z'}}).date,'2030-10-21');

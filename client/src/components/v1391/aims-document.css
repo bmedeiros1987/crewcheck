@@ -16,6 +16,11 @@
 .cc-doc-day { min-width:0; border-right:1px solid var(--ccr-line); padding:3px; }
 .cc-doc-day h3 { font-size:calc(.875rem * var(--cc-text-scale,1)); margin:0 0 4px; padding:3px; text-align:center; color:var(--ccr-title); border-bottom:1px solid var(--ccr-line); white-space:nowrap; }
 .cc-doc-day h3 small { display:block; font-size:calc(.75rem * var(--cc-text-scale,1)); }
+/* Today is a civil-date marker, independent of the selected program. Neutral in both themes. */
+.cc-aims-document { --cc-doc-today-bg:#26313d; --cc-doc-today-ink:#f8fbff; --cc-doc-today-edge:#9aa8b6; }
+html[data-crew-theme="light"] .cc-aims-document { --cc-doc-today-bg:#e9edf1; --cc-doc-today-ink:#10243a; --cc-doc-today-edge:#64748b; }
+html body #root .cz-app[data-version] .cc-aims-document .cc-doc-day h3[aria-current="date"] { color:var(--cc-doc-today-ink) !important; background:var(--cc-doc-today-bg) !important; border:2px solid var(--cc-doc-today-edge) !important; border-radius:4px; box-shadow:none !important; font-weight:700; }
+html body #root .cz-app[data-version] .cc-aims-document .cc-doc-day h3[aria-current="date"] :is(time,small) { color:inherit !important; background:transparent !important; }
 .cc-aims-document .cc-doc-entry.cc-roster-legend-v1397 { display:block !important; overflow:visible !important; margin:0 0 3px !important; padding:0 !important; }
 .cc-aims-document .cc-doc-entry > .cc-doc-token { display:block !important; padding:0 !important; border-radius:0 !important; border:0 !important; background:transparent !important; }
 html body #root .cz-app[data-version] .cc-aims-document .cc-doc-token button { display:flex; flex-direction:column; align-items:stretch; gap:1px; box-sizing:border-box; width:100%; min-height:44px; padding:3px; border:1px solid var(--ccr-line); border-left:2px solid var(--legend-accent) !important; border-radius:1px !important; box-shadow:none !important; color:var(--ccr-title); background:var(--ccr-panel-soft); font:inherit; font-size:calc(.875rem * var(--cc-text-scale,1)) !important; text-align:left; line-height:1.2; overflow-wrap:normal; word-break:normal; white-space:nowrap; touch-action:pan-x pan-y; }

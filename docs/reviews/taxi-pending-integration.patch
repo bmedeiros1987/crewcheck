@@ -1,0 +1,36 @@
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -3654,7 +3654,7 @@
+   const seen = new Set<string>();
+   const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
+   const pendingAirports = new Set<string>();
+-  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string }> = [];
++  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; kind?: "taxi_rate" }> = [];
+   const usedRateKeys = new Set<PerDiemRateKey>();
+   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date, partial = false) => {
+     const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
+@@ -3841,7 +3841,7 @@
+     const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
+       + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
+     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+-      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
++      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, kind: 'taxi_rate', reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+     } else {
+       rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
+         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
+@@ -4135,6 +4135,15 @@
+     <section className="cz-finance-table cc-per-diem-items">
+       <header><h2>Extrato previsto de diárias</h2><span>{itemLabel}</span></header>
+       <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
++      {forecast.monthlyUnclassifiedItems.filter(item => item.kind === 'taxi_rate').map((item, index) =>
++        <div className="cz-finance-row" data-financial-pending="taxi-rate" key={`taxi-pending-${item.iso}-${index}`}>
++          <span>{item.iso}</span><strong>Táxi · {item.airport}</strong><b>Tarifa pendente</b>
++          <details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{privacy.text(item.reason || '')}</small></details>
++        </div>
++      )}
++      {forecast.monthlyUnclassifiedItems.some(item => item.kind === 'taxi_rate') &&
++        <details className="cc-per-diem-source" data-taxi-rate-review><summary>Revisar tarifa de táxi</summary><FinancialStatementImporter mode="per_diem"/></details>
++      }
+       {forecast.monthlyRows.length ? [...forecast.monthlyRows].sort((a,b)=>a.iso.localeCompare(b.iso)).map((row, index) =>
+         <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
+           <span>{row.date}</span>

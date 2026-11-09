@@ -11,13 +11,13 @@ def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && 
 def generatedCrewWatchFaceRes = file("$buildDir/generated/res/crewcheckBrand")
 
 tasks.register('generateCrewWatchFaceBrandAssets') {
-    inputs.file(file('../../client/public/icons/crewcheck-icon-v2.png'))
+    inputs.file(file('../../client/public/assets/brand/crewcheck-app-icon-2026.png'))
     outputs.file(file("$generatedCrewWatchFaceRes/drawable-nodpi/crewcheck_official.png"))
     doLast {
         def target = file("$generatedCrewWatchFaceRes/drawable-nodpi")
         target.mkdirs()
         copy {
-            from file('../../client/public/icons/crewcheck-icon-v2.png')
+            from file('../../client/public/assets/brand/crewcheck-app-icon-2026.png')
             into target
             rename { 'crewcheck_official.png' }
         }

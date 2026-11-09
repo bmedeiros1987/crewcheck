@@ -1,18 +1,25 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import ts from 'typescript';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
+import os from 'node:os';import {createRequire} from 'node:module';import {build} from 'esbuild';
+const depDir=fs.mkdtempSync(path.join(os.tmpdir(),'salary-clock-deps-')),depFile=path.join(depDir,'deps.cjs');
+await build({stdin:{contents:`export * from './client/src/lib/salaryDsrConsumer';export {salaryDisplaySummary} from './client/src/lib/salaryDisplayBasis';export {captureAuthSession} from './client/src/lib/authClient';export {financialRateOwner,confirmedPayrollDsrContext,confirmedRateAt} from './client/src/lib/financialStatementLearning';export {readMonthlyFinancialSettings} from './client/src/lib/financialMonthlySettings';export {rosterFingerprint} from './client/src/lib/rosterComparison';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:depFile});
+const syntheticStorage=new Map([['crewcheck_auth_token','synthetic-clock-token'],['crewcheck_auth_user',JSON.stringify({id:'synthetic-clock-owner'})]]);globalThis.localStorage={getItem:key=>syntheticStorage.get(key)??null,setItem:(key,value)=>syntheticStorage.set(key,value),removeItem:key=>syntheticStorage.delete(key)};
+const dependencies=createRequire(import.meta.url)(depFile);
+
 import { loadClientModules } from './lib/ts-module-harness.mjs';
 
 const modules=loadClientModules({files:['client/src/lib/aimsParser.ts','client/src/lib/canonicalRoster.ts','client/src/lib/rosterDisplayDate.ts','client/src/lib/financialIntervalEvidence.ts','client/src/lib/compensationPolicy.ts','client/src/lib/financialJourneyGrouping.ts','client/src/lib/financialForecastPeriods.ts','client/src/lib/financialAmounts.ts','client/src/lib/salaryActivityEvidence.ts','client/src/lib/financialReserveCredits.ts'],expose:{aimsParser:['parseASB','parseStandby','parseGroundActivity','parseCRM']},prefix:'aims-activity-financial-'});
 try {
  const parser=modules.load('aimsParser'),canonical=modules.load('canonicalRoster');
- const names=['buildLegs','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','flightWorkType','financialEventCode','financialFlightRule','durationHours','nightHoursInsideWindow','isSundayOrConfiguredHoliday','calculateSalary','calculatePerDiem','moneyBRL'];
+ const names=['buildLegs','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','flightWorkType','financialEventCode','financialFlightRule','durationHours','nightHoursInsideWindow','isSundayOrConfiguredHoliday','calculateSalary','calculatePerDiem','moneyBRL','rosterFinancialDate'];
  const home=ts.createSourceFile('Home.tsx',fs.readFileSync('client/src/pages/Home.tsx','utf8'),99,true,4);
  const functions=home.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));assert.equal(functions.length,names.length);
- const context=vm.createContext({console,Date,Intl,...canonical,...modules.load('rosterDisplayDate'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialJourneyGrouping'),...modules.load('financialForecastPeriods'),...modules.load('financialAmounts'),...modules.load('salaryActivityEvidence'),...modules.load('financialReserveCredits'),
+ const context=vm.createContext({...dependencies,console,Date,Intl,...canonical,...modules.load('rosterDisplayDate'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialJourneyGrouping'),...modules.load('financialForecastPeriods'),...modules.load('financialAmounts'),...modules.load('salaryActivityEvidence'),...modules.load('financialReserveCredits'),
    storage:{get:(_k,f)=>f},pad2:n=>String(n).padStart(2,'0'),safe:(v,f='—')=>String(v??'').trim()||f,city:v=>v,normalizedAirlineCode:()=> 'LA',airlineNameFor:()=> 'SYNTHETIC',addMinutesToTime:()=>'',applyPresentationManagement:x=>x,
    dateChip:d=>d.toISOString().slice(0,10),moneyCurrency:(v,c)=>`${c} ${v}`,
    loadActCompensationConfig:()=>({basePay:1000,fixedAdditions:0,dayKmMetric:1,nightKmMetric:2,chiefPerSector:0,instructorPerSector:0,reserveHourMetric:1,standbyHourMetric:1,inssDeduction:0,irrfDeduction:0,otherDeductions:0,fgtsRate:0,configured:true,source:'SYNTHETIC NOT A TARIFF'}),
@@ -20,6 +27,7 @@ try {
    perDiemConfig:()=>({rates:{domestic:{mainMeal:100,currency:'BRL',label:'SYNTHETIC'}},domesticBreakfast:25,domesticMainMealSource:'synthetic',domesticBreakfastSource:'synthetic',breakfastPercent:.25,exchangeRates:{BRL:1},source:'SYNTHETIC NOT A TARIFF',act:{version:'SYNTHETIC'}}),
    loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:origin=>({rateKey:'domestic',airport:origin,reason:'synthetic fixture'}),readOptionalNumberSetting:()=>null});
  vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(home)).join('\n')+'\nglobalThis.subject={buildLegs,calculateSalary,calculatePerDiem,financialFlightRule,eventStartDateTime,eventEndDateTime,nightHoursInsideWindow,isSundayOrConfiguredHoliday,moneyBRL};',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+  installAllowanceDependencies(context,{stubConfig:true});
 
  const asbFallback=parser.parseASB(['ASB','04:10']);assert.equal(asbFallback.dutyDebrief,'10:10');assert.equal(asbFallback.dutyDebriefSource,'estimated','six-hour fallback equal to literal release stays estimated');
  const hsbInferred=parser.parseStandby(['HSB','09:00','ASB','13:00','19:00'],'HSB');assert.equal(hsbInferred.dutyDebrief,'13:00');assert.equal(hsbInferred.dutyDebriefSource,'estimated','next activity does not prove standby end');
@@ -70,4 +78,4 @@ try {
  assert.equal(outputs.length,204,'17activities ×4clock states ×3timezones');
  fs.mkdirSync('artifacts/aims-activity-finance',{recursive:true});fs.writeFileSync('artifacts/aims-activity-finance/report.json',JSON.stringify({synthetic:true,chain:'physicalPDF -> real parsePDF/AIMS -> actual Home buildLegs -> financial evidence/calculatePerDiem/calculateSalary',baselineCompared:Boolean(baseline),outputs},null,2));
  console.log('PASS204 physical-PDF activities across3TZ: ASB/RES/CRM variants/HSB/HSBE/ground codes, literal meal eligibility, missing clocks pending, persistence/dedup; numeric clocks and salary unchanged when baseline supplied');
-} finally {modules.cleanup();}
+} finally {modules.cleanup();fs.rmSync(depDir,{recursive:true,force:true});}

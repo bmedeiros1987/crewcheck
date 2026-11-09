@@ -73,11 +73,28 @@ export function evaluateCiriumRadar(request, response, options = {}) {
     operationalTimes: {}, airportResources: {}, flightEquipment: {}, lastUpdatedDate: row.lastUpdatedDate };
   if (row.status !== undefined && !['A', 'C', 'D', 'L', 'NO', 'R', 'S', 'U'].includes(row.status)) return result('invalid_payload');
   clean.status = row.status;
-  for (const name of ['scheduledGateDeparture', 'scheduledGateArrival', 'estimatedGateDeparture', 'estimatedGateArrival', 'actualGateDeparture', 'actualGateArrival']) {
+  for (const name of ['scheduledGateDeparture', 'scheduledGateArrival', 'estimatedGateDeparture', 'estimatedGateArrival', 'actualGateDeparture', 'actualGateArrival', 'scheduledRunwayArrival', 'estimatedRunwayArrival', 'actualRunwayArrival']) {
     const time = row.operationalTimes?.[name];
     if (time === undefined) continue;
     if (!object(time) || instant(time.dateUtc) === null) return result('invalid_payload');
     clean.operationalTimes[name] = { dateUtc: time.dateUtc };
+  }
+  // Preserve only official, bounded date deltas. A malformed/latest deletion
+  // cannot disappear and accidentally make an older arrival observation current.
+  if(row.flightStatusUpdates!==undefined){
+    if(!Array.isArray(row.flightStatusUpdates)||row.flightStatusUpdates.length>100)return result('invalid_payload');
+    clean.flightStatusUpdates=[];
+    for(const update of row.flightStatusUpdates){
+      if(!object(update)||!object(update.updatedAt)||instant(update.updatedAt.dateUtc)===null)return result('invalid_payload');
+      if(update.updatedDateFields!==undefined&&(!Array.isArray(update.updatedDateFields)||update.updatedDateFields.length>100))return result('invalid_payload');
+      const fields=[];
+      for(const field of update.updatedDateFields||[]){
+        if(!object(field)||typeof field.field!=='string'||!['SGD','EGD','AGD','SGA','EGA','AGA','SRD','ERD','ARD','SRA','ERA','ARA'].includes(field.field))return result('invalid_payload');
+        if(field.newDateUtc!==undefined&&field.newDateUtc!==null&&instant(field.newDateUtc)===null)return result('invalid_payload');
+        fields.push({field:field.field,...(field.newDateUtc===undefined?{}:{newDateUtc:field.newDateUtc})});
+      }
+      clean.flightStatusUpdates.push({updatedAt:{dateUtc:update.updatedAt.dateUtc},updatedDateFields:fields});
+    }
   }
   const scheduledArrivalMs = instant(clean.operationalTimes.scheduledGateArrival.dateUtc);
   const day = 24 * 60 * 60_000;

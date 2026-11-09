@@ -324,7 +324,8 @@ export function reconcileMyCrewCareLogistics({ context: contextValue, stays: sta
   if (!context || stays.length !== (Array.isArray(stayValues) ? stayValues.length : -1)) {
     return Object.freeze({ ...base, error: 'invalid-scope' });
   }
-  if (!Number.isFinite(now)
+  if (snapshot?.operationalImportAllowed === false
+    || !Number.isFinite(now)
     || !Number.isFinite(observedAt)
     || observedAt > now + 30_000
     || now - observedAt > MYCREWCARE_CACHE_MAX_AGE_MS

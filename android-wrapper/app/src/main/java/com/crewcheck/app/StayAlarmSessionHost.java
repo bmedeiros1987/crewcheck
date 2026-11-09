@@ -28,4 +28,6 @@ public final class StayAlarmSessionHost implements StayAlarmEngine.Owner {
         });return accepted[0];}
     public boolean current(long value){return enabled&&value==generation&&activeOwner()!=null;}
     public long generation(){return generation;}
+    boolean canVerify(long requestGeneration,long expiry){return enabled&&requestGeneration==generation
+        &&expiry>clock.now()&&expiry-clock.now()<=maxDuration;}
 }

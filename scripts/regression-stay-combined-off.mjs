@@ -19,7 +19,7 @@ const previewPath='client/src/components/v1391/StayHotelAlarmPreview.tsx';
 const compiled=compile(fs.readFileSync(previewPath,'utf8'));
 assert.equal(compiled.diagnostics.length,0);
 const module={exports:{}};
-vm.runInNewContext(compiled.outputText,{module,exports:module.exports,Date:Clock,Intl,require:name=> name==='react/jsx-runtime'?jsx:name==='@shared/stay-edit-plan.mjs'?plan:presentation});
+vm.runInNewContext(compiled.outputText,{module,exports:module.exports,Date:Clock,Intl,require:name=> name==='react/jsx-runtime'?jsx:name==='react'?{useState:initial=>[typeof initial==='function'?initial():initial,()=>{}]}:name==='@shared/stay-edit-plan.mjs'?plan:presentation});
 const Preview=module.exports.default;
 function nodes(element) { if(!element||typeof element!=='object')return [];return [element,...[element.props?.children].flat(Infinity).flatMap(nodes)]; }
 const text=element=>typeof element==='string'?element:element?.props?[element.props.children].flat(Infinity).map(text).join(''):'';

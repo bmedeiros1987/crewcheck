@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { departureRosterProjection as project } from '../shared/departureRosterProjection.mjs';
+const flight = (id,origin,destination,startAt,endAt) => ({id,kind:'flight',origin,destination,startAt,endAt});
+const rows = [flight('one','CGH','SSA','2026-10-21T09:35:00Z','2026-10-21T11:55:00Z'),flight('two','SSA','GRU','2026-10-21T13:00:00Z','2026-10-21T15:00:00Z'),flight('three','GRU','CWB','2026-10-21T17:00:00Z','2026-10-21T18:00:00Z')];
+const input = {events:rows,targetId:'tomorrow',presentationAt:'2026-10-22T07:50:00Z',origin:'CWB',currentAirport:'SSA',now:Date.parse('2026-10-21T11:57:00Z')};
+assert.deepEqual(project(input)?.eventIds,['two','three']);
+assert.equal(project(input).kind,'planned');
+for (const changes of [{currentAirport:'CGH'},{origin:'POA'},{events:[...rows,flight('unknown','CWB','POA','','')]},{events:[rows[2]]},{events:[...rows,rows[2]]},{events:[rows[1],{...rows[2],status:'Cancelado'}]},{presentationAt:'2026-10-21T17:30:00Z'},{now:Date.parse('2026-10-21T19:00:00Z')},{events:[{...rows[1],endAt:''},rows[2]]}]) assert.equal(project({...input,...changes}),null);
+assert.equal(project({...input,events:[rows[1],{...rows[2],startAt:'2026-10-21T14:00:00Z'}]}),null);
+console.log('PASS planned roster continuity, overnight deadline, cancelled/missing/overlapping/duplicate legs, unknown location and elapsed flights never imply actual movement');

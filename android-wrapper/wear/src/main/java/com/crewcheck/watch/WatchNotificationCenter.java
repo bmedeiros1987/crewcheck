@@ -41,7 +41,15 @@ public final class WatchNotificationCenter {
     }
 
     public static void postForSnapshot(Context context, WatchContextSnapshot snapshot) {
+        postForSnapshot(context, snapshot, System.currentTimeMillis());
+    }
+
+    // One sampled wall-clock instant; package visibility allows deterministic boundary tests.
+    static void postForSnapshot(Context context, WatchContextSnapshot snapshot, long nowEpochMs) {
         if (context == null || snapshot == null || !isEnabled(context)) return;
+        // Delayed/offline deliveries cannot turn an expired projection into a new alert.
+        // Use the same inclusive validity boundary as the watch display.
+        if (snapshot.isStale(nowEpochMs)) return;
         if (Build.VERSION.SDK_INT >= 33
                 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) return;
@@ -115,10 +123,10 @@ public final class WatchNotificationCenter {
                             presentation(s))
             );
             case "BOARDING" -> new Notice(
-                    s.remoteStand ? "Embarque remoto" : "Embarque",
+                    confirmedRemote(s) ? "Embarque remoto" : "Embarque",
                     join(" · ",
                             s.currentFlight,
-                            s.remoteStand ? "Remota" : s.gateLabel(),
+                            confirmedRemote(s) ? "Remota" : confirmedGate(s),
                             s.boardingTime.isBlank() ? "" : "embarque " + s.boardingTime)
             );
             case "CONNECTION" -> new Notice(
@@ -126,7 +134,7 @@ public final class WatchNotificationCenter {
                     join(" · ",
                             s.connection,
                             s.nextFlight,
-                            s.gateLabel(),
+                            confirmedGate(s),
                             s.boardingTime.isBlank() ? "" : "embarque " + s.boardingTime)
             );
             case "OVERNIGHT" -> new Notice(
@@ -137,6 +145,19 @@ public final class WatchNotificationCenter {
         };
     }
 
+    /**
+     * Regra do portão (docs/gate-behavior-rule.md): portão informado sem observação nunca
+     * alerta. Ele não entra no texto do aviso nem na deduplicação, então aparecer ou mudar
+     * um portão informado não dispara notificação nem é anunciado como confirmado.
+     */
+    private static String confirmedGate(WatchContextSnapshot s) {
+        return s.gateReported() ? "" : s.gateLabel();
+    }
+
+    private static boolean confirmedRemote(WatchContextSnapshot s) {
+        return s.remoteStand && !s.gateReported();
+    }
+
     private static String fingerprint(WatchContextSnapshot s, Notice notice) {
         return String.join("|",
                 s.state,
@@ -145,7 +166,7 @@ public final class WatchNotificationCenter {
                 s.leaveTime,
                 s.currentFlight,
                 s.nextFlight,
-                s.gate,
+                s.gateReported() ? "" : s.gate,
                 s.boardingTime,
                 s.overnight,
                 Boolean.toString(s.changed),

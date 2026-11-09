@@ -59,7 +59,7 @@ export async function mutateInstallation(db, input) {
     if(binding?.endpointKey&&binding.endpointKey!==stateKey){const[oldRows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[binding.endpointKey]);const old=typeof oldRows[0]?.payload==='string'?JSON.parse(oldRows[0].payload):oldRows[0]?.payload;if(old?.ownerId!==input.identity.ownerId||old.installationId!==input.installationId)fail('Vínculo anterior não verificado.',409);await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?',[JSON.stringify({...old,active:false,sealed:null}),binding.endpointKey]);}
     await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?',[JSON.stringify({email:next.email,ownerId:next.ownerId,installationId:next.installationId,revision:next.revision,active:next.active,endpointKey:stateKey}),bindingKey]);
     await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?', [JSON.stringify(next), stateKey]);
-    await connection.commit(); return { installationId: next.installationId, revision: next.revision, active: next.active, received: null };
+    await connection.commit(); return { installationId: next.installationId, revision: next.revision, active: next.active, subscriptionHash: stateKey.slice('crewcheck-push-installation:'.length), received: null };
   } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
 }
 

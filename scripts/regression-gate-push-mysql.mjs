@@ -1,0 +1,189 @@
+import { changeGateConsent, readGateBinding, createGateOutboxConnection, gateConsentKey } from '../server/web-push/gateHost.mjs';
+import { handleCrewCheckPush } from '../server/web-push/api.mjs';
+import { reconcilePushReceipts } from '../server/web-push/outbox.mjs';
+import crypto from 'node:crypto';
+import { installationStateKey,mutateInstallation } from '../server/web-push/installationRegistry.mjs';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import path from 'node:path';
+import mysql from 'mysql2/promise';
+import { createOfflineSqlGateAdapters } from '../server/web-push/gateSqlOffline.mjs';
+import { createOfflineGatePushCandidate } from '../server/web-push/gateCandidate.mjs';
+import { notificationStateDeletionStatements } from '../server/v139/notificationStateDeletion.mjs';
+globalThis.fetch = () => { throw Error('External network forbidden'); };
+const socketPath = process.env.CREWCHECK_GATE_QA_SOCKET;
+assert.equal(process.env.CREWCHECK_GATE_QA, 'isolated-mysql');
+assert(/^\/tmp\/crewcheck-gate-sql-qa-[a-zA-Z0-9]+\/mysqld.sock$/.test(socketPath || ''));
+assert(fs.statSync(socketPath).isSocket());
+const db = mysql.createPool({ socketPath, user: 'root', password: '', database: 'crewcheck_gate_push_qa', connectionLimit: 12 });
+const NOW = Date.parse('2032-10-14T12:00:00Z');
+const email = 'gate-a@example.test', ownerId = 'owner_fixture_A';
+const identity = {flight:'LA100',origin:'GRU',destination:'REC',departureDate:'2032-10-14',scheduledDepartureUtc:'2032-10-14T13:00:00Z'};
+const observation = gate => ({ok:true,provider:'custom',...identity,gate,sourceReceivedAt:NOW+(gate==='24'?-50000:-20000),departureGateUpdate:{schema:'crewcheck.departure-gate-update.v1',...identity,gate,updatedAt:new Date(NOW+(gate==='24'?-60000:-30000)).toISOString()}});
+const initial = () => ({ownerId,authority:{ownerId,epoch:'epoch_fixture_01',expiresAt:NOW+300000,revoked:false},rosterRevision:'roster_fixture_v1',identity,
+ installation:{ownerId,installationId:'installation_fixture_01',revision:1,active:true},consent:{ownerId,installationId:'installation_fixture_01',installationRevision:1,revision:1,enabled:true,topic:'departure-gate-change'},observation:observation('24')});
+const options = {db,email,ownerId,fixtureOnly:true};
+const adapter = () => createOfflineSqlGateAdapters(options);
+async function mutate(a, change) {
+ const c=await db.getConnection();try{await c.beginTransaction();await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);
+ const [rows]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[a.authorityKey]);const value=typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;change(value.state);
+ await c.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(value),a.authorityKey]);await c.commit();}catch(e){await c.rollback();throw e;}finally{c.release();}
+}
+let sends=0;
+const mockProvider={kind:'isolated-web-push-mock',send:async envelope=>{assert.equal(envelope.authorityEpoch,'epoch_fixture_01');assert.equal(Object.keys(envelope).length,9);sends++;return{accepted:true};}};
+const make=(a=adapter(),extra={})=>createOfflineGatePushCandidate({enabled:true,...a,mockProvider,clock:()=>NOW,...extra});
+try {
+ const [where]=await db.query('SELECT DATABASE() AS name,@@datadir AS datadir');
+ assert.equal(where[0].name,'crewcheck_gate_push_qa');assert([path.join(path.dirname(socketPath),'data'),'/var/run/mysqld/data'].includes(path.resolve(where[0].datadir)));
+ const a=adapter();
+ if(process.env.CREWCHECK_GATE_QA_RESTART==='verify'){
+  const result=await make(a).process();assert.equal(sends,0,'engine restart cannot replay durable dispatch claim');assert(result.results?.some(r=>r.status==='dispatching'));
+  console.log('PASS real MySQL ENGINE restart: committed dispatching claim survives, recreated producer sends zero');
+ } else {
+  await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(160)) ENGINE=InnoDB');
+  await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
+  await db.query('INSERT INTO crewcheck_platform_profiles VALUES (?,?),(?,?)',[email,ownerId,'gate-b@example.test','owner_fixture_B']);
+  const seed=async()=>{await db.query('DELETE FROM crewcheck_telegram_state');await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[a.authorityKey,JSON.stringify({kind:'isolated-gate-authority',email,ownerId,state:initial()})]);};
+  await seed();await assert.rejects(a.repository.transaction('rollback-probe',async record=>{await record.save({status:'must-rollback'});throw Error('synthetic rollback');}),/synthetic rollback/);const [rolledBack]=await db.query("SELECT state_key FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.key'))='rollback-probe'");assert.equal(rolledBack.length,0,'baseline and save roll back atomically');assert.equal((await make().process()).status,'baseline');assert.equal(sends,0);
+  await mutate(a,s=>s.observation=observation('25'));
+  await Promise.all(Array.from({length:8},()=>make().process()));assert.equal(sends,1,'eight real SQL consumers send exactly once');
+  await make().process();assert.equal(sends,1,'new adapter preserves dedup');
+  for(const revoke of [s=>s.authority.epoch='epoch_fixture_02',s=>s.authority.revoked=true,s=>s.consent.enabled=false,s=>s.installation.revision++,s=>s.rosterRevision='roster_fixture_v2']){
+   await seed();await make().process();await mutate(a,s=>s.observation=observation('25'));sends=0;
+   const repository={...a.repository,transaction:async(key,run)=>{const result=await a.repository.transaction(key,run);if(result?.claimId)await mutate(a,revoke);return result;}};
+   await make(a,{repository}).process();assert.equal(sends,0,'revocation between durable claim and send is rechecked under SQL owner lock');
+  }
+  await seed();sends=0;await make().process();await mutate(a,s=>s.observation=observation('25'));
+  const crashRepository={...a.repository,transaction:(key,run)=>a.repository.transaction(key,async record=>{const result=await run(record);if(result?.status==='accepted_unconfirmed')throw Error('synthetic crash after mock acceptance');return result;})};
+  await assert.rejects(make(a,{repository:crashRepository}).process(),/synthetic crash/);assert.equal(sends,1);
+  await make().process();assert.equal(sends,1,'rollback after acceptance never returns committed claim to sendable state');
+  const [claims]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-push-outbox:gate-off:%' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.record.status'))='dispatching'");assert.equal(claims.length,1);
+  // Scope + deletion counterproof uses the existing account deletion statements.
+  const other=createOfflineSqlGateAdapters({...options,email:'gate-b@example.test',ownerId:'owner_fixture_B'});
+  await other.repository.transaction('other-scope',async r=>r.save({status:'fixture-only'}));
+  for(const [sql,args] of notificationStateDeletionStatements(email)){
+   if(!sql.includes('crewcheck_telegram_state'))continue;
+   await db.query(sql.replaceAll('$1','?'),args);
+  }
+  const [left]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-push-outbox:gate-off:%'");assert.equal(left.length,1);assert.equal((typeof left[0].payload==='string'?JSON.parse(left[0].payload):left[0].payload).ownerId,'owner_fixture_B');
+  await seed();await make().process();await mutate(a,s=>s.observation=observation('25'));sends=0;await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['owner_replacement_fixture',email]);assert.equal((await make().process()).status,'blocked');assert.equal(sends,0,'owner replacement blocks an otherwise valid pending change');await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[ownerId,email]);
+  // Actual canonical session table/installation registry/consent/outbox connection.
+  // Tables and credentials below exist ONLY in this already guarded disposable DB.
+  await db.query('CREATE TABLE crewcheck_platform_accounts(email VARCHAR(254) PRIMARY KEY,must_change_password TINYINT NOT NULL) ENGINE=InnoDB');
+  await db.query('INSERT INTO crewcheck_platform_accounts VALUES (?,0)',[email]);
+  await db.query('CREATE TABLE crewcheck_watch_sessions(owner_id VARCHAR(160),session_id VARCHAR(160),epoch VARCHAR(64),revoked TINYINT,expires_at BIGINT,version BIGINT,PRIMARY KEY(owner_id,session_id)) ENGINE=InnoDB');
+  const sessionId='watch1_'+ 'a'.repeat(64),epoch='b'.repeat(64),installId='installation_fixture_01',subscription={endpoint:'https://fcm.googleapis.com/fixture-gate-host',keys:{p256dh:'fixture',auth:'fixture'}},endpointKey=installationStateKey(subscription.endpoint);
+  const identityContext={email,profile:{public_id:ownerId},payload:{iss:'crewcheck',aud:'crewcheck-web',sub:ownerId,email,jti:sessionId,iat:Math.floor(NOW/1000)-60,exp:Math.floor(NOW/1000)+600,mustChangePassword:false}};
+  await db.query('INSERT INTO crewcheck_watch_sessions VALUES (?,?,?,0,?,1)',[ownerId,sessionId,epoch,NOW+600000]);
+  const pair=crypto.createECDH('prime256v1');pair.generateKeys();subscription.keys={p256dh:pair.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,7).toString('base64url')};
+  const registryInput={identity:{email,ownerId},installationId:installId,expectedRevision:0,action:'subscribe',consent:true,subscription,key:Buffer.alloc(32),now:NOW};
+  await mutateInstallation(db,registryInput);
+  const consentInput={installationId:installId,expectedRevision:0,expectedInstallationRevision:1,enabled:true,confirmed:true};
+  assert.equal((await changeGateConsent(db,identityContext,consentInput)).status,'disabled');
+  await assert.rejects(changeGateConsent(db,identityContext,{...consentInput,authorityEpoch:epoch},{enabled:true,clock:()=>NOW}));
+  for(const delta of [{jti:undefined},{aud:'crewcheck-visitor'},{sub:'owner_fixture_B'},{mustChangePassword:true},{exp:Math.floor(NOW/1000)}])await assert.rejects(changeGateConsent(db,{...identityContext,payload:{...identityContext.payload,...delta}},consentInput,{enabled:true,clock:()=>NOW}));
+  await db.query('UPDATE crewcheck_watch_sessions SET revoked=1 WHERE owner_id=? AND session_id=?',[ownerId,sessionId]);await assert.rejects(changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW}));
+  await db.query('UPDATE crewcheck_watch_sessions SET revoked=0 WHERE owner_id=? AND session_id=?',[ownerId,sessionId]);
+  await mutateInstallation(db,{...registryInput,expectedRevision:1});
+  await assert.rejects(changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW}),/não confirmados/,'old confirmation cannot consent to rotated installation');
+  const callApi=async(input,context=identityContext)=>{let status,payload;const res={setHeader(){},writeHead(code){status=code;},end(raw){payload=JSON.parse(raw);}};
+   await handleCrewCheckPush({method:'POST',headers:{origin:'https://fixture.test'}},res,new URL('https://fixture.test/api/platform/notifications/crewcheck-installation'),{identify:async()=>({...context,db}),configuration:()=>({origin:'https://fixture.test'}),read:async()=>structuredClone(input),clock:()=>NOW,gateHostEnabled:()=>true});return {status,payload};};
+  const staleApi=await callApi({action:'gate-consent',...consentInput});assert.equal(staleApi.status,409,'API maps stale installation revision to conflict');assert.equal(staleApi.payload.code,'GATE_CONSENT_CONFLICT');
+  const [staleConsent]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);assert.equal(staleConsent.length,0);
+  consentInput.expectedInstallationRevision=2;
+  const ack=await changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW});assert.equal(ack.authorityEpoch,epoch);assert.equal(ack.localFenceConfirmed,false);assert(!('sessionId' in ack));
+  assert.equal(await readGateBinding(db,identityContext,installId),null,'default OFF projection reads no topic');
+  const projected=await readGateBinding(db,identityContext,installId,{enabled:true,clock:()=>NOW});assert.deepEqual(projected,{ownerId,installationId:installId,consentRevision:2,topicRevision:1,authorityEpoch:epoch,active:true});assert(!('sessionId' in projected));assert(!('email' in projected));
+  await assert.rejects(changeGateConsent(db,identityContext,consentInput,{enabled:true,clock:()=>NOW}),/não confirmados/);
+  const obs=observation('25'),sourceContext={rosterRevision:'roster_fixture_v1',identity,gate:'25',sourceUpdatedAt:obs.departureGateUpdate.updatedAt};
+  let source={ownerId,rosterRevision:'roster_fixture_v1',observation:obs,previousObservation:observation('24')};
+  const connected=createGateOutboxConnection({enabled:true,readSource:async()=>structuredClone(source),clock:()=>NOW});
+  // Use the EXISTING stateful SQL producer, not a hand-selected event key.
+  const producerEnvelopes=[],producerMock={kind:'isolated-web-push-mock',send:async envelope=>{producerEnvelopes.push(structuredClone(envelope));return{accepted:true};}};
+  const composedProducer=()=>make(a,{mockProvider:producerMock});
+  await mutate(a,s=>{s.authority={ownerId,epoch,expiresAt:NOW+300000,revoked:false};s.installation.revision=2;s.consent.installationRevision=2;s.observation=source.previousObservation;});
+  assert.equal((await composedProducer().process()).status,'baseline');assert.equal(producerEnvelopes.length,0);
+  await mutate(a,s=>s.observation=obs);await composedProducer().process();assert.equal(producerEnvelopes.length,1);
+  const gateEnvelope=producerEnvelopes[0];assert.equal(gateEnvelope.authorityEpoch,epoch);assert.equal(gateEnvelope.consentRevision,2);
+  const jobInput={installationKey:endpointKey,envelope:gateEnvelope,sourceContext,scheduledAt:new Date(NOW).toISOString()};
+  for(const digit of ['1','2'])assert.equal((await connected.enqueue(db,identityContext,{...jobInput,envelope:{...gateEnvelope,eventKey:'gate-change-v1:'+digit.repeat(64)}})).status,'blocked','same proved change cannot authorize an arbitrary event key');
+  const [forgedRows]=await db.query("SELECT state_key FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey')) IN (?,?)",['gate-change-v1:'+'1'.repeat(64),'gate-change-v1:'+'2'.repeat(64)]);assert.equal(forgedRows.length,0,'forged keys never enter the persistent outbox');
+  for(const delta of [{gate:'26'},{sourceUpdatedAt:new Date(NOW-10000).toISOString()},{identity:{...identity,destination:'BSB'}}])assert.equal((await connected.enqueue(db,identityContext,{...jobInput,sourceContext:{...sourceContext,...delta}})).status,'blocked','producer key never vouches for mismatched source proof');
+  assert.equal((await createGateOutboxConnection().enqueue(db,identityContext,jobInput)).status,'disabled');
+  assert.equal((await createGateOutboxConnection({enabled:true,clock:()=>NOW}).enqueue(db,identityContext,jobInput)).status,'blocked','no source adapter is closed, even with valid authority/consent');
+  for(const delta of [{authorityEpoch:'x'.repeat(64)},{ownerId:'owner_fixture_B'},{installationId:'installation_fixture_02'},{consentRevision:1},{consentRevision:3},{topicRevision:2}])assert.equal((await connected.enqueue(db,identityContext,{...jobInput,envelope:{...gateEnvelope,...delta}})).status,'blocked');
+  for(const delta of [{ownerId:'owner_fixture_B'},{rosterRevision:'other_roster_fixture'},{previousObservation:undefined},{previousObservation:obs},{previousObservation:{...observation('24'),departureGateUpdate:{...observation('24').departureGateUpdate,updatedAt:new Date(NOW-1800001).toISOString()}}},{observation:{...obs,provider:'legacy'}},{observation:{...obs,provider:'cirium'}},{observation:{...obs,sourceReceivedAt:undefined}},{observation:{...obs,sourceReceivedAt:NOW-40000}},{previousObservation:{...observation('24'),sourceReceivedAt:NOW-10000}},{previousObservation:{...observation('24'),sourceReceivedAt:undefined}},{observation:{...obs,operationalConflicts:['gate']}}]){const prior=source;source={...source,...delta};assert.equal((await connected.enqueue(db,identityContext,jobInput)).status,'blocked');source=prior;}
+  source={...source,observation:{...obs,departureGateUpdate:undefined}};assert.equal((await connected.enqueue(db,identityContext,jobInput)).status,'blocked','fetch/record time is not field proof');source={ownerId,rosterRevision:'roster_fixture_v1',observation:obs,previousObservation:observation('24')};
+  assert.equal((await connected.enqueue(db,identityContext,jobInput)).status,'queued');
+  const regrouped={...jobInput,sourceContext:{...sourceContext,preferencesRevision:'batch_fixture_B',identity:{scheduledDepartureUtc:'2032-10-14T13:00:00.000Z',destination:'REC',origin:'GRU',departureDate:'2032-10-14',flight:'LAN100'}}};
+  assert.equal((await connected.enqueue(db,identityContext,regrouped)).status,'queued','regrouping and canonical aliases preserve the one source-derived event');
+  await mutate(a,s=>s.identity={scheduledDepartureUtc:identity.scheduledDepartureUtc,destination:'REC',origin:'GRU',departureDate:identity.departureDate,flight:'LAN100'});
+  await composedProducer().process();assert.equal(producerEnvelopes.length,1,'recreated producer with regrouped same occurrence cannot emit again');
+  const [queued]=await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey'))=?",[gateEnvelope.eventKey]);assert.equal(queued.length,1);
+  let providerCalls=0;const configuration={enabled:true,configured:true,encryptionKey:Buffer.alloc(32)};
+  // Continue the real source/history -> real host/outbox chain into the existing
+  // guarded receiver. Only storage/display/transport surfaces are synthetic.
+  const worker={URL,Date,structuredClone};vm.createContext(worker);
+  for(const file of ['client/public/crewcheck-push-offline.js','client/public/crewcheck-gate-receiver-offline.js'])vm.runInContext(fs.readFileSync(file,'utf8'),worker);
+  let topic={ownerId,installationId:installId,consentRevision:2,topicRevision:1,authorityEpoch:epoch,active:true},displayCount=0;
+  const receiverClaims=new Set(),notifications=[];
+  const store={binding:async()=>({...topic}),gateBinding:async()=>({...topic}),claim:async key=>{if(receiverClaims.has(key))return false;receiverClaims.add(key);return true;},record:async()=>{},
+    invalidateGate:async expected=>{if(!['ownerId','installationId','consentRevision','topicRevision','authorityEpoch'].every(key=>topic[key]===expected[key]))return false;topic={...topic,active:false};return true;}};
+  let tail=Promise.resolve();const locks={request:(_name,_options,run)=>{const result=tail.then(run);tail=result.catch(()=>{});return result;}};
+  const receiver=worker.CrewCheckGateReceiverOffline.create({enabled:true,store,locks,clock:()=>NOW,processPush:worker.CrewCheckPushOffline.processPush,
+    registration:{getNotifications:async()=>notifications,showNotification:async(_title,options)=>{displayCount++;notifications.push({...options,closed:false,close(){this.closed=true;}});}}});
+  assert.equal((await connected.dispatch(db,queued[0],configuration,async(sub,envelope)=>{providerCalls++;assert.equal(sub.endpoint,subscription.endpoint);assert.equal(envelope.authorityEpoch,epoch);assert.equal((await receiver.receive(envelope)).status,'display_api_resolved');return{status:'accepted_unconfirmed',received:null};})).status,'accepted_unconfirmed');assert.equal(providerCalls,1);assert.equal(displayCount,1);
+  assert.equal((await connected.enqueue(db,identityContext,{...regrouped,envelope:{...gateEnvelope,expiresAt:new Date(NOW+120000).toISOString()}})).status,'accepted_unconfirmed','replay with regrouping/shorter expiry cannot create another event');
+  assert.equal((await connected.dispatch(db,queued[0],configuration,async()=>{throw Error('duplicate');})).status,'accepted_unconfirmed');providerCalls=0;
+  assert.equal((await receiver.receive(gateEnvelope)).status,'duplicate_or_revoked');assert.equal(displayCount,1);
+  const revokeRequest={...topic,requestId:'revoke_source_history_01'},localRevoke=await receiver.revoke(revokeRequest);
+  assert(worker.CrewCheckGateReceiverOffline.matchesAck(localRevoke.ack,revokeRequest));assert.equal(localRevoke.ack.received,null);
+  assert(!worker.CrewCheckGateReceiverOffline.matchesAck(localRevoke.ack,{...revokeRequest,authorityEpoch:'z'.repeat(64)}));
+  assert(notifications.every(item=>item.closed));assert.equal((await receiver.receive(gateEnvelope)).status,'revoked');assert.equal(displayCount,1);
+  assert.equal((await receiver.receive({...gateEnvelope,eventKey:'gate-change-v1:'+'f'.repeat(64)})).status,'revoked');assert.equal(displayCount,1,'revoked binding blocks a different late event too');
+  console.log('PASS admitted source/history -> canonical SQL host -> existing persistent outbox -> real guarded receiver: one mocked display, dedup, matching revoke ACK, stale ACK rejected and late events blocked');
+  // Device receipts for a gate job must carry its exact authority epoch and topic revision.
+  const receiptOwner={email,ownerId},gateJob=async()=>{const [rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[queued[0].state_key]);return typeof rows[0].payload==='string'?JSON.parse(rows[0].payload):rows[0].payload;};
+  const {authorityEpoch:_epoch,topicRevision:_topic,...withoutGateFields}=gateEnvelope;
+  for(const [label,envelope] of [['authority epoch mismatch',{...gateEnvelope,authorityEpoch:'x'.repeat(64)}],['topic revision mismatch',{...gateEnvelope,topicRevision:gateEnvelope.topicRevision+1}],['gate fields absent',withoutGateFields],['epoch only',{...withoutGateFields,authorityEpoch:epoch}]]){
+   assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope,status:'clicked'}])).reconciled,0,label);assert.equal((await gateJob()).deviceReport,undefined,label);
+  }
+  assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope:{...gateEnvelope,authorityEpoch:'y'.repeat(64)},status:'clicked'},{envelope:gateEnvelope,status:'display_api_resolved'}])).reconciled,1,'mixed batch counts only the matching receipt');
+  assert.deepEqual((await gateJob()).deviceReport,{status:'display_api_resolved',received:null});
+  assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope:gateEnvelope,status:'clicked'}])).reconciled,1);
+  assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope:{...gateEnvelope,authorityEpoch:'z'.repeat(64)},status:'uncertain'},{envelope:gateEnvelope,status:'uncertain'}])).reconciled,0,'clicked never regresses; mismatched receipt ignored');
+  assert.deepEqual((await gateJob()).deviceReport,{status:'clicked',received:null});
+  // Legacy stored gate job without epoch/topic: conservative, no receipt can reconcile it.
+  const legacyKey=queued[0].state_key,stored=await gateJob(),{authorityEpoch:_e,topicRevision:_t,...legacyEnvelope}=stored.envelope;
+  await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify({...stored,envelope:legacyEnvelope,deviceReport:undefined}),legacyKey]);
+  for(const envelope of [gateEnvelope,withoutGateFields])assert.equal((await reconcilePushReceipts(db,receiptOwner,[{envelope,status:'clicked'}])).reconciled,0,'legacy gate job stays unreconciled');
+  await db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(stored),legacyKey]);
+  const nextObservation={...observation('26'),sourceReceivedAt:NOW-5000,departureGateUpdate:{...observation('26').departureGateUpdate,updatedAt:new Date(NOW-10000).toISOString()}};
+  source={...source,previousObservation:obs,observation:nextObservation};await mutate(a,s=>s.observation=nextObservation);
+  await composedProducer().process();assert.equal(producerEnvelopes.length,2,'a later different proved gate derives its own event');
+  const revokedInput={...jobInput,envelope:producerEnvelopes[1],sourceContext:{...sourceContext,gate:'26',sourceUpdatedAt:nextObservation.departureGateUpdate.updatedAt}};assert.equal((await connected.enqueue(db,identityContext,revokedInput)).status,'queued');
+  const [revocationJobs]=await db.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.envelope.eventKey'))=?",[revokedInput.envelope.eventKey]);assert.equal(revocationJobs.length,1);
+  // Revoked canonical session blocks existing persistent outbox before opening subscription/provider.
+  await db.query('UPDATE crewcheck_watch_sessions SET revoked=1,epoch=NULL,version=version+1 WHERE owner_id=? AND session_id=?',[ownerId,sessionId]);
+  assert.equal((await connected.dispatch(db,revocationJobs[0],configuration,async()=>{providerCalls++;throw Error('forbidden real transport');})).status,'cancelled');assert.equal(providerCalls,0);
+  assert.equal(await readGateBinding(db,identityContext,installId,{enabled:true,clock:()=>NOW}),null,'revoked canonical session cannot synchronize a worker topic');
+  const [topicRows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);assert.equal((typeof topicRows[0].payload==='string'?JSON.parse(topicRows[0].payload):topicRows[0].payload).active,true,'session invalidation blocks independently of topic row');
+  await assert.rejects(changeGateConsent(db,identityContext,{...consentInput,expectedRevision:1},{enabled:true,clock:()=>NOW}));
+  assert.equal((await callApi({action:'gate-consent',...consentInput,enabled:false,confirmed:false,expectedRevision:1})).status,409,'revoked session cannot write consent');
+  // The tombstoned session stays revoked. A separate canonical session of the same owner
+  // revokes topic consent through the actual API and CAS; a replay is then a conflict.
+  const freshSession='watch1_'+'c'.repeat(64),freshContext={...identityContext,payload:{...identityContext.payload,jti:freshSession}};
+  await db.query('INSERT INTO crewcheck_watch_sessions VALUES (?,?,?,0,?,1)',[ownerId,freshSession,'c'.repeat(64),NOW+600000]);
+  const revokedApi=await callApi({action:'gate-consent',...consentInput,enabled:false,confirmed:false,expectedRevision:1},freshContext);
+  assert.equal(revokedApi.status,200);assert.equal(revokedApi.payload.status,'server_consent_revoked');assert.equal(revokedApi.payload.enabled,false);assert.equal(revokedApi.payload.topicRevision,2);assert.equal(revokedApi.payload.localFenceConfirmed,false);assert(!('sessionId' in revokedApi.payload));
+  const [revokedRows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[gateConsentKey(ownerId,installId)]);const revokedTopic=typeof revokedRows[0].payload==='string'?JSON.parse(revokedRows[0].payload):revokedRows[0].payload;assert.equal(revokedTopic.active,false);assert.equal(revokedTopic.revision,2);
+  const replay=await callApi({action:'gate-consent',...consentInput,enabled:false,confirmed:false,expectedRevision:1},freshContext);assert.equal(replay.status,409);assert.equal(replay.payload.code,'GATE_CONSENT_CONFLICT');
+  assert.equal((await connected.enqueue(db,identityContext,{...jobInput,envelope:{...gateEnvelope,topicRevision:2,authorityEpoch:'c'.repeat(64),eventKey:'gate-change-v1:'+ 'f'.repeat(64)}})).status,'blocked','server-revoked topic cannot enqueue even at its current revision');
+  console.log('PASS real canonical session reader + existing installation + gate consent CAS + existing persistent outbox: default OFF, scope/epoch/revision mismatch, no source proof and revocation before provider; no device enrollment or real sender');
+  // Restore the deliberately uncertain durable state for an external engine restart.
+  await seed();sends=0;await make().process();await mutate(a,s=>s.observation=observation('25'));
+  await assert.rejects(make(a,{repository:crashRepository}).process(),/synthetic crash/);assert.equal(sends,1);
+  console.log('PASS real InnoDB: producer baseline/change,8consumers, recreation, epoch/revoke/consent/install/roster fences, rollback after mock acceptance, owner-scoped deletion; zero network/real data');
+ }
+}finally{await db.end();}

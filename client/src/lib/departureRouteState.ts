@@ -33,7 +33,7 @@ export function createDepartureRouteSession<T extends DepartureRouteObservation>
   };
 }
 
-/** Terminal lookup errors keep the conservative positioning fallback. */
+/** Missing, failed or inconclusive searches never prove an extra flight is required. */
 export function isPositioningSearchPending(search: { status: string } | null | undefined): boolean {
-  return !search || search.status === 'checking';
+  return !search || search.status !== 'found';
 }

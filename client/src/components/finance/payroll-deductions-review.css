@@ -1,0 +1,11 @@
+.payroll-deductions-review{margin-block:18px;min-width:0;overflow-wrap:anywhere}
+.payroll-deductions-review h4,.payroll-deductions-review h5{margin:12px 0 8px}
+.payroll-deductions-review label{display:flex!important;align-items:flex-start!important;gap:9px!important;margin:12px 0!important;line-height:1.5;min-width:0}
+.payroll-deductions-review input[type=checkbox]{flex:0 0 20px!important;width:20px!important;height:20px!important;margin:2px 0 0!important}
+.payroll-deductions-rows,.payroll-deductions-before-after{display:grid;gap:10px;margin:12px 0}
+.payroll-deductions-rows article,.payroll-deductions-before-after article{min-width:0;border:1px solid currentColor;border-radius:12px;padding:12px}
+.payroll-deductions-rows article p{margin:6px 0}.payroll-deductions-rows article label{margin-top:0!important}
+.payroll-deductions-before-after dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;margin:0}
+.payroll-deductions-before-after dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.payroll-deductions-review button{max-width:100%;white-space:normal;overflow-wrap:anywhere;min-height:44px}
+.payroll-deductions-review small{display:block;line-height:1.5}

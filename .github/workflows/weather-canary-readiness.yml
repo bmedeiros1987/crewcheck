@@ -5,6 +5,7 @@ on:
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'server/weather/**'
+      - 'shared/weatherNoticeDetails.*'
       - 'scripts/tests/*weather*.test.mjs'
       - 'scripts/regression-weather-canary-mysql.mjs'
       - 'scripts/regression-weather-monitor-heartbeat-health.mjs'

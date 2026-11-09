@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {build} from 'esbuild';
+import {jsPDF} from 'jspdf';
+import {syntheticDsrPayroll} from './fixtures/synthetic-dsr-payroll.mjs';
+const require=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url),{chromium}=require('playwright');
+const worker=fs.readFileSync(createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs'));
+const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import Importer from './client/src/components/finance/FinancialStatementImporter';import {confirmedPayrollDsrContext} from './client/src/lib/financialStatementLearning';window.dsrContext=confirmedPayrollDsrContext;createRoot(document.getElementById('root')).render(<Importer mode="payroll"/>);`;
+const result=await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,outfile:'/tmp/synthetic-dsr-importer.js',format:'iife',jsx:'automatic',tsconfig:'tsconfig.json',loader:{'.css':'empty'},plugins:[{name:'local-pdf-worker',setup(b){b.onResolve({filter:/pdf\.worker\.min\.mjs\?url$/},()=>({path:'worker',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export default "/pdf-worker.mjs";',loader:'js'}));}}]});
+const bundle=result.outputFiles.find(file=>file.path.endsWith('.js')).text;
+const server=http.createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/pdf-worker.mjs'?'application/javascript; charset=utf-8':'text/html; charset=utf-8');res.end(req.url==='/pdf-worker.mjs'?worker:'<div id="root"></div><script>'+bundle.replaceAll('</script>','<\\/script>')+'</script>');});
+let browser;
+try {
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||(fs.existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined),args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.addInitScript(()=>{if(!localStorage.getItem('crewcheck_auth_user')){localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-dsr-owner',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-dsr-token');}});
+ await page.goto('http://127.0.0.1:'+server.address().port);
+ const pdf=new jsPDF();pdf.setFontSize(10);syntheticDsrPayroll.split('\n').forEach((line,index)=>pdf.text(line,12,12+index*9));
+ await page.locator('input[type=file]').setInputFiles({name:'synthetic-dsr.pdf',mimeType:'application/pdf',buffer:Buffer.from(pdf.output('arraybuffer'))});
+ await page.locator('.finance-learning-review').waitFor();
+ assert.match(await page.locator('[data-payroll-dsr-review]').textContent(),/22\/8.*conciliado/);
+ assert.equal(await page.evaluate(()=>window.dsrContext('2026-08')),null,'preview does not persist');
+ const confirm=page.getByRole('button',{name:'Confirmar valores',exact:true});assert.equal(await confirm.isDisabled(),true);
+ await page.getByLabel(/Conferi que o documento pertence/).check();await page.getByLabel(/Confirmo para esta conta/).check();
+ await confirm.click();await page.locator('.finance-learning-review').waitFor({state:'detached'});
+ const context=await page.evaluate(()=>window.dsrContext('2026-08'));assert.equal(context.profile.regime,'NB');assert.equal(context.sourcePayrollMonth,'2026-09');assert.equal(context.reportedDsr.amountMinor,88000);
+ assert.equal(await page.evaluate(()=>window.dsrContext('2026-09')),null);
+ await page.reload();await page.getByRole('heading',{name:'Salário e variáveis'}).waitFor();assert.equal((await page.evaluate(()=>window.dsrContext('2026-08'))).profile.regime,'NB');
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-dsr-other',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-other-token');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+ assert.equal(await page.evaluate(()=>window.dsrContext('2026-08')),null);assert.equal(await page.locator('[data-payroll-dsr-review]').count(),0);
+ assert.deepEqual(errors,[]);console.log('PASS actual PDF.js -> existing payroll importer -> same source/cycle confirmation -> persisted DSR producer -> reload and account isolation at390px; synthetic only');
+} finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}

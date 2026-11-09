@@ -25,7 +25,7 @@ const context = { ownerId: identity.ownerId, sourceVerified: true, eligible: tru
 const dispatch = extra => dispatchMockPush({ repository, mockProvider, installation: installed, envelope, context, now, ...extra });
 assert.deepEqual(livePushAvailability(), { enabled: false, configured: false, scheduled: false, received: null });
 await assert.rejects(dispatch({ mockProvider: { kind: 'live', send: () => { throw Error('Never'); } } }));
-const parallel = await Promise.all([dispatch(), dispatch()]); assert.equal(calls, 1); assert(parallel.every(value => value.status === 'accepted_unconfirmed' && value.received === null));
+const parallel = await Promise.all([dispatch(), dispatch()]); assert.equal(calls, 1); assert(parallel.every(value => ['accepted_unconfirmed','dispatching'].includes(value.status) && value.received === null)); assert.equal((await dispatch()).status,'accepted_unconfirmed','terminal durable state remains accepted after concurrent claim');
 assert.equal((await dispatch({ installation: revoked })).status, 'blocked');
 assert.equal((await dispatch({ context: { ...context, ownerId: 'owner_other' } })).status, 'blocked');
 assert.equal((await dispatch({ now: now + 60000 })).status, 'blocked');

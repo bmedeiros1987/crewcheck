@@ -3,11 +3,16 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
       - 'client/src/components/v1391/aims-vertical.css'
       - 'client/src/components/v1391/roster-layout.css'
       - 'client/src/lib/rosterPublication*.ts'
       - 'scripts/regression-aims-vertical-browser.mjs'
+      - 'scripts/regression-publication-import-flow.cjs'
+      - 'scripts/lib/roster-format-controls.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - '.github/workflows/aims-vertical.yml'
   workflow_dispatch:
@@ -18,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   aims-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -42,6 +47,15 @@ jobs:
           node scripts/regression-roster-layout-preference.mjs
           node scripts/regression-roster-publication-review.mjs
           npx vite build
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/aims-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

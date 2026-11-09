@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {regulationDeadlineSummary,regulationLastActivity,regulationExtensionMargin} from '../shared/regulationDeadlineSummary.mjs';
+import {regulationScheduleProjection} from '../shared/regulationScenarioPrefill.mjs';
+const form={presentation:'2033-04-15T07:20',presentationReviewed:true,normalEnd:'2033-04-15T18:20',offset:'-03:00',plannedEnd:'2033-04-15T16:50',delay:'0',reviewed:true,publicationOffsetReviewed:true,regime:'operator-reviewed',composition:'simple',acclimatization:'acclimatized',timingChange:'flight-delay',operation:'domestic',postFlight:'30',tasks:'0'};
+const summary=f=>regulationDeadlineSummary(f,regulationScheduleProjection(f),{lastActivity:'operating'});
+assert.equal(regulationExtensionMargin(summary(form),true),150);
+assert.equal(regulationExtensionMargin(summary({...form,composition:''}),true),null);
+assert.equal(regulationExtensionMargin(summary({...form,presentationReviewed:false}),true),null);
+assert.equal(regulationExtensionMargin(summary({...form,tasks:''}),true),null);
+assert.equal(regulationExtensionMargin(summary(form),false),null);
+assert.equal(regulationLastActivity(null,'operating'),'operating');assert.equal(regulationLastActivity(null,'positioning'),'positioning');assert.equal(regulationLastActivity(null,'forged'),'unknown');
+assert.equal(regulationLastActivity({legs:[{workType:'PS'}]},'operating'),'positioning');
+assert.equal(regulationLastActivity({legs:[{workType:'OP'}]},'positioning'),'operating');
+assert.equal(regulationLastActivity({legs:[{}]},'operating'),'unknown');
+console.log('PASS regulation review gates: validated extension margin only; manual last activity cannot override imported OP/PS/unknown.');

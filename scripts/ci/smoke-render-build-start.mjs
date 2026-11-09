@@ -51,8 +51,25 @@ try {
     } catch {}
   }
   assert.ok(healthy, 'configured npm start must expose local health without credentials');
+  // Exercise the canonical prepared dispatch, not just an import/regex check.
+  // No auth header or fake DB configuration: existing identity fails closed with
+  // 503 when the DB is unconfigured, or 401 if identity is checked first.
+  for (const route of ['/api/operational/escala-contact', '/api/admin/escala-contact']) {
+    const response = await fetch(`http://127.0.0.1:${env.PORT}${route}`, { signal: AbortSignal.timeout(1500) });
+    assert([401, 503].includes(response.status), route + ' must deny unauthenticated GET, not return 404/HTML');
+    assert.match(response.headers.get('content-type') || '', /application\/json/);
+    const body = await response.json();
+    assert.equal(body.ok, false); assert.equal(Object.hasOwn(body, 'contact'), false);
+    assert.match(body.message || '', /login|autentica|Banco Aiven|Segredo de autenticação/i);
+    // Handler-specific responses distinguish this route from any generic outage.
+    const invalid = await fetch(`http://127.0.0.1:${env.PORT}${route}?unexpected=1`, { signal: AbortSignal.timeout(1500) });
+    assert.equal(invalid.status, 400); assert.equal((await invalid.json()).code, 'CONTACT_INVALID');
+    const method = await fetch(`http://127.0.0.1:${env.PORT}${route}`, { method: 'POST', signal: AbortSignal.timeout(1500) });
+    assert.equal(method.status, 405); assert.equal((await method.json()).code, 'CONTACT_METHOD');
+    assert.equal(method.headers.get('allow'), route.includes('/admin/') ? 'GET, PUT' : 'GET');
+  }
   assert.equal(preparationFingerprint(), prepared, 'start must not replay or change prepared routing/security sources');
-  console.log('PASS: configured npm run build → npm start → localhost health; no credentials, no outbound network, unchanged prepared sources');
+  console.log('PASS: configured npm run build → npm start → localhost health + authenticated Escala route denials; no credentials, no outbound network, unchanged prepared sources');
 } finally {
   stop(server);
   if (server && server.exitCode === null) await once(server, 'exit');

@@ -26,7 +26,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
   const NativeDate=Date,instant=Date.parse('2032-02-02T15:00:00Z');
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
-  localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+  localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
   localStorage.setItem('crewcheck_demo_mode_seen','1');
   localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
@@ -49,7 +49,7 @@ async function checkHidden(page){
  assert(!moneyPattern.test(attrs),'no monetary attributes/tooltips');
  assert.equal(await root.locator('.cc-financial-bar-track').count(),0,'proportional bars are not exposed');
  assert(!moneyPattern.test(await root.ariaSnapshot()),'accessibility tree has no amounts');
- assert.match(await root.textContent(),/Valor oculto|Não calculável|Sem itens previstos/);
+ assert.match(await root.textContent(),/R\$ •••|Não calculável|Sem itens previstos/);
 }
 async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};
  // expand() deliberately exposes every details body for privacy assertions,
@@ -68,18 +68,24 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  for(const [kind,width] of [['domestic',390],['multi',1440],['unknown',390],['empty',390]]){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'}),errors=[];
   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
-  const jan={...roster('domestic',1),days:[day('31/01/2032')]};
-  const history=kind==='domestic'?[{id:'local-synthetic-current-february',checksum:'synthetic-current-february',createdAt:'2032-02-02T14:00:00Z',roster:roster(kind),sourceFileName:'Synthetic current February'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
-  await context.addInitScript(seed,{theme:'light',kind:roster(kind),amount:123.45,salaryBase:4321.67,history});
+  const off=date=>({...day(date),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,dutyHours:0});
+  const payload=roster(kind);
+  // The two proportional bars are a complete-publication control. Missing-day
+  // scenarios retain their original gaps; privacy must hide their pending state too.
+  if(kind==='domestic')for(let n=25;n<=29;n++)payload.days.push(off(n+'/02/2032'));
+  const jan={...roster('domestic',1),days:[...Array.from({length:30},(_,i)=>off(String(i+1).padStart(2,'0')+'/01/2032')),day('31/01/2032')]};
+  const prior={id:'local-synthetic-prior-december',checksum:'synthetic-prior-december',createdAt:'2031-12-31T00:00:00Z',roster:{...jan,year:2031,month:12,days:[off('31/12/2031')]},sourceFileName:'Synthetic boundary rest'};
+  const history=kind==='domestic'?[prior,{id:'local-synthetic-current-february',checksum:'synthetic-current-february',createdAt:'2032-02-02T14:00:00Z',roster:payload,sourceFileName:'Synthetic current February'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
+  await context.addInitScript(seed,{theme:'light',kind:payload,amount:123.45,salaryBase:4321.67,history});
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
   await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);await showFinancial(page,'charts');
   if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);
   const before=await page.locator('.cc-per-diem-content').textContent();
-  const persistedBefore=await page.evaluate(()=>JSON.stringify(localStorage));
+  const persistedBefore=await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>!key.startsWith('crewcheck:financial-privacy:v2:')))));
   const toggle=page.getByRole('button',{name:'Ocultar valores financeiros'}).first();await toggle.focus();await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().waitFor();await checkHidden(page);
   assert.equal(await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().getAttribute('aria-pressed'),'true');
-  assert.equal(await page.evaluate(()=>JSON.stringify(localStorage)),persistedBefore,'display toggle never writes data/settings');
+  assert.equal(await page.evaluate(()=>JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([key])=>!key.startsWith('crewcheck:financial-privacy:v2:'))))),persistedBefore,'display toggle writes only the account/device privacy preference; financial data/settings unchanged');
   if(kind==='domestic')await page.evaluate(()=>scrollTo(0,0));
   if(kind==='domestic')await page.screenshot({path:path.join(out,'hidden-mobile.png'),fullPage:false});
   await page.getByLabel('Filtro financeiro').selectOption('year');await checkHidden(page);await page.getByLabel('Filtro financeiro').selectOption('month');
@@ -115,7 +121,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
     assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview,'preview never adopts values: '+name);
     if(name==='mismatch'){
-     await importer.getByRole('checkbox').nth(0).check();await importer.getByRole('checkbox').nth(1).check();
+     await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
      assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false,'both consents cannot override proven mismatch');
      assert.match(await importer.getByRole('alert').innerText(),/Aplicação bloqueada/);
      assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview,'mismatch with both consents writes nothing');
@@ -125,15 +131,15 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    // Missing totals are unknown, not contradictory and never converted to zero.
    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-missing-totals.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,'Salario-base mensal 3000,00'])});
    await preview.waitFor();assert.match(await preview.innerText(),/Conciliação indisponível/);assert.doesNotMatch(await preview.innerText(),/Zero explícito|Totais impressos divergentes/);
-   await importer.getByRole('checkbox').nth(0).check();await importer.getByRole('checkbox').nth(1).check();
+   await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
    assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),true,'missing totals do not masquerade as proven mismatch');
    assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview);
    // A new, corrected document resets consent and can follow normal scoped adoption.
    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-corrected.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,'Salario-base mensal 3000,00','TOTAIS 3000,00 100,00','Liquido 2900,00'])});
    await preview.waitFor();assert.match(await preview.innerText(),/Totais impressos conciliados/);
-   assert.equal(await importer.getByRole('checkbox').nth(0).isChecked(),false);assert.equal(await importer.getByRole('checkbox').nth(1).isChecked(),false);
+   assert.equal(await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).isChecked(),false);assert.equal(await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).isChecked(),false);
    assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
-   await importer.getByRole('checkbox').nth(0).check();await importer.getByRole('checkbox').nth(1).check();
+   await importer.getByRole('checkbox',{name:'Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.',exact:true}).check();await importer.getByRole('checkbox',{name:/^Confirmo para esta conta: fixos do mês da folha/}).check();
    await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await preview.waitFor({state:'hidden'});
    const savedRates=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')).rates);
    assert.equal(savedRates.length,1);assert.equal(savedRates[0].key,'salary.base');assert.equal(savedRates[0].value,3000);
@@ -158,7 +164,8 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'other-synthetic-account',role:'user'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   assert.equal(await page.getByRole('button',{name:'Mostrar valores financeiros'}).count(),0,'other account does not inherit hidden state');
   await page.reload();await page.locator('.cz-app').waitFor();await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();
-  await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().waitFor();
+  await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().waitFor();
+  await checkHidden(page); // seed restores original owner; its hidden device preference survives reload.
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'mobile layout fits');
   assert.deepEqual(errors,[]);results.push({kind,width,keyboard:true,accessibility:true,roundTrip:true,accountIsolation:true,reload:true});await context.close();
  }

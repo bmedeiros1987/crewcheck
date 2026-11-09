@@ -1,3 +1,4 @@
+import {restrictConciergeSnapshotWrite} from '../server/concierge-read-only-scope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -40,7 +41,7 @@ function harness(initialPlan = 'basic', gymPlan = 'wellhub', io = {}) {
     { id: 'synthetic-gold', name: 'Synthetic Gold gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'gold', activities: [], openingHours: [], sourceUrl: 'https://example.invalid/synthetic-gold' },
   ];
   const context = vm.createContext({
-    ...preferences, detectWellhubActivityFromText, detectWellhubPlanFromText,
+    restrictConciergeSnapshotWrite,...preferences, detectWellhubActivityFromText, detectWellhubPlanFromText,
     isWellhubPlanServer, wellhubPlanLabelServer,
     telegramRostersRead: () => clone(local),
     telegramRostersWrite: data => {

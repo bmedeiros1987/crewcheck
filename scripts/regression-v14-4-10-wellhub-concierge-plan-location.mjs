@@ -127,7 +127,7 @@ assert.match(materializedServer, /isWellhubActivityPreferenceMessage\(value\)/);
 assert.match(materializedServer, /const provider = planPreference \|\| activityPreference/);
 assert.match(materializedServer, /extractWellhubLocationHintFromText\(text\)/);
 assert.match(materializedServer, /Não tenho uma cidade\/UF confirmada para pesquisar academias com segurança\./);
-assert.match(materializedServer, /configureWhatsAppConcierge\(async \(\{ email, text, location \}\)/);
+assert.match(materializedServer, /configureWhatsAppConcierge\(async \(\{ email, text, location, signal \}\)/);
 assert.match(materializedServer, /source: 'whatsapp'/);
 assert.match(materializedWhatsApp, /message\?\.type === 'location'/);
 assert.match(materializedWhatsApp, /location: message\.location \|\| null/);

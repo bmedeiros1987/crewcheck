@@ -53,9 +53,9 @@ try {
     check(runtime.readPositioningSearch(event)?.status === status, `${status} remains cached until TTL`);
     for (const busy of [false, true]) {
       const result = see(far, busy);
-      const pending = status === 'checking';
-      check(result.positioningUnresolved === pending, `${status} busy=${busy}: only checking is pending`);
-      check(pending ? result.detail !== 'Dia anterior' && result.card !== 'Dia anterior' : result.detail === 'Dia anterior' && result.card === 'Dia anterior', `${status} busy=${busy}: both surfaces preserve terminal fallback`);
+      const pending = status !== 'found';
+      check(result.positioningUnresolved === pending, `${status} busy=${busy}: inconclusive lookup remains pending`);
+      check(pending ? result.detail !== 'Dia anterior' && result.card !== 'Dia anterior' : result.detail === 'Dia anterior' && result.card === 'Dia anterior', `${status} busy=${busy}: both surfaces distinguish inconclusive from found`);
     }
     check(see({ ok:true, distanceMeters:12000 }).detail === '09:00', `${status}: near route no prior-day fallback`);
     check(see(far, false, { ...event, confirmed:true }).detail === 'FIX101', `${status}: confirmed flight wins`);

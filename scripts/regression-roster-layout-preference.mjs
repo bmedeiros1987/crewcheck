@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
+import vm from 'node:vm';
+import React from 'react';
 const code = ts.transpileModule(fs.readFileSync('client/src/lib/rosterLayoutPreference.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
 const { readRosterLayout: read, saveRosterLayout: save, rosterLayoutKey: key, readRosterZoom: zoom } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 const data = new Map();
@@ -34,15 +36,25 @@ assert.equal(save(storage,'A','cards'), true);
 assert.equal(read(storage,'A'), 'cards');
 const prepared = fs.readFileSync('client/src/components/v1391/RosterLaunchView.tsx','utf8');
 assert.ok(prepared.includes('data-roster-layout={layout}'), 'selector must survive canonical preparation');
-assert.match(prepared, /<select aria-label="Formato da escala" value=\{layout\}/, 'native picker exposes current value and accessible name');
-for (const layout of ['cards','list','aims','calendar']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
+// Evaluate the actual format control JSX, independent of select/button markup.
+// Browser companion verifies focus, keyboard activation, layout and reload.
+const ast=ts.createSourceFile('RosterLaunchView.tsx',prepared,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let formatControl;
+function findControl(node){if(ts.isJsxElement(node)&&node.openingElement.attributes.properties.some(p=>ts.isJsxAttribute(p)&&p.name.getText(ast)==='aria-label'&&p.initializer&&ts.isStringLiteral(p.initializer)&&p.initializer.text==='Formato da escala')){assert.equal(formatControl,undefined,'one format control');formatControl=node;}ts.forEachChild(node,findControl);}findControl(ast);assert.ok(formatControl,'named format control exists');
+const controls={};vm.runInNewContext(ts.transpileModule('export const render=(layout,choose)=>('+formatControl.getText(ast)+');',{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,{exports:controls,React,LayoutGrid:'svg',List:'svg',FileText:'svg',CalendarDays:'svg'});
+const names={cards:'Formato Cards',list:'Formato Lista',aims:'Formato AIMS · CrewCheck AIMS',calendar:'Formato Agenda · Calendário'};
+for(const selected of Object.keys(names)){
+ assert.equal(save(storage,'A',selected),true);const group=controls.render(read(storage,'A'),next=>assert.equal(save(storage,'A',next),true));assert.equal(group.props.role,'group');assert.equal(group.props['aria-label'],'Formato da escala');const buttons=React.Children.toArray(group.props.children);assert.equal(buttons.length,4,'four existing formats, no duplicate Document');
+ for(const [value,name]of Object.entries(names)){const button=buttons.find(b=>b.props['data-roster-layout-choice']===value);assert.ok(button,`format ${value} remains reachable`);assert.equal(button.type,'button');assert.equal(button.props.type,'button');assert.notEqual(button.props.disabled,true);assert.ok((button.props.tabIndex??0)>=0,'choice remains keyboard-focusable');assert.equal(button.props['aria-label'],name);assert.equal(button.props['aria-pressed'],value===selected);assert.equal(typeof button.props.onClick,'function');button.props.onClick();assert.equal(read(storage,'A'),value,'actual handler passes the selected format');assert.equal(read(storage,'B'),'cards','other account untouched');}
+}
+
 assert.ok(prepared.includes('<AimsDocumentView events={visibleEvents}'), 'AIMS uses the existing document projection');
 assert.ok(!prepared.includes('<option value="document">'), 'no duplicate Document option');
-assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
+// The calendar shows the filtered events, counts the whole period and keeps every operational event for details.
+assert.ok(prepared.includes('<CalendarRosterView operationalEvents={allOrdered} events={filterRosterEvents(ordered, categoryFilter.filter)} periodEvents={ordered} filtered={categoryFilter.filter !== \'all\'} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
 
 assert.ok(prepared.includes('data-roster-iso={group.iso}'), 'date navigation remains reachable');
 const aimsTable = fs.readFileSync('client/src/components/v1391/AimsRosterTable.tsx', 'utf8');
-for (const heading of ['Código / atividade', 'Apresentação', 'Origem', 'Partida / início', 'Destino', 'Chegada / fim', 'Detalhes publicados']) {
+for (const heading of ['<small>Atividade</small>', 'Apresentação', 'Origem', 'Partida / início', 'Destino', 'Chegada / fim', 'Dados da fonte · {card.code}', 'Detalhes publicados']) {
   assert.ok(aimsTable.includes(heading), `missing published AIMS field: ${heading}`);
 }
 assert.ok(aimsTable.includes('className="cc-aims-days"'), 'AIMS must group each published day in a vertical column');
@@ -54,7 +66,7 @@ const calendar = fs.readFileSync('client/src/components/v1391/CalendarRosterView
 assert.ok(calendar.includes('<table>'), 'calendar must be a semantic monthly table');
 assert.ok(calendar.includes("const weekDays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']"), 'calendar must keep the full Monday-to-Sunday week');
 assert.ok(calendar.includes('data-roster-iso={iso}'), 'calendar cells must preserve date navigation');
-assert.ok(calendar.includes('dayEvents.map((event)'), 'calendar must render every event in each day');
+assert.ok(calendar.includes('dayEvents.map((event, index)'), 'calendar must render every event in each day');
 assert.doesNotMatch(calendar, /dayEvents\.slice\(0,\s*\d+\)/, 'calendar must not hide valid events behind an arbitrary cap');
 assert.doesNotMatch(calendar, /finance|salary|perDiem|parser/i, 'calendar renderer must not invent finance or parser logic');
 const layoutCss = fs.readFileSync('client/src/components/v1391/roster-layout.css', 'utf8');
@@ -74,4 +86,3 @@ assert.equal(zoom(blocked, 'A'), 'month');
 assert.equal(save(storage, null, 'aims', 'day'), false);
 assert.equal(save(storage, 'A', 'aims', 'week'), false);
 console.log('PASS: backward-compatible month/day preference, reload, reset, account isolation and blocked storage');
-

@@ -68,10 +68,16 @@ expect(classification.classifyScheduleActivity(dayOff) === 'FOLGA', 'DO deve per
 expect(classification.isSmartDepartureEligible(hsb) === false, 'HSB não acionado não pode ganhar Saída Inteligente.');
 
 const rosterView = read('client/src/components/v1391/RosterLaunchView.tsx');
-expect(rosterView.includes("import { classifyScheduleActivity } from '@/lib/scheduleActivityClassification';"), 'Visão mensal não usa classificação compartilhada.');
-expect(rosterView.includes('const scheduleCategory = classifyScheduleActivity(event);'), 'workMode ainda deriva stay/rest por regex local.');
-expect(rosterView.includes("scheduleCategory === 'FOLGA' || scheduleCategory === 'REPOUSO'"), 'Folga/repouso não mapeados para modo rest.');
-expect(rosterView.includes("scheduleCategory === 'PERNOITE'"), 'Pernoite não mapeado para modo stay.');
+expect(rosterView.includes("from '@/lib/rosterPresentation';") && rosterView.includes('return rosterProgramMode(event)'), 'Visão mensal deve delegar à apresentação compartilhada.');
+const { loadClientModules } = await import('./lib/ts-module-harness.mjs');
+const presentationHarness = loadClientModules({files:['client/src/lib/rosterPresentation.ts']});
+const presentation = presentationHarness.load('rosterPresentation');
+for (const event of baseRests) expect(presentation.rosterProgramMode(event) === 'journey-rest', 'Repouso na base deve estar na categoria Repouso, não Folga/Pernoite.');
+for (const event of realOvernights) expect(presentation.rosterProgramMode(event) === 'stay', 'Pernoite real deve conservar sua categoria.');
+expect(presentation.rosterProgramMode(dayOff) === 'rest', 'DO conserva categoria Folga.');
+expect(presentation.rosterProgramMode(asb) === 'reserve', 'ASB conserva categoria Reserva.');
+expect(presentation.rosterProgramMode(hsb) === 'standby', 'HSB conserva categoria Sobreaviso.');
+presentationHarness.cleanup();
 expect(!rosterView.includes('/PERNOITE|ESTADIA|DESCANSO_BASE_CONTINUIDADE/.test(code)'), 'Regex legado ainda mistura descanso base com pernoite.');
 
 const continuity = read('client/src/lib/rosterContinuity.ts');

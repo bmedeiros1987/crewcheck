@@ -17,3 +17,7 @@
   outline-offset: 3px;
 }
 .cc-financial-privacy-toggle svg { flex: 0 0 auto; }
+/* Icon-only eye (shows/hides values only): accessible name and state kept, 44px target. */
+.cc-financial-privacy-toggle[data-icon-only] { min-width: 44px; justify-content: center; padding: .6rem; }
+/* Enlarged reading (150/200%) resets button min-width app-wide; the icon-only eye keeps its 44px target. */
+html:is([data-crew-text-size="150"], [data-crew-text-size="200"]) body :is(#root .cz-app[data-version], [role="dialog"]) .cc-financial-privacy-toggle[data-icon-only] { min-width: 44px !important; }

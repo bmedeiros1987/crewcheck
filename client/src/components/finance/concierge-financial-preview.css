@@ -13,3 +13,6 @@
 .cc-concierge-finance-help>summary>span {display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:2px solid currentColor;border-radius:50%;font-weight:700}
 .cc-concierge-finance-help>div {position:absolute;right:0;top:100%;z-index:5;width:min(280px,calc(100vw - 72px));max-height:60vh;overflow:auto;box-sizing:border-box;padding:16px;background:var(--cc-review-surface);color:var(--cc-review-text);border:1px solid var(--cc-review-border);border-radius:12px;box-shadow:0 8px 24px #0003}
 .cc-concierge-finance-help>div p {font-size:13px;line-height:1.5}
+
+.cc-concierge-finance-context summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:.85em}
+.cc-concierge-finance-context p{font-size:.85em;overflow-wrap:anywhere}

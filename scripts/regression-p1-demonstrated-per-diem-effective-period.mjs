@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
 import { loadClientModules, createChecker } from './lib/ts-module-harness.mjs';
 
 const checker = createChecker('Per diem demonstrado — período efetivo e precedência');
@@ -9,6 +11,8 @@ const { load, cleanup } = loadClientModules({
   files: [
     'client/src/lib/financialAmounts.ts',
     'client/src/lib/financialStatementLearning.ts',
+    'client/src/lib/sharedAllowanceResolution.ts',
+    'client/src/lib/financialActApplicability.ts',
   ],
   prefix: 'crewcheck-perdiem-effective-',
 });
@@ -120,10 +124,27 @@ try {
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
   check('fallback jurídico nacional continua 105,04',
     /key: 'domestic'[\s\S]{0,120}?mainMeal: 105\.04/.test(financialRules));
+  // Execute the actual replacement caller rather than asserting obsolete helper names.
+  const ast=ts.createSourceFile('Home.tsx',home,99,true,ts.ScriptKind.TSX);
+  const configNode=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='perDiemConfig');assert(configNode);
+  const journal=load('financialActApplicability'),shared=load('sharedAllowanceResolution');
+  const context=vm.createContext({...amounts,...shared,...journal,
+    resolveActFinancialRules:()=>({breakfastPercent:.25,perDiem:[{key:'domestic',label:'Literal floor metadata',currency:'BRL',mainMeal:105.04}]}),
+    confirmedPerDiemReferencesAt:()=>({state:'missing',mainMeal:null,breakfast:null,taxi:null}),
+    readOptionalNumberSetting:()=>null,loadAirportPerDiemOverrides:()=>({})});
+  vm.runInContext(ts.transpileModule(configNode.getText(ast),{compilerOptions:{target:99}}).outputText,context);
+  const empty={schema:1,ownerId:'synthetic-date-scope',revision:0,events:[]};
+  const history=journal.planFinancialActChange(empty,0,{from:'2025-12-01',through:'2027-11-30',active:true,employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'});assert(history);
+  const scope={state:'ready',ownerId:empty.ownerId,raw:JSON.stringify(history),history,session:null,isCurrent:()=>true};
+  const at=date=>context.perDiemConfig({},date,scope);
+  const before=at('2025-12-31'),jan=at('2026-01-01'),nextIndex=at('2026-12-01');
   check('Home usa resolvedor date-aware em vez de constante global',
-    home.includes('resolveDomesticPerDiemRate({') && home.includes('domesticBreakfast: domestic.breakfast'));
+    before.resolveSlot('domestic','mainMeal').kind==='reference'&&before.resolveSlot('domestic','mainMeal').value===109.43
+    &&jan.rates.domestic.mainMeal===109.44&&Number.isNaN(nextIndex.rates.domestic.mainMeal));
   check('café nacional vem da resolução efetiva',
-    home.includes("? cfg.domesticBreakfast") && home.includes('perDiemSlotAmount(rate.mainMeal, slot, cfg.breakfastPercent)'));
+    jan.domesticBreakfast===27.36&&jan.resolveSlot('domestic','breakfast').value===27.36&&Number.isNaN(nextIndex.domesticBreakfast));
+  const unconfirmed=context.perDiemConfig({},'2026-01-01',{...scope,history:empty});
+  check('Home não aplica piso atemporal sem abrangência declarada',Number.isNaN(unconfirmed.rates.domestic.mainMeal)&&Number.isNaN(unconfirmed.domesticBreakfast));
 } finally {
   cleanup();
 }

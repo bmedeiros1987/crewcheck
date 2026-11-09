@@ -5,9 +5,10 @@ import { validFinancialDay } from '@/lib/financialHistoryPeriods';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy';
 import './concierge-financial-preview.css';
 import {useHomeFinancialEstimate} from './HomeFinancialEstimate';
+import {financialPreviewMetadata} from '@shared/financialPreviewMetadata.mjs';
 import {localUpcomingAllowance} from '@/lib/financialLocalUpcoming';
 
-type Forecast = { id: string; category: string; expectedPaymentDate: string; expectedPaymentTimezone: string; amountMinor: number | null; currency: string; status: 'forecast';partial?:boolean };
+type Forecast = { id: string; category: string; expectedPaymentDate: string; expectedPaymentTimezone: string; amountMinor: number | null; currency: string; status: 'forecast';partial?:boolean; periodStart?:string;periodEnd?:string;aggregationLevel?:string;revision?:number;operationalMonth?:string;payrollMonth?:string;rateMonth?:string;expectedCreditMonth?:string;amountBasis?:string };
 type Preview = { state: 'available' | 'no_data' | 'incomplete'; events: Forecast[]; hasMore: boolean };
 type FinanceMode = 'allowance' | 'salary';
 const financeMode = (category: string): FinanceMode => ['payroll', 'vacation'].includes(category) ? 'salary' : 'allowance';
@@ -25,7 +26,7 @@ function decode(raw: any, identity: string): Preview | null {
     if (!event || typeof event.id !== 'string' || !/^[a-f0-9]{64}$/.test(event.id) || ids.has(event.id)
       || !Object.hasOwn(labels, event.category) || event.status !== 'forecast' || !validFinancialDay(event.expectedPaymentDate)
       || typeof event.currency !== 'string' || currencyMinorDigits(event.currency) === null
-      || (event.amountMinor !== null && !Number.isSafeInteger(event.amountMinor))) return null;
+      || (event.amountMinor !== null && (!Number.isSafeInteger(event.amountMinor) || event.amountMinor < 0)) || financialPreviewMetadata(event).state === 'invalid') return null;
     try { new Intl.DateTimeFormat('en', { timeZone: event.expectedPaymentTimezone }); } catch { return null; }
     if (!event.expectedPaymentTimezone) return null;
     ids.add(event.id);
@@ -71,12 +72,12 @@ export default function ConciergeFinancialPreview({ openFinance }: { openFinance
     return () => cancelAnimationFrame(frame);
   }, [identity,current?.loading,data]);
   return <section className="cz-toolbox cc-concierge-finance" aria-label="Próximas previsões financeiras">
-    <header className="cc-concierge-finance-heading"><h2>Próximas previsões financeiras</h2><details className="cc-concierge-finance-help"><summary aria-label="Entender as previsões financeiras"><span aria-hidden="true">?</span></summary><div><p>Estimativas em moedas originais; recebimento não confirmado.</p>{local?<p>Calculado da escala aberta nesta conta. Histórico salvo indisponível; subtotais não incluem parcelas sem dados.</p>:<p>Previsões dos registros salvos nesta conta.</p>}{data&&<p>Fusos das origens: {[...new Set(data.events.map(event=>event.expectedPaymentTimezone))].join(', ')||'a confirmar'}.</p>}</div></details></header><p>30 dias · estimativas</p>
+    <header className="cc-concierge-finance-heading"><h2>Próximas previsões financeiras</h2><details className="cc-concierge-finance-help"><summary aria-label="Entender as previsões financeiras"><span aria-hidden="true">?</span></summary><div><p>Estimativas em moedas originais; recebimento não confirmado.</p>{local?<p>Calculado da escala aberta nesta conta. Histórico salvo indisponível; subtotais não incluem parcelas sem dados.</p>:<p>Previsões dos registros salvos nesta conta. Podem diferir do cálculo da escala aberta. Atualização da origem não comprovada; confira no Financeiro.</p>}{data&&<p>Fusos das origens: {[...new Set(data.events.map(event=>event.expectedPaymentTimezone))].join(', ')||'a confirmar'}.</p>}</div></details></header><p>30 dias · estimativas</p>
     {local&&<p>Calculado da escala</p>}
     <p role="status">{!identity ? 'Entre na sua conta.' : current?.loading ? 'Consultando…' : !data ? 'Indisponível · tentar novamente.' : data.state === 'incomplete' ? 'Parcial · conferir valores e datas.' : !data.events.length ? 'Sem previsão com data.' : ''}</p>
     {data && data.events.length > 0 && <><FinancialPrivacyToggle/>
-      <ol>{data.events.map(event => <li key={event.id}><button type="button" data-financial-origin={event.id} onClick={() => openFinance(financeMode(event.category))}><div><strong>{labels[event.category]}</strong><span><time dateTime={event.expectedPaymentDate}>{event.expectedPaymentDate.slice(5).split('-').reverse().join('/')}</time> · previsão</span></div>
-        <b>{event.amountMinor === null ? 'Valor a confirmar' : privacy.amount(formatFinancialMinor(event.amountMinor, event.currency) || 'Valor a confirmar')}<small>Moeda original: {event.currency}{event.partial?' · subtotal parcial':''}</small></b></button></li>)}</ol>
+      <ol>{data.events.map(event => {const metadata=financialPreviewMetadata(event);return <li key={event.id}><button type="button" data-financial-origin={event.id} onClick={() => openFinance(financeMode(event.category))}><div><strong>{labels[event.category]}</strong><span><time dateTime={event.expectedPaymentDate}>{event.expectedPaymentDate.slice(5).split('-').reverse().join('/')}</time> · previsão</span></div>
+        <b>{event.amountMinor === null ? 'Valor a confirmar' : privacy.amount(formatFinancialMinor(event.amountMinor, event.currency) || 'Valor a confirmar')}<small>Moeda original: {event.currency}{event.partial?' · subtotal parcial':''}</small></b></button><details className="cc-concierge-finance-context"><summary>Competência e origem</summary>{metadata.state==='known'?<><p>Período do registro: {metadata.periodStart} a {metadata.periodEnd} · revisão {metadata.revision}.</p>{metadata.operationalMonth&&<p>Operacional: {metadata.operationalMonth} · folha: {metadata.payrollMonth} · crédito esperado: {metadata.expectedCreditMonth}.</p>}</>:<p>Competência e revisão persistida a confirmar. Confira no Financeiro.</p>}<p>{local?'Cálculo da escala aberta nesta conta; sem revisão persistida.':'Registros salvos nesta conta; atualização da origem não comprovada.'}</p><p>Pagamento previsto em {event.expectedPaymentDate} · {event.expectedPaymentTimezone}. Recebimento não confirmado.</p></details></li>})}</ol>
       {data.hasMore && <p>Outras previsões disponíveis.</p>}</>}
     <div className="cc-concierge-finance-actions">{(!data?.events.length||data?.hasMore)&&<button type="button" data-financial-origin="open-finance" onClick={() => openFinance(financeMode(data?.events[0]?.category || 'allowance'))}>Abrir Financeiro</button>}{identity && <button type="button" aria-label="Atualizar previsões" disabled={current?.loading} onClick={() => refresh(value => value + 1)}>Atualizar</button>}</div>
   </section>;

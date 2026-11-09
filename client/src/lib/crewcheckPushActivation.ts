@@ -1,4 +1,4 @@
-export type PushBinding = { ownerId: string; installationId: string; consentRevision: number };
+export type PushBinding = { ownerId: string; installationId: string; consentRevision: number; subscriptionHash?: string };
 export type PushDependencies = {
   enabled: boolean; ownerId: string | null; currentOwner: () => string | null; registration: ServiceWorkerRegistration;
   withSubscriptionLock: <T>(run: () => Promise<T>) => Promise<T>;

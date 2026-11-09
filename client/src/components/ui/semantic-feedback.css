@@ -1,0 +1,118 @@
+/* Narrow opt-in rules. Legacy controls and application surfaces keep their cascade. */
+html body #root [data-slot="button"][data-crew-feedback],
+html body #root [data-slot="card"][data-crew-feedback] {
+  box-sizing: border-box;
+  min-width: 0 !important;
+  max-width: 100%;
+  border: 2px solid var(--cc-feedback-edge, var(--cc-feedback-border)) !important;
+  background: var(--cc-feedback-surface) !important;
+  color: var(--cc-feedback-ink) !important;
+  box-shadow: none !important;
+  animation: none !important;
+  transition: background-color var(--cc-feedback-duration) ease-out,
+    border-color var(--cc-feedback-duration) ease-out,
+    color var(--cc-feedback-duration) ease-out,
+    transform var(--cc-feedback-duration) ease-out !important;
+}
+
+html body #root [data-crew-feedback="action"] { --cc-feedback-edge: var(--cc-feedback-action); }
+html body #root [data-crew-feedback="neutral"] { --cc-feedback-edge: var(--cc-feedback-border); }
+html body #root [data-crew-feedback="success"] { --cc-feedback-edge: var(--cc-feedback-success); }
+html body #root [data-crew-feedback="danger"] { --cc-feedback-edge: var(--cc-feedback-danger); }
+html body #root [data-crew-feedback="pending"] { --cc-feedback-edge: var(--cc-feedback-pending); }
+
+html body #root [data-slot="button"][data-crew-feedback] {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  min-height: 44px !important;
+  height: auto !important;
+  padding: 10px 16px !important;
+  margin: 0;
+  border-radius: 12px !important;
+  font-size: calc(1rem * var(--cc-text-scale, 1)) !important;
+  line-height: 1.4 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  text-align: center;
+  cursor: pointer;
+  transform: none !important;
+}
+
+html body #root [data-slot="button"][data-crew-feedback="action"] {
+  background: var(--cc-feedback-action) !important;
+  color: var(--cc-feedback-action-ink) !important;
+}
+
+html body #root [data-slot="button"][data-crew-feedback] > svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  color: inherit !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html body #root [data-slot="button"][data-crew-feedback]:not(:disabled):not([aria-disabled="true"]):hover {
+    border-color: var(--cc-feedback-ink) !important;
+  }
+  html body #root [data-slot="button"][data-crew-feedback]:not([data-crew-feedback="action"]):not(:disabled):not([aria-disabled="true"]):hover {
+    background: var(--cc-feedback-hover-surface) !important;
+  }
+}
+
+html body #root [data-slot="button"][data-crew-feedback]:not(:disabled):not([aria-disabled="true"]):active {
+  transform: translateY(1px) !important;
+}
+
+/* Focus is immediate; it is never part of the transition list. */
+html body #root [data-slot="button"][data-crew-feedback]:focus-visible {
+  outline: 3px solid var(--cc-feedback-focus) !important;
+  outline-offset: 3px !important;
+}
+
+html body #root [data-slot="button"][data-crew-feedback]:is(:disabled, [aria-disabled="true"]) {
+  border-color: var(--cc-feedback-pending) !important;
+  background: var(--cc-feedback-surface) !important;
+  color: var(--cc-feedback-muted) !important;
+  opacity: 1 !important;
+  transform: none !important;
+  cursor: not-allowed;
+}
+
+/* Reuses Card; the attribute does not imply a clickable or focusable surface. */
+html body #root [data-slot="card"][data-crew-feedback] {
+  gap: 16px;
+  padding-block: 20px;
+  border-left-width: 4px !important;
+  border-radius: 16px !important;
+  font-size: calc(1rem * var(--cc-text-scale, 1));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+html body #root [data-slot="card"][data-crew-feedback] [data-slot="card-description"] {
+  color: var(--cc-feedback-muted) !important;
+  font-size: inherit;
+  line-height: 1.5;
+}
+
+html body #root [data-slot="button"][data-crew-feedback] [data-feedback-chevron] {
+  transition: transform var(--cc-feedback-duration) ease-out !important;
+}
+html body #root [data-slot="button"][data-crew-feedback][aria-expanded="true"] [data-feedback-chevron] {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html body #root [data-slot="button"][data-crew-feedback],
+  html body #root [data-slot="card"][data-crew-feedback],
+  html body #root [data-slot="button"][data-crew-feedback] [data-feedback-chevron],
+  html body #root [data-slot="button"][data-crew-feedback]:not(:disabled):not([aria-disabled="true"]):is(:active, :hover, :focus-visible),
+  html body #root [data-slot="button"][data-crew-feedback][aria-expanded="true"] [data-feedback-chevron] {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+  }
+}

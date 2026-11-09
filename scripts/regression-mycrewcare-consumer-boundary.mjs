@@ -8,6 +8,30 @@ const record={direction:'to_airport',date:'2026-10-15',time:'05:00',airport:'FOR
 function read({stays=[stay],records=[record],observedAt=new Date(now).toISOString(),...extra}={}) {
  return reconcileMyCrewCareLogistics({context,stays,snapshot:{observedAt,records,...extra},now});
 }
+test('an explicit operational import veto rejects normalized and confirmed-empty snapshots',()=>{
+ const hotel={direction:'hotel_only',confirmation:'confirmed',airport:stay.airport,pairingId:stay.pairingId,hotelName:record.hotelName,reservationStartAt:stay.startAt,reservationEndAt:stay.endAt,status:'published'};
+ for(const records of [[record],[hotel],[{...record,status:'cancelled'}],[]]){
+  const result=read({records,emptyConfirmed:true,operationalImportAllowed:false});
+  assert.equal(result.accepted,false);assert.equal(result.error,'invalid-snapshot');
+  assert.deepEqual(result.facts,[]);assert.deepEqual(result.unmatched,[]);assert.deepEqual(result.conflicts,[]);
+  assert.equal(selectMyCrewCareHotel(result.facts,stay.id,{now}),null);
+  assert.equal(selectMyCrewCarePickup(result.facts,stay.id,{now}),null);
+ }
+});
+test('true is not authority and cannot bypass existing snapshot, record or stay guards',()=>{
+ for(const input of [
+  {records:[]},{observedAt:'invalid'},{observedAt:new Date(now+30001).toISOString()},
+  {records:[{...record,status:'planned'}]},{records:[{...record,status:'unknown'}]},
+  {stays:[{...stay,accountId:'other-account'}]},{stays:[{...stay,localOnly:true}]},
+  {records:[record,{...record,time:'05:10'}]},
+ ]){
+  const result=read({...input,operationalImportAllowed:true});
+  assert.equal(result.accepted,false);assert.deepEqual(result.facts,[]);
+ }
+ // The field is an optional veto, not a required capability token.
+ assert.deepEqual(read({operationalImportAllowed:true}),read());
+ assert.equal(read({records:[],emptyConfirmed:true}).accepted,true);
+});
 test('existing reconciler preserves source, update instant, stay identity and explicit pickup zone',()=>{
  const result=read();assert.equal(result.accepted,true);
  const hotel=selectMyCrewCareHotel(result.facts,stay.id,{now});

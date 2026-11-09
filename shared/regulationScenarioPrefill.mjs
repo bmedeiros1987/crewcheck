@@ -48,7 +48,9 @@ export function resolveRegulationProgram(events,current,context){
  return current||null;
 }
 export function regulationProgramDay(events,selected){
- if(!selected)return null;
+ // Home's no-future placeholder borrows a day (even an expired real day).
+ // That is navigation presentation, never an imported scenario selection.
+ if(!selected||selected.placeholder)return null;
  const canonical=selected.canonical,day=selected.day;
  if(!canonical?.journeyId||canonical.kind!=='flight')return day||null;
  const journey=events.filter(event=>event.canonical?.journeyId===canonical.journeyId&&event.kind==='flight').map(event=>event.canonical).sort((a,b)=>a.startDateTime.localeCompare(b.startDateTime));
