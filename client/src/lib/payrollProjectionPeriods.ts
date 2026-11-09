@@ -1,5 +1,6 @@
 import {financialActAt,readFinancialActApplicability,type FinancialActSnapshot} from './financialActApplicability';
 import {actPayrollCompetences,ACT_PAYROLL_CYCLE_SOURCE,PAYROLL_CYCLE_SOURCE,payrollMonthBounds} from './financialPayrollPeriods';
+import {resolveCrewFunction} from './actRules';
 
 export type FinancialPresetScope={company:'TAM';role:'cabin';basis:'system_default'|'owner_declaration';employmentConfirmed:boolean;allowsMonth:(month:string)=>boolean};
 /** Product configuration is not an employment declaration. Unknown roles,
@@ -20,8 +21,8 @@ export function financialPresetScope(roster:{airline?:string;rank?:string},conte
    }return current();
   }};
  }
- const rank=String(roster.rank||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
- if(!['LA','TAM','LATAM'].includes(String(roster.airline||'').trim().toUpperCase())||!['CC','COMISSARIO','COMISSARIA','COMISSARIO(A)'].includes(rank))return null;
+ const functionResolution=resolveCrewFunction(roster.rank);
+ if(!['LA','TAM','LATAM'].includes(String(roster.airline||'').trim().toUpperCase())||functionResolution.role!=='cabin'||functionResolution.confidence!=='alta')return null;
  return {company:'TAM',role:'cabin',basis:'system_default',employmentConfirmed:false,allowsMonth:month=>Boolean(current()&&payrollMonthBounds(month))};
 }
 

@@ -3817,8 +3817,8 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
   return Math.round(routeDistanceKm(from, to));
 }
 function perDiemConfig(roster: CrewRoster, effectiveDate: string, applicability: FinancialActSnapshot = readFinancialActApplicability()) {
-  // ACT metadata/geography is not evidence of this owner's employment. Only the
-  // separate explicit financial declaration may enable a shared reference.
+  // Product preset is explicitly labelled and separate from employment proof.
+  // Existing personal declarations/values retain their own source and fences.
   const act = resolveActFinancialRules(roster);
   const references = confirmedPerDiemReferencesAt(effectiveDate);
   const learnedMealRate = references.mainMeal, learnedMeal = learnedMealRate?.value ?? null;
@@ -3850,7 +3850,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string, applicability:
       const manual = readOptionalNumberSetting('crewcheck_perdiem_rate_' + category);
       if (manual !== null) selected = owned(perDiemSlotAmount(manual, slot === 'breakfast' ? 'breakfast' : 'mainMeal', act.breakfastPercent), false, true);
     }
-    return resolveSharedAllowanceSlot({ category, slot, date: effectiveDate, context: applicability, owned: selected, archiveIssue: rateArchiveIssue });
+    return resolveSharedAllowanceSlot({ category, slot, date: effectiveDate, context: applicability, owned: selected, archiveIssue: rateArchiveIssue,roster });
   };
   const domestic = resolveSlot('domestic', 'mainMeal'), breakfast = resolveSlot('domestic', 'breakfast'), taxi = resolveSlot('domestic', 'taxi');
   const rates = Object.fromEntries(act.perDiem.map(rule => {
@@ -3879,7 +3879,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const geography = resolveAllowanceOccurrenceGeography({ origin: event.origin, destination: event.destination, base: roster.base || '',
       breakfastAtProvenBase: slot === 'breakfast', overrides: airportOverrides, classify: resolvePerDiemRule });
     const classification = resolveLatamCabinAllowanceJourney({ geography, event, events, base: roster.base || '',
-      airline: roster.airline || '', date: iso, context: applicability, classify: resolvePerDiemRule });
+      airline: roster.airline || '', date: iso, context: applicability, classify: resolvePerDiemRule,roster });
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
       unclassifiedItems.push({ iso, originIso:rosterOperationalIso(calculationStart), airport: classification.airport, reason: classification.reason });
@@ -4362,7 +4362,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <p>Estimativa por moeda · sem confirmação de pagamento.</p>
     </section>
     </FinancialScreen>
-    <FinancialActApplicability pending={forecast.monthlyUnclassifiedItems.filter(item => item.actCause && item.iso)}/>
+    <FinancialActApplicability pending={forecast.monthlyUnclassifiedItems.filter(item => item.actCause && item.iso)} preset={forecast.monthlyRows.some(item=>item.rateSource?.startsWith('system_default:'))}/>
     {nextPayment}
     <FinancialScreen names={['statement']}>
     <section className="cz-finance-grid cc-per-diem-summary" aria-label="Resumo da competência">
