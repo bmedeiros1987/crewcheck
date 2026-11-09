@@ -32,6 +32,7 @@ const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace
  const origin='http://127.0.0.1:'+server.address().port;
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
  const results=[];let financialWrites=0;const external=[];
+ try{
  // Counterproofs for the readiness predicate, independent of application timing.
  const probe=await browser.newPage();await probe.setContent('<main style="height:2000px"><button data-financial-origin="synthetic-source" style="position:fixed;top:10px">Synthetic source</button><button data-financial-origin="wrong" style="position:fixed;top:50px">Wrong source</button></main>');
  await probe.locator('[data-financial-origin=synthetic-source]').focus();
@@ -39,7 +40,7 @@ const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace
  await assert.rejects(()=>requireSourceRestoration(probe,'synthetic-source',200,150),error=>error.name==='TimeoutError','permanently wrong scroll rejects');
  await probe.evaluate(()=>{setTimeout(()=>window.scrollTo({top:200,behavior:'instant'}),80);});await requireSourceRestoration(probe,'synthetic-source',200);
  await probe.locator('[data-financial-origin=wrong]').focus();await assert.rejects(()=>requireSourceRestoration(probe,'synthetic-source',200,150),error=>error.name==='TimeoutError','right scroll with wrong focus rejects');await probe.close();console.log('PASS source restoration controls: focus-only rejects; delayed scroll completes; permanent wrong position and wrong focus reject.');
- try{for(const timezoneId of ['UTC','America/Sao_Paulo']){
+ for(const timezoneId of ['UTC','America/Sao_Paulo']){
   const context=await browser.newContext({viewport:{width:390,height:850},timezoneId,serviceWorkers:'block'});
   await context.addInitScript(seed,{unknown:false,unknownAddition:false,futureForeign:true});
   await context.route('**/*',route=>{const req=route.request(),url=new URL(req.url());if(url.origin!==origin){external.push({host:url.hostname,method:req.method()});return route.abort();}if(url.pathname.startsWith('/api/')){if(req.method()!=='GET'&&url.pathname.startsWith('/api/platform/finance/'))financialWrites++;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({ok:false,code:url.pathname==='/api/platform/finance/upcoming'?'FINANCIAL_LEDGER_NOT_ENABLED':'SYNTHETIC_OFFLINE'})});}return route.continue();});
