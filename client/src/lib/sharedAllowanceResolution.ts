@@ -124,6 +124,35 @@ export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | 
   const flights = [...unique.values()].sort((a,b) => start(a)-start(b));
   const targetStart = start(args.event), targetEnd = end(args.event);
   if (!Number.isFinite(targetStart) || !Number.isFinite(targetEnd)) return pending('intervalo da ocorrência ausente.');
+  // A closed published duty can prove a domestic excursion independently of
+  // the wider pairing (which may contain an unrecorded domestic ground move).
+  // Civil midnight and contractual-base presence are not overnight evidence.
+  const dutyKey=financialJourneyGroupKey(args.event);
+  const duty=flights.filter(event=>financialJourneyGroupKey(event)===dutyKey);
+  if (args.event.kind==='flight' && dutyKey!=='event:missing-id' && duty.length
+    && duty.some(event=>event.id===args.event.id)
+    && !financialPublishedFlightIntervalIssue(duty) && !financialIntervalEvidenceIssue(duty)) {
+    const first=duty[0],last=duty.at(-1),published=(last.day||last.canonical?.publishedDay||{});
+    const evidence=published.publishedClockEvidence||published;
+    const routeKnown=duty.every((event,index)=>{
+      const day=event.day||event.canonical?.publishedDay||{},clocks=day.publishedClockEvidence||day;
+      return args.classify(event.origin,event.origin,{}).rateKey && args.classify(event.destination,event.destination,{}).rateKey
+        && new Set((clocks.records||[clocks]).map((record:any)=>JSON.stringify(record.legs))).size===1
+        && (!index || duty[index-1].destination===event.origin && end(duty[index-1])<=start(event));
+    });
+    const concurrent=flights.some(event=>!duty.includes(event)&&start(event)<end(last)&&end(event)>start(first));
+    const stayConflict=args.events.some(event=>event.kind==='stay'&&(
+      Number.isFinite(start(event))&&Number.isFinite(end(event))
+        ? start(event)<end(last)&&end(event)>start(first)
+        : duty.some(flight=>(flight.canonical?.date||flight.day?.date)===(event.canonical?.date||event.day?.date))
+    ));
+    if (routeKnown && !concurrent && !stayConflict && first.origin===last.destination
+      && args.classify(first.origin,first.origin,{}).rateKey==='domestic'
+      && /^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(String(evidence.dutyDebrief||'')) && evidence.dutyDebriefSource==='published') {
+      const domestic=args.classify(first.origin,first.origin,{});
+      return {...domestic,reason:'Regra de previsão informada para LATAM/comissários; não homologada como norma geral. Jornada publicada com retorno à mesma estação nacional e sem pernoite internacional comprovado; categoria nacional, inclusive após meia-noite ou fora da base contratual.'};
+    }
+  }
   const firstIndex = flights.findLastIndex(event => event.origin === base && start(event) <= targetStart);
   const lastIndex = flights.findIndex((event,index) => index >= firstIndex && event.destination === base && end(event) >= targetEnd);
   if (firstIndex < 0 || lastIndex < firstIndex) return pending('saída e retorno à base não comprovados na mesma fonte.');
