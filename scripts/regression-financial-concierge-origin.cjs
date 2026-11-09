@@ -21,12 +21,24 @@ function seed({unknown,unknownAddition,futureForeign}){
  localStorage.setItem('crewcheck_financial_month_settings_v1:'+owner+':2026-10',JSON.stringify({schema:1,ownerId:owner,month:'2026-10',revision:1,closed:false,values:{fixed_with_co:val(340000),other_fixed:val(unknownAddition?null:1000),inss:val(10000,'deduction'),irrf:val(0,'deduction'),other_deductions:val(2000,'deduction')}}));
 }
 async function screen(page,name){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===name)return;await page.getByRole('button',{name:{payment:'Detalhes do pagamento',charts:'Gráficos',statement:'Extrato',overview:'Resumo financeiro'}[name],exact:true}).click();await page.waitForFunction(name=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===name,name);}
+// Focus alone is not completion of asynchronous source restoration. Keep the
+// original position tolerance; a permanently wrong position must time out.
+async function requireSourceRestoration(page,key,y,timeout=10000){
+ await page.waitForFunction(({key,y})=>document.activeElement?.getAttribute('data-financial-origin')===key&&Math.abs(scrollY-y)<3,{key,y},{timeout});
+}
 const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.'));
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const origin='http://127.0.0.1:'+server.address().port;
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
  const results=[];let financialWrites=0;const external=[];
+ // Counterproofs for the readiness predicate, independent of application timing.
+ const probe=await browser.newPage();await probe.setContent('<main style="height:2000px"><button data-financial-origin="synthetic-source" style="position:fixed;top:10px">Synthetic source</button><button data-financial-origin="wrong" style="position:fixed;top:50px">Wrong source</button></main>');
+ await probe.locator('[data-financial-origin=synthetic-source]').focus();
+ await assert.rejects(async()=>{await probe.waitForFunction(()=>document.activeElement?.getAttribute('data-financial-origin')==='synthetic-source');assert(Math.abs(await probe.evaluate(()=>scrollY)-200)<3);},assert.AssertionError,'focus alone falsely accepts restoration while position is wrong');
+ await assert.rejects(()=>requireSourceRestoration(probe,'synthetic-source',200,150),error=>error.name==='TimeoutError','permanently wrong scroll rejects');
+ await probe.evaluate(()=>{setTimeout(()=>window.scrollTo({top:200,behavior:'instant'}),80);});await requireSourceRestoration(probe,'synthetic-source',200);
+ await probe.locator('[data-financial-origin=wrong]').focus();await assert.rejects(()=>requireSourceRestoration(probe,'synthetic-source',200,150),error=>error.name==='TimeoutError','right scroll with wrong focus rejects');await probe.close();console.log('PASS source restoration controls: focus-only rejects; delayed scroll completes; permanent wrong position and wrong focus reject.');
  try{for(const timezoneId of ['UTC','America/Sao_Paulo']){
   const context=await browser.newContext({viewport:{width:390,height:850},timezoneId,serviceWorkers:'block'});
   await context.addInitScript(seed,{unknown:false,unknownAddition:false,futureForeign:true});
@@ -41,11 +53,11 @@ const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace
   await page.getByRole('heading',{name:'Diárias',exact:true}).waitFor();
   assert.equal(new URL(page.url()).searchParams.get('view'),'perdiem');
   await page.goBack();await card.locator('li button').first().waitFor();
-  await page.waitForFunction(key=>document.activeElement?.getAttribute('data-financial-origin')===key,key);
+  await requireSourceRestoration(page,key,y);
   assert.equal(new URL(page.url()).searchParams.get('view'),'concierge');assert(Math.abs(await page.evaluate(()=>scrollY)-y)<3,'restore source scroll after async load');
   await card.locator('li button').first().press('Enter');await page.getByRole('heading',{name:'Diárias',exact:true}).waitFor();
   await page.locator('.cz-global-header button.cz-menu-btn').click();
-  await card.locator('li button').first().waitFor();await page.waitForFunction(key=>document.activeElement?.getAttribute('data-financial-origin')===key,key);
+  await card.locator('li button').first().waitFor();await requireSourceRestoration(page,key,y);
   assert.equal(new URL(page.url()).searchParams.get('view'),'concierge','actual header back returns to source');assert(Math.abs(await page.evaluate(()=>scrollY)-y)<3);
   await page.screenshot({path:path.join(out,'concierge-source-'+timezoneId.replaceAll('/','-')+'.png'),fullPage:false});
   await card.locator('li button').first().press('Enter');await page.getByRole('heading',{name:'Diárias',exact:true}).waitFor();

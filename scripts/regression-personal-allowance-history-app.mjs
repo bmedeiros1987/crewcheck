@@ -49,7 +49,8 @@ function seed({owner,language}){
 }
 
 try{
- browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+ browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
+ report.browser={engine:browser.version(),playwright:createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright/package.json').version,executableConfigured:Boolean(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE)};
  for(const width of [390,1440]){
   const owner='synthetic-personal-history-app-'+width;
   const context=await browser.newContext({viewport:{width,height:950},timezoneId:'America/Sao_Paulo',serviceWorkers:'block'});
