@@ -28,12 +28,13 @@ const focusBounds=[];for(const zoomLabel of ['Ajustar','100%']){await page.getBy
 // Read-only native event evidence: retain the pre-action baseline and 1px assertions.
 await page.evaluate(()=>{if(window.__aimsNativeTraceInstalled){window.__aimsNativeTrace=[];return;}window.__aimsNativeTraceInstalled=true;window.__aimsNativeTrace=[];for(const name of ['pointerdown','mousedown','focus','focusin','pointerup','mouseup','click','scroll'])document.addEventListener(name,event=>{const frame=document.querySelector('.cc-doc-viewport'),target=event.target;window.__aimsNativeTrace.push({event:name,y:scrollY,left:frame?.scrollLeft,top:frame?.scrollTop,active:document.activeElement?.getAttribute('data-roster-event-id')||document.activeElement?.className||document.activeElement?.tagName,target:target?.getAttribute?.('data-roster-event-id')||target?.className||target?.tagName,at:performance.now()});},{capture:true,passive:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).scrollIntoViewIfNeeded();
-// Observe the qualified scroller's arrow transition before the unchanged strict baseline.
-const affordance=await page.evaluate(waitForAimsScrollAffordance);console.log('AIMS observable scroll affordance',JSON.stringify({theme,size,width,zoomLabel,...affordance}));
-// Finish preparation before measuring the return baseline. Layout changes fail; only
-// scroll settling is allowed. A bounded wait cannot turn perpetual movement green.
+// Complete the initiated native scroll before requiring a frozen position. The
+// existing bounded stabilizer rejects layout/zoom shifts and perpetual motion.
 const preparation=await page.evaluate(stabilizeAimsPreAction);
 console.log('AIMS stable preparation',JSON.stringify({theme,size,width,zoomLabel,...preparation}));
+// The floating arrow has zero flow contribution. Its observable update must now
+// complete without any further layout/scroll movement, before the strict baseline.
+const affordance=await page.evaluate(waitForAimsScrollAffordance);console.log('AIMS observable scroll affordance',JSON.stringify({theme,size,width,zoomLabel,...affordance}));
 const preparedBeforePointerAction=await page.evaluate(()=>({y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent}));
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).evaluate(el=>{window.__qaAimsActivationPosition=null;el.addEventListener('click',()=>{window.__qaAimsActivationPosition={y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent};},{capture:true,once:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).click();

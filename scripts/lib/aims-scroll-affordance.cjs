@@ -34,7 +34,10 @@ async function waitForAimsScrollAffordance({timeoutMs=1500}={}) {
   while(performance.now()-start<timeoutMs){
     await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('AIMS arrow update did not complete within '+timeoutMs+'ms')),Math.max(1,timeoutMs-(performance.now()-start)));requestAnimationFrame(()=>{clearTimeout(timer);resolve();});});
     const current=read();
-    if(current.fixed!==initial.fixed||current.decorations!==initial.decorations||current.children.length!==originalChildren.length||current.children.some((e,i)=>e!==originalChildren[i]))throw Error('AIMS layout or scroll changed unexpectedly before arrow completion');
+    if(current.fixed!==initial.fixed||current.decorations!==initial.decorations||current.children.length!==originalChildren.length||current.children.some((e,i)=>e!==originalChildren[i])) {
+      const before=JSON.parse(initial.fixed),after=JSON.parse(current.fixed);
+      throw Error('AIMS layout or scroll changed unexpectedly before arrow completion '+JSON.stringify({changed:Object.keys(before).filter(key=>JSON.stringify(before[key])!==JSON.stringify(after[key])),before:{target:before.target,frame:before.frame,pan:before.pan,scroll:before.scroll,zoom:before.zoom},after:{target:after.target,frame:after.frame,pan:after.pan,scroll:after.scroll,zoom:after.zoom}}));
+    }
     const transition=current.arrow!==initialArrow,deltaDoc=current.doc-initial.doc,deltaHost=current.hostHeight-initial.hostHeight,deltaScroll=current.hostScroll-initial.hostScroll;
     // A floating action contributes zero extent. Never accept an unrelated shift
     // merely because its appearance/removal happened in the same interval.
