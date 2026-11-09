@@ -27,7 +27,8 @@ const results = [];
 // exact destination and unchanged geometry, bounded by Node's real clock.
 // It neither reads nor waits for the arrow, and never scrolls a second time.
 async function prepareRosterScroll(page, target) {
-  let timer;
+  let timer,expired=false;
+  const live=()=>{if(expired)throw Error('Roster scroll preparation exceeded 2000ms');};
   const operation = async () => {
     const initial = await page.evaluate(target => {
       const root = document.scrollingElement;
@@ -36,26 +37,36 @@ async function prepareRosterScroll(page, target) {
     assert.equal(initial.motion, true, 'reduced-motion preparation must be applied');
     assert.equal(initial.behavior, 'auto', 'effective reduced-motion scroll style must be applied');
     assert.ok(initial.max >= target, 'fixture cannot reach requested scroll destination '+JSON.stringify(initial));
-    await page.evaluate(target => scrollTo({ left: 0, top: target, behavior: 'instant' }), target);
-    const read = () => page.evaluate(() => {
+    const read = phase => {live();return page.evaluate(phase => {
       const root = document.scrollingElement, header = document.querySelector('.cz-app > .cz-global-header'), host = header?.closest('.cz-app');
       const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return [r.left + scrollX, r.top + scrollY, r.width, r.height]; };
-      return { x: scrollX, y: scrollY, rootTop: root.scrollTop, max: root.scrollHeight-root.clientHeight, doc: root.scrollHeight, host: host?.getBoundingClientRect().height,
+      return { phase, focus: document.activeElement?.tagName+':'+(document.activeElement?.getAttribute('aria-label')||''), dialogOpen: Boolean(document.querySelector('dialog[open], [aria-modal="true"]')), x: scrollX, y: scrollY, rootTop: root.scrollTop, max: root.scrollHeight-root.clientHeight, doc: root.scrollHeight, host: host?.getBoundingClientRect().height,
         anchors: [header, document.querySelector('.cc-roster-options-trigger'), document.querySelector('[data-roster-iso]')].map(box),
         ancestors: header ? [...function*(el) { while(el) { yield el; el=el.parentElement; } }(header.parentElement)].map(el=>[el.tagName,el.scrollLeft,el.scrollTop,el.scrollHeight,el.clientHeight]) : [] };
-    });
-    const baseline = await read();
+    }, phase);};
+    // Finish prior UI focus/scroll work BEFORE positioning. This polls
+    // geometry, never the arrow, and never repeats a positioning command.
+    let previous=await read('settling'),stable=0,settlingSamples=0;
+    const observedPositions=[previous.y];
+    while(stable<5){
+      live();await new Promise(resolve=>setTimeout(resolve,50));
+      const current=await read('settling');live();settlingSamples+=1;
+      if(current.y!==observedPositions.at(-1))observedPositions.push(current.y);
+      stable=JSON.stringify(current)===JSON.stringify(previous)?stable+1:0;previous=current;
+    }
+    live();await page.evaluate(target => scrollTo({ left: 0, top: target, behavior: 'instant' }), target);
+    live();const baseline = await read('positioned');
     assert.equal(baseline.x, 0, 'fixture horizontal scroll is zero');
     assert.equal(baseline.y, target, 'single preparation request must reach its destination');
     assert.equal(baseline.rootTop, target, 'document is the actual fixture scroller');
     for (let sample=0; sample<4; sample+=1) {
-      await new Promise(resolve=>setTimeout(resolve,25));
-      assert.deepEqual(await read(),baseline,'fixture scroll/layout changed during preparation');
+      live();await new Promise(resolve=>setTimeout(resolve,25));
+      live();assert.deepEqual(await read('positioned'),baseline,'fixture scroll/layout changed during preparation');
     }
-    return baseline;
+    return {...baseline,settlingSamples,observedPositions};
   };
-  try { return await Promise.race([operation(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Roster scroll preparation exceeded 2000ms')),2000);})]); }
-  finally { clearTimeout(timer); }
+  try { return await Promise.race([operation(),new Promise((_,reject)=>{timer=setTimeout(()=>{expired=true;reject(Error('Roster scroll preparation exceeded 2000ms'));},2000);})]); }
+  finally { expired=true;clearTimeout(timer); }
 }
 
 // Measurement starts after top preparation, before the single normalized80
@@ -105,6 +116,29 @@ async function verifyRosterScrollPreparation(browser) {
     await prepareRosterScroll(page,0);await prepareRosterScroll(page,80);await prepareRosterScroll(page,0);await prepareRosterScroll(page,80);
     assert.equal(await page.evaluate(()=>window.__preparationRequests),6,'four preparations issue exactly four requests on first/repeated iterations');
   } finally { await page.close(); }
+  page=await fixture();
+  try {
+    let moved=false;
+    const pendingScroll={evaluate:async(fn,arg)=>{const value=await page.evaluate(fn,arg);if(value?.phase==='settling'&&!moved){moved=true;await page.evaluate(()=>scrollTo({top:27,behavior:'instant'}));}return value;}};
+    const prepared=await prepareRosterScroll(pendingScroll,0);
+    assert.deepEqual(prepared.observedPositions,[0,27]);assert.equal(prepared.y,0);
+    assert.equal(await page.evaluate(()=>window.__preparationRequests),2,'one injected pending move and one preparation request');
+  } finally { await page.close(); }
+  page=await fixture();
+  try {
+    let samples=0,positioned=0;const pending=new Set();
+    const neverSettles={evaluate:(fn,arg)=>{
+      const task=(async()=>{const value=await page.evaluate(fn,arg);if(value?.phase==='settling'){samples+=1;await page.evaluate(top=>scrollTo({top,behavior:'instant'}),samples%2?27:28);}if(value?.phase==='positioned')positioned+=1;return value;})();
+      pending.add(task);return task.finally(()=>pending.delete(task));
+    }};
+    await assert.rejects(()=>prepareRosterScroll(neverSettles,0),/preparation exceeded 2000ms/);
+    // A dispatched browser read cannot be recalled. Drain only that work, then
+    // prove the expired preparation schedules no new reads or positioning.
+    await Promise.allSettled([...pending]);const stoppedAt=samples;
+    await new Promise(resolve=>setTimeout(resolve,100));
+    assert.equal(samples,stoppedAt,'expired preparation stops polling');assert.equal(positioned,0,'expired preparation never positions later');
+    assert.equal(await page.evaluate(()=>scrollY===27||scrollY===28),true);
+  } finally { await page.close(); }
   page=await fixture(true);
   try { await assert.rejects(()=>prepareRosterScroll(page,80),/fixture cannot reach/);assert.equal(await page.evaluate(()=>window.__preparationRequests),0); }
   finally { await page.close(); }
@@ -117,7 +151,7 @@ async function verifyRosterScrollPreparation(browser) {
   page=await fixture();
   try {
     let drifted=false;
-    const externalDrift={evaluate:async(fn,arg)=>{const value=await page.evaluate(fn,arg);if(value?.anchors&&!drifted){drifted=true;await page.evaluate(()=>scrollTo({top:81,behavior:'instant'}));}return value;}};
+    const externalDrift={evaluate:async(fn,arg)=>{const value=await page.evaluate(fn,arg);if(value?.phase==='positioned'&&!drifted){drifted=true;await page.evaluate(()=>scrollTo({top:81,behavior:'instant'}));}return value;}};
     await assert.rejects(()=>prepareRosterScroll(externalDrift,80),/changed during preparation/);
     assert.equal(await page.evaluate(()=>window.__preparationRequests),2,'one request plus injected external drift, no preparation retry');
   } finally { await page.close(); }
@@ -141,7 +175,7 @@ async function verifyRosterScrollPreparation(browser) {
     assert.ok(shifted.violation,'content shifted during arrow transition is rejected before it can enter the baseline');
     await page.evaluate(()=>window.__rosterArrowWindow.finish());
   } finally { await page.close(); }
-  results.push('scroll preparation counterproofs: insufficient extent, unreachable target, 1px drift and strict movement/layout rejection; no repeated positioning');
+  results.push('scroll preparation counterproofs: pending27 settles before one request; deadline stops unsettled work; insufficient extent/no-op/post-request1px and strict movement/layout rejection');
 }
 
 try {
@@ -262,7 +296,7 @@ try {
     await page.mouse.click(closeTarget.x+4,closeTarget.y+closeTarget.height/2);assert.equal(await page.locator('.cc-roster-options-dialog').evaluate(d=>d.open),false,'close target works near its edge');await viewReady();await closeButton.focus();await page.keyboard.press('Escape');assert.equal(await page.locator('.cc-roster-options-dialog').evaluate(d=>d.open),false,'Escape closes the modal');await viewReady();
     const geometry=await actions.evaluate(el=>({overflow:document.documentElement.scrollWidth>innerWidth+1,buttons:[...el.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect(),span=b.querySelector('span'),range=document.createRange();range.selectNodeContents(span);return {name:b.getAttribute('aria-label'),width:r.width,height:r.height,clipped:b.scrollWidth>b.clientWidth+1,labelLines:new Set([...range.getClientRects()].map(r=>Math.round(r.top))).size,icon:Boolean(b.querySelector('svg'))};})}));
     assert.equal(geometry.overflow,false,JSON.stringify({width,theme,scale,...geometry}));assert.ok(geometry.buttons.length===7&&geometry.buttons.every(b=>b.width>=48&&b.height>=48&&!b.clipped&&b.labelLines===1&&b.icon&&b.name),JSON.stringify({width,theme,scale,...geometry}));
-    await page.getByRole('button',{name:'Ver escala',exact:true}).click();await page.emulateMedia({reducedMotion:'reduce'});await prepareRosterScroll(page,0);
+    await page.getByRole('button',{name:'Ver escala',exact:true}).click();await page.emulateMedia({reducedMotion:'reduce'});const preparedTop=await prepareRosterScroll(page,0);results.push('top preparation '+JSON.stringify({width,height,theme,scale,samples:preparedTop.settlingSamples,positions:preparedTop.observedPositions,destination:preparedTop.y}));
     const initial=await page.locator('[data-roster-iso]').first().boundingBox();assert.ok(initial,JSON.stringify({width,theme,scale,initial}));if(scale===1)assert.ok(initial.y<530,JSON.stringify({width,theme,scale,initial}));else results.push(`200% first content y=${initial.y}; small-height initial visibility remains a separate measured exception, not hidden text`);
     const firstTitle=await page.locator('.cc-roster-program-head-v1397').first().boundingBox(),nav=await page.locator('.cz-bottom-nav').boundingBox();assert.ok(firstTitle&&nav);if(scale===1)assert.ok(firstTitle.y>=0&&firstTitle.y+firstTitle.height<=nav.y,JSON.stringify({width,height,theme,scale,firstTitle,nav}));
     const cardReading=await page.locator('.cc-roster-program-head-v1397').first().evaluate(el=>{const h=el.querySelector('h3'),small=el.querySelector('small'),st=getComputedStyle(small),canvas=document.createElement('canvas').getContext('2d');canvas.font=st.font;const words=small.textContent.toUpperCase().split(/\s+/);return {titleColor:getComputedStyle(h).color,activityColor:st.color,activityWidth:small.getBoundingClientRect().width,widestWord:Math.max(...words.map(w=>canvas.measureText(w).width+Math.max(0,w.length-1)*(parseFloat(st.letterSpacing)||0))),icon:getComputedStyle(el.querySelector('.cc-roster-program-icon-v1397')).display};});if(theme==='dark'){assert.equal(cardReading.titleColor,'rgb(237, 244, 251)');assert.equal(cardReading.activityColor,'rgb(200, 214, 227)');}if(width<=600&&scale===2){assert.equal(cardReading.icon,'none','only the redundant decorative icon yields width at enlarged reading');assert.ok(cardReading.widestWord<=cardReading.activityWidth+1,JSON.stringify({width,height,theme,scale,cardReading}));}
