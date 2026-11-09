@@ -86,7 +86,11 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   },[owner,crew,initialMonth,roster,authRevision]);
   useEffect(()=>{
     if(!owner||!crew)return;
-    const wanted=[...sourceMonths(range),...(expanded?sourceMonths(comparisonRange):[]),...requestedPeriods], version=epoch.current;
+    // Salary needs the adjacent published source to project the next credit.
+    // This only requests an existing owned publication; no period policy or
+    // employment scope is inferred until that source is actually loaded.
+    const previous=new Date(initialMonth+'-01T12:00:00Z');previous.setUTCMonth(previous.getUTCMonth()-1);
+    const wanted=[...sourceMonths(range),...(expanded?sourceMonths(comparisonRange):[]),...requestedPeriods,...(mode==='salary'?[previous.toISOString().slice(0,7)]:[])], version=epoch.current;
     const requests=inventory.filter(item=>wanted.includes(`${item.year}-${String(item.month).padStart(2,'0')}`)&&!loaded.some(entry=>monthOf(entry.roster)===`${item.year}-${String(item.month).padStart(2,'0')}`)&&!fetching.current.has(item.id));
     if(!requests.length)return;
     const attempts=requests.map(item=>({item,token:{epoch:version,state:'pending' as 'pending'|'failed'|'complete'}}));

@@ -2,6 +2,7 @@ import type {consumeSalaryDsr} from './salaryDsrConsumer';
 import { payrollMonthBounds } from './financialPayrollPeriods';
 import { validFinancialDay } from './financialHistoryPeriods';
 import {knownPaymentTotals,type NextPayment,type PayrollCandidate,type PaymentLine} from './nextFinancialPayment';
+import type {FinancialPresetScope} from './payrollProjectionPeriods';
 
 type SalaryLine=PaymentLine & {amountMinor:number|null};
 type SalaryProjection=Omit<ReturnType<typeof consumeSalaryDsr>,'inventoryComplete'> & {inventoryComplete:boolean};
@@ -12,7 +13,7 @@ export type PayrollSalary = {
   rows:Array<{iso:string;flight:string;route:string;total:number;timeKnown:boolean;distanceKnown:boolean;source:string}>;
   reserveAssessment:{pendingCount:number;knownCount?:number;knownAmount?:number};standbyAssessment:{pendingCount:number;knownCount?:number;knownAmount?:number};
 };
-export type PayrollSnapshot = {month:string;salary:PayrollSalary;publishedDays:string[]};
+export type PayrollSnapshot = {month:string;salary:PayrollSalary;publishedDays:string[];presetScope?:FinancialPresetScope|null};
 const inventoryPending='Inventário por rubrica e composição integral com DSR pendentes. Confirmar tarifas ou datas não comprova todas as parcelas; os valores conhecidos são um subtotal.';
 /** Consume the SAME canonical composition; a day list or a scalar total cannot
  * certify category completeness. No producer is manufactured by this adapter. */

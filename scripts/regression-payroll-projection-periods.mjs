@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {loadClientModules} from './lib/ts-module-harness.mjs';
 const h=loadClientModules({files:['client/src/lib/payrollProjectionPeriods.ts'],prefix:'synthetic-payroll-cycles-'});
-const {payrollProjectionPeriods,financialPresetScope}=h.load('payrollProjectionPeriods');
+const {payrollProjectionPeriods,financialPresetScope:resolveScope}=h.load('payrollProjectionPeriods');
+const financialPresetScope=(roster,context)=>resolveScope(roster,context,()=>context);
 const history={schema:1,ownerId:'SYN-A',revision:0,events:[]};
 const context={state:'missing',ownerId:'SYN-A',history,raw:null,session:'SYN',isCurrent:()=>true};
 const roster={airline:'LA',rank:'CC'};
@@ -15,8 +16,15 @@ assert.equal(financialPresetScope(roster,{...context,isCurrent:()=>false}),null)
 assert.equal(financialPresetScope(roster,{...context,state:'invalid'}),null);
 assert.equal(financialPresetScope(roster,{...context,state:'unavailable'}),null);
 assert.equal(financialPresetScope(roster,{...context,history:{...history,ownerId:'SYN-B'}}),null);
+const declaration={revision:1,from:'2026-10-01',through:'2026-10-31',active:true,confirmed:true,source:'owner_financial_confirmation',employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'};
+const declared=financialPresetScope(roster,{...context,state:'ready',history:{...history,revision:1,events:[declaration]}});
+assert(declared.allowsMonth('2026-10'));assert.equal(declared.allowsMonth('2026-11'),false,'expired declaration cannot fall back to system preset');
+const revoked=financialPresetScope(roster,{...context,state:'ready',history:{...history,revision:2,events:[declaration,{revision:2,from:'2026-10-15',through:'2026-10-20',active:false,confirmed:true,source:'owner_financial_confirmation'}]}});
+assert.equal(revoked.allowsMonth('2026-10'),false,'mid-month revocation never becomes a full-month scope');
+const pilot=financialPresetScope(roster,{...context,state:'ready',history:{...history,revision:1,events:[{...declaration,role:'pilot'}]}});assert.equal(pilot.allowsMonth('2026-10'),false);
 assert.equal(payrollProjectionPeriods(['2026-10'],null,()=>null).length,0);
 const reviewed={payrollMonth:'2026-11',operationalVariableMonth:'2026-10',fixedMonth:'2026-11',expectedCreditMonth:'2026-12',source:'user-reported-absa-tam'};
 assert.equal(payrollProjectionPeriods(['2026-10'],null,()=>reviewed)[0].basis,'reviewed_company_cycle');
 assert.equal(payrollProjectionPeriods(['2026-10'],scope,()=>({...reviewed,operationalVariableMonth:'2026-09'})).length,0,'conflicting reviewed cycle does not silently fall back');
+let live=context;const captured=resolveScope(roster,context,()=>live);assert(captured.allowsMonth('2026-10'));live={...context,state:'invalid',raw:'corrupt',history:null};assert.equal(captured.allowsMonth('2026-10'),false,'same-owner corruption invalidates captured scope');live={...context,state:'ready',raw:'new-revision',history:{...history,revision:1,events:[{revision:1,from:'2026-10-01',through:'2026-10-31',active:false,confirmed:true,source:'owner_financial_confirmation'}]}};assert.equal(captured.allowsMonth('2026-10'),false,'same-owner revision invalidates captured scope');
 console.log('PASS synthetic payroll periods: production/fixed/credit/tariff, year boundary, preset provenance, unknown role/company, owner/session, conflict and reviewed precedence');

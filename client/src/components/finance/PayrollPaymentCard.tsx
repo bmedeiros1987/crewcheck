@@ -8,14 +8,14 @@ import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
 import {salaryDisplaySummary,type SalaryDisplayBasis} from '@/lib/salaryDisplayBasis';
 import {SalaryBasisControl,SalaryBasisAmount,SalaryPlrNotice} from './SalaryDisplayBasis';
 import NextPaymentCard from './NextPaymentCard';
-import {payrollProjectionPeriods,type FinancialPresetScope} from '@/lib/payrollProjectionPeriods';
+import {payrollProjectionPeriods} from '@/lib/payrollProjectionPeriods';
 import {payrollMonthBounds} from '@/lib/financialPayrollPeriods';
 import FinancialActPresetReference from './FinancialActPresetReference';
 
-export default function PayrollPaymentCard({ snapshots, availableMonths=[], presetScope=null, requestRange, extraDetails, basis, chooseBasis }: { snapshots:PayrollSnapshot[];availableMonths?:string[];presetScope?:FinancialPresetScope|null;requestRange:(range:FinancialRange)=>void;extraDetails?:ReactNode;basis:SalaryDisplayBasis;chooseBasis:(basis:SalaryDisplayBasis)=>unknown }) {
+export default function PayrollPaymentCard({ snapshots, availableMonths=[], requestRange, extraDetails, basis, chooseBasis }: { snapshots:PayrollSnapshot[];availableMonths?:string[];requestRange:(range:FinancialRange)=>void;extraDetails?:ReactNode;basis:SalaryDisplayBasis;chooseBasis:(basis:SalaryDisplayBasis)=>unknown }) {
   const months=[...new Set([...availableMonths,...snapshots.map(item=>item.month),...readConfirmedFinancialRates().filter(item=>item.key.startsWith('salary.')).map(item=>item.effectiveFrom.slice(0,7))])];
-  const periods=payrollProjectionPeriods(months,presetScope,reviewedPayrollCycleForOperationalMonth);
-  const candidates=periods.map(period=>({...composePayrollPayment(period,snapshots),cycleBasis:period.basis}));
+  const periods=months.flatMap(month=>payrollProjectionPeriods([month],snapshots.find(item=>item.month===month)?.presetScope||null,reviewedPayrollCycleForOperationalMonth));
+  const candidates=periods.map(period=>({...composePayrollPayment(period,period.basis==='reviewed_company_cycle'?snapshots:snapshots.filter(item=>item.presetScope?.company==='TAM'&&item.presetScope.role==='cabin'&&item.presetScope.allowsMonth(item.month))),cycleBasis:period.basis}));
   const session=financialRateSession(),[selection,setSelection]=useState({session,month:''});
   const available=[...new Set([...snapshots.map(item=>item.month),...candidates.map(item=>item.operationalMonth)])].sort().reverse();
   const selected=selection.session===session&&available.includes(selection.month)?selection.month:'';
@@ -25,8 +25,8 @@ export default function PayrollPaymentCard({ snapshots, availableMonths=[], pres
   if(!payment.range&&snapshots.length){const current=new Date().toISOString().slice(0,7);const snapshot=snapshots.find(item=>item.month===(selected||current))||[...snapshots].sort((a,b)=>b.month.localeCompare(a.month))[0];payment=composeOperationalPayrollEstimate(snapshot);deductionMonth=snapshot.month;}
   const activeCandidate=candidates.find(item=>item.range===payment.range);
   const activePeriod=periods.find(item=>item.operationalVariableMonth===activeCandidate?.operationalMonth);
-  const sourceStart=activePeriod?[activePeriod.operationalVariableMonth,activePeriod.fixedMonth].sort()[0]:null;
-  const sourceEnd=activePeriod?[activePeriod.operationalVariableMonth,activePeriod.fixedMonth].sort().at(-1):null;
+  const sourceStart=activePeriod?[activePeriod.operationalVariableMonth,activePeriod.fixedMonth].sort()[0]:selected||null;
+  const sourceEnd=activePeriod?[activePeriod.operationalVariableMonth,activePeriod.fixedMonth].sort().at(-1):selected||null;
   const sourceRange:FinancialRange|undefined=sourceStart&&sourceEnd?{start:sourceStart+'-01',end:payrollMonthBounds(sourceEnd)!.end,kind:'custom',valid:true}:undefined;
   const operationalMonth=activeCandidate?.operationalMonth||(payment.estimationBasis==='operational_month'?deductionMonth:undefined);
   const summary=salaryDisplaySummary(basis,payment.calculationTotals?.BRL??payment.totals?.BRL??null,payment.totals!==null&&payment.totals!==undefined, deductionMonth?[deductionMonth]:[],deductionMonth?[readMonthlyFinancialSettings(deductionMonth)]:[]);
