@@ -45,9 +45,26 @@ export default function BackToTop() {
       const viewportBottom = Math.min(innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : innerHeight);
       const containerBottom = scroller === root ? viewportBottom : Math.min(viewportBottom, scroller.getBoundingClientRect().bottom);
       const usableBottom = navigation && navigation.height > 0 && navigation.bottom > 0 && navigation.top < containerBottom ? navigation.top : containerBottom;
-      const bottom = Math.max(12, innerHeight - usableBottom + 12);
+      let bottom = Math.max(12, innerHeight - usableBottom + 12);
+      // Do not place the floating target over an existing action (for example,
+      // the roster legend at enlarged text). Move only our button, never content.
+      const left = button.current?.getBoundingClientRect().left ?? innerWidth - 60;
+      const visibleTop = Math.max(window.visualViewport?.offsetTop || 0, scroller === root ? 0 : scroller.getBoundingClientRect().top);
+      const controls = show ? Array.from(document.querySelectorAll('button, a, input, select, textarea, summary, [role="button"], label[for]'))
+        .filter(node => node !== button.current && !button.current?.contains(node))
+        .map(node => ({ node, box: node.getBoundingClientRect() }))
+        .filter(({ box }) => box.width > 0 && box.height > 0 && box.top < usableBottom && box.bottom > visibleTop && box.left < left + 52 && box.right > left - 4)
+        .filter(({ node }) => { const style = getComputedStyle(node); return style.visibility !== 'hidden' && style.pointerEvents !== 'none'; }) : [];
+      let top = innerHeight - bottom - 48;
+      for (let i = 0; i <= controls.length; i += 1) {
+        const overlaps = controls.filter(({ box }) => box.top < top + 52 && box.bottom > top - 4);
+        if (!overlaps.length) break;
+        top = Math.min(...overlaps.map(({ box }) => box.top)) - 56;
+      }
+      const fits = top >= visibleTop + 12;
+      bottom = innerHeight - top - 48;
       const activeScroller = scroller;
-      setState(previous => show ? previous?.header === header && previous.scroller === activeScroller && previous.bottom === bottom ? previous : { header, scroller: activeScroller, bottom } : null);
+      setState(previous => show && fits ? previous?.header === header && previous.scroller === activeScroller && previous.bottom === bottom ? previous : { header, scroller: activeScroller, bottom } : null);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
