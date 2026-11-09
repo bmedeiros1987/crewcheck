@@ -62,6 +62,14 @@ ${baseline?'const setBrowserRadarContext=()=>{};':''}
 ${globals}
 ${followCandidate}
 ${functions}
+// Test-only receipt: observe the real read through JSON, fences, saver and event.
+// Fulfilment can be a rejection payload; it never means the response was admitted.
+const actualFetchRadarSnapshot=fetchRadarSnapshot;
+fetchRadarSnapshot=(...args)=>{
+ const before=window.requests.length,completion=actualFetchRadarSnapshot(...args);
+ if(window.requests.length===before+1){const request=window.requests[before];request.completion=completion;request.complete=false;void completion.then(()=>{request.complete=true},()=>{request.complete=true});}
+ return completion;
+};
 const events={one:{id:'SYNTHETIC-ONE',kind:'flight',flightNumber:'LA9001',origin:'BSB',destination:'CGH',day:{date:'20/10/2032'},canonical:{date:'20/10/2032',startDateTime:'2032-10-20T12:00:00.000Z'}},two:{id:'SYNTHETIC-TWO',kind:'flight',flightNumber:'LA9002',origin:'CGH',destination:'BSB',day:{date:'21/10/2032'},canonical:{date:'21/10/2032',startDateTime:'2032-10-21T12:00:00.000Z'}}};
 let selected=events.one;let windowCleanup=null;window.windowReads=[];const openRosterDisplayWindow=primary=>new Promise((resolve,reject)=>window.windowReads.push({primary,resolve,reject}));
 function mountPublication(primary){const bundle={roster:primary};const useState=()=>[primary,()=>{}],useRef=x=>({current:x}),useEffect=fn=>{windowCleanup=fn()};${windowBlock}}
@@ -72,7 +80,12 @@ window.key=()=>radarSnapshotKey(selected);
 window.inspectCache=()=>{const cached=readRadarSnapshot(selected);return {cacheGate:cached?.gate,ownedAdmissionCurrent:Boolean(cached&&readOperationalRadarAdmission(cached,radarSnapshotKey(selected),JSON.stringify(selected.canonical))),owner:manualGateAccountKey(getStoredUser())}};
 window.signal=(key=radarSnapshotKey(selected),snapshot={gate:'FORGED'})=>window.dispatchEvent(new CustomEvent('crewcheck:radar-updated',{detail:{key,snapshot}}));
 window.payload=(index,value,extra={})=>{const u=new URL(window.requests[index].url,location.origin);return {ok:true,configured:true,provider:'aerodatabox',flight:u.searchParams.get('flight'),origin:u.searchParams.get('origin'),destination:u.searchParams.get('destination'),scheduledDepartureUtc:u.searchParams.get('scheduledDepartureUtc'),sourceReceivedAt:Date.now(),gate:value,...extra}};
-window.reply=(index,value,extra={})=>window.requests[index].resolve(new Response(JSON.stringify(window.payload(index,value,extra)),{status:200,headers:{'content-type':'application/json'}}));
+window.reply=(index,value,extra={})=>{
+ const request=window.requests[index];if(!request?.completion)throw Error('Missing synthetic read completion receipt');
+ const response=new Response(JSON.stringify(window.payload(index,value,extra)),{status:200,headers:{'content-type':'application/json'}});
+ if(window.holdNextResponseJson){window.holdNextResponseJson=false;const json=response.json.bind(response);response.json=()=>new Promise((resolve,reject)=>{window.heldResponseIndex=index;window.releaseResponseJson=()=>json().then(resolve,reject)});}
+ request.resolve(response);return request.completion.then(result=>({ok:result?.ok===true,gate:result?.gate||null,querySuppressed:result?.querySuppressed===true,message:result?.message||null}));
+};
 window.cache=(value,extra={})=>saveRadarSnapshot(selected,{ok:true,configured:true,provider:'aerodatabox',flight:selected.flightNumber,origin:selected.origin,destination:selected.destination,scheduledDepartureUtc:selected.canonical.startDateTime,sourceReceivedAt:Date.now(),gate:value,...extra});
 window.removeCache=()=>{localStorage.removeItem(radarSnapshotKey(selected));window.signal()};
 window.fetchRadar=()=>{void fetchRadarSnapshot(selected,true).then(x=>window.lastAccepted=x)};
@@ -110,7 +123,8 @@ try {
   const gateLine=page.locator('.cz-radar-screen article').first().locator('strong').filter({hasText:/Portão:/});
   const gateIs=async value=>assert.match(await gateLine.innerText(),new RegExp('Portão: '+value+'(?: ·|$)'));
   const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-  const reply=async(index,gate,extra={})=>{await page.evaluate(({index,gate,extra})=>window.reply(index,gate,extra),{index,gate,extra});await settle()};
+  const completeReply=async(index,gate,extra={})=>{let timer;try{return await Promise.race([page.evaluate(({index,gate,extra})=>window.reply(index,gate,extra),{index,gate,extra}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Synthetic Radar read did not complete within 5000ms')),5000)})])}finally{clearTimeout(timer)}};
+  const reply=async(index,gate,extra={})=>{await completeReply(index,gate,extra);await settle()};
   const count=()=>page.evaluate(()=>window.requests.length);
   const start=async()=>{const n=await count();await page.evaluate(()=>window.fetchRadar());await page.waitForFunction(n=>window.requests.length===n+1,n);return n};
   const queryGate=async(gate,extra={})=>{const n=await start();await reply(n,gate,extra);return n};
@@ -129,7 +143,17 @@ try {
   const six=await page.evaluate(()=>window.inspectCache());assert.equal(six.cacheGate,'26');assert.equal(six.ownedAdmissionCurrent,false);await gateIs('26');assert.equal(await count(),beforeSix);
   console.log('SYNTHETIC six-minute accepted response '+JSON.stringify(six));
   await page.clock.fastForward(24*60*1000+10);await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeSix,'source expiry only clears UI');
-  await queryGate('16');await gateIs('16');
+  // A delayed JSON body refutes the old two-RAF-only barrier without changing
+  // the production read, timestamps, session/grant or cache. No text-until-pass.
+  const delayed=await start();await page.evaluate(()=>{window.holdNextResponseJson=true});
+  const [completedReceipt]=await Promise.all([completeReply(delayed,'16'),(async()=>{
+   await page.waitForFunction(index=>window.heldResponseIndex===index,delayed);await settle();
+   assert.equal(await page.evaluate(index=>window.requests[index].complete,delayed),false);
+   await assert.rejects(()=>gateIs('16'),error=>error.code==='ERR_ASSERTION','two frames cannot complete a held JSON body');
+   await page.evaluate(()=>window.releaseResponseJson());
+  })()]);
+  await settle();console.log('SYNTHETIC completed Radar read '+JSON.stringify({timezoneId,index:delayed,receipt:completedReceipt}));await gateIs('16');assert.equal(await count(),delayed+1,'completion waits never requery');
+  assert.equal(await page.evaluate(()=>window.inspectCache().ownedAdmissionCurrent),false,'completion cannot renew the operational grant');
   const removedPending=await start();await page.evaluate(()=>window.removeCache());await settle();await gateIs('Não confirmado');await reply(removedPending,'OLD');await gateIs('Não confirmado');
   await page.evaluate(()=>window.cache('DISK'));await settle();await gateIs('Não confirmado');
   await page.evaluate(()=>window.signal());await settle();await gateIs('Não confirmado');
@@ -173,7 +197,7 @@ try {
   await page.evaluate(()=>window.refreshWindow());await page.evaluate(()=>window.cancelWindow());await page.evaluate(()=>window.resolveWindow(6,'B'));await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeFailure,'cancelled reconstruction cannot reactivate');
   await page.evaluate(()=>window.beginWindow());const beforeAccountWindow=await count();await page.evaluate(()=>window.switchAccount('SYNTHETIC-B',true));await page.evaluate(()=>window.resolveWindow(7,'B'));await settle();await gateIs('Não confirmado');assert.equal(await count(),beforeAccountWindow,'account switch + late publication cannot query');
   const missingIdentityIndex=await page.evaluate(()=>window.windowReads.length);await page.evaluate(()=>window.beginInvalidIdentity());await page.evaluate(i=>window.resolveWindow(i,'A',{crewId:''}),missingIdentityIndex);await settle();assert.equal(await page.evaluate(()=>window.publicationContextReady()),false,'missing crew identity is not publication proof');
-  assert.deepEqual(errors,[]);assert.equal(providerRequests,0);results.push({timezoneId,cache12to14:true,historicalPublicationProvenance:true,sixMinuteContinuity:true,sourceExpiry:true,accountIsolation:true,staleFences:true,realProviderRequests:0});await ctx.close();
+  assert.deepEqual(errors,[]);assert.equal(providerRequests,0);results.push({timezoneId,bodyCompletion:true,cache12to14:true,historicalPublicationProvenance:true,sixMinuteContinuity:true,sourceExpiry:true,accountIsolation:true,staleFences:true,realProviderRequests:0});await ctx.close();
  }
  console.log('PASS actual RadarView cache refresh '+JSON.stringify(results));
 } finally {await browser?.close();if(server)await new Promise(r=>server.close(r));fs.rmSync(tmp,{recursive:true,force:true})}
