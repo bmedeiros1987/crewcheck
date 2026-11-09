@@ -17,7 +17,7 @@ export default function PayrollPaymentCard({ snapshots, availableMonths=[], sele
   const periods=months.flatMap(month=>payrollProjectionPeriods([month],snapshots.find(item=>item.month===month)?.presetScope||null,reviewedPayrollCycleForOperationalMonth));
   // Personal fixed components have their own owner/competence evidence. The
   // operational ACT scope must not erase them when its declaration ends.
-  const candidates=periods.map(period=>({...composePayrollPayment(period,period.basis==='reviewed_company_cycle'?snapshots:snapshots.filter(item=>(item.month===period.fixedMonth&&item.presetScope?.allowsFixedMonth(item.month))||(item.presetScope?.company==='TAM'&&item.presetScope.role==='cabin'&&item.presetScope.allowsMonth(item.month)))),cycleBasis:period.basis}));
+  const candidates=periods.map(period=>({...composePayrollPayment(period,period.basis==='reviewed_company_cycle'?snapshots:snapshots.filter(item=>item.month===period.fixedMonth?item.presetScope?.allowsFixedMonth(item.month):(item.presetScope?.company==='TAM'&&item.presetScope.role==='cabin'&&item.presetScope.allowsMonth(item.month)))),cycleBasis:period.basis}));
   const session=financialRateSession(),[selection,setSelection]=useState({session,month:''});
   const available=[...new Set([...snapshots.map(item=>item.month),...candidates.map(item=>item.operationalMonth)])].sort().reverse();
   const selected=selection.session===session&&available.includes(selection.month)?selection.month:'';
