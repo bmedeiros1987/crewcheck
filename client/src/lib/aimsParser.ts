@@ -1,3 +1,4 @@
+import { associateCrewOccurrences } from './crewOccurrenceAssociation';
 import { aimsSourceDateIso, aimsFlightSourceIdentity, newAimsFlightSourceCoverage, finalizeAimsFlightSourceCoverage, mergeAimsFlightSourceCoverage, type AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { capturePublishedFreeDayStart, attachPublishedFreeDayTimeZone } from './freeDayStartEvidence';
 /**
@@ -944,8 +945,7 @@ function parseAimsCrewMembersFromTripulationText(text: string, rosterName: strin
     const role = item[1].toUpperCase() === 'CM' ? 'CCM' : item[1].toUpperCase();
     const name = cleanAimsTripulationCrewName(item[2]);
     const normalized = normalizeCrewNameForMatch(name);
-    const minPartsOk = normalized.split(' ').length >= 2 || ['CP','FO'].includes(role);
-    if (!normalized || normalized.length < 2 || !minPartsOk) continue;
+    if (!normalized || normalized.length < 2) continue;
     const key = `${role}|${normalized}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -953,7 +953,7 @@ function parseAimsCrewMembersFromTripulationText(text: string, rosterName: strin
       role,
       name,
       order: crew.length,
-      isCurrentCrew: isSameCrewMember(name, rosterName),
+      isCurrentCrew: normalized.split(' ').length >= 2 && isSameCrewMember(name, rosterName),
     });
   }
   return crew;
@@ -990,50 +990,11 @@ function parseTripulationRecords(fullText: string, rosterName: string, fallbackY
     const leadCcm = crew.find((member) => member.role === 'CCM') || null;
     records.push({ date, flightNumber, crew, leadCcm });
   }
-  return records.filter((record, index, all) => all.findIndex((other) => other.date === record.date && normalizeFlightKey(other.flightNumber) === normalizeFlightKey(record.flightNumber)) === index);
+  return records;
 }
 
 function applyTripulationRecords(days: RosterDay[], records: TripulationRecord[], rosterName: string): RosterDay[] {
-  if (!records.length) return days;
-  const byExact = new Map<string, TripulationRecord>();
-  const byDate = new Map<string, TripulationRecord[]>();
-  const byFlight = new Map<string, TripulationRecord>();
-  records.forEach((record) => {
-    const flightKey = normalizeFlightKey(record.flightNumber);
-    if (record.date) {
-      byExact.set(`${record.date}|${flightKey}`, record);
-      const list = byDate.get(record.date) || [];
-      list.push(record);
-      byDate.set(record.date, list);
-    }
-    if (!byFlight.has(flightKey)) byFlight.set(flightKey, record);
-  });
-  return days.map((day) => ({
-    ...day,
-    legs: (day.legs || []).map((leg, legIndex) => {
-      const flightKey = normalizeFlightKey(leg.flightNumber || '');
-      const exact = byExact.get(`${day.date}|${flightKey}`);
-      const fallback = !exact && legIndex === 0 ? byDate.get(day.date)?.find((record) => normalizeFlightKey(record.flightNumber) === flightKey) : undefined;
-      const record = exact || fallback || byFlight.get(flightKey);
-      if (!record) return leg;
-      const crew = record.crew.map((member, index) => ({
-        ...member,
-        order: index,
-        isCurrentCrew: member.isCurrentCrew || isSameCrewMember(member.name, rosterName),
-      }));
-      const leadCcm = crew.find((member) => member.role === 'CCM') || null;
-      const current = crew.find((member) => member.isCurrentCrew) || null;
-      const status = leadCcm && current?.role === 'CCM'
-        ? (Number(leadCcm.order) === Number(current.order) ? 'confirmed' : 'not_applicable')
-        : (leadCcm && isSameCrewMember(leadCcm.name, rosterName) ? 'confirmed' : (leadCcm ? 'pending' : 'pending'));
-      return {
-        ...leg,
-        crew,
-        ccmLead: leadCcm,
-        ccmBonusStatus: status,
-      };
-    }),
-  }));
+  return associateCrewOccurrences(days, records);
 }
 
 function parseAimsRosterFromVisualRows(fullText: string, visualRows: AimsVisualRow[]): CrewRoster | null {

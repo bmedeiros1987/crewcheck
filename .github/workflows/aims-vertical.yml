@@ -7,6 +7,11 @@ on:
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
+      - 'client/src/components/roster/**'
+      - 'client/src/lib/crewOccurrenceAssociation.ts'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/pdfParser.ts'
+      - 'scripts/regression-roster-crew-*.mjs'
       - 'client/src/components/v1391/aims-vertical.css'
       - 'client/src/components/v1391/roster-layout.css'
       - 'client/src/lib/rosterPublication*.ts'
@@ -37,6 +42,7 @@ jobs:
       - run: npm ci
       - name: Raw source contracts and TypeScript
         run: |
+          node scripts/regression-roster-crew-occurrence.mjs
           node scripts/regression-roster-layout-preference.mjs
           npx tsc --noEmit
           sha256sum client/src/components/v1391/AimsRosterTable.tsx client/src/components/v1391/aims-vertical.css > "$RUNNER_TEMP/aims.sha256"
@@ -44,6 +50,7 @@ jobs:
         run: |
           npm run check
           sha256sum -c "$RUNNER_TEMP/aims.sha256"
+          node scripts/regression-roster-crew-occurrence.mjs
           node scripts/regression-roster-layout-preference.mjs
           node scripts/regression-roster-publication-review.mjs
           npx vite build
@@ -63,7 +70,9 @@ jobs:
       - name: Actual AIMS component, theme, font, navigation and privacy checks
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
-        run: node scripts/regression-aims-vertical-browser.mjs
+        run: |
+          node scripts/regression-aims-vertical-browser.mjs
+          node scripts/regression-roster-crew-browser.mjs
       - name: Full app import to AIMS history regression
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
@@ -73,6 +82,7 @@ jobs:
         with:
           name: aims-vertical-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
+            artifacts/SYNTHETIC-roster-crew
             artifacts/aims-vertical
             artifacts/publication-import-flow
           if-no-files-found: warn
