@@ -4504,8 +4504,16 @@ function SalaryReliableView({ bundle,freeDayEvaluation }: { bundle: BundleState;
       const available = diagnostic.ready;
       const deductionScopeReady = fullMonths && missing.length===0 && selected.length>0 && selected.every(item=>item.snapshot.salary.dsr.isCurrent());
       const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
+      // A monthly observed subtotal is independently valid even when the
+      // exhaustive inventory/DSR gate prevents a complete salary. Never rate it
+      // over a partial month or reuse a revoked/different account projection.
+      const observed = selected.map(item=>item.snapshot.salary.dsr);
+      const observedOwner = financialRateOwner();
+      const observedMinor = fullMonths && observed.length>0 && new Set(selected.map(item=>`${item.roster.year}-${item.roster.month}`)).size===selected.length && observed.every((dsr,index)=>dsr.isCurrent()&&dsr.composition.ownerId===observedOwner&&dsr.composition.competence===`${selected[index].roster.year}-${String(selected[index].roster.month).padStart(2,'0')}`) ? observed.flatMap(dsr=>dsr.observedSubtotalMinor===null?[]:[dsr.observedSubtotalMinor]) : [];
+      const observedSum = observedMinor.reduce((sum,value)=>sum+value,0);
+      const statementGross = gross ?? (observedMinor.length>0&&observedMinor.every(value=>Number.isSafeInteger(value)&&value>=0)&&Number.isSafeInteger(observedSum)?observedSum/100:null);
       const completeNetScope=available&&fullMonths&&selected.length>0&&selected.every(item=>payrollOperationalCoverage(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,item.roster.days.map(day=>day.date)).complete);
-      const displaySummary=basis==='gross'?salaryDisplaySummary(basis,gross,available&&fullMonths,[],[]):sumSalaryDisplaySummaries(basis,selected.map(item=>summaryForMonth(item.snapshot,item.snapshot.salary.gross,available&&fullMonths)));
+      const displaySummary=basis==='gross'?salaryDisplaySummary(basis,statementGross,available&&fullMonths,[],[]):sumSalaryDisplaySummaries(basis,selected.map(item=>summaryForMonth(item.snapshot,item.snapshot.salary.gross,available&&fullMonths)));
       const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
       const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
       return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">

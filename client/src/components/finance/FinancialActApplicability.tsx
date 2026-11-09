@@ -138,6 +138,7 @@ export default function FinancialActApplicability({ pending = [] }: { pending?: 
   if (!currentSession || snapshot.state === 'unauthenticated') return null;
   if (!snapshot.history || !['ready', 'missing'].includes(snapshot.state)) return <section className="cz-toolbox cc-act-notice" data-financial-act-context="unavailable" data-i18n-skip="true" lang={lang}>
     <p role="status"><strong>{t.unreadable}</strong></p>
+    <button type="button" onClick={() => { if (!snapshot.isCurrent()) return; setPreview(null); refresh(value => value + 1); window.dispatchEvent(new Event('crewcheck:financial-config-changed')); }}>{lang==='pt-BR'?'Tentar ler novamente':'Try reading again'}</button>
     <details><summary>{t.details}</summary><p>{t.unreadableDetail}</p></details>
   </section>;
   const pendingDates = [...new Set(pending.map(item => item.iso).filter(Boolean))].sort();
