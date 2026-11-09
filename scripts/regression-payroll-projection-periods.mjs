@@ -18,6 +18,8 @@ assert.equal(financialPresetScope(roster,{...context,state:'unavailable'}),null)
 assert.equal(financialPresetScope(roster,{...context,history:{...history,ownerId:'SYN-B'}}),null);
 const declaration={revision:1,from:'2026-10-01',through:'2026-10-31',active:true,confirmed:true,source:'owner_financial_confirmation',employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'};
 const declared=financialPresetScope(roster,{...context,state:'ready',history:{...history,revision:1,events:[declaration]}});
+assert(declared.allowsFixedMonth('2026-11'),'owned fixed observations survive ACT expiry on compatible publication');
+for(const other of [{airline:'G3',rank:'CC'},{airline:'LA',rank:'PILOT'},{airline:'LA',rank:''}]){const scope=financialPresetScope(other,{...context,state:'ready',history:{...history,revision:1,events:[declaration]}});assert.equal(scope?.allowsFixedMonth('2026-11')??false,false,'incompatible or unknown fixed publication does not enter the TAM cabin cycle');}
 assert(declared.allowsMonth('2026-10'));assert.equal(declared.allowsMonth('2026-11'),false,'expired declaration cannot fall back to system preset');
 const revoked=financialPresetScope(roster,{...context,state:'ready',history:{...history,revision:2,events:[declaration,{revision:2,from:'2026-10-15',through:'2026-10-20',active:false,confirmed:true,source:'owner_financial_confirmation'}]}});
 assert.equal(revoked.allowsMonth('2026-10'),false,'mid-month revocation never becomes a full-month scope');

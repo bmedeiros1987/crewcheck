@@ -3,7 +3,7 @@ import {actPayrollCompetences,ACT_PAYROLL_CYCLE_SOURCE,PAYROLL_CYCLE_SOURCE,payr
 import {resolveCrewFunction,inferCrewRole} from './actRules';
 import type {CrewRoster} from './pdfParser';
 
-export type FinancialPresetScope={company:'TAM';role:'cabin';basis:'system_default'|'owner_declaration';employmentConfirmed:boolean;allowsMonth:(month:string)=>boolean};
+export type FinancialPresetScope={company:'TAM';role:'cabin';basis:'system_default'|'owner_declaration';employmentConfirmed:boolean;allowsMonth:(month:string)=>boolean;allowsFixedMonth:(month:string)=>boolean};
 /** Product configuration is not an employment declaration. Unknown roles,
  * incompatible operators and unreadable/revoked owner records never opt in.
  * Roster carrier is only a compatibility check, not proof of employment. */
@@ -15,10 +15,15 @@ export function financialPresetScope(roster:{airline?:string;rank?:string},conte
  const categoryCompatible=()=>resolveCrewFunction(roster.rank).role!=='pilot'&&inferCrewRole(roster as CrewRoster).role!=='pilot';
  const current=()=>{const live=reread();return categoryCompatible()&&context.isCurrent()&&live.isCurrent()&&live.ownerId===context.ownerId&&live.session===context.session&&live.state===context.state&&live.raw===context.raw;};
  if(!current())return null;
+ const role=resolveCrewFunction(roster.rank);
+ const publicationCompatible=['LA','TAM','LATAM'].includes(String(roster.airline||'').trim().toUpperCase())&&role.role==='cabin'&&role.confidence==='alta';
+ // Fixed observations use their own receipts, not an ACT rate grant. Still
+ // reject a publication of another company/category or unknown provenance.
+ const allowsFixedMonth=(month:string)=>Boolean(current()&&publicationCompatible&&payrollMonthBounds(month));
  const history=context.history;
  if(!history)return null;
  if(history.events.length){
-  return {company:'TAM',role:'cabin',basis:'owner_declaration',employmentConfirmed:false,allowsMonth:month=>{
+  return {company:'TAM',role:'cabin',basis:'owner_declaration',employmentConfirmed:false,allowsFixedMonth,allowsMonth:month=>{
    const bounds=payrollMonthBounds(month);if(!bounds||!current())return false;
    for(let d=new Date(bounds.start+'T12:00:00Z');d.toISOString().slice(0,10)<=bounds.end;d.setUTCDate(d.getUTCDate()+1)){
     const selection=financialActAt(history,d.toISOString().slice(0,10));
@@ -28,7 +33,7 @@ export function financialPresetScope(roster:{airline?:string;rank?:string},conte
  }
  const functionResolution=resolveCrewFunction(roster.rank);
  if(!['LA','TAM','LATAM'].includes(String(roster.airline||'').trim().toUpperCase())||functionResolution.role!=='cabin'||functionResolution.confidence!=='alta')return null;
- return {company:'TAM',role:'cabin',basis:'system_default',employmentConfirmed:false,allowsMonth:month=>Boolean(current()&&payrollMonthBounds(month))};
+ return {company:'TAM',role:'cabin',basis:'system_default',employmentConfirmed:false,allowsFixedMonth,allowsMonth:month=>Boolean(current()&&payrollMonthBounds(month))};
 }
 
 type ReviewedCycle={payrollMonth:string;operationalVariableMonth:string;fixedMonth:string;expectedCreditMonth:string;source:string};
