@@ -82,7 +82,7 @@ try {
     assert.equal(await saved(), null, 'opening the compiled app never enrolls its parsed airline/profile');
     const control = page.locator('[data-financial-act-context]');
     // Prepared Home caller: the October domestic items wait on the declaration, so the short notice shows.
-    assert.match(await control.innerText(), /Confirme seus dados para calcular as diárias\./);
+    assert.match(await control.innerText(), /Aplicação do ACT pendente neste período\./);
     await control.getByText('Confirmar ou revisar aplicação financeira do ACT', { exact: true }).click();
     assert.equal(await control.getByLabel(/^Empregador/).count(), 1);
     assert.equal(await control.getByLabel(/^Perfil do ACT/).count(), 1);

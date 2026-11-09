@@ -17,12 +17,14 @@ export default function ForecastCurrencyCarousel({payment}:{payment:NextPayment}
   function timing(currency:string){
     const full=payment.currencyTiming?.[currency]||payment.timing;
     if(payment.kind==='payroll')return full;
-    if(currency==='BRL')return payment.expectedPaymentDates?.BRL?`Previsto · ${dateLabel(payment.expectedPaymentDates.BRL)}`:'Data a confirmar';
+    if(currency==='BRL')return payment.expectedPaymentDates?.BRL?`Crédito previsto · ${dateLabel(payment.expectedPaymentDates.BRL)}`:'Data a confirmar';
     const items=payment.lines.filter(line=>line.currency===currency),dates=[...new Set(items.map(line=>line.expectedPaymentDate).filter((date):date is string=>Boolean(date&&validFinancialDay(date))))].sort();
     return dates.length?`Dia do voo · ${dates.map(dateLabel).join(' · ')}${items.some(line=>!line.expectedPaymentDate)?' · parcial':''}`:'Data a confirmar';
   }
-  if(!currencies.length)return <div className="cc-forecast-currencies"><div className="cc-payment-value"><strong>Previsão incompleta</strong></div><p className="cc-payment-timing">{payment.kind==='allowance'&&payment.expectedPaymentDates?.BRL?`Referência BRL · previsto ${dateLabel(payment.expectedPaymentDates.BRL)}`:payment.timing}</p></div>;
+  const workPeriod=payment.kind==='allowance'&&payment.range?.valid?<p className="cc-payment-timing">Trabalho · {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)}</p>:null;
+  if(!currencies.length)return <div className="cc-forecast-currencies"><div className="cc-payment-value"><strong>Previsão incompleta</strong></div>{workPeriod}<p className="cc-payment-timing">{payment.kind==='allowance'&&payment.expectedPaymentDates?.BRL?`BRL · crédito previsto ${dateLabel(payment.expectedPaymentDates.BRL)}`:payment.timing}</p></div>;
   return <div className="cc-forecast-currencies">
+    {workPeriod}
     <div className="cc-forecast-currency-viewport" ref={viewport} role="region" aria-label="Moedas da previsão" aria-roledescription="carrossel" tabIndex={currencies.length>1?0:undefined} onScroll={event=>{const el=event.currentTarget;const next=Math.round(el.scrollLeft/el.clientWidth);if(currencies[next]&&currencies[next]!==selected){internalSelection.current=true;setSelected(currencies[next]);}}} onKeyDown={event=>{if(event.target!==event.currentTarget)return;if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();go(index+(event.key==='ArrowRight'?1:-1));}}}>
       {currencies.map(currency=><section className="cc-forecast-currency-slide" key={currency} aria-label={`Previsão em ${currency}`}><p className="cc-forecast-currency-code">{currency}</p><div className="cc-payment-value" data-complete={Boolean(payment.totals)} data-calculation-partial={Boolean(payment.calculationPartial)}><strong>{displayTotals&&Number.isFinite(displayTotals[currency])?privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency}).format(displayTotals[currency])):'Previsão incompleta'}</strong>{displayTotals&&Number.isFinite(displayTotals[currency])&&<small>{compact?(payment.calculationPartial?'subtotal estimado · parcial':'Estimado'):(payment.calculationPartial?'Previsão incompleta · subtotal estimado das parcelas conhecidas':'Estimativa calculada · sem confirmação de pagamento')}</small>}</div><p className="cc-payment-timing">{timing(currency)}</p></section>)}
     </div>

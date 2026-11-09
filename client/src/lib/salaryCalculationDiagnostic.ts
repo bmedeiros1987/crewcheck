@@ -14,7 +14,7 @@ export function salaryCalculationDiagnostic(items: SalaryDiagnosticItem[], range
   if (missing.length) reasons.push(`Falta escala para ${missing.join(', ')}. Nenhum valor foi presumido para esses meses.`);
   if (!items.length) reasons.push('Nenhuma escala com vínculo confirmado está disponível para o período.');
   for (const item of items) {
-    if(item.dsrPending) reasons.push(`${item.month}: DSR e inventário salarial completos pendentes; subtotal conhecido separado.`);
+    if(item.dsrPending||item.inventoryComplete===false) reasons.push(`${item.month}: DSR e inventário salarial completos pendentes; subtotal conhecido separado.`);
     if (!item.days) reasons.push(`${item.month}: a escala não contém dias publicados.`);
     if (item.requiresManualFunction) reasons.push(`${item.month}: a função profissional está pendente; as tarifas salariais não foram selecionadas.`);
     if (!item.configured) reasons.push(`${item.month}: não há tarifas ou valores salariais disponíveis para esta conta e competência.`);
