@@ -203,3 +203,23 @@ export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | 
   }
   return pending('pernoite internacional não comprovado; mudança de dia, hotel ou intervalo inferido não bastam.');
 }
+
+/** Observed company statement + user confirmation, not a universal duty rule.
+ * Only the documented Tuesday-flight/Wednesday-supper boundary is reassigned.
+ * A Wednesday departure with Tuesday APZ remains Wednesday. No persistence,
+ * entitlement, tariff or credit confirmation is created by this projection. */
+export function latamSupperReference(args:{event:any;slot:string;rateKey:string;iso:string;roster:{airline?:string;rank?:string};context:FinancialActSnapshot}):{iso:string;occurrenceIso?:string;referenceDateBasis?:'latam_observed_tuesday_flight_supper'} {
+  const unchanged={iso:args.iso};
+  if(args.slot!=='supper'||args.rateKey!=='domestic'||args.event.kind!=='flight'||args.event.salaryClockKnown===false
+    ||!['LA','TAM','LATAM'].includes(String(args.roster.airline||'').trim().toUpperCase())
+    ||financialPublishedFlightIntervalIssue([args.event]))return unchanged;
+  const scope=financialPresetScope(args.roster,args.context);
+  if(!scope?.allowsMonth(args.iso.slice(0,7)))return unchanged;
+  const departure=new Date(args.event.canonical?.startDateTime||''),arrival=new Date(args.event.canonical?.endDateTime||'');
+  if(!Number.isFinite(departure.getTime())||!Number.isFinite(arrival.getTime())||arrival<=departure||!validAllowanceDay(args.iso))return unchanged;
+  const flightIso=rosterOperationalIso(departure),next=new Date(flightIso+'T12:00:00Z');
+  if(next.getUTCDay()!==2||!scope.allowsMonth(flightIso.slice(0,7)))return unchanged;
+  next.setUTCDate(next.getUTCDate()+1);
+  if(next.toISOString().slice(0,10)!==args.iso||rosterOperationalIso(arrival)!==args.iso)return unchanged;
+  return {iso:flightIso,occurrenceIso:args.iso,referenceDateBasis:'latam_observed_tuesday_flight_supper' as const};
+}

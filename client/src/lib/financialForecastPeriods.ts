@@ -8,6 +8,7 @@ type AllowanceEvidenceRow = ForecastRow & {
   rateKey?: string; rateSource?: string; rateVersion?: string;
   calculationStart?: string; calculationEnd?: string;
   expectedPaymentDate?: string; expectedPaymentTimezone?: string;
+  occurrenceIso?: string; referenceDateBasis?: 'latam_observed_tuesday_flight_supper';
 };
 type AllowancePending = UnclassifiedItem & { reason?: string; pendingKind?: string; sourceIssueId?: string; actCause?: string; originIso?: string };
 
@@ -37,6 +38,12 @@ export function aggregateAllowanceEvidence<R extends AllowanceEvidenceRow, P ext
     }
     for (const row of snapshot.perdiem.rows ?? snapshot.perdiem.monthlyRows) {
       if (!validFinancialDay(row.iso)) { addPending({iso:'',airport:row.airport||'',pendingKind:'source_coverage',reason:'Data de origem da diária não verificada.'}); continue; }
+      if ((row.occurrenceIso||row.referenceDateBasis) && (row.referenceDateBasis!=='latam_observed_tuesday_flight_supper'
+        ||!validFinancialDay(row.occurrenceIso||'')||row.label!=='Ceia'||row.currency!=='BRL'
+        ||new Date(row.iso+'T12:00:00Z').getUTCDay()!==2
+        ||Date.parse(row.occurrenceIso+'T12:00:00Z')-Date.parse(row.iso+'T12:00:00Z')!==86400000)) {
+        addPending({iso:row.iso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Vínculo da ocorrência física e referência da ceia não verificado.'});continue;
+      }
       if (month && row.iso.slice(0,7)!==month) {
         // A literal activity printed in a different competence is not carry-in.
         // Only a journey beginning in this source's nominal month can carry
@@ -48,11 +55,11 @@ export function aggregateAllowanceEvidence<R extends AllowanceEvidenceRow, P ext
       if (row.partial===true) addPending({iso:row.iso,originIso:row.originIso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Completude da jornada de origem da diária não comprovada.'});
       // Existing producer: one of each meal and at most one taxi per civil day.
       // Currency or amount must not turn conflicting versions into two meals.
-      const key = JSON.stringify([row.iso,row.label]);
+      const key = JSON.stringify([row.occurrenceIso||row.iso,row.label]);
       const group = groups.get(key) || []; group.push(row); groups.set(key,group);
     }
   }
-  const evidence = (row: R) => JSON.stringify([row.eventId,row.originIso,row.currency,row.value,row.convertedBRL,row.source,row.airport,row.partial,
+  const evidence = (row: R) => JSON.stringify([row.eventId,row.iso,row.occurrenceIso,row.referenceDateBasis,row.originIso,row.currency,row.value,row.convertedBRL,row.source,row.airport,row.partial,
     row.rateKey,row.rateSource,row.rateVersion,row.calculationStart,row.calculationEnd,row.expectedPaymentDate,row.expectedPaymentTimezone]);
   const rows: R[] = [];
   for (const group of groups.values()) {

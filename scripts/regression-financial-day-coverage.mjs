@@ -1,3 +1,4 @@
+import {closedDutyCycleFixture} from './fixtures/allowance-closed-duty-cycle.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -268,6 +269,49 @@ try{
  assert.equal(tripForecast(missingOutstationReturn).rows.filter(row=>['Jantar','Ceia'].includes(row.label)).length,0,'an unproved outstation return stays pending');
  const unknownOutstationEnd=copy(outstation);unknownOutstationEnd.days[0].dutyDebriefSource='estimated';
  assert.equal(tripForecast(unknownOutstationEnd).rows.filter(row=>['Jantar','Ceia'].includes(row.label)).length,0,'an estimated duty end cannot establish a closed duty');
+ // Narrow documentary reference: a Tuesday flight's supper after midnight
+ // Wednesday remains in that preceding cycle, not a universal duty-date rule.
+ const tuesdaySupper=copy(outstation);tuesdaySupper.days[0].date='10/11/2026';
+ const supperForecast=tripForecast(tuesdaySupper),supperRow=supperForecast.rows.find(row=>row.label==='Ceia');
+ assert.equal(supperRow?.iso,'2026-11-10','TUESDAY_SUPPER_REFERENCE: retain the published flight date at this observed company-cycle boundary');
+ assert.equal(supperRow.occurrenceIso,'2026-11-11','the physical Wednesday occurrence must remain inspectable');
+ assert.equal(supperRow.referenceDateBasis,'latam_observed_tuesday_flight_supper');
+ const supperAfterBoundary=libs.financialRange('custom','','','2026-11-11','2026-11-17');
+ assert.equal(context.subject.scopedFinancialForecast([{roster:tuesdaySupper,perdiem:supperForecast}],supperAfterBoundary,[]).rows.filter(row=>row.label==='Ceia').length,0,'the same supper must not reappear in the following cycle');
+ const supperBeforeBoundary=libs.financialRange('custom','','','2026-11-04','2026-11-10');
+ assert.equal(context.subject.scopedFinancialForecast([{roster:tuesdaySupper,perdiem:supperForecast}],supperBeforeBoundary,[]).rows.filter(row=>row.label==='Ceia').length,1,'the preceding cycle retains exactly one supper');
+ const wednesdaySupper=copy(tuesdaySupper);wednesdaySupper.days[0].date='11/11/2026';
+ assert.equal(tripForecast(wednesdaySupper).rows.find(row=>row.label==='Ceia').iso,'2026-11-12','do not generalize a Tuesday-boundary observation to every midnight');
+ const wednesdayDeparture=copy(tuesdaySupper);wednesdayDeparture.days[0].dutyReport='23:18';wednesdayDeparture.days[0].dutyDebrief='03:50';wednesdayDeparture.days[0].legs=[{flightNumber:'LA9998',origin:'GIG',destination:'GRU',departureTime:'00:05',arrivalTime:'03:20',presentationTime:'23:18',workType:'OP'}];
+ const afterApz=tripForecast(wednesdayDeparture).rows.find(row=>row.label==='Ceia');assert.equal(afterApz?.iso,'2026-11-11','Tuesday presentation does not move a Wednesday departure supper backwards');assert.equal(afterApz.occurrenceIso,undefined);
+ const referenceArgs={event:events(tuesdaySupper).filter(event=>event.kind==='flight').at(-1),slot:'supper',rateKey:'domestic',iso:'2026-11-11',roster:tuesdaySupper,context:libs.readFinancialActApplicability()};
+ for(const change of [{roster:{...tuesdaySupper,rank:'CP'}},{roster:{...tuesdaySupper,airline:'OTHER'}},{slot:'dinner'},{rateKey:'argentina'},{event:{...referenceArgs.event,salaryClockKnown:false}},{context:{...referenceArgs.context,isCurrent:()=>false}}])assert.equal(libs.latamSupperReference({...referenceArgs,...change}).iso,'2026-11-11','incompatible profile, source, slot and stale context cannot borrow the supper reference');
+ const supperSnapshot={roster:tuesdaySupper,perdiem:supperForecast};
+ const duplicatedSupper=libs.aggregateAllowanceEvidence([supperSnapshot,supperSnapshot]);assert.equal(duplicatedSupper.rows.filter(row=>row.label==='Ceia').length,1,'reimported supper is not duplicated');
+ const badReference={...supperSnapshot,perdiem:{...supperForecast,rows:supperForecast.rows.map(row=>row.label==='Ceia'?{...row,occurrenceIso:'2026-11-12'}:row)}};
+ assert.equal(libs.aggregateAllowanceEvidence([badReference]).rows.filter(row=>row.label==='Ceia').length,0,'a contradictory physical/reference date stays pending');
+
+ // Entirely fictional source: closed foreign excursion, domestic outstation
+ // continuity, an unrecorded ground move, DR, and both cycle-edge suppers.
+ {
+ const fixture=closedDutyCycleFixture();
+ const previousClock=context.Date;class CycleClock extends Date{constructor(...args){super(...(args.length?args:['2026-10-22T12:00:00Z']));}static now(){return Date.parse('2026-10-22T12:00:00Z');}}
+ const octoberScope=libs.planFinancialActChange({schema:1,ownerId:owner,revision:0,events:[]},0,{from:'2026-10-01',through:'2026-10-31',active:true,employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'});
+ try {context.Date=CycleClock;values.set(libs.financialActStorageKey(owner),JSON.stringify(octoberScope));
+  for(const mode of ['documentary-preset','explicit-synthetic-tariff']){
+   libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic',mode==='documentary-preset'?'':'109.44');
+   const forecast=context.subject.calculatePerDiem(events(fixture),fixture,new Date('2026-10-22T12:00:00Z'));
+   const selected=libs.financialRange('custom','','','2026-10-14','2026-10-20');
+   const rendered=consumer([{roster:fixture,perdiem:forecast}],selected);
+   assert.equal(rendered.forecast.rows.length,10,mode+' retains ten proved meals in the selected cycle');
+   assert.equal(Math.round(rendered.forecast.nativeSummary.knownTotalsByCurrency.BRL*100),109440,mode+' independent 10 × 10944 cents');
+   assert.equal(Math.round(rendered.payment.calculationTotals.BRL*100),109440,'the actual next-payment consumer uses the same ten lines');
+   assert.equal(rendered.forecast.unclassifiedItems.length,0);
+   assert.equal(rendered.forecast.rows.filter(row=>row.label==='Ceia').length,1,'no previous-cycle supper counted twice');
+   assert.equal(rendered.forecast.rows.find(row=>row.label==='Ceia').originIso,'2026-10-14');
+  }
+ }finally{context.Date=previousClock;values.set(libs.financialActStorageKey(owner),JSON.stringify(cabinDeclaration));libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');}
+ }
  for(const source of [roundTrip,libs.normalizeRosterDays(roundTrip),copy(libs.normalizeRosterDays(roundTrip))])assert.equal(tripForecast(source).rows.find(row=>row.label==='Almoço').rateKey,'domestic','reimport/prepared source retains decision');
  const duplicate=copy(roundTrip);duplicate.days.push(copy(duplicate.days[0]));assert.equal(tripForecast(duplicate).rows.filter(row=>row.label==='Almoço').length,0,'existing multi-record evidence gate remains pending rather than duplicating a meal');assert.equal(tripForecast(duplicate).nativeSummary.complete,false);
  const conflict=copy(duplicate);conflict.days[1].legs[1].arrivalTime='18:00';pendingTrip(conflict,'conflicting original published records remain pending');
