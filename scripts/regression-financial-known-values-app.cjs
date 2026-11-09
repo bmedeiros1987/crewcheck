@@ -33,6 +33,7 @@ async function screen(page,name){const root=page.locator('.cc-payment-overview')
 async function requireRestoredOverviewFocus(page,timeout=10000){
  await page.waitForFunction(()=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen==='overview'&&document.activeElement?.matches('.cc-payment-overview .cc-financial-screen-links button')&&document.activeElement.textContent.trim()==='Extrato',null,{timeout});
 }
+let activeCase=null;
 const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.'));
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});let writes=0;const blockedWrites=[],cases=[],errors=[];
 try{
@@ -43,6 +44,7 @@ try{
  await focusControl.evaluate(()=>setTimeout(()=>document.querySelector('button').focus(),80));await requireRestoredOverviewFocus(focusControl);await focusControl.close();
  console.log('PASS strict overview focus controls: body/help reject; delayed saved Extrato focus passes.');
  for(const timezoneId of ['UTC','America/Sao_Paulo','Asia/Tokyo'])for(const width of [390,1440])for(const scenario of ['known','unknownDistance','unknownAddition','futureForeign','unprovedForeign']){const unknown=scenario==='unknownDistance',unknownAddition=scenario==='unknownAddition',futureForeign=scenario==='futureForeign',unprovedForeign=scenario==='unprovedForeign';
+ activeCase={timezoneId,width,scenario};
  const context=await browser.newContext({viewport:{width,height:950},timezoneId,serviceWorkers:'block'});await context.addInitScript(seed,{unknown,unknownAddition,futureForeign,unprovedForeign,language:'pt'});
  await context.route('**/*',route=>{const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/')){if(req.method()!=='GET'){blockedWrites.push(url.pathname);if(url.pathname.startsWith('/api/platform/finance/'))writes++;}return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({ok:false,state:'unavailable',code:url.pathname==='/api/platform/finance/upcoming'?'FINANCIAL_LEDGER_NOT_ENABLED':'SYNTHETIC_OFFLINE'})});}return route.continue();});
  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
@@ -76,4 +78,4 @@ try{
  await page.screenshot({path:path.join(out,`concierge-${width}-${timezoneId.replaceAll('/','-')}-${scenario}.png`),fullPage:false});await card.locator('li button').first().click();await page.getByRole('heading',{name:'Diárias',exact:true}).waitFor();
  cases.push({timezoneId,width,unknown,unknownAddition,futureForeign,unprovedForeign,monthlyInputs:true,ledgerOffConcierge:true});await context.close();
  }assert.equal(writes,0,'zero financial API mutation attempts; all other APIs are intercepted');assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({cases,writes,blockedWrites,realAPIRequests:0,errors},null,2));console.log('PASS actual app financial audit:30 cases,3TZ,390/1440px; monthly inputs/gross-net/pending OPS+CPV/BRL date/ledger-OFF Concierge/navigation; zero writes.');
-}finally{await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});
+}finally{await browser.close();server.close();}})().catch(e=>{console.error('FAILED_SYNTHETIC_CASE',activeCase);console.error(e);process.exitCode=1;server.close();});
