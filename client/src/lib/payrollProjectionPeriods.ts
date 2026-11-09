@@ -1,6 +1,7 @@
 import {financialActAt,readFinancialActApplicability,type FinancialActSnapshot} from './financialActApplicability';
 import {actPayrollCompetences,ACT_PAYROLL_CYCLE_SOURCE,PAYROLL_CYCLE_SOURCE,payrollMonthBounds} from './financialPayrollPeriods';
-import {resolveCrewFunction} from './actRules';
+import {resolveCrewFunction,inferCrewRole} from './actRules';
+import type {CrewRoster} from './pdfParser';
 
 export type FinancialPresetScope={company:'TAM';role:'cabin';basis:'system_default'|'owner_declaration';employmentConfirmed:boolean;allowsMonth:(month:string)=>boolean};
 /** Product configuration is not an employment declaration. Unknown roles,
@@ -8,7 +9,11 @@ export type FinancialPresetScope={company:'TAM';role:'cabin';basis:'system_defau
  * Roster carrier is only a compatibility check, not proof of employment. */
 export function financialPresetScope(roster:{airline?:string;rank?:string},context:FinancialActSnapshot,reread:()=>FinancialActSnapshot=readFinancialActApplicability):FinancialPresetScope|null {
  if(!context.ownerId||context.history?.ownerId!==context.ownerId||!context.isCurrent()||!['ready','missing'].includes(context.state))return null;
- const current=()=>{const live=reread();return context.isCurrent()&&live.isCurrent()&&live.ownerId===context.ownerId&&live.session===context.session&&live.state===context.state&&live.raw===context.raw;};
+ // Match the existing engine's category precedence. Registered pilot context
+ // can veto a cabin default; legacy/global profile data never positively opts
+ // an unknown roster role into the cabin product preset.
+ const categoryCompatible=()=>resolveCrewFunction(roster.rank).role!=='pilot'&&inferCrewRole(roster as CrewRoster).role!=='pilot';
+ const current=()=>{const live=reread();return categoryCompatible()&&context.isCurrent()&&live.isCurrent()&&live.ownerId===context.ownerId&&live.session===context.session&&live.state===context.state&&live.raw===context.raw;};
  if(!current())return null;
  const history=context.history;
  if(!history)return null;

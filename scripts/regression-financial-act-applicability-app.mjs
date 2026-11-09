@@ -81,8 +81,9 @@ try {
     await open();
     assert.equal(await saved(), null, 'opening the compiled app never enrolls its parsed airline/profile');
     const control = page.locator('[data-financial-act-context]');
-    // Prepared Home caller: the October domestic items wait on the declaration, so the short notice shows.
-    assert.match(await control.innerText(), /Aplicação do ACT pendente neste período\./);
+    // A configured cabin profile receives the documented default without personal enrollment.
+    assert.match(await control.innerText(), /Previsão · padrão LATAM Brasil\/comissários/);
+    assert.equal(await control.locator('[data-financial-preset]').count(), 1);
     await control.getByText('Confirmar ou revisar aplicação financeira do ACT', { exact: true }).click();
     assert.equal(await control.getByLabel(/^Empregador/).count(), 1);
     assert.equal(await control.getByLabel(/^Perfil do ACT/).count(), 1);
