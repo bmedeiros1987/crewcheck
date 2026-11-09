@@ -77,6 +77,9 @@ on:
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/payrollPaymentComposition.ts'
+      - 'client/src/lib/payrollProjectionPeriods.ts'
+      - 'scripts/regression-payroll-projection-periods.mjs'
+      - 'scripts/regression-financial-act-cycles-browser.cjs'
       - 'scripts/regression-payroll-payment-coverage.mjs'
       - 'scripts/regression-next-financial-payment.mjs'
       - 'scripts/regression-financial-payment-preview.cjs'
@@ -320,7 +323,9 @@ jobs:
         timeout-minutes: 10
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-ui-browser.cjs
+        run: |
+          node scripts/regression-financial-ui-browser.cjs
+          node scripts/regression-financial-act-cycles-browser.cjs
       - name: Explain free-day pending data and open roster dates (synthetic)
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json

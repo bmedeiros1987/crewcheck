@@ -9,14 +9,14 @@ import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy'
 import './payment-preview.css';
 import { useFinancialScreen } from './FinancialScreen';
 
-export default function NextPaymentCard({ payment, requestRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void; extraDetails?:ReactNode;salaryDisplay?:{title?:string;control:ReactNode;amount:ReactNode;caption:string} }) {
+export default function NextPaymentCard({ payment, requestRange, sourceRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void;sourceRange?:FinancialRange; extraDetails?:ReactNode;salaryDisplay?:{title?:string;control:ReactNode;amount:ReactNode;caption:string} }) {
   const privacy=useFinancialPrivacy(), root=useRef<HTMLDivElement>(null);
   const {screen,navigate,back,controls,history,range,changesDetails}=useFinancialScreen();
   const overviewCaption=payment.kind==='payroll'?(payment.estimationBasis==='operational_month'&&payment.range?`Salário · ${payment.range.start.slice(0,7).split('-').reverse().join('/')} · bruto estimado`:payment.caption.replace(', antes dos descontos','').replace(' · antes dos descontos','')):'Diárias';
   const lines=[...payment.lines].sort((a,b)=>a.iso.localeCompare(b.iso));
   const currencies=[...new Set(lines.map(line=>line.currency))];
 
-  useEffect(()=>{if(payment.range)requestRange(payment.range);},[payment.range?.start,payment.range?.end]);
+  useEffect(()=>{const needed=sourceRange||payment.range;if(needed)requestRange(needed);},[sourceRange?.start,sourceRange?.end,payment.range?.start,payment.range?.end]);
   const dateLabel=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)?value.split('-').reverse().join('/'):value;
   const money=(value:number,currency:string)=>privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency}).format(value));
   const signed=(value:number,currency:string)=>privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency,signDisplay:'always'}).format(value));
