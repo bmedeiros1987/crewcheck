@@ -25,5 +25,14 @@ try{
   const value=read([header+'\nAdiantamentos anteriores\n'+row('CAFE','99,00','2032-09-01'),header+'\n'+row('CAFE','27,36')+'\n'+deposit('27,36')]);
   assert.equal(value.allowanceReconciliation.state,'balanced');assert.equal(value.rates[0].value,27.36);assert.equal(value.allowanceReconciliation.rows[0].page,2);assert.equal(value.allowanceReconciliation.rows[0].origin,'pdf-physical');
  });
+ check('line quantity/subtotal is not evidence of a unit tariff',()=>{
+  for(const text of ['ALMOCO QTD 2 R$ 218,88','ALMOCO 2 R$ 218,88','2 ALMOCO R$ 218,88','ALMOCO UNITARIO R$ 109,44 SUBTOTAL R$ 218,88']){
+   const value=read([header+'\n2032-09-09 QA9001 SYN SYN '+text+'\n'+deposit('218,88')]);
+   assert.equal(value.rates.length,0,text);assert.equal(value.allowanceReconciliation.unitCandidates.length,0,text);assert.equal(value.allowanceReconciliation.state,'conflict',text);assert(value.warnings.some(w=>/obrigatória/.test(w)),text);
+  }
+ });
+ check('an ISO date is not an implicit quantity',()=>{
+  const value=read([header+'\n2032-09-09 CAFE R$ 27,36\n'+deposit('27,36')]);assert.equal(value.allowanceReconciliation.state,'balanced');assert.equal(value.rates[0].value,27.36);
+ });
  console.log(JSON.stringify(cases,null,2));assert(cases.every(c=>c.status==='PASS'),'page continuity counterproofs failed');
 }finally{h.cleanup();}
