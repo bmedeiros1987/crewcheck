@@ -38,10 +38,24 @@ console.log('PASS personal consent: defaults/allowlist, masked/group destination
 
 let accesses=0;const httpDb=await seed();
 const server=http.createServer((req,res)=>handlePersonalConsent(req,res,{identity:r=>r.headers.authorization==='Bearer synthetic-only'?user:null,dbPool:async()=>{accesses++;return httpDb;},readJson:async r=>{let raw='';for await(const x of r)raw+=x;return JSON.parse(raw);},sendJson:(r,status,value)=>{r.writeHead(status,{'content-type':'application/json'});r.end(JSON.stringify(value));}}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+// The direct model fixtures above use an explicit clock. Keep the shipping HTTP
+// handler on that same clock too: wall time must not expire its valid-context
+// offer-OFF fixture and accidentally test a different rejection path.
+const realDateNow=Date.now;let httpNow=now;Date.now=()=>httpNow;
+const httpState=()=>JSON.stringify({rows:[...httpDb.state.rows],jobs:[...httpDb.state.jobs]});
 try{const url='http://127.0.0.1:'+server.address().port,headers={authorization:'Bearer synthetic-only','content-type':'application/json'};
 assert.equal((await fetch(url)).status,401);assert.equal(accesses,0);
-const state=await (await fetch(url,{headers})).json();assert.equal(state.available,false);
-assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify(grant(state))})).status,403);
+const unchanged=httpState();
+const state=await (await fetch(url,{headers})).json();assert.equal(state.available,false);assert.equal(state.reason,'CONSENT_NOT_OFFERED');assert.ok(state.context);
+assert.equal(httpState(),unchanged,'HTTP read must preserve sources, consent, receipts and held jobs');
+const unavailable=await fetch(url,{method:'POST',headers,body:JSON.stringify(grant(state))});assert.equal(unavailable.status,403);assert.equal((await unavailable.json()).code,'CONSENT_NOT_OFFERED');
+assert.equal(httpState(),unchanged,'Valid-context offer-OFF rejection must not mutate any source or job');
 assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({...grant(state),ownerId:'other'})})).status,400);
-}finally{await new Promise(r=>server.close(r));}
-console.log('PASS personal consent HTTP: authenticated owner only, no unauthenticated DB access, default offer off, client authority rejected');
+assert.equal(httpState(),unchanged,'Forged authority rejection must not mutate any source or job');
+httpNow=now+30*86400000;
+const expired=await (await fetch(url,{headers})).json();assert.equal(expired.available,false);assert.equal(expired.context,null);assert.equal(expired.reason,'CONSENT_CONTEXT_CHANGED');
+const expiredGrant=await fetch(url,{method:'POST',headers,body:JSON.stringify(grant(state))});assert.equal(expiredGrant.status,409);assert.equal((await expiredGrant.json()).code,'CONSENT_CONTEXT_CHANGED');
+assert.equal(httpState(),unchanged,'Exact-expiry reads and stale-context grants must not mutate sources, consent, receipts or jobs');
+}finally{Date.now=realDateNow;await new Promise(r=>server.close(r));}
+assert.equal(Date.now,realDateNow,'HTTP fixture must restore the process clock');
+console.log('PASS personal consent HTTP: authenticated owner only, no unauthenticated DB access, valid-context offer OFF403, exact30day expiry409, rejected authority400, source/consent/receipt/job state unchanged and process clock restored');
