@@ -15,7 +15,9 @@ import FinancialActPresetReference from './FinancialActPresetReference';
 export default function PayrollPaymentCard({ snapshots, availableMonths=[], selectReferenceMonth, requestRange, extraDetails, basis, chooseBasis }: { snapshots:PayrollSnapshot[];availableMonths?:string[];selectReferenceMonth?:(month:string,explicit?:boolean)=>void;requestRange:(range:FinancialRange)=>void;extraDetails?:ReactNode;basis:SalaryDisplayBasis;chooseBasis:(basis:SalaryDisplayBasis)=>unknown }) {
   const months=[...new Set([...availableMonths,...snapshots.map(item=>item.month),...readConfirmedFinancialRates().filter(item=>item.key.startsWith('salary.')).map(item=>item.effectiveFrom.slice(0,7))])];
   const periods=months.flatMap(month=>payrollProjectionPeriods([month],snapshots.find(item=>item.month===month)?.presetScope||null,reviewedPayrollCycleForOperationalMonth));
-  const candidates=periods.map(period=>({...composePayrollPayment(period,period.basis==='reviewed_company_cycle'?snapshots:snapshots.filter(item=>item.presetScope?.company==='TAM'&&item.presetScope.role==='cabin'&&item.presetScope.allowsMonth(item.month))),cycleBasis:period.basis}));
+  // Personal fixed components have their own owner/competence evidence. The
+  // operational ACT scope must not erase them when its declaration ends.
+  const candidates=periods.map(period=>({...composePayrollPayment(period,period.basis==='reviewed_company_cycle'?snapshots:snapshots.filter(item=>item.month===period.fixedMonth||(item.presetScope?.company==='TAM'&&item.presetScope.role==='cabin'&&item.presetScope.allowsMonth(item.month)))),cycleBasis:period.basis}));
   const session=financialRateSession(),[selection,setSelection]=useState({session,month:''});
   const available=[...new Set([...snapshots.map(item=>item.month),...candidates.map(item=>item.operationalMonth)])].sort().reverse();
   const selected=selection.session===session&&available.includes(selection.month)?selection.month:'';
