@@ -1733,12 +1733,77 @@ function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
     return null;
   }
 }
+// Presentation continuity only. This registry is not an operational admission,
+// grant or disk cache: only the accepted authenticated fetch below can add a record.
+let browserRadarContext = { owner: '', revision: '', session: captureAuthSession() };
+type BrowserRadarRecord = {
+  context: typeof browserRadarContext; session: ReturnType<typeof captureAuthSession>;
+  signature: string; serial: number; bytes: string; snapshot: RadarSnapshot;
+};
+const browserRadarResponses = new Map<string, BrowserRadarRecord>();
+const browserRadarInvalidations = new Map<string, { value: number }>();
+function browserRadarGeneration(key: string) {
+  let generation = browserRadarInvalidations.get(key);
+  if (!generation) {
+    // Eviction invalidates captured references too; it cannot reset an old read
+    // to a numerically equal generation or make the registry grow indefinitely.
+    if (browserRadarInvalidations.size >= 128) browserRadarInvalidations.delete(browserRadarInvalidations.keys().next().value!);
+    generation = { value: 0 };
+    browserRadarInvalidations.set(key, generation);
+  }
+  return generation;
+}
+function setBrowserRadarContext(revision: string) {
+  const session = captureAuthSession();
+  const owner = session.token ? session.owner : '';
+  if (owner !== browserRadarContext.owner || revision !== browserRadarContext.revision || !browserRadarContext.session.isCurrent()) {
+    browserRadarContext = { owner, revision, session };
+    browserRadarResponses.clear();
+  }
+}
+function invalidateBrowserRadarResponse(key: string) {
+  browserRadarResponses.delete(key);
+  browserRadarGeneration(key).value += 1;
+}
+function browserRadarSignature(event: ZeroLeg): string {
+  return JSON.stringify([event.id, event.flightNumber, event.origin, event.destination, event.canonical]);
+}
+function readBrowserRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
+  const key = radarSnapshotKey(event), record = browserRadarResponses.get(key);
+  if (!record) return null;
+  if (record.context !== browserRadarContext || !record.context.revision || !record.session.token || !record.session.isCurrent()
+    || record.session.owner !== record.context.owner || record.signature !== browserRadarSignature(event)
+    || storage.get(key, 'null') !== record.bytes || JSON.stringify(record.snapshot) !== record.bytes
+    || !readRadarSnapshot(event) || !validatedRadarForEvent(event, record.snapshot)
+    || !gateQueryDay({ flight: String(event.flightNumber || ''), origin: String(event.origin || ''), destination: String(event.destination || ''),
+      departureDate: originFlightDate(event.canonical?.startDateTime || '', String(event.origin || '')), scheduledDepartureUtc: event.canonical?.startDateTime }).allowed) {
+    invalidateBrowserRadarResponse(key);
+    return null;
+  }
+  return record.snapshot;
+}
+// One local expiry wake-up, never a fetch/poll. Field expiry and origin midnight
+// can precede receipt expiry; preserve each existing validator's own boundary.
+function browserRadarDisplayDeadline(event: ZeroLeg, snapshot: RadarSnapshot): number {
+  const now = Date.now();
+  const deadlines = [Number(snapshot.updatedAt) + RADAR_GATE_STALE_MS,
+    ...Object.values(radarGateInfo(event, snapshot).automaticFieldValidUntilEpochMs).filter((x): x is number => typeof x === 'number' && x >= now)];
+  let end = Math.min(...deadlines);
+  const identity = { flight: String(event.flightNumber || ''), origin: String(event.origin || ''), destination: String(event.destination || ''),
+    departureDate: originFlightDate(event.canonical?.startDateTime || '', String(event.origin || '')), scheduledDepartureUtc: event.canonical?.startDateTime };
+  if (!gateQueryDay(identity, end).allowed) {
+    let lo = now, hi = end;
+    while (hi - lo > 1) { const mid = Math.floor((hi + lo) / 2); if (gateQueryDay(identity, mid).allowed) lo = mid; else hi = mid; }
+    end = hi;
+  }
+  return end;
+}
 function confirmedRadarGate(value?: string): string {
   const normalized = String(value || '').trim().toUpperCase();
   if (!normalized || normalized === '—' || normalized === '-' || /CONFIRMAR|INFORMAD|UNKNOWN|N\/A/.test(normalized)) return '';
   return normalized;
 }
-function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: ReturnType<typeof beginOperationalRadarRead> = null, receipt = ""): RadarSnapshot {
+function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: ReturnType<typeof beginOperationalRadarRead> = null, receipt = "", emitUpdate = true): RadarSnapshot {
   const previous = readRadarSnapshot(event);
   // Âncora da janela de 30 min do portão: o recebimento original da fonte, o mesmo que a
   // admissão conferiu (nunca no futuro do celular; sem ele, agora). Gravar no celular não
@@ -1751,9 +1816,10 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: R
   const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, incoming) : incoming;
   const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, incoming) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: receivedAt };
   const key = radarSnapshotKey(event);
+  invalidateBrowserRadarResponse(key); // Generic saves revoke; they never create a presentation binding.
   storage.set(key, JSON.stringify(snapshot));
   retainOperationalRadarResponse(snapshot,key,JSON.stringify(event.canonical),readTicket,receipt);
-  window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
+  if (emitUpdate) window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
   const manualEntry = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event);
   const manualGate = manualEntry?.gate || '';
@@ -1816,14 +1882,33 @@ async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarS
   // Preserve the legacy preparation anchor, then pin its outgoing instant to canonical UTC.
   params.set('scheduledDeparture', queryIdentity.scheduledDepartureUtc);
   const readTicket=beginOperationalRadarRead();
+  const browserSession = captureAuthSession(), browserContext = browserRadarContext;
+  const browserSignature = browserRadarSignature(event), browserKey = radarSnapshotKey(event);
+  const browserGeneration = browserRadarGeneration(browserKey), browserInvalidation = browserGeneration.value;
+  const browserBytes = storage.get(browserKey, 'null');
   let payload: RadarSnapshot;
   try { payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' }); }
   catch (error) { payload = radarFailurePayload(error); }
-  if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed)
+  if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed
+    || !browserSession.isCurrent() || browserContext !== browserRadarContext || browserSignature !== browserRadarSignature(event)
+    || (browserRadarInvalidations.get(browserKey) !== browserGeneration || browserGeneration.value !== browserInvalidation) || storage.get(browserKey, 'null') !== browserBytes)
     return { ...gateQuerySuppressed({ reason: 'response-context-expired' }), httpStatus: payload.httpStatus };
   if (payload?.ok !== true || payload?.querySuppressed) return payload;
   if (payload?.ok && !radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS).allowed) return gateQuerySuppressed(radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS));
-  return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' },readTicket,new Date().toISOString());
+  const snapshot = saveRadarSnapshot(event, payload, readTicket, new Date().toISOString(), false);
+  const bytes = JSON.stringify(snapshot);
+  // Sole writer: neither events, a generic saver nor caller-supplied owners can
+  // mint this binding. Recheck after saver side-effects and bind final bytes.
+  if (browserSession.isCurrent() && browserContext === browserRadarContext && browserContext.revision
+    && browserContext.owner === browserSession.owner && browserSignature === browserRadarSignature(event)
+    && radarQuerySerial.get(serialKey) === serial && browserRadarInvalidations.get(browserKey) === browserGeneration
+    && browserGeneration.value === browserInvalidation + 1 && storage.get(browserKey, 'null') === bytes
+    && validatedRadarForEvent(event, snapshot) && gateQueryDay(queryIdentity).allowed) {
+    if (browserRadarResponses.size >= 128 && !browserRadarResponses.has(browserKey)) browserRadarResponses.delete(browserRadarResponses.keys().next().value!);
+    browserRadarResponses.set(browserKey, { context: browserContext, session: browserSession, signature: browserSignature, serial, bytes, snapshot });
+  }
+  window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key: browserKey, snapshot } }));
+  return snapshot;
 }
 function useRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   const [snapshot, setSnapshot] = useState<RadarSnapshot | null>(() => readRadarSnapshot(event));
@@ -3292,24 +3377,35 @@ function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: B
 
 
 function RadarView({ event }: { event: ZeroLeg }) {
-  const [state, setState] = useState<RadarSnapshot | null>(() => readRadarSnapshot(event));
+  const [snapshot, setState] = useState<RadarSnapshot | null>(() => readBrowserRadarSnapshot(event));
   const [loading, setLoading] = useState(false);
+  const [displayTick, setDisplayTick] = useState(0);
   const flight = safe(event.flightNumber, '');
   const airlineCode = event.airlineCode || normalizedAirlineCode(flight);
   const airlineName = airlineNameFor(airlineCode, event.airlineName);
   const owner = manualGateAccountKey(getStoredUser());
   const token = getToken();
-  const contextKey = [event.id, event.canonical?.startDateTime, flight, event.origin, event.destination, owner].join('|');
-  const requestState = useRef({ key: contextKey, serial: 0 });
-  if (requestState.current.key !== contextKey) requestState.current = { key: contextKey, serial: requestState.current.serial + 1 };
+  const contextKey = [event.id, event.canonical?.startDateTime, flight, event.origin, event.destination, owner, browserRadarSignature(event), browserRadarContext.revision].join('|');
+  const requestState = useRef({ key: contextKey, serial: 0, owner, token, live: Boolean(token && owner !== 'local'), skipAutomaticRead: false });
+  if (requestState.current.key !== contextKey || requestState.current.token !== token) {
+    const accountChanged = requestState.current.owner !== owner || requestState.current.token !== token;
+    requestState.current = { ...requestState.current, key: contextKey, owner, token, serial: requestState.current.serial + 1, live: false, skipAutomaticRead: accountChanged };
+  }
+  const state = requestState.current.live ? snapshot : null;
+  const sameContext = () => requestState.current.key === contextKey && getToken() === token && manualGateAccountKey(getStoredUser()) === owner;
+  function currentCache() {
+    if (!requestState.current.live || !sameContext()) return null;
+    return readBrowserRadarSnapshot(event);
+  }
   async function refresh(force = false) {
-    if (requestState.current.key !== contextKey) return;
+    if (!sameContext() || !token || owner === 'local' || (!requestState.current.live && !force)) return;
+    requestState.current.live = true;
     const serial = ++requestState.current.serial;
-    const current = () => requestState.current.key === contextKey && requestState.current.serial === serial && getToken() === token && manualGateAccountKey(getStoredUser()) === owner;
+    const current = () => requestState.current.live && sameContext() && requestState.current.serial === serial;
     setLoading(true);
     try {
       const payload = await fetchRadarSnapshot(event, force);
-      if (current()) setState(payload || { ok: false, message: 'Radar indisponível.' });
+      if (current()) setState(payload?.ok ? currentCache() : payload || { ok: false, message: 'Radar indisponível.' });
     } catch (error) {
       if (current()) setState(radarFailurePayload(error));
     } finally {
@@ -3317,11 +3413,49 @@ function RadarView({ event }: { event: ZeroLeg }) {
     }
   }
   useEffect(() => {
-    const cached = readRadarSnapshot(event);
-    setState(cached);
-    refresh(false);
-    return () => { requestState.current.serial += 1; };
+    const key = radarSnapshotKey(event);
+    requestState.current.live = Boolean(token && owner !== 'local');
+    setState(currentCache());
+    setLoading(false);
+    const onRadar = (incoming: Event) => {
+      if ((incoming as CustomEvent).detail?.key !== key || !sameContext() || !requestState.current.live) return;
+      requestState.current.serial += 1;
+      const cached = currentCache();
+      if (!cached) invalidateBrowserRadarResponse(key); // Removal/replacement also revokes a pending read when no binding exists yet.
+      setState(cached); // The signal cannot supply or admit a snapshot.
+      setDisplayTick(value => value + 1);
+      setLoading(false);
+    };
+    const onAccount = (incoming: Event) => {
+      if (incoming.type === 'storage' && (incoming as StorageEvent).key === key) { onRadar(new CustomEvent('crewcheck:radar-updated', {detail:{key}})); return; }
+      if (incoming.type === 'storage' && ![null, 'crewcheck_auth_user', 'crewcheck_auth_token'].includes((incoming as StorageEvent).key)) return;
+      requestState.current.serial += 1;
+      requestState.current.skipAutomaticRead = true;
+      requestState.current.live = incoming.type === 'crewcheck:auth-changed' && Boolean(token && owner !== 'local') && sameContext();
+      setState(null);
+      setLoading(false);
+    };
+    const accountEvents = ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'storage'];
+    window.addEventListener('crewcheck:radar-updated', onRadar);
+    for (const name of accountEvents) window.addEventListener(name, onAccount);
+    if (!requestState.current.skipAutomaticRead) refresh(false);
+    requestState.current.skipAutomaticRead = false;
+    return () => {
+      requestState.current.live = false;
+      requestState.current.serial += 1;
+      browserRadarGeneration(key).value += 1; // Cancel pending reads; keep an already accepted response for remount.
+      window.removeEventListener('crewcheck:radar-updated', onRadar);
+      for (const name of accountEvents) window.removeEventListener(name, onAccount);
+    };
   }, [contextKey, token]);
+  useEffect(() => {
+    const cached = currentCache();
+    if (!cached) return;
+    const expire = () => { setState(currentCache()); setDisplayTick(value => value + 1); };
+    const timer = window.setTimeout(expire, Math.max(1, browserRadarDisplayDeadline(event, cached) - Date.now() + 1));
+    window.addEventListener('focus', expire);
+    return () => { window.clearTimeout(timer); window.removeEventListener('focus', expire); };
+  }, [snapshot, contextKey, token, displayTick]);
   const verified = validatedRadarForEvent(event,state);
   const gateInfo = radarGateInfo(event,verified);
   const status = gateInfo.status || 'Não confirmado';
@@ -5441,6 +5575,7 @@ export default function Home() {
   const rosterReadRevision=useMemo(()=>JSON.stringify(bundle.roster),[bundle.roster]);
   // Changes invalidate original response admission before a new render can use it.
   setOperationalRadarContext(captureAuthSession().owner,alertRosterOwned(bundle.roster)?rosterReadRevision:'');
+  setBrowserRadarContext(alertRosterOwned(bundle.roster)?rosterReadRevision:'');
   const [,refreshOperationalArrival]=useState(0);
   useEffect(()=>{
     const changed=()=>refreshOperationalArrival(n=>n+1);
