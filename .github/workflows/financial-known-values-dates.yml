@@ -18,6 +18,8 @@ on:
       - 'client/src/lib/payrollProjectionPeriods.ts'
       - 'client/src/lib/allowanceStatementReconciliation.ts'
       - 'scripts/regression-allowance-occurrence-reconciliation.mjs'
+      - 'scripts/regression-allowance-page-continuity.mjs'
+      - 'scripts/regression-allowance-import-continuity-browser.mjs'
       - 'scripts/regression-financial-preset-allowances.mjs'
       - 'scripts/regression-financial-period-invalid-browser.mjs'
       - 'scripts/regression-payroll-projection-periods.mjs'
@@ -79,18 +81,22 @@ jobs:
         run: |
           TZ=UTC node scripts/regression-financial-preset-allowances.mjs
           TZ=UTC node scripts/regression-allowance-occurrence-reconciliation.mjs
+          TZ=UTC node scripts/regression-allowance-page-continuity.mjs
           TZ=UTC node scripts/regression-payroll-projection-periods.mjs
           TZ=America/Sao_Paulo node scripts/regression-financial-preset-allowances.mjs
           TZ=America/Sao_Paulo node scripts/regression-allowance-occurrence-reconciliation.mjs
+          TZ=America/Sao_Paulo node scripts/regression-allowance-page-continuity.mjs
           TZ=America/Sao_Paulo node scripts/regression-payroll-projection-periods.mjs
           TZ=America/Los_Angeles node scripts/regression-financial-preset-allowances.mjs
           TZ=America/Los_Angeles node scripts/regression-allowance-occurrence-reconciliation.mjs
+          TZ=America/Los_Angeles node scripts/regression-allowance-page-continuity.mjs
           TZ=America/Los_Angeles node scripts/regression-payroll-projection-periods.mjs
       - name: Prepared real-function contracts and existing negative gates
         run: |
           node scripts/regression-financial-known-values-dates.mjs
           node scripts/regression-financial-preset-allowances.mjs
           node scripts/regression-allowance-occurrence-reconciliation.mjs
+          node scripts/regression-allowance-page-continuity.mjs
           node scripts/regression-payroll-projection-periods.mjs
           node scripts/regression-next-financial-payment.mjs
           node scripts/regression-payroll-payment-coverage.mjs

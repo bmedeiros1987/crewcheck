@@ -80,6 +80,8 @@ on:
       - 'client/src/lib/payrollProjectionPeriods.ts'
       - 'client/src/lib/allowanceStatementReconciliation.ts'
       - 'scripts/regression-allowance-occurrence-reconciliation.mjs'
+      - 'scripts/regression-allowance-page-continuity.mjs'
+      - 'scripts/regression-allowance-import-continuity-browser.mjs'
       - 'scripts/regression-financial-preset-allowances.mjs'
       - 'scripts/regression-financial-period-invalid-browser.mjs'
       - 'scripts/regression-payroll-projection-periods.mjs'
@@ -331,6 +333,7 @@ jobs:
           node scripts/regression-financial-ui-browser.cjs
           node scripts/regression-financial-act-cycles-browser.cjs
           node scripts/regression-financial-period-invalid-browser.mjs
+          node scripts/regression-allowance-import-continuity-browser.mjs
       - name: Explain free-day pending data and open roster dates (synthetic)
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
