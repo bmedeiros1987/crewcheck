@@ -3,3 +3,6 @@
 .cz-app>.cc-back-to-top svg{width:20px;height:20px;pointer-events:none}
 .cz-app>.cc-back-to-top:focus-visible{outline:3px solid #3399bd;outline-offset:2px}
 html body #root .cz-app[data-version]>.cc-back-to-top{position:fixed!important;display:grid!important;place-items:center;width:48px!important;height:48px!important;min-width:48px!important;min-height:48px!important;padding:0!important;margin:0!important;border:1px solid var(--cc-border,#b8c9d7)!important;background:var(--cc-surface,#fff)!important}
+/* Preserve the shell's existing 32px final-content margin when our portal becomes
+   its last child. The fixed button itself contributes no extent. */
+.cz-app>:nth-last-child(1 of :not(.cc-back-to-top)):not(.cz-bottom-nav){margin-bottom:32px!important}

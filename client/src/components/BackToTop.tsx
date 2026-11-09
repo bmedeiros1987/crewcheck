@@ -26,7 +26,7 @@ export default function BackToTop() {
       frame = 0;
       const header = document.querySelector<HTMLElement>('.cz-app > .cz-global-header');
       const root = document.scrollingElement;
-      const blocked = document.querySelector('dialog[open], [aria-modal="true"], .cz-menu-overlay, .cz-busy');
+      const blocked = document.querySelector('dialog[open], [aria-modal="true"], .cz-menu-overlay, .cz-busy, .cc-play-update-notice');
       const editing = document.activeElement?.matches('input, textarea, select, [contenteditable="true"]');
       if (!header || !root || blocked || editing) { setState(null); return; }
       if (!scroller?.isConnected || (scroller !== root && !scroller.contains(header))) scroller = root;
@@ -35,7 +35,7 @@ export default function BackToTop() {
       }
       const height = scroller === root ? innerHeight : scroller.clientHeight;
       const show = scroller.scrollTop > 64 && scroller.scrollHeight > height + 64;
-      const navigationElement = header.closest('.cz-app')?.querySelector('.cz-bottom-nav') || null;
+      const navigationElement = document.querySelector('body > nav.cz-bottom-nav[aria-label="Navegação principal"]') || header.closest('.cz-app')?.querySelector('.cz-bottom-nav') || null;
       if (navigationElement !== watchedNavigation) {
         if (watchedNavigation) resizeObserver?.unobserve(watchedNavigation);
         watchedNavigation = navigationElement;
@@ -44,7 +44,7 @@ export default function BackToTop() {
       const navigation = navigationElement?.getBoundingClientRect();
       const viewportBottom = Math.min(innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : innerHeight);
       const containerBottom = scroller === root ? viewportBottom : Math.min(viewportBottom, scroller.getBoundingClientRect().bottom);
-      const usableBottom = navigation && navigation.height > 0 && navigation.top < containerBottom ? navigation.top : containerBottom;
+      const usableBottom = navigation && navigation.height > 0 && navigation.bottom > 0 && navigation.top < containerBottom ? navigation.top : containerBottom;
       const bottom = Math.max(12, innerHeight - usableBottom + 12);
       const activeScroller = scroller;
       setState(previous => show ? previous?.header === header && previous.scroller === activeScroller && previous.bottom === bottom ? previous : { header, scroller: activeScroller, bottom } : null);

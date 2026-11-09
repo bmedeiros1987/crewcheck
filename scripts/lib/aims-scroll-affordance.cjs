@@ -19,7 +19,7 @@ async function waitForAimsScrollAffordance({timeoutMs=1500}={}) {
   const initialArrow=host.querySelector(':scope > .cc-back-to-top');
   const originalChildren=[...host.children].filter(e=>e!==initialArrow);
   const read=()=>{
-    if(document.querySelector('dialog[open], [aria-modal="true"], .cz-menu-overlay, .cz-busy'))throw Error('AIMS arrow preparation requires closed overlays and completed busy state');
+    if(document.querySelector('dialog[open], [aria-modal="true"], .cz-menu-overlay, .cz-busy, .cc-play-update-notice'))throw Error('AIMS arrow preparation requires closed overlays and completed busy state');
     const arrow=host.querySelector(':scope > .cc-back-to-top'),height=scroller===root?innerHeight:scroller.clientHeight;
     const hostBox=host.getBoundingClientRect(),style=getComputedStyle(host);
     const decorations=JSON.stringify([style.display,style.position,style.transform,style.boxSizing,style.minHeight,style.paddingTop,style.paddingBottom,style.borderTopWidth,style.borderBottomWidth]);
