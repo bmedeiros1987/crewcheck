@@ -21,10 +21,10 @@ export default function VacationForecast(){
  const amount=(s:string)=>/^\d+(?:[.,]\d{1,2})?$/.test(s)?Math.round(Number(s.replace(',','.'))*100):null;
  const periods=Array.from({length:draft.split?2:1},(_,i)=>({id:String(i),startDate:draft.starts[i]||null,days:draft.split?15:30}));
  const source={id:draft.source.trim(),revision:state.revision,reviewed:draft.reviewed};
- const earnings:VacationEvidence['earnings']=draft.basis==='monthly_average'?(amount(draft.amounts[0])===null?[]:[{id:'average',source,amountMinor:amount(draft.amounts[0])!,basis:'monthly_average'}]):periods.flatMap((p,i)=>amount(draft.amounts[i])===null?[]:[{id:'period-'+i,source,amountMinor:amount(draft.amounts[i])!,basis:'period_amount' as const,periodId:p.id}]);
+ const earnings:VacationEvidence['earnings']=periods.flatMap((p,i)=>amount(draft.amounts[i])===null?[]:[{id:'remuneration-'+i,source,amountMinor:amount(draft.amounts[i])!,basis:draft.basis,periodId:p.id}]);
  const deductions:VacationEvidence['deductions']=periods.flatMap((p,i)=>(['retentions','consigned','advances'] as const).flatMap(key=>amount(draft[key][i])===null?[]:[{id:key+i,source,periodId:p.id,kind:({retentions:'retention',consigned:'consigned',advances:'advance'} as const)[key],amountMinor:amount(draft[key][i])!}]));
  const allDeductionsEntered=periods.every((_,i)=>[draft.retentions[i],draft.consigned[i],draft.advances[i]].every(v=>amount(v)!==null));
- const allEarningsEntered=draft.basis==='monthly_average'?amount(draft.amounts[0])!==null:periods.every((_,i)=>amount(draft.amounts[i])!==null);
+ const allEarningsEntered=periods.every((_,i)=>amount(draft.amounts[i])!==null);
  const acquisition={start:draft.acquisitionStart,end:draft.acquisitionEnd};
  const result=vacationForecast({ownerId:owner,plan:{ownerId:owner||'',revision:state.revision,acquisition,periods},lawApplicable:draft.lawApplicable,evidence:{ownerId:owner||'',planRevision:state.revision,acquisition,earnings,deductions,earningsComplete:draft.earningsComplete&&allEarningsEntered,deductionsComplete:draft.deductionsComplete&&allDeductionsEntered}});
  const money=(minor:number|null)=>minor===null?'Pendente':privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(minor/100));
@@ -45,7 +45,7 @@ export default function VacationForecast(){
  <p>A média precisa ter fonte e período aquisitivo. Para comissários TAM, o ACT 3.2.1 usa a média dos KM voados no período aquisitivo, aplicada na concessão. A escala parcial e o salário atual não comprovam essa média.</p>
  {privacy.hidden?<p>Valores ocultos. Use o controle de privacidade do Financeiro para editar.</p>:<>
  <label style={{display:'block'}}>Origem da remuneração<select value={draft.basis} onChange={e=>change({basis:e.target.value as typeof draft.basis,amounts:['',''],reviewed:false})}><option value="monthly_average">Média mensal comprovada · fixa e variável</option><option value="period_amount">Remuneração já proporcional ao gozo · sem o terço</option></select></label>
- {(draft.basis==='monthly_average'?[periods[0]]:periods).map((p,i)=><div key={p.id}>{amountField(draft.basis==='monthly_average'?'Remuneração média mensal (R$)':`Remuneração proporcional do período ${i+1} (R$)`,draft.amounts[i],v=>indexed('amounts',i,v))}</div>)}
+ {periods.map((p,i)=><div key={p.id}>{amountField(draft.basis==='monthly_average'?`Remuneração média mensal para o gozo ${i+1} (R$)`:`Remuneração proporcional do período ${i+1} (R$)`,draft.amounts[i],v=>indexed('amounts',i,v))}</div>)}
  <label style={{display:'block'}}>Fonte revisada (referência do recibo/demonstrativo)<input value={draft.source} onChange={e=>change({source:e.target.value,reviewed:false})} style={{display:'block',width:'100%',minHeight:44}}/></label>
  <label style={{display:'block'}}><input type="checkbox" checked={draft.reviewed} onChange={e=>change({reviewed:e.target.checked})}/> Conferi a fonte, o período aquisitivo e a base escolhida</label>
  <label style={{display:'block'}}><input type="checkbox" checked={draft.earningsComplete} onChange={e=>change({earningsComplete:e.target.checked})}/> A remuneração informada contém todas as parcelas devidas neste cenário</label>

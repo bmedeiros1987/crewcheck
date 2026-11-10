@@ -30,7 +30,7 @@ export function vacationForecast({ownerId,plan,evidence,lawApplicable}={}) {
     for(const r of rows){
       if(!r||typeof r.id!=='string'||!r.id.trim()||rowIds.has(r.id)||!money(r.amountMinor)||!source(r.source))return false;
       rowIds.add(r.id);
-      if(kind==='earning'&&!((r.basis==='monthly_average'&&r.periodId==null)||(r.basis==='period_amount'&&ids.has(r.periodId))))return false;
+      if(kind==='earning'&&!(['monthly_average','period_amount'].includes(r.basis)&&ids.has(r.periodId)))return false;
       if(kind==='deduction'&&(!ids.has(r.periodId)||!['retention','consigned','advance'].includes(r.kind)))return false;
     }
     return true;
@@ -38,7 +38,7 @@ export function vacationForecast({ownerId,plan,evidence,lawApplicable}={}) {
   const valid=validRows('earning',evidence?.earnings),validDeductions=validRows('deduction',evidence?.deductions);
   const periods=plan.periods.map(p=>{
     const timing=vacationPaymentTiming({ownerId,plan:{...plan,startDate:p.startDate},lawApplicable});
-    const rows=valid?evidence.earnings.filter(r=>r.basis==='monthly_average'||r.periodId===p.id):[];
+    const rows=valid?evidence.earnings.filter(r=>r.periodId===p.id):[];
     const earnings=rows.length?rows.reduce((sum,r)=>sum+(r.basis==='monthly_average'?round(r.amountMinor*p.days,30):r.amountMinor),0):null;
     const third=earnings===null?null:round(earnings,3);
     const knownSubtotal=earnings===null?null:earnings+third;

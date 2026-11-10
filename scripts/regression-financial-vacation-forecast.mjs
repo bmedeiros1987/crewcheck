@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import {vacationForecast} from '../shared/financialVacationForecast.mjs';
 const plan={ownerId:'fiction-A',revision:2,acquisition:{start:'2030-02-01',end:'2031-01-31'},periods:[{id:'first',startDate:'2031-07-01',days:15},{id:'second',startDate:'2031-12-20',days:15}]};
 const source={id:'synthetic-receipt',revision:1,reviewed:true};
-const evidence={ownerId:plan.ownerId,planRevision:2,acquisition:{...plan.acquisition},earnings:[{id:'average',source,amountMinor:600000,basis:'monthly_average'}],deductions:[],earningsComplete:true,deductionsComplete:true};
+const evidence={ownerId:plan.ownerId,planRevision:2,acquisition:{...plan.acquisition},earnings:[{id:'average',source,amountMinor:600000,basis:'monthly_average',periodId:'first'},{id:'average-second',source:{...source,id:'synthetic-second-concession'},amountMinor:600000,basis:'monthly_average',periodId:'second'}],deductions:[],earningsComplete:true,deductionsComplete:true};
 const run=(p=plan,e=evidence,ownerId='fiction-A')=>vacationForecast({ownerId,plan:p,evidence:e,lawApplicable:true});
 assert.equal(run().periods[0].earningsMinor,300000);
 assert.equal(run().periods[0].thirdMinor,100000);
 assert.equal(run().periods[0].grossMinor,400000);
 assert.equal(run().periods[0].netMinor,400000);
 assert.equal(run().periods[1].deadlineDate,'2031-12-18');
-assert.equal(run({...plan,periods:[{id:'first',startDate:'2031-07-01',days:30}]}).periods[0].grossMinor,800000);
+assert.equal(run({...plan,periods:[{id:'first',startDate:'2031-07-01',days:30}]},{...evidence,earnings:[evidence.earnings[0]]}).periods[0].grossMinor,800000);
 const proportional={...evidence,earnings:[{id:'period',source,amountMinor:300000,basis:'period_amount',periodId:'first'}],earningsComplete:false};
 assert.equal(run(plan,proportional).periods[0].knownSubtotalMinor,400000,'already proportional must not be halved again');
 assert.equal(run(plan,proportional).periods[0].grossMinor,null);
@@ -29,6 +29,8 @@ assert.equal(run(plan,{...evidence,earnings:[{...evidence.earnings[0],amountMino
 assert.equal(run(plan,{...evidence,earnings:[...evidence.earnings,evidence.earnings[0]]}).periods[0].knownSubtotalMinor,null,'same evidence identity cannot be counted twice');
 assert.equal(run(plan,evidence,'fiction-B').periods.length,0);
 for(const periods of [[{id:'x',startDate:'2031-07-01',days:20}],[plan.periods[0],{...plan.periods[1],startDate:'2031-07-10'}]])assert.equal(run({...plan,periods}).periods.length,0);
-assert.equal(run({...plan,periods:[{id:'first',startDate:null,days:15}]}).periods[0].deadlineDate,null);
+assert.equal(run({...plan,periods:[{id:'first',startDate:null,days:15}]},{...evidence,earnings:[evidence.earnings[0]]}).periods[0].deadlineDate,null);
 const original=JSON.stringify({plan,evidence});run();assert.equal(JSON.stringify({plan,evidence}),original);
+
+assert.equal(run(plan,{...evidence,earnings:[evidence.earnings[0]]}).periods[1].knownSubtotalMinor,null,'one concession cannot silently supply another');
 console.log('PASS vacation forecast: synthetic 30/15+15, proportional versus monthly, sourced acquisition, partial/zero, deductions/advance, isolation/revision, overlap and deadline; no persistence or network');

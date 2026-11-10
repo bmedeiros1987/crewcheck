@@ -22,7 +22,8 @@ It neither reads private documents nor confirms an import, credit or bank receip
 There is no automatic acquisition-period average producer yet. Neither a current
 salary, geographic KM estimate, partial roster nor ACT floor becomes that average.
 The user can review a sourced monthly remuneration average or an amount already
-proportional to a particular gozo, excluding the third. Period amounts are never
+proportional to a particular gozo, excluding the third. Each gozo requires its own reviewed value, including monthly
+averages: a concession cannot silently supply the other. Period amounts are never
 proportionalized again. No generic moving12-month window is invented. This is a
 user-reviewed scenario, not documentary verification by the application.
 
