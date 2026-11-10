@@ -4,7 +4,7 @@ const plan={ownerId:'fiction-A',revision:3,year:2032,averagePeriod:{start:'2031-
 const source={id:'synthetic-reviewed-source',revision:2,reviewed:true};
 const evidence={ownerId:plan.ownerId,planRevision:3,year:2032,averagePeriod:{...plan.averagePeriod},source,amountMinor:600000,avos:12,basis:'full_year_equivalent',earningsComplete:true,deductionsComplete:false,deductions:[]};
 const run=(e=evidence,p=plan,extra={})=>thirteenthForecast({ownerId:'fiction-A',plan:p,evidence:e,lawApplicable:true,activeEmployment:true,...extra});
-assert.equal(run().grossMinor,600000);assert.equal(run({...evidence,avos:7}).grossMinor,350000);
+assert.equal(run().grossMinor,600000);assert.equal(run({...evidence,amountMinor:null}).knownSubtotalMinor,null);assert.equal(run({...evidence,amountMinor:0}).grossMinor,0);assert.equal(run({...evidence,avos:7}).grossMinor,350000);
 assert.equal(run({...evidence,avos:0}).grossMinor,0);assert.equal(run({...evidence,avos:null}).grossMinor,null);
 assert.equal(run({...evidence,basis:'annual_proportional_amount',avos:7,amountMinor:350000}).grossMinor,350000,'do not apply avos twice');
 assert.equal(run({...evidence,basis:'annual_proportional_amount',avos:0,amountMinor:350000}).grossMinor,null,'zero avos contradict a positive already-proportional amount');
