@@ -46,6 +46,7 @@ on:
       - 'shared/spBankCalendar2026.mjs'
       - 'shared/financial*.mjs'
       - 'shared/financialVacationForecast.d.mts'
+      - 'shared/financialThirteenthForecast.d.mts'
       - 'client/src/lib/cabinSalaryRateReference.ts'
       - 'scripts/regression-financial-concierge-*'
       - 'scripts/regression-financial-history-loading-ui.cjs'
@@ -53,6 +54,7 @@ on:
       - 'scripts/regression-cabin-rate-audit.mjs'
       - 'scripts/regression-financial-known-values*'
       - 'scripts/regression-financial-vacation-*'
+      - 'scripts/regression-financial-thirteenth-*'
       - 'scripts/regression-financial-review-owner-negative.mjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
       - '.github/workflows/financial-known-values-dates.yml'
@@ -73,6 +75,7 @@ jobs:
       - name: Raw real-function contracts in three device timezones
         run: |
           node scripts/regression-financial-vacation-forecast.mjs
+          node scripts/regression-financial-thirteenth-forecast.mjs
           TZ=UTC node scripts/regression-financial-known-values-dates.mjs
           TZ=America/Sao_Paulo node scripts/regression-financial-known-values-dates.mjs
           TZ=Asia/Tokyo node scripts/regression-financial-known-values-dates.mjs
@@ -99,6 +102,7 @@ jobs:
       - name: Prepared real-function contracts and existing negative gates
         run: |
           node scripts/regression-financial-vacation-forecast.mjs
+          node scripts/regression-financial-thirteenth-forecast.mjs
           node scripts/regression-financial-known-values-dates.mjs
           node scripts/regression-financial-preset-allowances.mjs
           node scripts/regression-allowance-occurrence-reconciliation.mjs
@@ -149,6 +153,7 @@ jobs:
           node scripts/regression-salary-display-basis-browser.cjs
           node scripts/regression-financial-vacation-browser.cjs
           node scripts/regression-financial-vacation-app.cjs
+          node scripts/regression-financial-vacation-app.cjs --thirteenth
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -161,4 +166,5 @@ jobs:
             artifacts/salary-display-basis/
             artifacts/vacation-forecast/
             artifacts/vacation-app/
+            artifacts/thirteenth-app/
           if-no-files-found: ignore
