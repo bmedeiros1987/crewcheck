@@ -87,3 +87,20 @@ only approved lock-screen content, validate action identity/revision on tap, and
 label cached source/time honestly. Local saved-time alarms remain a distinct
 existing AlarmManager path; no continuous service, new infrastructure, sender
 activation or claim of iOS Live Activities is introduced here.
+
+## Recomposition against main 94b68053 (10 November 2026)
+
+The original branch history is preserved by merging main
+`94b6805380b68cf4afd5ed6002ac9a928dad8cdb`. The merge has no conflicts and
+changes none of the eight registry-slice files relative to `54730ab3`.
+No runtime route, Android path, scheduler, credential, flag or sender is added.
+The historical SQL results above are not evidence for this new composition.
+
+On the recomposition, the raw synthetic suites passed 22 registry checks and
+45 protocol checks. A new local disposable MySQL 8.4 fixture was isolated with
+network disabled, no published ports and a tmpfs database. Its socket connection
+failed with EACCES before the test could execute DDL. That SQL run is NOT a pass;
+no permission change or alternate connection was attempted. The fixture was
+stopped. Actual disposable SQL coverage remains required from the exact candidate
+CI workflow before integration. Neither these tests nor that CI enable FCM or
+prove receipt on a device.
