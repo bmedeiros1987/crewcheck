@@ -142,7 +142,7 @@ import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceRe
 import FinancialActApplicability, { AllowanceMinimumReference } from '@/components/finance/FinancialActApplicability';
 import { readFinancialActApplicability, type FinancialActSnapshot } from '@/lib/financialActApplicability';
 import { financialPresetScope } from '@/lib/payrollProjectionPeriods';
-import { resolveLatamCabinAllowanceJourney, resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type FinancialActPendingCause, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
+import { latamSupperReference, resolveLatamCabinAllowanceJourney, resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type FinancialActPendingCause, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
 import type { AllowanceSlot } from '@/lib/latamAllowanceCatalog';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
@@ -3680,6 +3680,8 @@ type PerDiemRow = {
   partial: boolean;
   eventId: string;
   originIso: string;
+  occurrenceIso?: string;
+  referenceDateBasis?: 'latam_observed_tuesday_flight_supper';
   date: string;
   iso: string;
   label: string;
@@ -3887,7 +3889,16 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       unclassifiedItems.push({ iso, originIso:rosterOperationalIso(calculationStart), airport: classification.airport, reason: classification.reason });
       return;
     }
-    const key = iso + '-' + slot;
+    const physicalIso=iso;
+    const reference=latamSupperReference({event,slot,rateKey:classification.rateKey,iso,roster,context:applicability});
+    if(reference.pendingReason){
+      for(const candidate of new Set([physicalIso,reference.candidateIso].filter(Boolean)))unclassifiedItems.push({iso:candidate!,originIso:rosterOperationalIso(calculationStart),airport:classification.airport,reason:reference.pendingReason});
+      return;
+    }
+    iso=reference.iso;
+    // Entitlement dedup remains keyed by the physical meal window, even when
+    // a documented financial reference belongs to the preceding cycle.
+    const key = physicalIso + '-' + slot;
     if (seen.has(key)) return;
     seen.add(key);
     usedRateKeys.add(classification.rateKey);
@@ -3911,6 +3922,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     target.push({
       eventId: event.id,
       originIso: rosterOperationalIso(calculationStart),
+      ...reference,
       partial,
       ...(currency!=='BRL'&&event.kind==='flight'&&!financialPublishedFlightIntervalIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
       date: dateChip(new Date(iso + 'T12:00:00')),
@@ -3920,7 +3932,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       currency: currency,
       // FX is projected separately from native entitlements using dated quotes.
       convertedBRL: currency === 'BRL' ? value : null,
-      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + (classification !== geography ? classification.reason : selected.reference ? classification.reason : 'Categoria geográfica da ocorrência; sem declaração de aplicabilidade do ACT por esta classificação.') + ' · ' + selected.reason + ' · vigência consultada em ' + iso
+      source: source + (reference.occurrenceIso ? ` · ceia ocorrida em ${reference.occurrenceIso}; referência observada no demonstrativo para trecho de terça: ${reference.iso}; não é regra geral de data de apresentação` : '') + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + (classification !== geography ? classification.reason : selected.reference ? classification.reason : 'Categoria geográfica da ocorrência; sem declaração de aplicabilidade do ACT por esta classificação.') + ' · ' + selected.reason + ' · vigência consultada em ' + iso
         + ' · versão ' + selected.version + (selected.reference?.sourceUrls.length ? ' · fontes: ' + selected.reference.sourceUrls.join(' ; ') : '')
         + (classification.rateKey==='domestic'&&(slot==='breakfast'?cfg.personalReferences?.breakfast:cfg.personalReferences?.mainMeal)?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':''),
       airport: classification.airport,
