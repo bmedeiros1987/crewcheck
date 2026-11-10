@@ -7,6 +7,8 @@ const run=(e=evidence,p=plan,extra={})=>thirteenthForecast({ownerId:'fiction-A',
 assert.equal(run().grossMinor,600000);assert.equal(run({...evidence,avos:7}).grossMinor,350000);
 assert.equal(run({...evidence,avos:0}).grossMinor,0);assert.equal(run({...evidence,avos:null}).grossMinor,null);
 assert.equal(run({...evidence,basis:'annual_proportional_amount',avos:7,amountMinor:350000}).grossMinor,350000,'do not apply avos twice');
+assert.equal(run({...evidence,basis:'annual_proportional_amount',avos:0,amountMinor:350000}).grossMinor,null,'zero avos contradict a positive already-proportional amount');
+assert.equal(run({...evidence,averagePeriod:{...plan.averagePeriod,end:'2033-01-31'}},{...plan,averagePeriod:{...plan.averagePeriod,end:'2033-01-31'}}).grossMinor,null,'a reviewed annual average cannot include a period after that year');
 assert.equal(run({...evidence,amountMinor:1,avos:6}).grossMinor,1,'half cent rounds once');
 assert.equal(run().netMinor,null);assert.equal(run().firstAdvanceEstimateMinor,null);assert.equal(run().finalDeadlineDate,'2032-12-20');assert.equal(run().expectedDepositDate,null);
 const deductions=[{id:'tax',kind:'retention',source,amountMinor:40000},{id:'loan',kind:'consigned',source,amountMinor:60000},{id:'advance',kind:'advance',source,amountMinor:200000}];

@@ -31,6 +31,9 @@ days or employment dates without a service/absence producer. Unknown avos are
 pending, distinct from an explicit reviewed zero. A full12-avo equivalent is
 multiplied by avos/12 and rounded half-up once in integer centavos. An already
 proportional annual amount is never multiplied by avos again. There is no vacation
+third. A positive already-proportional amount with zero avos, or a mean ending
+after the annual year, is contradictory and cannot produce a total. Deadlines
+before the1965 payment-law version are not modeled. There is no vacation
 third. Partial reviewed remuneration remains a subtotal; full gross requires an
 explicit completeness review. The program does not certify a user's document.
 

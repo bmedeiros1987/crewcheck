@@ -10,11 +10,12 @@ export function thirteenthForecast({ownerId,plan,evidence,lawApplicable,activeEm
  const base={rule:THIRTEENTH_RULE,knownSubtotalMinor:null,grossMinor:null,netMinor:null,deductionsMinor:null,firstAdvanceEstimateMinor:null,finalDeadlineDate:null,expectedDepositDate:null,paymentConfirmed:false,taxableBaseMinor:null};
  const blocked=reason=>({...base,state:'pending',reason});
  if(typeof ownerId!=='string'||!ownerId.trim()||plan?.ownerId!==ownerId)return blocked('owner_mismatch');
- if(!revision(plan.revision)||!Number.isInteger(plan.year)||plan.year<1900||plan.year>9999||!period(plan.averagePeriod))return blocked('year_period_or_revision_missing');
+ if(!revision(plan.revision)||!Number.isInteger(plan.year)||plan.year<1965||plan.year>9999||!period(plan.averagePeriod)||plan.averagePeriod.end>`${plan.year}-12-31`)return blocked('year_period_or_revision_missing');
  if(lawApplicable!==true||activeEmployment!==true)return blocked('applicability_unconfirmed');
  const result={...base,finalDeadlineDate:`${plan.year}-12-20`,firstAdvanceWindow:'February-November',state:'partial',reason:'remuneration_or_avos_unconfirmed'};
  const bound=evidence?.ownerId===ownerId&&evidence.planRevision===plan.revision&&evidence.year===plan.year&&evidence.averagePeriod?.start===plan.averagePeriod.start&&evidence.averagePeriod?.end===plan.averagePeriod.end;
  if(!bound||!source(evidence.source)||!money(evidence.amountMinor)||!Number.isInteger(evidence.avos)||evidence.avos<0||evidence.avos>12||!['full_year_equivalent','annual_proportional_amount'].includes(evidence.basis))return result;
+ if(evidence.basis==='annual_proportional_amount'&&evidence.avos===0&&evidence.amountMinor!==0)return {...result,reason:'contradictory_proportion'};
  const known=evidence.basis==='full_year_equivalent'?Math.floor((evidence.amountMinor*evidence.avos+6)/12):evidence.amountMinor;
  result.knownSubtotalMinor=known;
  result.grossMinor=evidence.earningsComplete===true?known:null;
