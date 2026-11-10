@@ -975,7 +975,7 @@ function parseTripulationRecords(fullText: string, rosterName: string, fallbackY
     .replace(/\s+(?=(?:\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?\s+)?LA\s*\d{3,4}\s+(?:CP|FO|CCM|CC|CM)\b)/gi, '\n')
     .replace(/\n{2,}/g, '\n');
 
-  const lineRegex = /(?:^|\n)\s*(?:(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s+)?LA\s*(\d{3,4})\s+((?:CP|FO|CCM|CC|CM)\b[\s\S]*?)(?=\n\s*(?:\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\s+)?LA\s*\d{3,4}\s+(?:CP|FO|CCM|CC|CM)\b|$)/gi;
+  const lineRegex = /(?:^|\n)\s*(?:(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?\s+)?LA\s*(\d{3,4})\s+((?:CP|FO|CCM|CC|CM)\b[\s\S]*?)(?=\n\s*(?:\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?\s+)?LA\s*\d{3,4}\s+(?:CP|FO|CCM|CC|CM)\b|$)/gi;
   const records: TripulationRecord[] = [];
   let match: RegExpExecArray | null;
   while ((match = lineRegex.exec(section)) !== null) {

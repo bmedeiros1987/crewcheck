@@ -11,3 +11,5 @@ PDF.js lê todas as páginas; os parsers recebem o texto completo. A prova sint�
 Os anexos pessoais não foram incorporados. Todo PDF, nome, matrícula, voo e screenshot de regressão é sintético. Portão, PS/#1325, #1310, #1292 e a projeção distinta da #893 ficam fora deste delta.
 
 Limite: server/rosterParser.mjs possui outro parser para fallback/Telegram e não lê esta tabela. Este incremento cobre parsePDF local, seus parsers e objetos persistidos; não afirma extração de tripulações pelo fallback do servidor.
+
+P2 date-separator follow-up: AIMS crew records capture slash, hyphen and dotted civil dates consistently with preprocessing, including the next-record boundary. They still require a valid date and exact flight occurrence; no flight-only fallback is restored. Synthetic regressions cover full/short/inferred year, line breaks, adjacent records, invalid dates and the actual PDF-to-app chain.

@@ -14,6 +14,17 @@ for(const [module,parse,records,apply] of [['aimsParser','parseAimsCrewMembersFr
  const days=[10,11].map(n=>({date:n+'/11/2032',legs:[{flightNumber:'LA9001'}]}));
  const out=m[apply](days,rs,'FICTITIOUS OWNER');
  assert.equal(out[0].legs[0].crew.length,2);assert.equal(out[1].legs[0].crew?.length||0,0,'no flight-only date fallback');
+ for(const separator of ['/','-','.'])for(const year of ['2032','32','']){
+  const civil=['10','11',...(year?[year]:[])].join(separator);
+  for(const text of [civil+' LA9001 CP Alice Silva CC Ana Silva',civil+'\nLA 9001\nCP Alice Silva CC Ana Silva']){
+   const dated=m[records]('Tripulações\n'+text,'FICTITIOUS OWNER',2032,11);
+   assert.equal(dated.length,1,module+' supported date produces one record');assert.equal(dated[0].date,'10/11/2032',module+' preserves supported date '+civil);
+   const attached=m[apply](days,dated,'FICTITIOUS OWNER');assert.equal(attached[0].legs[0].crew?.length,2,module+' supported date must attach to exact occurrence');assert(!attached[1].legs[0].crew,'no cross-date fallback for '+civil);
+  }
+  const pair=m[records]('Tripulações\n'+civil+' LA9001 CC First Person\n'+['11','11',...(year?[year]:[])].join(separator)+' LA9001 CC Second Person','FICTITIOUS OWNER',2032,11);
+  const attached=m[apply](days,pair,'FICTITIOUS OWNER');assert.equal(attached[0].legs[0].crew?.[0].name,'First Person');assert.equal(attached[1].legs[0].crew?.[0].name,'Second Person','next row must not join previous crew');
+  const invalid=m[records]('Tripulações\n'+['31','11',...(year?[year]:[])].join(separator)+' LA9001 CC Ana Silva','FICTITIOUS OWNER',2032,11);assert(!m[apply](days,invalid,'FICTITIOUS OWNER')[0].legs[0].crew,'invalid civil dates remain unassigned');
+ }
  const owner='FICTITIOUS OWNER';
  const row=(date,names='CP Alice Ávila CCM Íris CC Sol')=>m[records]('Tripulações\n'+(date?date+' ':'')+'LA9001 '+names,owner,2032,11);
  assert.equal(m[apply](days,row(''),owner)[0].legs[0].crew,undefined,'missing date never attaches');
