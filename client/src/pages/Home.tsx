@@ -5221,7 +5221,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
       toast.success(payload.message || 'Escala salva no Concierge.');
       await refresh(current);
     } catch (error) {
-      if (current()) toast.error(error instanceof Error ? error.message : 'Sincronização do Concierge não confirmada. A escala continua no app.');
+      if (current()) toast.message(error instanceof Error ? error.message : 'Sincronização do Concierge não confirmada. A escala continua no app.');
     } finally {
       if (syncMounted.current && request === syncRequest.current) setBusy('');
     }
@@ -5898,7 +5898,7 @@ export default function Home() {
       const conciergeImportCurrent = () => conciergeImportSession.isCurrent() && plannedImport.canCommit()
         && sessionStorage.getItem('crewcheck_roster') === conciergeImportRevision;
       syncRosterWithTelegramConcierge(roster, file.name).catch(() => {
-        if (conciergeImportCurrent()) toast.error('Sincronização do Concierge não confirmada. A escala continua no app.');
+        if (conciergeImportCurrent()) toast.message('Sincronização do Concierge não confirmada. A escala continua no app.');
       });
       syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));
       sessionStorage.setItem('crewcheck_force_view_once', opensComparison ? 'compare' : 'roster');
