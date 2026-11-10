@@ -56,6 +56,7 @@ on:
       - 'scripts/regression-financial-vacation-*'
       - 'scripts/regression-financial-thirteenth-*'
       - 'scripts/regression-financial-review-owner-negative.mjs'
+      - 'scripts/regression-financial-review-hardening.mjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
       - '.github/workflows/financial-known-values-dates.yml'
 permissions:
@@ -76,6 +77,7 @@ jobs:
         run: |
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
+          node scripts/regression-financial-review-hardening.mjs
           TZ=UTC node scripts/regression-financial-known-values-dates.mjs
           TZ=America/Sao_Paulo node scripts/regression-financial-known-values-dates.mjs
           TZ=Asia/Tokyo node scripts/regression-financial-known-values-dates.mjs
@@ -103,6 +105,7 @@ jobs:
         run: |
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
+          node scripts/regression-financial-review-hardening.mjs
           node scripts/regression-financial-known-values-dates.mjs
           node scripts/regression-financial-preset-allowances.mjs
           node scripts/regression-allowance-occurrence-reconciliation.mjs

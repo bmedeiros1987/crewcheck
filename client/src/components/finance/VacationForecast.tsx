@@ -18,12 +18,12 @@ export default function VacationForecast(){
   return()=>{events.forEach(event=>window.removeEventListener(event,reset));window.removeEventListener('storage',storage);};
  },[]);
  const draft=state.session===session?state.draft:empty();
- const change=(patch:Partial<ReturnType<typeof empty>>)=>setState(current=>({session,revision:current.revision+1,draft:{...(current.session===session?current.draft:empty()),...(Object.keys(patch).some(key=>!['reviewed','earningsComplete','deductionsComplete'].includes(key))?{reviewed:false}:{}),...patch}}));
+ const change=(patch:Partial<ReturnType<typeof empty>>)=>setState(current=>({session,revision:current.revision+1,draft:{...(current.session===session?current.draft:empty()),...(Object.keys(patch).some(key=>!['reviewed','earningsComplete','deductionsComplete'].includes(key))?{reviewed:false,earningsComplete:false,deductionsComplete:false}:{}),...patch}}));
  const amount=(s:string)=>/^\d+(?:[.,]\d{1,2})?$/.test(s)?Math.round(Number(s.replace(',','.'))*100):null;
  const periods=Array.from({length:draft.split?2:1},(_,i)=>({id:String(i),startDate:draft.starts[i]||null,days:draft.split?15:30}));
- const source={id:draft.source.trim(),revision:state.revision,reviewed:draft.reviewed};
- const earnings:VacationEvidence['earnings']=periods.flatMap((p,i)=>amount(draft.amounts[i])===null?[]:[{id:'remuneration-'+i,source,amountMinor:amount(draft.amounts[i])!,basis:draft.basis,periodId:p.id}]);
- const deductions:VacationEvidence['deductions']=periods.flatMap((p,i)=>(['retentions','consigned','advances'] as const).flatMap(key=>amount(draft[key][i])===null?[]:[{id:key+i,source,periodId:p.id,kind:({retentions:'retention',consigned:'consigned',advances:'advance'} as const)[key],amountMinor:amount(draft[key][i])!}]));
+ const source={kind:'manual_scenario' as const,id:draft.source.trim(),itemId:'remuneration',revision:state.revision,reviewed:draft.reviewed};
+ const earnings:VacationEvidence['earnings']=periods.flatMap((p,i)=>amount(draft.amounts[i])===null?[]:[{id:'remuneration-'+i,component:'total',source:{...source,itemId:'remuneration-'+i},amountMinor:amount(draft.amounts[i])!,basis:draft.basis,periodId:p.id}]);
+ const deductions:VacationEvidence['deductions']=periods.flatMap((p,i)=>(['retentions','consigned','advances'] as const).flatMap(key=>amount(draft[key][i])===null?[]:[{id:key+i,component:'total',source:{...source,itemId:key+i},periodId:p.id,kind:({retentions:'retention',consigned:'consigned',advances:'advance'} as const)[key],amountMinor:amount(draft[key][i])!}]));
  const allDeductionsEntered=periods.every((_,i)=>[draft.retentions[i],draft.consigned[i],draft.advances[i]].every(v=>amount(v)!==null));
  const allEarningsEntered=periods.every((_,i)=>amount(draft.amounts[i])!==null);
  const acquisition={start:draft.acquisitionStart,end:draft.acquisitionEnd};
@@ -33,12 +33,13 @@ export default function VacationForecast(){
  const amountField=(label:string,value:string,onChange:(v:string)=>void)=><label style={{display:'block',marginBlock:8}}>{label}<input inputMode="decimal" value={value} onChange={e=>onChange(e.target.value)} style={{display:'block',width:'100%',maxWidth:280,minHeight:44}}/></label>;
  const indexed=(key:'starts'|'amounts'|'retentions'|'consigned'|'advances',index:number,value:string)=>change({[key]:draft[key].map((old,i)=>i===index?value:old)});
  return <details className="cz-finance-table" style={{overflowWrap:'anywhere'}} data-vacation-forecast><summary>Previsão de férias · separada do salário</summary>
+ <p>Não some esta previsão automaticamente à folha mensal. Direito ao gozo e arredondamento da empresa ainda não avaliados.</p>
  <p>Simulação nesta tela, sem salvar ou alterar sua folha. Médias e retenções ainda não são recuperadas automaticamente do holerite.</p>
  {!owner?<p>Entre na sua conta para simular.</p>:<>
  <fieldset><legend>Períodos</legend>
  {dateField('Início do período aquisitivo',draft.acquisitionStart,v=>change({acquisitionStart:v}))}
  {dateField('Fim do período aquisitivo',draft.acquisitionEnd,v=>change({acquisitionEnd:v}))}
- <label><input type="checkbox" checked={draft.split} onChange={e=>change({split:e.target.checked})}/> Dois períodos de 15 dias</label>
+ <label><input type="checkbox" checked={draft.split} onChange={e=>change({split:e.target.checked,...(draft.basis==='period_amount'?{amounts:['','']}:{} )})}/> Dois períodos de 15 dias</label>
  {periods.map((p,i)=><div key={p.id}>{dateField(`Início do gozo ${i+1} · ${p.days} dias`,draft.starts[i],v=>indexed('starts',i,v))}</div>)}
  <label style={{display:'block'}}><input type="checkbox" checked={draft.lawApplicable} onChange={e=>change({lawApplicable:e.target.checked})}/> Lei do Aeronauta aplicável; fracionamento previsto no meu ACT quando escolhido</label>
  </fieldset>
@@ -55,7 +56,7 @@ export default function VacationForecast(){
  </>}
  <p>Consignados reduzem o caixa; não reduzem automaticamente remuneração ou base tributável. Não calculamos tributos de férias com a tabela da folha mensal.</p>
  </details>
- <div aria-live="polite">{result.periods.length?result.periods.map((p,i)=><section key={p.id}><h4>Gozo {i+1} · {p.days} dias</h4><p>Remuneração: {money(p.earningsMinor)} · terço: {money(p.thirdMinor)}</p><p><strong>{p.grossMinor===null?'Subtotal conhecido com terço':'Bruto estimado'}: {money(p.knownSubtotalMinor)}</strong></p><p>Saldo estimado após descontos e adiantamentos: {money(p.netMinor)}</p><p>Data limite legal: {p.deadlineDate||'Pendente de data e enquadramento'}. Depósito não confirmado.</p>{p.pending.length>0&&<small>Composição integral e/ou retenções ainda pendentes; campos ausentes não são zero.</small>}</section>):<p>Informe período aquisitivo válido e gozos sem sobreposição para preparar a previsão.</p>}</div>
+ <div aria-live="polite">{result.periods.length?result.periods.map((p,i)=><section key={p.id}><h4>Gozo {i+1} · {p.days} dias</h4><p>Remuneração: {money(p.earningsMinor)} · terço: {money(p.thirdMinor)}</p><p><strong>{p.grossMinor===null?'Subtotal conhecido com terço':'Bruto estimado'}: {money(p.knownSubtotalMinor)}</strong></p><p>Saldo estimado após descontos e adiantamentos: {money(p.netMinor)}</p>{!privacy.hidden&&p.cashState==='negative_review'&&<p role="status">Saldo negativo: revise os valores e a conciliação dos adiantamentos.</p>}<p>Data limite legal: {p.deadlineDate||'Pendente de data e enquadramento'}. Depósito não confirmado.</p>{p.pending.length>0&&<small>Composição integral e/ou retenções ainda pendentes; campos ausentes não são zero.</small>}</section>):<p>Informe período aquisitivo válido e gozos sem sobreposição para preparar a previsão.</p>}</div>
  </>}
  <p><a href="/legal/ACT-Comissarios-2025-2027.pdf" target="_blank" rel="noopener noreferrer">ACT comissários TAM · 3.2.1 e 3.7.5</a> · Lei 13.475, arts. 67–71. O prazo é dois dias corridos antes de cada início, sem inferir depósito.</p>
  </details>;

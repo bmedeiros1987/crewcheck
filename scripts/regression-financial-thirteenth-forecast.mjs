@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {thirteenthForecast} from '../shared/financialThirteenthForecast.mjs';
 const plan={ownerId:'fiction-A',revision:3,year:2032,averagePeriod:{start:'2031-12-01',end:'2032-11-30'}};
-const source={id:'synthetic-reviewed-source',revision:2,reviewed:true};
+const source={kind:'manual_scenario',itemId:'remuneration',id:'synthetic-reviewed-source',revision:2,reviewed:true};
 const evidence={ownerId:plan.ownerId,planRevision:3,year:2032,averagePeriod:{...plan.averagePeriod},source,amountMinor:600000,avos:12,basis:'full_year_equivalent',earningsComplete:true,deductionsComplete:false,deductions:[]};
 const run=(e=evidence,p=plan,extra={})=>thirteenthForecast({ownerId:'fiction-A',plan:p,evidence:e,lawApplicable:true,activeEmployment:true,...extra});
 assert.equal(run().grossMinor,600000);assert.equal(run({...evidence,amountMinor:null}).knownSubtotalMinor,null);assert.equal(run({...evidence,amountMinor:0}).grossMinor,0);assert.equal(run({...evidence,avos:7}).grossMinor,350000);
@@ -11,7 +11,7 @@ assert.equal(run({...evidence,basis:'annual_proportional_amount',avos:0,amountMi
 assert.equal(run({...evidence,averagePeriod:{...plan.averagePeriod,end:'2033-01-31'}},{...plan,averagePeriod:{...plan.averagePeriod,end:'2033-01-31'}}).grossMinor,null,'a reviewed annual average cannot include a period after that year');
 assert.equal(run({...evidence,amountMinor:1,avos:6}).grossMinor,1,'half cent rounds once');
 assert.equal(run().netMinor,null);assert.equal(run().firstAdvanceEstimateMinor,null);assert.equal(run().finalDeadlineDate,'2032-12-20');assert.equal(run().expectedDepositDate,null);
-const deductions=[{id:'tax',kind:'retention',source,amountMinor:40000},{id:'loan',kind:'consigned',source,amountMinor:60000},{id:'advance',kind:'advance',source,amountMinor:200000}];
+const deductions=[{id:'tax',component:'total',kind:'retention',source:{...source,itemId:'tax'},amountMinor:40000},{id:'loan',component:'total',kind:'consigned',source:{...source,itemId:'loan'},amountMinor:60000},{id:'advance',component:'total',kind:'advance',source:{...source,itemId:'advance'},amountMinor:200000}];
 assert.equal(run({...evidence,deductions,deductionsComplete:true}).netMinor,300000);
 assert.equal(run({...evidence,deductions,deductionsComplete:true}).grossMinor,600000);assert.equal(run().taxableBaseMinor,null);
 assert.equal(run({...evidence,deductions:[...deductions,deductions[2]],deductionsComplete:true}).netMinor,null,'advance cannot be deducted twice by identity');

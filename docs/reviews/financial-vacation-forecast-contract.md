@@ -36,7 +36,7 @@ financialVacationTiming helper retains calendar-day arithmetic without inferring
 an employer deposit. A separate applicability declaration gates amounts/deadline.
 
 Integer centavos, half-up per proportional component and then the third. Split
-period rounding may differ by a cent; this is disclosed estimate arithmetic, not
+period rounding can accumulate across components (a synthetic three-component case differs by four cents); this is disclosed estimate arithmetic, not
 proof of the employer's rounding. Known partial remuneration/third remains a
 subtotal. Integral gross requires explicit complete remuneration review. Unknown
 or malformed evidence never becomes zero; explicit zero remains valid.
@@ -80,3 +80,5 @@ financial storage, with all API output stubbed and external requests blocked.
 Text enlargement is simulated; no native accessibility zoom, screen-reader audio,
 shipping-font availability, WebKit or physical-device acceptance is claimed.
 Raw/prepared/build and exact-tree review results must be recorded separately.
+
+Review hardening: source kind/document/revision/canonical item and component are required. Manual screen scenarios use explicit aggregate slots, not inferred documentary rows. Each gozo requires explicit retention, consigned and advance coverage, including reviewed zeros. Negative cash remains signed and requires reconciliation review. Entitlement and employer rounding are not assessed. Substantive edits clear all confirmations; changing a proportional period clears its amounts. Do not add this forecast automatically to monthly payroll.
