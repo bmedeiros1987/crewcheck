@@ -28,7 +28,7 @@ assert(css.includes('html[data-crew-theme="light"] .cz-feature-grid button'), 'B
 assert(css.includes('overflow-wrap: anywhere'), 'Textos longos precisam ficar contidos nos cards');
 assert(css.includes('grid-template-columns: 1fr !important'), 'Mobile precisa reduzir grids criticos para uma coluna');
 assert(home.includes('async function parsePDFResilient'), 'Fallback resiliente de PDF v13.5.2 precisa permanecer');
-assert(home.includes('useWeatherLandingMonitor(flightEvent);'), 'Monitor meteorologico precisa continuar no componente principal');
+assert(home.includes('useWeatherLandingMonitor();') && home.includes('useOperationalWeatherPulse(bundle, events);'), 'Monitor meteorologico precisa continuar no componente principal');
 assert(home.includes("{view === 'radar' && <RadarView event={flightEvent}/>}"), 'Radar deve usar proximo voo real');
 assert(home.includes("{view === 'weather' && <WeatherView event={flightEvent}/>}"), 'Meteorologia deve usar proximo voo real');
 

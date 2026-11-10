@@ -7,6 +7,19 @@ on:
       - 'server.mjs'
       - 'server/weather/**'
       - 'shared/weatherNoticeDetails.*'
+      - 'shared/operational-weather-pulse.*'
+      - 'shared/weather-observation-source-time.*'
+      - 'shared/weather-station-overrides.*'
+      - 'client/src/lib/operationalWeather*.ts'
+      - 'client/src/lib/rosterStartup.ts'
+      - 'client/src/lib/alertRosterOwnership.ts'
+      - 'client/src/lib/notificationPreferences.ts'
+      - 'scripts/tests/operational-weather-*.test.mjs'
+      - 'scripts/tests/weather-source-time.test.mjs'
+      - 'scripts/tests/weather-station-overrides.test.mjs'
+      - 'scripts/tests/weather-api-provenance.test.mjs'
+      - 'scripts/tests/weather-test-loader.mjs'
+      - 'scripts/tests/weather-runtime-harness.mjs'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/pulse/**'
       - 'client/src/lib/alertReviewStore.ts'
@@ -41,12 +54,19 @@ jobs:
           node scripts/regression-weather-monitor-heartbeat-health.mjs
       - run: npm ci
       - name: Test tracked Home and real Pulse with synthetic device sinks
-        run: node --test scripts/tests/weather-notice-producers.test.mjs
+        run: |
+          for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
+            export TZ
+            node --test scripts/tests/operational-weather-*.test.mjs scripts/tests/weather-source-time.test.mjs scripts/tests/weather-station-overrides.test.mjs scripts/tests/weather-api-provenance.test.mjs scripts/tests/weather-notice-*.test.mjs
+          done
       - name: Prepare production sources
         run: node scripts/v139/apply.mjs
       - name: Verify prepared monitor retains policy and authorization
         run: |
-          node --test scripts/tests/weather-notice-details.test.mjs scripts/tests/weather-notice-producers.test.mjs
+          for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
+            export TZ
+            node --test scripts/tests/operational-weather-*.test.mjs scripts/tests/weather-source-time.test.mjs scripts/tests/weather-station-overrides.test.mjs scripts/tests/weather-api-provenance.test.mjs scripts/tests/weather-notice-*.test.mjs
+          done
           node --check server.mjs
           node --test scripts/tests/critical-weather-observation.test.mjs
           node scripts/regression-weather-monitor-heartbeat-health.mjs
