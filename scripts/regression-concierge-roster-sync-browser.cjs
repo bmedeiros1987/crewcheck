@@ -39,6 +39,7 @@ const warning='Sincronização do Concierge não confirmada. A escala continua n
    if(width===320)await page.addStyleTag({content:'html{font-size:200% !important}'});
    const original=await page.evaluate(()=>sessionStorage.getItem('crewcheck_roster'));
    await button.focus();await page.keyboard.press('Enter');const notice=page.getByText(warning,{exact:true});await notice.waitFor();
+   const noticeFont=await notice.evaluate((el,double)=>{const before=parseFloat(getComputedStyle(el).fontSize);if(double){el.style.fontSize=(before*2)+'px';el.style.lineHeight='1.4';}return{before,after:parseFloat(getComputedStyle(el).fontSize)};},width===320);if(width===320)assert.equal(noticeFont.after,noticeFont.before*2);
    assert.equal(writes,1);assert.equal(await page.evaluate(()=>sessionStorage.getItem('crewcheck_roster')),original);
    const accessible=await notice.evaluate(el=>{const live=el.closest('[aria-live]')||el.closest('section')?.querySelector('[aria-live]');const r=el.getBoundingClientRect(),cs=getComputedStyle(el);let parent=el,bg='';while(parent){const v=getComputedStyle(parent).backgroundColor;if(v!=='rgba(0, 0, 0, 0)'&&v!=='transparent'){bg=v;break;}parent=parent.parentElement;}return{live:live?.getAttribute('aria-live')||el.closest('section')?.getAttribute('aria-live'),text:cs.color,background:bg,rect:{x:r.x,right:r.right,width:r.width},viewport:innerWidth};});
    assert(accessible.live,'notice must retain an accessible live region');assert(accessible.rect.x>=0&&accessible.rect.right<=accessible.viewport+1,'notice text stays within viewport');
@@ -53,7 +54,7 @@ const warning='Sincronização do Concierge não confirmada. A escala continua n
    await page.waitForFunction(()=>document.querySelector('.cc-concierge-heading')===null);
    assert((await notice.count())<=warningCount,'obsolete session produces no new warning');assert.equal(writes,3);
    assert.equal(await page.evaluate(()=>sessionStorage.getItem('crewcheck_roster')),null,'existing auth lifecycle removes the previous context');assert.equal(external,0);assert.deepEqual(errors,[]);
-   results.push({width,theme,textScale:width===320?'200%':'100%',engine:browser.version(),keyboard:'Enter',liveRegion:accessible.live,contrast,synthetic:true,writes,fonts:await page.evaluate(()=>({family:getComputedStyle(document.body).fontFamily,loaded:[...document.fonts].filter(f=>f.status==='loaded').map(f=>f.family)}))});
+   results.push({width,theme,rootFontScale:width===320?'200%':'100%',noticeTextScale:width===320?'200%':'100%',noticeFont,engine:browser.version(),keyboard:'Enter',liveRegion:accessible.live,contrast,synthetic:true,writes,fonts:await page.evaluate(()=>({family:getComputedStyle(document.body).fontFamily,loaded:[...document.fonts].filter(f=>f.status==='loaded').map(f=>f.family)}))});
    await context.close();
   }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(results,null,2));console.log('PASS compiled Concierge sync notice: six synthetic layouts, keyboard, live region, contrast, preserved roster, explicit success/failure, zero provider calls');
