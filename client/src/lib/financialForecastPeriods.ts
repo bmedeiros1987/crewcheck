@@ -67,7 +67,10 @@ export function aggregateAllowanceEvidence<R extends AllowanceEvidenceRow, P ext
     // Without an occurrence identity two equal amounts are not proof that the
     // records are duplicates. Divergence is explicit, never last-writer-wins.
     if (group.length > 1 && (!first.eventId || group.some(row => evidence(row) !== evidence(first)))) {
-      addPending({iso:first.iso,airport:'',pendingKind:'source_coverage',reason:`Evidências divergentes de ${first.label} em ${first.iso}; confira as escalas de origem.`});
+      // Old physical-date and new documented-reference versions can straddle
+      // a cycle boundary. Neither source order may certify the other cycle.
+      for(const iso of [...new Set(group.map(row=>row.iso))].sort())
+        addPending({iso,airport:'',pendingKind:'source_coverage',reason:`Evidências divergentes de ${first.label} em ${iso}; confira as escalas de origem.`});
     } else rows.push(first);
   }
   rows.sort((a,b)=>a.iso.localeCompare(b.iso)||a.label.localeCompare(b.label)||String(a.eventId||'').localeCompare(String(b.eventId||'')));

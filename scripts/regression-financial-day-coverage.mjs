@@ -293,6 +293,13 @@ try{
  const duplicatedSupper=libs.aggregateAllowanceEvidence([supperSnapshot,supperSnapshot]);assert.equal(duplicatedSupper.rows.filter(row=>row.label==='Ceia').length,1,'reimported supper is not duplicated');
  const badReference={...supperSnapshot,perdiem:{...supperForecast,rows:supperForecast.rows.map(row=>row.label==='Ceia'?{...row,occurrenceIso:'2026-11-12'}:row)}};
  assert.equal(libs.aggregateAllowanceEvidence([badReference]).rows.filter(row=>row.label==='Ceia').length,0,'a contradictory physical/reference date stays pending');
+ const legacySupper={...supperRow,iso:supperRow.occurrenceIso,occurrenceIso:undefined,referenceDateBasis:undefined};
+ const legacySnapshot={...supperSnapshot,perdiem:{...supperForecast,rows:[legacySupper],monthlyRows:[legacySupper]}};
+ for(const order of [[supperSnapshot,legacySnapshot],[legacySnapshot,supperSnapshot]]){
+  const conflict=libs.aggregateAllowanceEvidence(order);
+  for(const date of ['2026-11-10','2026-11-11'])assert(conflict.unclassifiedItems.some(item=>item.iso===date),'CONFLICTING_SUPPER_REFERENCE: each possible cycle stays pending regardless of source order');
+  for(const scope of [supperBeforeBoundary,supperAfterBoundary])assert.equal(context.subject.scopedFinancialForecast(order,scope,[]).nativeSummary.complete,false,'source order cannot certify either disputed cycle');
+ }
 
  // Entirely fictional source: closed foreign excursion, domestic outstation
  // continuity, an unrecorded ground move, DR, and both cycle-edge suppers.
