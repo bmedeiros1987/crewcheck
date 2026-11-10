@@ -124,6 +124,35 @@ export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | 
   const flights = [...unique.values()].sort((a,b) => start(a)-start(b));
   const targetStart = start(args.event), targetEnd = end(args.event);
   if (!Number.isFinite(targetStart) || !Number.isFinite(targetEnd)) return pending('intervalo da ocorrência ausente.');
+  // A closed published duty can prove a domestic excursion independently of
+  // the wider pairing (which may contain an unrecorded domestic ground move).
+  // Civil midnight and contractual-base presence are not overnight evidence.
+  const dutyKey=financialJourneyGroupKey(args.event);
+  const duty=flights.filter(event=>financialJourneyGroupKey(event)===dutyKey);
+  if (args.event.kind==='flight' && dutyKey!=='event:missing-id' && duty.length
+    && duty.some(event=>event.id===args.event.id)
+    && !financialPublishedFlightIntervalIssue(duty) && !financialIntervalEvidenceIssue(duty)) {
+    const first=duty[0],last=duty.at(-1),published=(last.day||last.canonical?.publishedDay||{});
+    const evidence=published.publishedClockEvidence||published;
+    const routeKnown=duty.every((event,index)=>{
+      const day=event.day||event.canonical?.publishedDay||{},clocks=day.publishedClockEvidence||day;
+      return args.classify(event.origin,event.origin,{}).rateKey && args.classify(event.destination,event.destination,{}).rateKey
+        && new Set((clocks.records||[clocks]).map((record:any)=>JSON.stringify(record.legs))).size===1
+        && (!index || duty[index-1].destination===event.origin && end(duty[index-1])<=start(event));
+    });
+    const concurrent=flights.some(event=>!duty.includes(event)&&start(event)<end(last)&&end(event)>start(first));
+    const stayConflict=args.events.some(event=>event.kind==='stay'&&(
+      Number.isFinite(start(event))&&Number.isFinite(end(event))
+        ? start(event)<end(last)&&end(event)>start(first)
+        : duty.some(flight=>(flight.canonical?.date||flight.day?.date)===(event.canonical?.date||event.day?.date))
+    ));
+    if (routeKnown && !concurrent && !stayConflict && first.origin===last.destination
+      && args.classify(first.origin,first.origin,{}).rateKey==='domestic'
+      && /^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(String(evidence.dutyDebrief||'')) && evidence.dutyDebriefSource==='published') {
+      const domestic=args.classify(first.origin,first.origin,{});
+      return {...domestic,reason:'Regra de previsão informada para LATAM/comissários; não homologada como norma geral. Jornada publicada com retorno à mesma estação nacional e sem pernoite internacional comprovado; categoria nacional, inclusive após meia-noite ou fora da base contratual.'};
+    }
+  }
   const firstIndex = flights.findLastIndex(event => event.origin === base && start(event) <= targetStart);
   const lastIndex = flights.findIndex((event,index) => index >= firstIndex && event.destination === base && end(event) >= targetEnd);
   if (firstIndex < 0 || lastIndex < firstIndex) return pending('saída e retorno à base não comprovados na mesma fonte.');
@@ -173,4 +202,25 @@ export function resolveLatamCabinAllowanceJourney<T extends { rateKey: string | 
     return { ...domestic, reason: source + 'Bate-volta na mesma jornada/data BRT, com retorno à base e sem pernoite comprovado; categoria nacional para esta previsão.' };
   }
   return pending('pernoite internacional não comprovado; mudança de dia, hotel ou intervalo inferido não bastam.');
+}
+
+/** Observed company statement + user confirmation, not a universal duty rule.
+ * Only the documented Tuesday-flight/Wednesday-supper boundary is reassigned.
+ * A Wednesday departure with Tuesday APZ remains Wednesday. No persistence,
+ * entitlement, tariff or credit confirmation is created by this projection. */
+export function latamSupperReference(args:{event:any;slot:string;rateKey:string;iso:string;roster:{airline?:string;rank?:string};context:FinancialActSnapshot}):{iso:string;occurrenceIso?:string;referenceDateBasis?:'latam_observed_tuesday_flight_supper';pendingReason?:string;candidateIso?:string} {
+  const unchanged={iso:args.iso};
+  if(args.slot!=='supper'||args.rateKey!=='domestic'||args.event.kind!=='flight'||args.event.salaryClockKnown===false
+    ||!['LA','TAM','LATAM'].includes(String(args.roster.airline||'').trim().toUpperCase())
+    ||financialPublishedFlightIntervalIssue([args.event]))return unchanged;
+  const scope=financialPresetScope(args.roster,args.context);
+  if(!scope?.allowsMonth(args.iso.slice(0,7)))return unchanged;
+  const departure=new Date(args.event.canonical?.startDateTime||''),arrival=new Date(args.event.canonical?.endDateTime||'');
+  if(!Number.isFinite(departure.getTime())||!Number.isFinite(arrival.getTime())||arrival<=departure||!validAllowanceDay(args.iso))return unchanged;
+  const flightIso=rosterOperationalIso(departure),next=new Date(flightIso+'T12:00:00Z');
+  if(next.getUTCDay()!==2||!scope.allowsMonth(flightIso.slice(0,7)))return unchanged;
+  next.setUTCDate(next.getUTCDate()+1);
+  if(next.toISOString().slice(0,10)!==args.iso)return unchanged;
+  if(rosterOperationalIso(arrival)!==args.iso)return {iso:args.iso,candidateIso:flightIso,pendingReason:'Competência da ceia pendente: a evidência observada cobre trecho com chegada na quarta; somente o encerramento após meia-noite não comprova a data de lançamento.'};
+  return {iso:flightIso,occurrenceIso:args.iso,referenceDateBasis:'latam_observed_tuesday_flight_supper' as const};
 }
