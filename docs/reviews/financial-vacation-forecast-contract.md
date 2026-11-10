@@ -73,5 +73,10 @@ revision/acquisition/source mismatch, partial amounts, already-proportional basi
 retentions/loans/advances, duplicate IDs and overlap. Browser uses actual compiled
 component and actual privacy control, explicit synthetic local identity and zero
 external calls:320/390/1440, light/dark, keyboard, enlarged text, review and A→B→A.
-Component fixture styling is not full-app pixel acceptance or a physical device.
+The separate actual-app harness boots the prepared production bundle in18 cases:
+320/390/1440, light/dark and UTC/Sao_Paulo/Tokyo, with computed text sizes doubled.
+It checks the real Home integration, containment, pending net, and unchanged monthly
+financial storage, with all API output stubbed and external requests blocked.
+Text enlargement is simulated; no native accessibility zoom, screen-reader audio,
+shipping-font availability, WebKit or physical-device acceptance is claimed.
 Raw/prepared/build and exact-tree review results must be recorded separately.

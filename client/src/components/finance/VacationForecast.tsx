@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {financialRateOwner,financialRateSession} from '@/lib/financialStatementLearning';
 import {vacationForecast,type VacationEvidence} from '../../../../shared/financialVacationForecast.mjs';
 import {useFinancialPrivacy} from './FinancialPrivacy';
+import './vacation-forecast.css';
 
 const empty=()=>({acquisitionStart:'',acquisitionEnd:'',split:false,starts:['',''],basis:'monthly_average' as 'monthly_average'|'period_amount',amounts:['',''],source:'',reviewed:false,earningsComplete:false,deductionsComplete:false,lawApplicable:false,retentions:['',''],consigned:['',''],advances:['','']});
 // An editable scenario, deliberately ephemeral: it is not the monthly payroll

@@ -148,6 +148,7 @@ jobs:
           node scripts/regression-financial-long-history.cjs
           node scripts/regression-salary-display-basis-browser.cjs
           node scripts/regression-financial-vacation-browser.cjs
+          node scripts/regression-financial-vacation-app.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -159,4 +160,5 @@ jobs:
             artifacts/financial-long-history/
             artifacts/salary-display-basis/
             artifacts/vacation-forecast/
+            artifacts/vacation-app/
           if-no-files-found: ignore
