@@ -5223,7 +5223,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     } catch (error) {
       if (current()) toast.error(error instanceof Error ? error.message : 'Sincronização do Concierge não confirmada. A escala continua no app.');
     } finally {
-      if (syncMounted.current && request === syncRequest.current && session.isCurrent()) setBusy('');
+      if (syncMounted.current && request === syncRequest.current) setBusy('');
     }
   }
   async function importFromTelegram() {

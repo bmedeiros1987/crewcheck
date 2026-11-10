@@ -137,10 +137,8 @@ update('client/src/pages/Home.tsx', (source) => {
 
   next = replaceRequired(
     next,
-    `      syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
-      syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));`,
-    `      syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
-      Promise.allSettled([
+    `      syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));`,
+    `      Promise.allSettled([
         saveRosterAnalysis({ roster, compliance: newCompliance, gym: newGym, sourceFileName: file.name } as any),
         syncPlatformRoster(roster, newCompliance, file.name),
       ]).then((results) => {

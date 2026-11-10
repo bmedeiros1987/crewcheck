@@ -8,15 +8,15 @@ const ts=createRequire(import.meta.url)('typescript');
 const server=fs.readFileSync('server.mjs','utf8'),home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
 const tree=ts.createSourceFile('server.mjs',server,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const declarations=new Map(tree.statements.filter(ts.isFunctionDeclaration).map(n=>[n.name.text,n.getText(tree)]));
-const names=['conciergeSafeKey','conciergeMinimizeRoster','conciergeRosterDiagnostics','conciergeSaveSnapshot','conciergeSaveSnapshotAsync','handleTelegramRosterSync'];
+const names=['conciergeSafeKey','conciergeSnapshotForProfile','conciergeMinimizeRoster','conciergeRosterDiagnostics','conciergeSaveSnapshot','conciergeSaveSnapshotAsync','handleTelegramRosterSync'];
 const code=names.map(n=>{assert(declarations.has(n),n);return declarations.get(n);}).join('\n');
 const roster=revision=>({year:2099,month:10,base:'AAA',publicationRevision:revision,days:[{date:'04/10/2099',type:'RES',legs:[],rawText:''}]});
 const copy=x=>structuredClone(x);
 let checks=0;
-function fixture(outcome){
- let local={snapshots:{}},durable=null,calls=0;
+function fixture(outcome,localWrite=true){
+ let local={snapshots:{}},durable={roster:roster('A')},calls=0;
  const context={Date,console,restrictConciergeSnapshotWrite,DEFAULT_CONCIERGE_NAME:'Synthetic',
-  telegramRostersRead:()=>copy(local),telegramRostersWrite:data=>{local=copy(data);},
+  telegramRostersRead:()=>copy(local),telegramRostersWrite:data=>{if(localWrite==='throw')throw Error('SYNTHETIC_LOCAL_FAILURE');if(localWrite){local=copy(data);return true;}return false;},
   conciergeDbPut:async(key,value)=>{calls++;assert.equal(key,'snapshot:synthetic@example.test');if(outcome==='throw')throw Error('PRIVATE_PAYLOAD_MUST_NOT_ESCAPE');if(outcome===true||outcome==='uncertain')durable=copy(value);if(outcome==='uncertain')throw Error('SYNTHETIC_ACK_LOST');return outcome;},
   conciergeLoadSnapshot:async()=>null,telegramLinkedRecordForEmail:async()=>null,
   telegramRequestUser:()=>({email:'synthetic@example.test',name:'Synthetic',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeAccessMatches:()=>true,
@@ -35,9 +35,15 @@ for(const outcome of [false,undefined,null,'true',{},'throw','uncertain']){
  assert.equal(result.body.persistence,'unconfirmed');assert.equal(result.body.cache,'updated');assert.equal(f.calls(),1);
  assert.equal(f.local().snapshots['synthetic@example.test'].roster.publicationRevision,'B');
  assert(!JSON.stringify(result).includes('PRIVATE_PAYLOAD'));assert(!JSON.stringify(result).includes('synthetic@example.test'));
+ if(outcome!=='uncertain')assert.equal(f.durable().roster.publicationRevision,'A');
  if(outcome==='uncertain')assert.equal(f.durable().roster.publicationRevision,'B','lost ACK may follow a committed write');
  checks++;
 }
+for(const localWrite of [false,'throw']){
+const f=fixture(true,localWrite),result=await f.sync();assert.equal(result.status,503);assert.equal(result.body.cache,'unconfirmed');
+assert.equal(result.body.persistence,localWrite===false?'confirmed':'unconfirmed');assert.equal(f.calls(),localWrite===false?1:0);checks++;
+}
+
 // The shared writer keeps its existing contract for unrelated consumers.
 {
  const f=fixture(false);const saved=await f.context.conciergeSaveSnapshotAsync({email:'synthetic@example.test'},roster('A'),{});
