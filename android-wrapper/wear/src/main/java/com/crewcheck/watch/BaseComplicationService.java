@@ -45,6 +45,11 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
     /** Código distinto por provider para que os PendingIntents não se sobrescrevam. */
     protected abstract int tapRequestCode();
 
+    /** Tela do app aberta pelo toque na complicação; null abre a tela inicial. */
+    protected String tapScreen() {
+        return null;
+    }
+
     @Override
     public void onComplicationRequest(
             ComplicationRequest request,
@@ -62,14 +67,20 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
         return buildData(type, true);
     }
 
+    Intent tapIntent() {
+        Intent intent = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (tapScreen() != null) intent.putExtra("crewcheck_screen", tapScreen());
+        return intent;
+    }
+
     private ComplicationData buildData(ComplicationType type, boolean preview) {
         ComplicationRendering rendering = render(System.currentTimeMillis(), preview);
 
         PendingIntent tapAction = PendingIntent.getActivity(
                 this,
                 tapRequestCode(),
-                new Intent(this, MainActivity.class)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                tapIntent(),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 

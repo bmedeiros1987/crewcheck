@@ -22,6 +22,9 @@ on:
       - 'scripts/lib/shared-allowance-fixture.mjs'
       - 'scripts/regression-latam-allowance-catalog.mjs'
       - 'scripts/regression-financial-act-applicability*.mjs'
+      - 'scripts/regression-financial-act-pending-cause.mjs'
+      - 'scripts/regression-financial-act-notice-*.mjs'
+      - 'client/src/lib/i18n.ts'
       - 'scripts/regression-shared-allowance-callers.mjs'
       - 'client/src/lib/financialRules.ts'
       - 'client/src/pages/Home.tsx'
@@ -67,6 +70,13 @@ jobs:
             TZ="$zone" node scripts/regression-financial-act-applicability.mjs
             TZ="$zone" node scripts/regression-shared-allowance-callers.mjs
           done
+          node scripts/regression-financial-act-pending-cause.mjs
+      - name: Isolated synthetic DOM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/act-notice-dom" --ignore-scripts --no-audit --no-fund --package-lock=false jsdom@26.1.0
+      - name: ACT notice rule (raw, synthetic DOM)
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/act-notice-dom/node_modules/jsdom/package.json
+        run: node scripts/regression-financial-act-notice-dom.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Revalidate after preparation
@@ -88,6 +98,11 @@ jobs:
             TZ="$zone" node scripts/regression-financial-act-applicability.mjs
             TZ="$zone" node scripts/regression-shared-allowance-callers.mjs
           done
+          node scripts/regression-financial-act-pending-cause.mjs
+      - name: ACT notice rule (prepared, synthetic DOM)
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/act-notice-dom/node_modules/jsdom/package.json
+        run: node scripts/regression-financial-act-notice-dom.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Web build

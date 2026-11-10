@@ -11,7 +11,10 @@ const rosterView = fs.readFileSync('client/src/components/v1391/RosterLaunchView
 assert.match(database, /async function openDisplayCompetenceCandidate\([\s\S]*preferredOpened[\s\S]*getLocalRosterSummaries\(72\)[\s\S]*rosterPeriodOrdinal\(item\) === targetOrdinal/);
 assert.match(database, /crewIdentityToken\(localOpened\.roster\) !== primaryCrew/);
 assert.match(database, /rosterPeriodOrdinal\(localOpened\.roster\) !== targetOrdinal/);
-assert.match(database, /const competence = await openDisplayCompetenceCandidate\(primary, summary, ordinal, primaryCrew\)/);
+assert.match(database, /const competence = await openDisplayCompetenceCandidate\(primary, summary, ordinal, primaryCrew, session\.isCurrent\)/);
+
+assert.match(database, /const session = captureAuthSession\(\);/);
+assert.match(database, /if \(!session\.isCurrent\(\)\) return primary;/);
 
 // Finding B: financeSnapshot(bundle.roster) remains tied to the operational primary
 // roster, and the visual month receives an explicit competence token. Adjacent months

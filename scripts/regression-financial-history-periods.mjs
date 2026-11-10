@@ -41,8 +41,11 @@ try {
   assert.equal(salary.rows[0].iso,'2032-02-02');
   if(context.subject.scopedFinancialForecast){
     const row=(iso,currency,value,convertedBRL)=>({iso,currency,value,convertedBRL,label:'SYN',source:'synthetic'});
-    const snapshot=rows=>({perdiem:{rows,monthlyRows:rows,monthlyUnclassifiedItems:[],unclassifiedItems:[]}});
-    const mixed=context.subject.scopedFinancialForecast([snapshot([row('2032-02-01','BRL',120,120),row('2032-02-02','USD',30,null)])],month,[]);
+    // This money/FX fixture has complete published coverage, including explicit
+    // non-working dates. Meal rows alone do not prove the rest of the month.
+    const snapshot=rows=>({roster:{year:2032,month:2,days:Array.from({length:29},(_,i)=>({date:String(i+1).padStart(2,'0')+'/02/2032',type:'DO',legs:[]}))},perdiem:{rows,monthlyRows:rows,monthlyUnclassifiedItems:[],unclassifiedItems:[]}});
+    const prior={roster:{year:2032,month:1,days:[{date:'31/01/2032',type:'DO',legs:[]}]},perdiem:{monthlyRows:[],monthlyUnclassifiedItems:[]}};
+    const mixed=context.subject.scopedFinancialForecast([prior,snapshot([row('2032-02-01','BRL',120,120),row('2032-02-02','USD',30,null)])],month,[]);
     assert.equal(mixed.nativeSummary.complete,true);assert.equal(mixed.monthlySummary.convertedTotalBRL,null);assert.equal(mixed.totalsByCurrency.BRL,120);assert.equal(mixed.totalsByCurrency.USD,30);
     const unknown=context.subject.scopedFinancialForecast([{perdiem:{rows:[],monthlyRows:[],monthlyUnclassifiedItems:[{iso:'2032-02-02',airport:'ZZZ'}]}}],month,[]);assert.equal(unknown.nativeSummary.complete,false,'unknown-only month is not a zero');
     const absent=context.subject.scopedFinancialForecast([snapshot([row('2032-02-02','BRL',120,120)])],week,['2032-01']);assert.equal(absent.monthly,null,'missing monthly source prevents a cross-month total');
@@ -60,7 +63,7 @@ try {
   const readNames=['listSavedRosters','readLocalHistory','normalizeLocalHistoryItem'];
   const readFunctions=db.statements.filter(n=>ts.isFunctionDeclaration(n)&&readNames.includes(n.name?.text));
   let online=[],local=[],expectedPreserve=false;
-  const readerContext=vm.createContext({exports:{},localStorage:{getItem:()=>JSON.stringify(local)},localHistoryKeys:()=>['synthetic-owned-history'],periodHistoryKey:source=>String(source.roster?.year)+':'+String(source.roster?.month),getLocalRosterSummaries:(limit,preserve)=>{assert.equal(Boolean(preserve),expectedPreserve);return local;},hasCrewCheckAuthToken:()=>true,normalizeSingleActiveSummary:items=>items,jsonFetch:async()=>({ok:true,rosters:online})});
+  const readerContext=vm.createContext({captureRosterReadSession:dependencies.captureAuthSession,exports:{},localStorage:{getItem:()=>JSON.stringify(local)},localHistoryKeys:()=>['synthetic-owned-history'],periodHistoryKey:source=>String(source.roster?.year)+':'+String(source.roster?.month),getLocalRosterSummaries:(limit,preserve)=>{assert.equal(Boolean(preserve),expectedPreserve);return local;},hasCrewCheckAuthToken:()=>true,normalizeSingleActiveSummary:items=>items,jsonFetch:async()=>({ok:true,rosters:online})});
   vm.runInContext(ts.transpileModule(readFunctions.map(n=>n.getText(db)).join('\n')+'\nglobalThis.readers={listSavedRosters,readLocalHistory};',{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,readerContext);
   const revision=(id,date)=>({...item(id,date),checksum:null,isActive:true});
   online=[revision('online-old','2032-02-01T00:00:00Z'),revision('online-new','2032-02-02T00:00:00Z')];expectedPreserve=true;

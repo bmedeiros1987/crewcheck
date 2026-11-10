@@ -2,8 +2,9 @@ import {normalizeCiriumFlightStatus} from '../server/cirium-flight-adapter.mjs';
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import ts from 'typescript';import {build} from 'esbuild';import {createRequire} from 'node:module';
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const source=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',source,99,true,ts.ScriptKind.TSX);
-const names=['validatedRadarForEvent','radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','readRadarSnapshot','saveRadarSnapshot','fetchRadarSnapshot'];
+const names=['validatedRadarForEvent','radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','readRadarSnapshot','saveRadarSnapshot','browserRadarContextIsCurrent','fetchRadarSnapshot','browserRadarSignature','browserRadarGeneration','invalidateBrowserRadarResponse'];
 const functions=names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,'Actual Home function missing: '+name);return fn.getText(ast);}).join('\n');
+const presentationGlobals=['browserRadarContext','browserRadarResponses','browserRadarInvalidations'].map(name=>{const n=ast.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)===name));assert(n,name);return n.getText(ast)}).join('\n');
 const marker='    const watchSession = captureAuthSession();',start=source.indexOf(marker),end=source.indexOf('\n  }, [',start);assert(start>=0&&end>start,'Actual Home watch effect required');const effect=source.slice(start,end);
 const memoStart=source.indexOf('  const operationalArrival=useMemo('),memoEnd=source.indexOf(';',memoStart);assert(memoStart>=0&&memoEnd>memoStart,'Actual memoized Home admission required');const memo=source.slice(memoStart,memoEnd+1);
 const entry=`import React,{useMemo} from 'react';import {createRoot} from 'react-dom/client';import View from './client/src/components/regulation/RegulationScenarioView';import {buildCanonicalRosterEvents} from './client/src/lib/canonicalRoster';import {regulationProgramDay} from './shared/regulationScenarioPrefill.mjs';
@@ -11,7 +12,7 @@ import * as auth from './client/src/lib/authClient';import * as admission from '
 import {readStayOperationalProjection} from './client/src/lib/stayOperationalProjection';
 import * as gate from './client/src/lib/nextFlightGate';import {applyNextFlightToWatchSnapshot} from './client/src/lib/nextFlightWatch';import {buildCrewCheckWatchSnapshot} from './client/src/lib/watchContext';
 import * as stayStore from './client/src/lib/stayEditorStore';import {emptyStayEditor,stayEditorKey} from './shared/stay-editor-store.mjs';import {alertRosterOwned} from './client/src/lib/alertRosterOwnership';import {startupKey,startupOwner} from './client/src/lib/rosterStartup';
-import {gateQueryDay,gateQuerySuppressed,originFlightDate,radarResultDecision} from './shared/gate-query-day.mjs';import {radarFailurePayload} from './client/src/lib/radarAvailability';
+import {gateQueryDay,gateQuerySuppressed,originFlightDate,radarResultDecision,radarSourceEpoch} from './shared/gate-query-day.mjs';import {radarFailurePayload} from './client/src/lib/radarAvailability';
 const {captureAuthSession,getStoredUser,getToken,authFetch}=auth;const {beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission}=admission;
 const {retainLatestGateEvidence,nextGateUpdateWatermark,canonicalFlightId,RADAR_GATE_STALE_MS,MANUAL_GATE_EVENT,manualGateIdentity,flightOperationalDate,gateChangeAlertAllowed,manualGateAccountKey,resolveNextFlightGate,radarSnapshotStorageKey,readCachedRadarForFlight,readManualGate,selectNextFlight}=gate;
 const {savedStayEditorEvent}=stayStore;
@@ -21,6 +22,7 @@ const notices=[];const reconcileCrewCheckPulse=(...x)=>notices.push(x),manualGat
 const eventStartDateTime=e=>new Date(e.canonical.startDateTime),telegramConciergeIdentity=()=>({email:'synthetic@example.invalid',name:'Synthetic',conciergeKey:'synthetic'});
 const storage={get:(k,f='')=>localStorage.getItem(k)??f,set:(k,v)=>localStorage.setItem(k,v)};
 const RADAR_CARD_CACHE_TTL_MS=6*60*60*1000,radarQuerySerial=new Map();
+${presentationGlobals}
 ${functions}
 const watch=[];window.addEventListener('crewcheck:watch-snapshot',e=>watch.push(e.detail));
 function mountWatch(events,event,bundle){${effect}}

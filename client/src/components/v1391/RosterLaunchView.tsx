@@ -2,8 +2,8 @@ import { filterRosterEvents, rosterCardPresentation, rosterProgramMode, rosterMo
 import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';
 import { RosterActivityIcon, RosterLegend, useRosterCategoryFilter } from './RosterLegend';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
-import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { useEffect, useMemo, useState } from 'react';
+import { rosterDisplayCompare, rosterDisplaySortInstant, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
 import { rosterDayAllowanceSummary } from '@/lib/rosterDayAllowanceSummary';
 import { peekPendingNavigationContext } from '@/lib/navigationContext';
@@ -13,11 +13,12 @@ import type { CrewRoster } from '../../lib/pdfParser';
 import {
   Banknote,
   GitCompareArrows,
+  SlidersHorizontal,
+  X,
   BedDouble,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
-  ChevronDown,
   Clock,
   Coffee,
   Dumbbell,
@@ -25,12 +26,12 @@ import {
   Home,
   Hotel,
   LayoutGrid,
+  FileText,
   List,
   MapPin,
   Moon,
   Plane,
   RotateCcw,
-  SlidersHorizontal,
   Route,
   ShieldCheck,
   Sparkles,
@@ -141,13 +142,14 @@ function formatDate(date: Date | null) {
 }
 
 function duration(event: RosterEvent) {
+  if (!rosterCardPresentation(event).durationKnown) return null;
   if (event.canonical?.kind === 'journey-rest') {
     const minutes = Number((event.canonical as any).restMinutes);
     return Number.isFinite(minutes) ? Math.max(0, minutes / 60) : 0;
   }
   const start = new Date(event.canonical?.startDateTime || 0);
   const end = new Date(event.canonical?.endDateTime || 0);
-  return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) ? Math.max(0, (end.getTime() - start.getTime()) / 3600000) : 0;
+  return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) ? Math.max(0, (end.getTime() - start.getTime()) / 3600000) : null;
 }
 
 // Shared presentation contract: source classification and published fields remain unchanged.
@@ -202,6 +204,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const currentMonth = isoFromDate(new Date()).slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(() => months.includes(currentMonth) ? currentMonth : months[0] || currentMonth);
   const [selectedDay, setSelectedDay] = useState('');
+  const optionsDialog = useRef<HTMLDialogElement>(null);
   const [focusedEventId,setFocusedEventId] = useState<string>();
   const [pendingRosterFocusIso, setPendingRosterFocusIso] = useState<string | null>(null);
   const [rosterFocusStatus, setRosterFocusStatus] = useState('');
@@ -265,16 +268,29 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const activeDay = selectedDay.startsWith(`${selectedMonth}-`) ? selectedDay : groups[0]?.iso || `${selectedMonth}-01`;
   const periodEvents = zoom === 'day' ? ordered.filter(event => isoOf(event) === activeDay) : ordered;
   const visibleEvents = filterRosterEvents(periodEvents, categoryFilter.filter);
-  const timedEvents = periodEvents.filter(event => Number.isFinite(dateOf(event).getTime()));
-  const civilOnlyEvents = visibleEvents.filter(event => !Number.isFinite(dateOf(event).getTime()));
+  const timedEvents = periodEvents.filter(event => rosterDisplaySortInstant(event) !== null);
+  const civilOnlyEvents = visibleEvents.filter(event => rosterDisplaySortInstant(event) === null && workMode(event) !== 'rest');
   // Consecutive runs retain canonical chronology when published dates recur
   // across a journey-rest interval. The civil map above serves month metrics.
-  const visibleGroups = timedEvents.reduce((runs, event) => {
+  const timelineGroups = timedEvents.reduce((runs, event) => {
     const iso = isoOf(event), previous = runs[runs.length - 1];
     if (previous?.iso === iso) previous.events.push(event);
     else runs.push({ iso, date: rosterLabelDate(event), events: [event] });
     return runs;
-  }, [] as { iso: string; date: Date | null; events: RosterEvent[] }[])
+  }, [] as { iso: string; date: Date | null; events: RosterEvent[] }[]);
+  // A published civil rest/vacation date is enough for its calendar placement,
+  // not for a work interval. Never sort a flight using an invented rest instant.
+  for (const event of periodEvents.filter(event => rosterDisplaySortInstant(event) === null && workMode(event) === 'rest')) {
+    const iso = isoOf(event);
+    let group = [...timelineGroups].reverse().find(item => item.iso === iso);
+    if (!group) {
+      group = { iso, date: rosterLabelDate(event), events: [] };
+      const next = timelineGroups.findIndex(item => item.iso > iso);
+      timelineGroups.splice(next < 0 ? timelineGroups.length : next, 0, group);
+    }
+    group.events.push(event);
+  }
+  const visibleGroups = timelineGroups
     .map(group => ({ ...group, allEvents: group.events, events: filterRosterEvents(group.events, categoryFilter.filter) }))
     .filter(group => group.events.length > 0);
   function selectDay(iso: string) {
@@ -297,7 +313,9 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const perDiemSummary = scopedFinance?.perdiem?.monthlySummary ?? summarizeForecastRows(selectedPerDiemRows);
   const perDiemTotal = perDiemSummary.convertedTotalBRL;
   const pendingCurrencies = perDiemSummary.pendingCurrencies;
-  const dutyHours = ordered.filter((event) => !['stay', 'rest', 'journey-rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
+  const dutyDurations = ordered.filter((event) => !['stay', 'rest', 'journey-rest'].includes(workMode(event))).map(duration);
+  const dutyHours = dutyDurations.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  const incompleteDutyTimes = dutyDurations.some(value => value === null);
   const todayIso = isoFromDate(new Date());
 
   function goToday() {
@@ -307,67 +325,44 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   }
 
   return <div className="cc-roster-premium-v1397">
-    <V139Header title="Escala inteligente" detail="Programações e horários publicados."/>
+    <V139Header title="Escala" detail=""/>
     {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
-    <div className="cz-roster-actions cc-share-entry"><a className="cc-roster-changes-link" href="?view=perdiem&fmode=allowance&fscreen=changes" aria-label="Alterações" title="Alterações"><GitCompareArrows size={18} aria-hidden="true"/></a><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
 
-      <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label>
+      <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month).replace(/ de (\d{4})$/, ' $1')}</option>)}</select></label>
       <button type="button" onClick={goToday}><Clock/> Hoje</button>
       <p className="cc-roster-period-count" role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}</p>
     </section>
 
-    {/* Presentation collapsed: format, reset and month/day zoom under one discreet expander. */}
-    <details className="cc-roster-view-options">
-      <summary><SlidersHorizontal aria-hidden="true"/><span>Exibição</span><small>{({ cards: 'Cards', list: 'Lista', aims: 'AIMS', calendar: 'Calendário' } as Record<string, string>)[layout] || 'Cards'} · {zoom === 'day' ? 'Dia' : 'Mês'}</small><ChevronDown className="cc-roster-disclosure" aria-hidden="true"/></summary>
-      <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
-        <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
-          <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">CrewCheck AIMS</option><option value="calendar">Calendário</option>
-        </select></label>
-        <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards', 'month')} disabled={layout === 'cards' && zoom === 'month'}><RotateCcw aria-hidden="true"/> Restaurar padrão</button>
-      </section>
-
-      <section className="cc-roster-zoom" aria-label="Zoom da escala">
-        <div role="group" aria-label="Escolher período de leitura">
-          <button type="button" aria-pressed={zoom === 'month'} onClick={() => chooseZoom('month')}>Mês completo</button>
-          <button type="button" aria-pressed={zoom === 'day'} onClick={() => chooseZoom('day')}>Dia ampliado</button>
-        </div>
-        {zoom === 'day' && <label>Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
-      </section>
-    </details>
+    <div className="cc-roster-top-controls cc-roster-compact-actions">
+      <button type="button" className="cc-roster-options-trigger" aria-label="Exibir opções da escala" aria-haspopup="dialog" onClick={()=>optionsDialog.current?.showModal()}><SlidersHorizontal aria-hidden="true"/><span>Exibir</span></button>
+      {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
+    </div>
+    <dialog ref={optionsDialog} className="cc-roster-options-dialog" aria-labelledby="cc-roster-options-title">
+      <header><h2 id="cc-roster-options-title">Visualização</h2><button type="button" autoFocus aria-label="Fechar visualização" onClick={()=>optionsDialog.current?.close()}><X aria-hidden="true"/></button></header>
+    <section className="cc-roster-view-options cc-roster-view-toolbar" aria-label="Exibição da escala">
+      <div className="cc-roster-layout-buttons" role="group" aria-label="Formato da escala">
+        {([
+          {value:'cards',label:'Cards',name:'Cards',Icon:LayoutGrid},
+          {value:'list',label:'Lista',name:'Lista',Icon:List},
+          {value:'aims',label:'AIMS',name:'CrewCheck AIMS',Icon:FileText},
+          {value:'calendar',label:'Agenda',name:'Calendário',Icon:CalendarDays},
+        ] as const).map(({value,label,name,Icon})=><button key={value} type="button" data-roster-layout-choice={value} aria-label={`Formato ${label}${label!==name?` · ${name}`:''}`} aria-pressed={layout===value} onClick={()=>choose(value)}><Icon aria-hidden="true"/><span>{label}</span></button>)}
+      </div>
+      <div className="cc-roster-direct-period" role="group" aria-label="Escolher período de leitura">
+        <button type="button" aria-label="Mês completo" aria-pressed={zoom==='month'} onClick={()=>chooseZoom('month')}><CalendarDays aria-hidden="true"/><span>Mês</span></button>
+        <button type="button" aria-label="Dia ampliado" aria-pressed={zoom==='day'} onClick={()=>chooseZoom('day')}><Clock aria-hidden="true"/><span>Dia</span></button>
+        <button className="cc-roster-layout-reset" type="button" aria-label="Restaurar padrão" onClick={()=>choose('cards','month')} disabled={layout==='cards'&&zoom==='month'}><RotateCcw aria-hidden="true"/><span>Padrão</span></button>
+      </div>
+      {zoom === 'day' && <label className="cc-roster-direct-date">Dia da escala<input type="date" aria-label="Dia da escala" value={activeDay} min={`${selectedMonth}-01`} max={`${selectedMonth}-${new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)), 0).getDate()}`} onChange={event => { if (event.target.value.startsWith(`${selectedMonth}-`)) setSelectedDay(event.target.value); }}/></label>}
+    </section>
+    <div className="cz-roster-actions cc-share-entry"><a className="cc-roster-changes-link" href="?view=perdiem&fmode=allowance&fscreen=changes" aria-label="Alterações" title="Alterações"><GitCompareArrows size={18} aria-hidden="true"/></a><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
+      <button type="button" className="cc-roster-options-done" onClick={()=>optionsDialog.current?.close()}>Ver escala</button>
+    </dialog>
     <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
 
     {categoryFilter.filter !== 'all' && !visibleEvents.length && <div className="cc-roster-filter-empty"><p>Nenhum item deste filtro no período selecionado.</p><button type="button" onClick={categoryFilter.reset}>Mostrar tudo</button></div>}
-
-    {/* The eye (values only) sits beside the month summary instead of taking a row of its own. */}
-    <div className="cc-roster-finance-row"><FinancialPrivacyToggle iconOnly/><details className="cc-roster-finance-summary">
-      <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
-      <section className="cc-roster-hero-v1397">
-      <div className="cc-roster-hero-copy-v1397">
-        <h2>Resumo do mês</h2>
-        <p>Cada programação preserva os dados da escala e exibe somente o que foi calculado pelas regras financeiras configuradas.</p>
-        <div className="cc-roster-hero-counts-v1397">
-          <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
-          <span><Plane/><b>{flights}</b> voos</span>
-          <span><Hotel/><b>{stays}</b> pernoites</span>
-          <span><Clock/><b>{readableHours(dutyHours)}</b> em programação</span>
-        </div>
-      </div>
-      <div className="cc-roster-money-overview-v1397">
-        <button type="button" onClick={() => setView('perdiem')}>
-          <span><Utensils/> Diárias previstas</span>
-          <strong>{financeAvailable ? money(perDiemTotal) : 'Indisponível'}</strong>
-          <small>{financeAvailable ? (pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis') : 'Financeiro disponível somente para a competência operacional ativa'}</small>
-        </button>
-        <button type="button" onClick={() => setView('salary')}>
-          <span><Route/> Produção por KM</span>
-          <strong>{financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</strong>
-          <small>{financeAvailable ? `${totalKm.toLocaleString('pt-BR')} km estimados no mês` : 'Selecione a competência operacional ativa para ver a memória financeira'}</small>
-        </button>
-      </div>
-    </section>
-    </details></div>
 
     {unconfirmed.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada">
       <h2>Data não confirmada</h2>
@@ -392,10 +387,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
           <header className="cc-roster-day-header-v1397">
             <time dateTime={group.iso}><b>{group.iso.slice(8).padStart(2, '0')}</b><span>{new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, month: 'short' }).format(group.date!)}</span></time>
             <div><small>{new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, weekday: 'long' }).format(group.date!)}</small><h2>{group.events.length} {group.events.length === 1 ? 'programação' : 'programações'}</h2></div>
-            {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397" aria-label="Totais do dia, sem filtro de categoria">
-              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPerDiemTotal === null ? 'Não calculável' : groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
-              {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{scopedFinance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
-            </div>}
+
           </header>
 
           <div className="cc-roster-programs-v1397">
@@ -409,20 +401,20 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
               const eventPerDiems = perDiemForEvent(event);
               const earning = salaryByEvent.get(event.id);
 
-              return <article key={`${event.id}:${allOrdered.indexOf(event)}:${eventIndex}`} className="cc-roster-program-v1397 cc-roster-event-v1394 cc-roster-token" data-roster-mode={mode} data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''} data-roster-event-id={event.id}>
+              return <article key={`${event.id}:${allOrdered.indexOf(event)}:${eventIndex}`} className="cc-roster-program-v1397 cc-roster-event-v1394 cc-roster-token" data-roster-mode={mode} data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''} data-roster-event-id={event.id} aria-label={(mode === 'operating' || mode === 'extra') ? `${card.title} · ${card.context || 'Rota não informada'} · ${formatDate(rosterLabelDate(event))}` : undefined}>
                 <header className="cc-roster-program-head-v1397">
                   <span className="cc-roster-program-icon-v1397"><RosterActivityIcon mode={mode}/></span>
-                  <div><small>{carePresentation?.label || meta.label} · {formatDate(rosterLabelDate(event))}</small><h3>{card.title}</h3></div>
-                  {hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
+                  <div>{(mode === 'operating' || mode === 'extra')
+                    ? <><h3>{card.context || 'Rota não informada'}</h3><small>{card.title} · {meta.label}{rosterDisplayIso(event) !== group.iso && ` · ${formatDate(rosterLabelDate(event))}`}</small></>
+                    : <><small>{carePresentation?.label || meta.label} · {formatDate(rosterLabelDate(event))}</small><h3>{card.title}</h3></>}</div>
+                  {hours !== null && hours > 0 && <span className="cc-roster-duration-v1397"><Clock/><b>{readableHours(hours)}</b></span>}
                 </header>
-
-                <details className="cc-roster-source-code"><summary>Dados da fonte</summary><small className="cc-roster-published-code">Código da fonte: {card.code}</small></details>
-
+                {mode === 'rest' && rosterDisplaySortInstant(event) === null && <p>Data publicada; ordem no dia não confirmada.</p>}
                 {(mode === 'operating' || mode === 'extra') && <div className="cc-roster-flight-grid-v1397">
                   {card.presentation && <span><small>Apresentação</small><b>{card.presentation}</b></span>}
                   <span><small>Partida{card.startDate && ` · ${card.startDate}`}</small><b>{card.start}</b></span>
                   <span><small>Chegada{card.endDate && ` · ${card.endDate}`}</small><b>{card.end}</b></span>
-                  {event.subtitle && <span className="wide"><small>Detalhes da etapa</small><b>{event.subtitle}</b></span>}
+                  {card.detail && <span className="wide"><small>Detalhes da etapa</small><b>{card.detail}</b></span>}
                 </div>}
 
                 {!(mode === 'operating' || mode === 'extra') && <div className="cc-roster-flight-grid-v1397 cc-roster-program-time-grid-v1397" aria-label="Horários publicados da programação">
@@ -432,7 +424,9 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
 
                 {card.nonOperational && <p className="cc-roster-summary-v1397">{card.note}{card.context && ` · ${card.context}`}{card.hotel && ` · Hotel: ${card.hotel}`}</p>}
                 {card.datesUnconfirmed && <p>Virada de dia indicada; datas a confirmar.</p>}
-                {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${event.departure || 'Horário a confirmar'} → ${event.arrival || 'Horário a confirmar'}`}</p>}
+                {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${card.start === '—' ? 'Horário a confirmar' : card.start} → ${card.end === '—' ? 'Horário a confirmar' : card.end}`}</p>}
+
+                <details className="cc-roster-source-code"><summary>Dados da fonte</summary><small className="cc-roster-published-code">Código da fonte: {card.code}</small></details>
 
                 {(eventPerDiems.length > 0 || earning) && <section className="cc-roster-event-finance-v1397">
                   {eventPerDiems.length > 0 && <div className="cc-roster-meals-v1397">
@@ -460,6 +454,10 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
               </article>;
             })}
           </div>
+            {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397" aria-label="Totais do dia, sem filtro de categoria">
+              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPerDiemTotal === null ? 'Não calculável' : groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
+              {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{scopedFinance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
+            </div>}
         </section>;
       })}
 
@@ -472,8 +470,34 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <AimsRosterTable operationalEvents={allOrdered} events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
     </section>}
 
-    {/* A legenda original, perto do rodapé, é o único controle de filtro (Tudo reúne todas). */}
-    {ordered.length > 0 && <RosterLegend events={periodEvents} selected={categoryFilter.filter} onSelect={categoryFilter.choose} periodLabel={zoom === 'day' ? activeDay.split('-').reverse().join('/') : monthLabel(selectedMonth)}/>}
+    {/* The eye (values only) sits beside the month summary instead of taking a row of its own. */}
+    <div className="cc-roster-finance-row"><FinancialPrivacyToggle iconOnly/><details className="cc-roster-finance-summary">
+      <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
+      <section className="cc-roster-hero-v1397">
+      <div className="cc-roster-hero-copy-v1397">
+        <h2>Resumo do mês</h2>
+        <p>Cada programação preserva os dados da escala e exibe somente o que foi calculado pelas regras financeiras configuradas.</p>
+        <div className="cc-roster-hero-counts-v1397">
+          <span><CalendarDays/><b>{uniqueDays}</b> dias</span>
+          <span><Plane/><b>{flights}</b> voos</span>
+          <span><Hotel/><b>{stays}</b> pernoites</span>
+          <span className="cc-roster-duty-summary"><Clock/><b>{readableHours(dutyHours)}</b><small className="cc-roster-duty-coverage">{incompleteDutyTimes ? 'subtotal conhecido · Horários incompletos ou não reconciliados' : 'em programação'}</small></span>
+        </div>
+      </div>
+      <div className="cc-roster-money-overview-v1397">
+        <button type="button" onClick={() => setView('perdiem')}>
+          <span><Utensils/> Diárias previstas</span>
+          <strong>{financeAvailable ? money(perDiemTotal) : 'Indisponível'}</strong>
+          <small>{financeAvailable ? (pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis') : 'Financeiro disponível somente para a competência operacional ativa'}</small>
+        </button>
+        <button type="button" onClick={() => setView('salary')}>
+          <span><Route/> Produção por KM</span>
+          <strong>{financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</strong>
+          <small>{financeAvailable ? `${totalKm.toLocaleString('pt-BR')} km estimados no mês` : 'Selecione a competência operacional ativa para ver a memória financeira'}</small>
+        </button>
+      </div>
+    </section>
+    </details></div>
 
     {ordered.length > 0 && <footer className="cc-roster-estimate-note-v1397"><ShieldCheck/><p><strong>Estimativa conferível.</strong> Diárias e produção por KM usam as regras ACT, tarifas administrativas e dados aprendidos já configurados no CrewCheck. Não substituem o demonstrativo oficial.</p></footer>}
   </div>;

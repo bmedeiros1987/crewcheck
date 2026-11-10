@@ -234,6 +234,10 @@ function addDocumentFooter(doc: jsPDF, pageWidth: number, logo: string) {
   }
 }
 
+function pendingWindow(day: CrewRoster['days'][number]): boolean {
+  return (!day.dutyReport || !day.dutyDebrief) && (day.dutyReportSource === 'unknown' || day.dutyDebriefSource === 'unknown');
+}
+
 export async function exportReport(
   roster: CrewRoster,
   compliance: ComplianceResult,
@@ -325,16 +329,16 @@ export async function exportReport(
   const timelineData = roster.days.map((day) => {
     let details = '';
     if (day.type === 'VOO' && day.legs?.length) details = day.legs.map((leg) => `${leg.origin}-${leg.destination}`).join(', ');
-    else if (['HSB', 'HSBE'].includes(day.type)) details = `Sobreaviso ${day.dutyReport || ''} - ${day.dutyDebrief || ''}`;
-    else if (day.type === 'ASB') details = `Reserva aeroportuária ${day.dutyReport || ''} - ${day.dutyDebrief || ''}`;
+    else if (['HSB', 'HSBE'].includes(day.type)) details = pendingWindow(day) ? 'Sobreaviso · horário pendente (sem estação)' : `Sobreaviso ${day.dutyReport || ''} - ${day.dutyDebrief || ''}`;
+    else if (day.type === 'ASB') details = pendingWindow(day) ? 'Reserva aeroportuária · horário pendente (sem estação)' : `Reserva aeroportuária ${day.dutyReport || ''} - ${day.dutyDebrief || ''}`;
     else if (day.type === 'LAYOVER') details = `Pernoite ${day.hotel || ''}`.trim();
     else if (day.type === 'OFF') details = 'Folga / repouso';
     return [
       day.date,
       day.dayOfWeek,
       day.type,
-      day.dutyReport || '-',
-      day.dutyDebrief || '-',
+      day.dutyReport || (pendingWindow(day) ? 'pendente' : '-'),
+      day.dutyDebrief || (pendingWindow(day) ? 'pendente' : '-'),
       day.dutyHours ? `${day.dutyHours.toFixed(1)}h` : '-',
       details,
     ];
@@ -360,6 +364,16 @@ export async function exportReport(
   doc.addPage();
   drawContinuationHeader(doc, pageWidth, 'Planejamento de bem-estar', logo);
   y = sectionHeading(doc, 28, 'Planejamento de academia e bem-estar', COLOR.cyan);
+  // Dates with unknown availability get no suggested time; say so instead of leaving them silently out.
+  const pendingGymDates = compliance.loadAnalysis?.pendingAvailabilityDates || [];
+  if (pendingGymDates.length) {
+    text(doc, COLOR.muted);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const note = doc.splitTextToSize(`Sem sugestão em ${pendingGymDates.join(', ')}: disponibilidade pendente (horários sem estação).${compliance.loadAnalysis?.aggregateStatus === 'indeterminate' ? ' Carga da escala indeterminada.' : compliance.loadAnalysis?.aggregateStatus === 'partial' ? ' Indicadores de carga parciais.' : ''}`, pageWidth - 28);
+    doc.text(note, 14, y + 3);
+    y += 3 + note.length * 4.2;
+  }
   if (gymRecommendations.length) {
     const gymData = gymRecommendations.map((recommendation) => {
       const status = recommendation.availability === 'ideal' ? 'IDEAL'

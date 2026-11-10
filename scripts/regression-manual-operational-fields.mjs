@@ -12,7 +12,7 @@ try {
  const proof=(value)=>({version:1,value,sourceObservedAt:observed,provenance:'synthetic-source-field'});
  const radar={ok:true,flight:event.flightNumber,sourceOrigin:event.origin,sourceDestination:event.destination,scheduledDepartureUtc:event.canonical.startDateTime,updatedAt:received,gate:'17',status:'Embarcando',registration:'PR-XYZ',terminal:'2',operationalEvidence:{gate:proof('17'),status:proof('Embarcando'),registration:proof('PR-XYZ')}};
  let info=resolve();assert.equal(info.status,'');assert.equal(info.gate,'');assert.equal(info.statusSource,null);assert.equal(info.plannedStatus,'Programado');assert.equal(info.plannedGate,'24');assert.equal(m.gateDisplay(info),'Não confirmado');
- assert.equal(resolve({...radar,operationalEvidence:undefined}).gate,'');assert.equal(resolve({...radar,operationalEvidence:undefined}).status,'');assert.equal(resolve({...radar,operationalEvidence:undefined}).registration,'');
+ {const reported=resolve({...radar,operationalEvidence:undefined});assert.equal(reported.gate,'17','reported gate without observation');assert.equal(reported.gateSource,'reported');}assert.equal(resolve({...radar,operationalEvidence:undefined}).status,'');assert.equal(resolve({...radar,operationalEvidence:undefined}).registration,'');
  for(const patch of [{flight:''},{sourceOrigin:''},{sourceDestination:''},{flight:'OTHER1'},{sourceOrigin:'REC'},{scheduledDepartureUtc:'2032-10-20T13:30:00Z'},{updatedAt:now+1},{updatedAt:now-31*60000}]) {
   info=resolve({...radar,...patch});assert.equal(info.status,'');assert.equal(info.gate,'');assert.equal(info.registration,'');assert.equal(info.terminal,'');
  }

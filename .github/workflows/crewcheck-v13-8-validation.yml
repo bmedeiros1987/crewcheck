@@ -102,7 +102,7 @@ jobs:
         run: docker stop crewcheck-notification-qa || true
   emergency-browser:
     name: SOS authenticated recovery browser fixtures
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -209,6 +209,7 @@ jobs:
           node scripts/regression-web-push-offline.mjs
           node scripts/regression-web-push-provider.mjs
           node scripts/regression-web-push-api.mjs
+          node scripts/regression-trusted-app-origin.mjs
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-wakeup-call-delivery.mjs
@@ -271,6 +272,7 @@ jobs:
           node scripts/regression-web-push-offline.mjs
           node scripts/regression-web-push-provider.mjs
           node scripts/regression-web-push-api.mjs
+          node scripts/regression-trusted-app-origin.mjs
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-wakeup-call-delivery.mjs

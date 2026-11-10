@@ -53,11 +53,14 @@ export function createInfobipWhatsAppApplicationHost(options={}) {
   if(starting)return servingListener===listener?starting:Promise.reject(unavailable());
   listener=servingListener;
   starting=Promise.resolve().then(async()=>{
+   let stage='policy';
    try{
     if(closed)throw unavailable();
     const policy=options.policy??JSON.parse(environment.CREWCHECK_INFOBIP_WHATSAPP_POLICY);
-    if(policy.version!==1||policy.ingress?.mode!=='render-managed-hmac'||
-       environment.RENDER_SERVICE_ID!==policy.ingress.serviceId)throw unavailable();
+    if(policy.version!==1||policy.ingress?.mode!=='render-managed-hmac')throw unavailable();
+    stage='deployment-binding';
+    if(environment.RENDER_SERVICE_ID!==policy.ingress.serviceId)throw unavailable();
+    stage='host-preflight';
     host=createInfobipWhatsAppHost({enabled:true,ingress:policy.ingress,lifecycle,
      load:async()=>({configuration:policy.configuration,admission:policy.admission,
       credentials:credentialProvider(environment,options.matchesLinkKey??matchesCanonicalWhatsAppLinkSecret),
@@ -66,7 +69,7 @@ export function createInfobipWhatsAppApplicationHost(options={}) {
     const health=await host.start(listener);
     if(closed||health.ready!==true)throw unavailable();
     return health;
-   }catch{throw unavailable();}
+   }catch{const error=unavailable();error.stage=stage;throw error;}
   });return starting;
  };
  return Object.freeze({start,health:()=>host?.health()??held.health(),

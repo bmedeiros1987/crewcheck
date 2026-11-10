@@ -19,3 +19,5 @@ html body #root .cz-app[data-version] .cc-alert-center .cc-alert-actions button{
 html body #root .cz-app[data-version] .cc-alert-center .cc-alert-actions button:first-child{background:var(--cc-review-text,var(--cc-text))!important;color:var(--cc-review-surface,var(--cc-surface))!important}
 
 .cc-alert-center{font-size:calc(1rem * var(--cc-text-scale,1))}.cc-alert-card h2{font-size:calc(1.05rem * var(--cc-text-scale,1))}
+.cc-alert-card .cc-alert-dates{margin:10px 0 0;font-variant-numeric:tabular-nums}
+.cc-alert-card .cc-alert-dates strong{font-weight:650}

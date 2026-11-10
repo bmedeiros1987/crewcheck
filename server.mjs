@@ -1,9 +1,11 @@
+import { radarAttemptDiagnostics } from './server/radar-attempt-diagnostics.mjs';
 import { runCiriumFlightAwareSequence, sequentialRadarProjection } from './server/radar-sequential.mjs';
 import { configureRadarPaidSources } from './server/radar-paid-sources.mjs';
 import { formatWeatherNoticeDetails } from './shared/weatherNoticeDetails.mjs';
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
 import { customGateSourceUpdate } from './server/gate-source-update.mjs';
-import { radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS, retainAgreeingRadarGateProof } from './shared/radar-field-evidence.mjs';
+import { selectAeroDataBoxOccurrence } from './server/aerodatabox-occurrence.mjs';
+import { radarOperationalConflicts, radarFieldEvidenceGaps, verifiedRadarFields, radarEvidenceGapLabel, RADAR_FIELD_FRESH_MS, retainAgreeingRadarGateProof } from './shared/radar-field-evidence.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
@@ -73,6 +75,8 @@ function publicRadarPayload(item = {}, now = Date.now()) {
     gate: firstKnown(item.gate),
     terminal: firstKnown(item.terminal),
     departure: firstKnown(item.departure),
+    // Public key of the answering source, so the app can name a reported gate.
+    ...(['flightaware', 'custom', 'aviationstack', 'airlabs', 'aerodatabox', 'cirium-sky', 'cirium-flex'].includes(item.provider) ? { provider: item.provider } : {}),
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
     ...(item.gateEvidenceReceivedAt !== undefined ? { gateEvidenceReceivedAt: item.gateEvidenceReceivedAt } : {}),
@@ -110,13 +114,32 @@ function scoreRadar(item = {}, ctx = {}) {
   if (item.cancelled) score += 8;
   return Math.max(0, Math.min(100, score));
 }
-async function jsonFetch(url, options = {}, timeoutMs = 2200) {
+async function jsonFetch(url, options = {}, timeoutMs = 2200, radarProvider = '', identity) {
+  const tracked = ['flightaware','custom','aviationstack','airlabs','aerodatabox'].includes(radarProvider);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let reported = false;
+  const report = value => {
+    if (tracked && !reported) { reported = true; radarAttemptDiagnostics.result(radarProvider, value, radarResultDecision(value, identity, Date.now())); }
+    return value;
+  };
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    const payload = await response.json().catch(() => null);
-    return { response, payload };
+    if (tracked) radarAttemptDiagnostics.transport(radarProvider, 'attempt');
+    let response;
+    try { response = await fetch(url, { ...options, signal: controller.signal }); }
+    catch (error) {
+      if (tracked) { radarAttemptDiagnostics.transport(radarProvider, controller.signal.aborted ? 'timeout' : 'transport'); noteProviderError(radarProvider); }
+      throw error;
+    }
+    if (tracked) {
+      radarAttemptDiagnostics.transport(radarProvider, 'http', response.status);
+      markProvider(radarProvider, response.ok, response.status);
+    }
+    const payload = await response.json().catch((error) => {
+      if (tracked) { radarAttemptDiagnostics.transport(radarProvider, controller.signal.aborted ? 'timeout' : error?.name === 'SyntaxError' ? 'invalid-json' : 'transport'); noteProviderError(radarProvider); }
+      return null;
+    });
+    return { response, payload, report };
   } finally {
     clearTimeout(timer);
   }
@@ -127,14 +150,22 @@ function providerAvailable(name, keys) {
   const state = radarHealth.get(name);
   if (!state) return true;
   const now = Date.now();
-  if (state.lastOk && now - state.lastOk < 10 * 60_000) return true;
+  // An already in-flight success cannot cancel the fixed failure cooldown.
   if (state.lastFail && now - state.lastFail < 30_000) return false;
   return true;
 }
-function markProvider(name, ok) {
+function markProvider(name, ok, httpStatus) {
   const state = radarHealth.get(name) || {};
   if (ok) state.lastOk = Date.now();
   else state.lastFail = Date.now();
+  if (Number.isInteger(httpStatus)) state.lastHttpStatus = httpStatus;
+  radarHealth.set(name, state);
+}
+// Admin diagnostics only: whether each source was actually called and how it answered.
+function noteProviderError(name) {
+  const state = radarHealth.get(name) || {};
+  state.lastError = Date.now();
+  state.lastFail = state.lastError;
   radarHealth.set(name, state);
 }
 function normalizeFlightAwareFlight(row = {}, ctx) {
@@ -142,7 +173,7 @@ function normalizeFlightAwareFlight(row = {}, ctx) {
     ok: true,
     configured: true,
     flight: firstKnown(row.ident, row.fa_flight_id),
-    status: firstKnown(row.status, row.cancelled ? 'Cancelado' : '', row.progress_percent === 100 ? 'Finalizado' : '', 'Monitorando'),
+    status: firstKnown(row.status, row.cancelled ? 'Cancelado' : '', row.progress_percent === 100 ? 'Finalizado' : ''),
     gate: firstKnown(row.gate_origin, row.departure_gate),
     terminal: firstKnown(row.terminal_origin, row.departure_terminal),
     scheduledDepartureUtc: firstKnown(row.scheduled_out, row.filed_departure_time),
@@ -166,10 +197,10 @@ async function providerFlightAware(ctx, timeoutMs) {
   if (!key || !providerAvailable('flightaware', ['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY'])) return null;
   const started = Date.now();
   const url = `https://aeroapi.flightaware.com/aeroapi/flights/${encodeURIComponent(ctx.flightAware)}?max_pages=1`;
-  const { response, payload } = await jsonFetch(url, { headers: { accept: 'application/json', 'x-apikey': key } }, timeoutMs);
+  const { response, payload, report = value => value } = await jsonFetch(url, { headers: { accept: 'application/json', 'x-apikey': key } }, timeoutMs, 'flightaware', ctx?.gateQueryEvidence);
   if (!response.ok) {
-    markProvider('flightaware', false);
-    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' };
+    markProvider('flightaware', false, response.status);
+    return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' });
   }
   const sourceFlights = Array.isArray(payload?.flights) ? payload.flights : [];
   // Reuse #1143's response-owned occurrence filter on the existing production path.
@@ -178,23 +209,23 @@ async function providerFlightAware(ctx, timeoutMs) {
   const row = flights.find((item) => !item.cancelled && !item.actual_in) || flights[0];
   if (!row) {
     // Successful no-data/ambiguity is not a provider outage.
-    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
+    return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' });
   }
   markProvider('flightaware', true);
-  return { ...normalizeFlightAwareFlight(row, ctx), latencyMs: Date.now() - started };
+  return report({ ...normalizeFlightAwareFlight(row, ctx), latencyMs: Date.now() - started });
 }
 async function providerCustom(ctx, timeoutMs, origin, destination) {
   const template = envAny(['CREWCHECK_FLIGHT_STATUS_URL']);
-  if (!template) return null;
+  if (!template || !providerAvailable('custom', ['CREWCHECK_FLIGHT_STATUS_URL'])) return null;
   const started = Date.now();
   const apiUrl = template
     .replaceAll('{flight}', encodeURIComponent(ctx.iata || ctx.raw))
     .replaceAll('{flight_icao}', encodeURIComponent(ctx.icao || ctx.raw))
     .replaceAll('{origin}', encodeURIComponent(origin || ''))
     .replaceAll('{destination}', encodeURIComponent(destination || ''));
-  const { response, payload } = await jsonFetch(apiUrl, { headers: { accept: 'application/json' } }, timeoutMs);
-  if (!response.ok) return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte configurável sem dados agora.' };
-  return {
+  const { response, payload, report = value => value } = await jsonFetch(apiUrl, { headers: { accept: 'application/json' } }, timeoutMs, 'custom', ctx?.gateQueryEvidence);
+  if (!response.ok) return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte configurável sem dados agora.' });
+  return report({
     ok: true,
     configured: true,
     flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao),
@@ -211,25 +242,25 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     registration: firstKnown(payload?.registration, payload?.aircraft?.registration),
     latencyMs: Date.now() - started,
     message: 'Radar atualizado.',
-  };
+  });
 }
 async function providerAviationstack(ctx, timeoutMs) {
   const key = envAny(['AVIATIONSTACK_API_KEY']);
   if (!key || !providerAvailable('aviationstack', ['AVIATIONSTACK_API_KEY'])) return null;
   const started = Date.now();
   const url = `https://api.aviationstack.com/v1/flights?access_key=${encodeURIComponent(key)}&flight_iata=${encodeURIComponent(ctx.iata)}`;
-  const { response, payload } = await jsonFetch(url, { headers: { accept: 'application/json' } }, timeoutMs);
+  const { response, payload, report = value => value } = await jsonFetch(url, { headers: { accept: 'application/json' } }, timeoutMs, 'aviationstack', ctx?.gateQueryEvidence);
   if (!response.ok) {
-    markProvider('aviationstack', false);
-    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
+    markProvider('aviationstack', false, response.status);
+    return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' });
   }
   const row = Array.isArray(payload?.data) ? payload.data[0] : null;
   if (!row) {
     markProvider('aviationstack', false);
-    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
+    return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' });
   }
   markProvider('aviationstack', true);
-  return {
+  return report({
     ok: true,
     configured: true,
     flight: firstKnown(row.flight?.iata, row.flight?.icao),
@@ -245,28 +276,33 @@ async function providerAviationstack(ctx, timeoutMs) {
     registration: firstKnown(row.aircraft?.registration),
     latencyMs: Date.now() - started,
     message: 'Radar atualizado.',
-  };
+  });
 }
 async function providerAirLabs(ctx, timeoutMs) {
   const key = envAny(['AIRLABS_API_KEY']);
   if (!key || !providerAvailable('airlabs', ['AIRLABS_API_KEY'])) return null;
   const started = Date.now();
   const url = `https://airlabs.co/api/v9/flight?flight_iata=${encodeURIComponent(ctx.iata)}&api_key=${encodeURIComponent(key)}`;
-  const { response, payload } = await jsonFetch(url, { headers: { accept: 'application/json' } }, timeoutMs);
+  const { response, payload, report = value => value } = await jsonFetch(url, { headers: { accept: 'application/json' } }, timeoutMs, 'airlabs', ctx?.gateQueryEvidence);
   if (!response.ok || payload?.error) {
-    markProvider('airlabs', false);
-    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
+    markProvider('airlabs', false, response.status);
+    return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' });
   }
   const row = payload?.response || payload;
   markProvider('airlabs', true);
-  return {
+  // Only the explicitly UTC-named field can omit its zone suffix. Never
+  // reinterpret dep_time (origin-local), estimated or actual clocks as UTC.
+  const namedUtc = typeof row.dep_time_utc === 'string' ? row.dep_time_utc.trim() : row.dep_time_utc;
+  const scheduledUtc = typeof namedUtc === 'string' && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/.test(namedUtc)
+    ? namedUtc.replace(' ', 'T') + 'Z' : namedUtc;
+  return report({
     ok: true,
     configured: true,
     flight: firstKnown(row.flight_iata, row.flight_icao),
     status: firstKnown(row.status, 'Monitorando'),
     gate: firstKnown(row.dep_gate),
     terminal: firstKnown(row.dep_terminal),
-    scheduledDepartureUtc: firstKnown(row.dep_time_utc, row.dep_time),
+    scheduledDepartureUtc: firstKnown(scheduledUtc, row.dep_time),
     departure: firstKnown(row.dep_estimated, row.dep_actual, row.dep_time),
     arrival: firstKnown(row.arr_estimated, row.arr_actual, row.arr_time),
     origin: firstKnown(row.dep_iata, row.dep_icao),
@@ -275,7 +311,7 @@ async function providerAirLabs(ctx, timeoutMs) {
     registration: firstKnown(row.reg_number),
     latencyMs: Date.now() - started,
     message: 'Radar atualizado.',
-  };
+  });
 }
 async function providerAeroDataBox(ctx, timeoutMs) {
   const key = envAny(['AERODATABOX_API_KEY']);
@@ -284,18 +320,19 @@ async function providerAeroDataBox(ctx, timeoutMs) {
   const host = envAny(['AERODATABOX_RAPIDAPI_HOST']) || 'aerodatabox.p.rapidapi.com';
   const template = envAny(['AERODATABOX_URL_TEMPLATE']) || `https://${host}/flights/number/{flight}?withAircraftImage=false&withLocation=false`;
   const apiUrl = template.replaceAll('{flight}', encodeURIComponent(ctx.iata)).replaceAll('{flight_icao}', encodeURIComponent(ctx.icao));
-  const { response, payload } = await jsonFetch(apiUrl, { headers: { accept: 'application/json', 'x-rapidapi-key': key, 'x-rapidapi-host': host } }, timeoutMs);
+  const { response, payload, report = value => value } = await jsonFetch(apiUrl, { headers: { accept: 'application/json', 'x-rapidapi-key': key, 'x-rapidapi-host': host } }, timeoutMs, 'aerodatabox', ctx?.gateQueryEvidence);
   if (!response.ok) {
-    markProvider('aerodatabox', false);
-    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' };
+    markProvider('aerodatabox', false, response.status);
+    return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional sem resposta agora.' });
   }
-  const row = Array.isArray(payload) ? payload[0] : Array.isArray(payload?.items) ? payload.items[0] : payload;
+  const row = selectAeroDataBoxOccurrence(payload, ctx.gateQueryEvidence);
   if (!row) {
-    markProvider('aerodatabox', false);
-    return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
+    // A valid response without this exact occurrence is not a provider failure:
+    // backing off here would skip AeroDataBox for every other flight.
+    return report({ ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' });
   }
   markProvider('aerodatabox', true);
-  return {
+  return report({
     ok: true,
     configured: true,
     flight: firstKnown(row.number, row.flightNumber),
@@ -311,7 +348,7 @@ async function providerAeroDataBox(ctx, timeoutMs) {
     registration: firstKnown(row.aircraft?.reg),
     latencyMs: Date.now() - started,
     message: 'Radar atualizado.',
-  };
+  });
 }
 function configuredProviders() {
   return [
@@ -360,11 +397,11 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
   const providers = [
-    () => providerFlightAware(ctx, timeoutMs),
-    () => providerCustom(ctx, timeoutMs, origin, destination),
-    () => providerAviationstack(ctx, timeoutMs),
-    () => providerAirLabs(ctx, timeoutMs),
-    () => providerAeroDataBox(ctx, timeoutMs),
+    ['flightaware', () => providerFlightAware(ctx, timeoutMs)],
+    ['custom', () => providerCustom(ctx, timeoutMs, origin, destination)],
+    ['aviationstack', () => providerAviationstack(ctx, timeoutMs)],
+    ['airlabs', () => providerAirLabs(ctx, timeoutMs)],
+    ['aerodatabox', () => providerAeroDataBox(ctx, timeoutMs)],
   ];
   const results = [];
   let settled = false;
@@ -380,15 +417,15 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
         return;
       }
-      const operationalConflicts = ['gate', 'status', 'registration'].filter(field =>
-        new Set(okResults.map(row => String(row[field] || '').trim().toUpperCase()).filter(Boolean)).size > 1);
+      const operationalConflicts = radarOperationalConflicts(okResults);
       resolve(publicRadarPayload(retainAgreeingRadarGateProof({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }, okResults, evidence, Date.now())));
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;
-    providers.forEach((run) => {
+    providers.forEach(([provider, run]) => {
       run().then((raw) => {
         if (raw) {
+          raw = { ...raw, provider: raw.provider || provider };
           const sourceDecision = radarResultDecision(raw,evidence,Date.now());
           if (raw.ok && !sourceDecision.allowed) { results.push(gateQuerySuppressed(sourceDecision)); return; }
           raw = {...raw,sourceReceivedAt:raw.sourceReceivedAt ?? Date.now(),gate:raw.ok ? raw.gate : ''};
@@ -402,6 +439,7 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
           }
         }
       }).catch(() => {
+        if (typeof noteProviderError === 'function') noteProviderError(provider);
         results.push({ ok: false, configured: true, latencyMs: Date.now() - started, quality: 0, message: 'Fonte operacional sem resposta agora.' });
       }).finally(() => {
         pending -= 1;
@@ -422,22 +460,31 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
   const authorityCurrent = () => { const user=telegramRequestUser(req,{email:url.searchParams.get('email') || '',name:url.searchParams.get('name') || '',conciergeKey:url.searchParams.get('conciergeKey') || ''}); return telegramAppRequestAllowed(user) && conciergeSafeKey(user.email) === email && user.authenticated === radarUser.authenticated && user.accessKeyHash === radarUser.accessKeyHash; };
   const profile = { email, name: radarUser.name || '', authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
+  const occurrenceRequest = { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' };
   const loadAuthority = async () => {
-    if (!email) return null;
+    if (!email || !authorityCurrent()) return null;
     const snapshot = await conciergeLoadSnapshot(profile);
+    if (!authorityCurrent()) return null;
     if (snapshot?.roster) {
       if (!conciergeAccessMatches(profile, snapshot) || conciergeSafeKey(snapshot.email || snapshot.key || '') !== email || (snapshot.key && conciergeSafeKey(snapshot.key) !== email)) return null;
-      return { kind:'concierge', snapshot, roster:snapshot.roster, id:'', revision:'' };
+      if (authority?.kind === 'concierge' || findPublishedGateOccurrence(snapshot.roster, occurrenceRequest, buildCanonicalRosterEvents(snapshot.roster)))
+        return { kind:'concierge', snapshot, roster:snapshot.roster, id:'', revision:'' };
     }
-    if (!profile.authenticated) return null;
+    if (!profile.authenticated || !authorityCurrent()) return null;
     const active = await loadOwnedPlatformRoster(req, email);
-    return active ? { ...active, kind:'platform', snapshot:null } : null;
+    if (!authorityCurrent() || !active) return null;
+    const activeOccurrence = findPublishedGateOccurrence(active.roster, occurrenceRequest, buildCanonicalRosterEvents(active.roster));
+    const activePeriod = `${Number(active.roster.year)}-${String(Number(active.roster.month)).padStart(2, '0')}`;
+    if (activeOccurrence?.publishedDate.slice(0, 7) === activePeriod)
+      return { ...active, kind:'platform', snapshot:null };
+    const publication = await loadOwnedPlatformRoster(req, email, occurrenceRequest, buildCanonicalRosterEvents);
+    return authorityCurrent() && publication ? { ...publication, kind:'platform', snapshot:null } : null;
   };
   let authority;
   try { authority = await loadAuthority(); }
   catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
   ctx.gateQueryEvidence = authority
-    ? findPublishedGateOccurrence(authority.roster, { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' }, buildCanonicalRosterEvents(authority.roster)) : null;
+    ? findPublishedGateOccurrence(authority.roster, occurrenceRequest, buildCanonicalRosterEvents(authority.roster)) : null;
   if (!authorityCurrent()) return sendJson(res,200,{...gateQuerySuppressed({reason:'account-unverified'}),exportedToConcierge:false});
   const queryDecision = gateQueryDay(ctx.gateQueryEvidence);
   if (!queryDecision.allowed) return sendJson(res, 200, { ...gateQuerySuppressed(queryDecision), exportedToConcierge: false });
@@ -454,6 +501,8 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
     ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
   }
+  if (authority.kind === 'platform' && !await ctx.radarReadAdmission())
+    return sendJson(res, 200, { ...gateQuerySuppressed({reason: authorityCurrent() && gateQueryDay(ctx.gateQueryEvidence).allowed ? 'response-occurrence-changed' : 'response-context-expired'}), exportedToConcierge:false });
   const payload = await runRadarRace(ctx, origin, destination);
   if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
   if (payload.querySuppressed || (payload.provider === 'cirium-sky' && payload.radarRouting !== 'cirium-flightaware-v1')) return sendJson(res, 200, { ...payload, exportedToConcierge: false });
@@ -461,9 +510,9 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   let currentAuthority;
   try { currentAuthority = await loadAuthority(); }
   catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
-  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed || !currentAuthority)
+  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed)
     return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
-  if (currentAuthority.kind !== authority.kind || currentAuthority.id !== authority.id || currentAuthority.revision !== authority.revision)
+  if (!currentAuthority || currentAuthority.kind !== authority.kind || currentAuthority.id !== authority.id || currentAuthority.revision !== authority.revision)
     return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
   const info = findPublishedGateLeg(currentAuthority.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(currentAuthority.roster));
   if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
@@ -477,13 +526,23 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
   return sendJson(res, 200, { ...payload, exportedToConcierge });
 }
+function radarHealthAdmin(req) {
+  try { const payload = cc1371Verify(cc1371RequestToken(req)); return Boolean(payload?.admin || cc1371IsAdmin(payload?.email)); }
+  catch { return false; }
+}
 function handleRadarHealth(req, res) {
   const configured = configuredProviders();
+  const iso = at => Number.isFinite(at) ? new Date(at).toISOString() : null;
   return sendJson(res, 200, {
     ok: configured.some((item) => item.available),
     configured: configured.filter((item) => item.available).length,
     message: configured.some((item) => item.available) ? 'Fontes configuradas para teste automático.' : 'Nenhuma fonte de radar configurada.',
     timeoutMs: Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400),
+    // Admin only, since the last restart: configured flag and call outcomes, never keys or flights.
+    ...(radarHealthAdmin(req) ? { attemptDiagnostics: radarAttemptDiagnostics.snapshot(), providers: configured.map(({ key, available }) => {
+      const state = radarHealth.get(key) || {};
+      return { key, configured: Boolean(available), lastOkAt: iso(state.lastOk), lastFailAt: iso(state.lastFail), lastHttpStatus: state.lastHttpStatus ?? null, lastErrorAt: iso(state.lastError) };
+    }) } : {}),
   });
 }
 

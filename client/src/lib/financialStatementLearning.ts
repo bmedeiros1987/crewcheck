@@ -1,4 +1,5 @@
 import { draftPayrollDsrEvidence, validPayrollDsrEvidence, payrollDsrContext, type PayrollDsrEvidence } from './payrollDsrEvidence';
+import {reconcileAllowanceOccurrences,type AllowanceReconciliation} from './allowanceStatementReconciliation';
 import { extractPrivatePayroll, type PayrollPage, type PrivatePayrollExtraction, type PayrollSourceOrigin } from './privatePayrollExtraction';
 import { getStoredUser, getToken } from './authClient';
 import { payrollMonthBounds, payrollCompetences, PAYROLL_CYCLE_SOURCE } from './financialPayrollPeriods';
@@ -30,6 +31,7 @@ export interface LearnedRate {
 }
 
 export interface StatementLearningResult {
+  allowanceReconciliation?:AllowanceReconciliation;
   payrollDsrDraft?: PayrollDsrEvidence;
   payrollExtraction?: PrivatePayrollExtraction;
   kind: StatementKind;
@@ -94,7 +96,7 @@ export function detectFinancialStatement(text: string): StatementKind | null {
   return null;
 }
 
-export function learnPerDiemStatement(text: string, sourceDocument: string): StatementLearningResult {
+export function learnPerDiemStatement(text: string, sourceDocument: string,pages?:readonly PayrollPage[]): StatementLearningResult {
   const period = text.match(/De\s+(\d{4}-\d{2}-\d{2})\s+at[eé]\s+(\d{4}-\d{2}-\d{2})/i);
   const paymentDates = new Set<string>();
   let invalidPaymentDate = false;
@@ -109,19 +111,10 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   const end = period?.[2] || '';
   const fp = fingerprint(text);
   const observations = new Map<string, number[]>();
-  const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper', TAXI: 'taxi' };
-  const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  let invalidRate = false;
-  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA|TAXI)\b[^\n\r]{0,40}?R\$[^\S\n\r]*([^\s;:()]+)/gi)) {
-    const key = aliases[match[1].toUpperCase()];
-    const token = match[2];
-    const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
-    const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
-    if (!strict || !Number.isSafeInteger(cents) || cents < 0) { invalidRate = true; continue; }
-    const values = observations.get(key) || [];
-    values.push(cents / 100);
-    observations.set(key, values);
-  }
+  const occurrencePages=pages||text.split('\f').map((text,index)=>({text,page:index+1,origin:'document-logical' as const}));
+  const dated=reconcileAllowanceOccurrences(occurrencePages,start,end,null);
+  const invalidRate = dated.state==='conflict';
+  for(const row of dated.unitCandidates){const values=observations.get(row.rubric)||[];values.push(row.amountMinor/100);observations.set(row.rubric,values);}
   const rates: LearnedRate[] = [];
   const conflictingMeals: string[] = [];
   for (const [key, values] of observations) {
@@ -172,7 +165,9 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   if (invalidDepositedTotal) warnings.push('Total depositado com formato inválido; revisão obrigatória.');
   if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
   const deposited = !paymentIssue && !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
-  return { kind: 'per_diem', competence: start.slice(0, 7), periodStart: start || undefined, periodEnd: end || undefined, paymentDate, rates, totals: deposited === undefined ? {} : { deposited }, warnings };
+  const allowanceReconciliation=reconcileAllowanceOccurrences(occurrencePages,start,end,deposited===undefined?null:[...depositedTotals][0]);
+  if(['mismatch','conflict'].includes(allowanceReconciliation.state))warnings.push('Conciliação das ocorrências de diárias divergente; revisão obrigatória.');
+  return { kind: 'per_diem', competence: start.slice(0, 7), periodStart: start || undefined, periodEnd: end || undefined, paymentDate, rates, totals: deposited === undefined ? {} : { deposited }, warnings,allowanceReconciliation };
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [
@@ -297,7 +292,7 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
 
 export function learnFinancialStatement(text: string, sourceDocument: string, pages?: readonly PayrollPage[]): StatementLearningResult {
   const kind = detectFinancialStatement(text);
-  if (kind === 'per_diem') return learnPerDiemStatement(text, sourceDocument);
+  if (kind === 'per_diem') return learnPerDiemStatement(text, sourceDocument,pages);
   if (kind === 'payroll') return learnPayrollStatement(text, sourceDocument, pages);
   throw new Error('O arquivo não foi reconhecido como demonstrativo de diárias ou de pagamento.');
 }

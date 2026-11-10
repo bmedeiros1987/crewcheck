@@ -23,6 +23,7 @@ function flightDate(info: NextFlightGateInfo): string {
 export function gateSourceLabel(info: NextFlightGateInfo): string {
   if (info.gateSource === 'manual') return `${info.manual?.sourceReview?.action === 'accept' ? 'Aceito' : 'Informado'} por ${info.manual?.author || 'você'} em ${sourceGateUpdateLabel(info.manual?.setAtEpochMs || 0)}`;
   if (info.gateSource === 'radar') return `Fonte operacional · resposta recebida ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'}`;
+  if (info.gateSource === 'reported') return `Informado por ${info.reportedProvider} · recebido ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'} · sem hora de observação; confirme no painel do aeroporto`;
   if (info.gateSource === 'roster') return 'Escala publicada';
   return 'Portão automático ainda não confirmado';
 }
@@ -78,12 +79,13 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
       {info.manualGateUnlinked && <span role="note">Portão informado anteriormente preservado. Confirme o vínculo com este horário de voo no editor.</span>}
       {Boolean(info.operationalConflicts?.length) && <span role="note">Há divergência nos dados operacionais. Valores manuais foram preservados; dados automáticos conflitantes não confirmam a informação.</span>}
       {info.divergence && <span className="cc-next-gate-divergence" role="note">
-        {info.manualReview.state === 'newer' ? 'Possível mudança. ' : info.manualReview.state === 'kept' ? 'Manual mantido. ' : ''}Você informou {info.divergence.manualGate}; {info.divergence.source === 'radar' ? 'o Radar' : 'a escala'} indica {info.divergence.sourceGate}. {info.manualReview.state === 'kept' ? 'Essa atualização já foi revisada.' : info.manualReview.state === 'newer' ? 'Abra os detalhes para aceitar ou manter.' : 'Atualização posterior não comprovada; confirme no aeroporto.'}
+        {info.manualReview.state === 'newer' ? 'Possível mudança. ' : info.manualReview.state === 'kept' ? 'Manual mantido. ' : ''}Você informou {info.divergence.manualGate}; {info.divergence.source === 'radar' ? 'o Radar' : info.divergence.source === 'reported' ? info.reportedProvider : 'a escala'} indica {info.divergence.sourceGate}. {info.manualReview.state === 'kept' ? 'Essa atualização já foi revisada.' : info.manualReview.state === 'newer' ? 'Abra os detalhes para aceitar ou manter.' : 'Atualização posterior não comprovada; confirme no aeroporto.'}
       </span>}
       <span className="cc-next-gate-source">
         {info.stale && <b className="cc-next-gate-stale"><Clock aria-hidden="true"/> Desatualizado</b>}
         {info.gateSource === 'manual' && <span>Portão manual</span>}
         {info.gateSource === 'radar' && <span>Portão · fonte operacional</span>}
+        {info.gateSource === 'reported' && <span className="cc-next-gate-reported">Portão informado por {info.reportedProvider} · a confirmar</span>}
         {info.gateSource === 'roster' && <span>Portão · escala publicada</span>}
         {info.statusSource && <span>Status · {info.statusSource === 'manual' ? 'manual' : 'fonte operacional'}</span>}
         <span className="cc-next-gate-disclosure">{open ? 'Fechar detalhes' : 'Ver detalhes'}</span>

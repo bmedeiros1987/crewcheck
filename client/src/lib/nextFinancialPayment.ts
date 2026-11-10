@@ -1,6 +1,6 @@
-import { observedAllowancePeriods, rowsInObservedCycle, summarizeNativeForecastRows } from './financialForecastPeriods';
+import { observedAllowancePeriods, rowsInObservedCycle, summarizeNativeForecastRows, allowancePendingInRange } from './financialForecastPeriods';
 import { rosterOperationalIso, observedStatementCycle, rosterOperationalDateAt } from './compensationPolicy';
-import { financialMonths, validFinancialDay, type FinancialRange } from './financialHistoryPeriods';
+import { financialMonths, validFinancialDay, financialDayCoverage, allowanceSourceRange, type FinancialRange } from './financialHistoryPeriods';
 import {spBankDay} from '../../../shared/spBankCalendar2026.mjs';
 
 export type PaymentLine = { iso: string; label: string; currency: string; value: number | null; source: string; partial?:boolean;pendingReason?:string;expectedPaymentDate?:string;expectedPaymentTimezone?:string };
@@ -31,14 +31,14 @@ function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string;pendi
    // The producer knows which journey supplied this meal. Never infer that
    // relationship from a shared occurrence/payment date or display text.
    // Legacy rows without structured evidence remain explicitly unconfirmed.
-   const sourceIssue=pending.find(item=>item.pendingKind==='source_coverage'&&(!validFinancialDay(item.iso)||item.iso===row.iso));
+   const sourceIssue=pending.find(item=>item.pendingKind==='source_coverage'&&allowancePendingInRange([item],{start:row.iso,end:row.iso,kind:'custom',valid:true}).length>0);
    return {...row,partial:Boolean(sourceIssue)||row.partial!==false,...(sourceIssue?{pendingReason:sourceIssue.reason||'Cobertura da fonte da diária não verificada.'}:row.partial===undefined?{pendingReason:'Completude da origem da diária não comprovada.'}:{})};
   }
   const cycle=observedStatementCycle(rosterOperationalDateAt(row.iso,12),'roster_brt'),start=rosterOperationalIso(cycle.start),end=rosterOperationalIso(cycle.end);
   if(!cycles.has(start)){
-   let absent=false;for(const day=new Date(start+'T12:00:00Z');day.toISOString().slice(0,10)<=end;day.setUTCDate(day.getUTCDate()+1))if(!coveredDays?.includes(day.toISOString().slice(0,10)))absent=true;
+   const coverage=financialDayCoverage(allowanceSourceRange({start,end,kind:'custom',valid:true}),coveredDays),absent=!coverage.valid||coverage.missingDays.length>0;
    const missing=financialMonths({start,end,kind:'custom',valid:true}).some(month=>!covered.includes(month));
-   cycles.set(start,{date:observedBrlPaymentDate(rosterOperationalIso(cycle.payment)),partial:absent||missing||rowsInObservedCycle(pending,cycle).length>0||pending.some(item=>!validFinancialDay(item.iso))});
+   cycles.set(start,{date:observedBrlPaymentDate(rosterOperationalIso(cycle.payment)),partial:absent||missing||allowancePendingInRange(pending,{start,end,kind:'custom',valid:true}).length>0});
   }
   const item=cycles.get(start)!;return {...row,expectedPaymentDate:item.date||undefined,expectedPaymentTimezone:item.date?'America/Sao_Paulo':undefined,partial:item.partial||row.partial===true};
  });
@@ -49,14 +49,13 @@ export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:s
   // Never substitute the accumulating or selected month for that week's rows.
   const cycle = (observedBrlPaymentDate(rosterOperationalIso(periods.previous.payment))||rosterOperationalIso(periods.previous.payment)) >= today ? periods.previous : periods.accumulation;
   const range: FinancialRange = {start:rosterOperationalIso(cycle.start),end:rosterOperationalIso(cycle.end),kind:'custom',valid:true};
-  const lines = rowsInObservedCycle(rows, cycle), unknown = [...rowsInObservedCycle(pending, cycle), ...pending.filter(item=>!validFinancialDay(item.iso))];
+  const lines = rowsInObservedCycle(rows, cycle), unknown = allowancePendingInRange(pending,range);
   const missing = financialMonths(range).filter(month=>!covered.includes(month));
-  const absentDays:string[]=[];
-  for(let day=new Date(range.start+'T12:00:00Z');day.toISOString().slice(0,10)<=range.end;day.setUTCDate(day.getUTCDate()+1)){const iso=day.toISOString().slice(0,10);if(!coveredDays?.includes(iso))absentDays.push(iso);}
+  const {missingDays:absentDays} = financialDayCoverage(allowanceSourceRange(range),coveredDays);
   const summary = summarizeNativeForecastRows(lines, unknown);
   const issues = [
     ...(lines.some(line=>!validFinancialDay(line.iso)) ? ['Há datas inválidas na composição; confira a origem dos itens.'] : []),
-    ...(absentDays.length ? [`Há ${absentDays.length} dia(s) sem programação publicada comprovada neste ciclo. Confira a escala.`] : []),
+    ...(absentDays.length ? [`Há ${absentDays.length} dia(s) sem programação publicada comprovada para conferir a origem deste ciclo. Confira a escala.`] : []),
     ...(missing.length ? [`Falta conferir a escala de ${missing.join(', ')} para completar este ciclo.`] : []),
     ...(unknown.length ? [...new Set(unknown.map(item=>`${validFinancialDay(item.iso)?item.iso:'Data de origem pendente'} · ${item.reason||('Classificação ou tarifa pendente'+(item.airport?' em '+item.airport:''))}`))] : []),
     ...(!lines.length ? ['Nenhum item deste ciclo está disponível. Importe ou confira a escala correspondente.'] : []),
@@ -70,7 +69,7 @@ export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:s
   const brlTiming=brlDate?`Pagamento previsto em ${brlDate.split('-').reverse().join('/')} · regra informada: quinta-feira, antecipada para quarta se bancos de SP fecharem na quinta. Ciclo estimado; não confirma crédito.`:'Data a confirmar · calendário bancário de SP não verificado para este ciclo BRL.';
   return {kind:'allowance',range,upcomingLines:datedAllowanceLines(rows,pending,covered,coveredDays),timing:'Data a confirmar',currencyTiming:{BRL:brlTiming,...foreignTiming},expectedPaymentDates:brlDate?{BRL:brlDate}:{},source:'Referência semanal observada do motor atual (quarta a terça). Datas estimadas pela regra informada e calendário bancário de SP; não há comprovação de recebimento.',lines,totals:issues.length ? null : summary.totalsByCurrency,calculationTotals:knownPaymentTotals(lines.filter(line=>validFinancialDay(line.iso))),calculationPartial:issues.length>0,issues,caption:'Diárias · valores na moeda original'};
 }
-export type PayrollCandidate = { creditMonth:string; operationalMonth:string; fixedMonth:string; range:FinancialRange; lines:PaymentLine[]; issues:string[] };
+export type PayrollCandidate = { creditMonth:string; operationalMonth:string; fixedMonth:string; range:FinancialRange; lines:PaymentLine[]; issues:string[];calculationTotals?:Record<string,number>|null;cycleBasis?:'reviewed_company_cycle'|'system_default'|'owner_declaration' };
 export function nextPayrollPayment(candidates: PayrollCandidate[], now = new Date()): NextPayment {
   const currentMonth=rosterOperationalIso(now).slice(0,7);
   const next=candidates.filter(item=>/^\d{4}-(0[1-9]|1[0-2])$/.test(item.creditMonth)&&item.creditMonth>=currentMonth).sort((a,b)=>a.creditMonth.localeCompare(b.creditMonth))[0];
@@ -80,5 +79,6 @@ export function nextPayrollPayment(candidates: PayrollCandidate[], now = new Dat
   const total=next.lines.reduce((sum,line)=>sum+(line.value??NaN),0);
   if(!Number.isFinite(total)&&!issues.length)issues.push('Não foi possível totalizar a composição deste ciclo.');
   const timing=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(next.creditMonth+'-01T12:00:00Z'));
-  return {kind:'payroll',range:next.range,timing:`Crédito esperado em ${timing}`,source:`Ciclo empresarial revisado nesta conta: variáveis de ${next.operationalMonth}, fixos da folha ${next.fixedMonth}. Dia exato e liquidação não confirmados.`,lines:next.lines,totals:issues.length?null:{BRL:total},calculationTotals:knownPaymentTotals(next.lines),calculationPartial:issues.length>0,issues,caption:'Folha · bruto estimado, antes dos descontos'};
+  const origin=next.cycleBasis==='system_default'?'Perfil padrão LATAM/comissários; configuração de cálculo, sem confirmação individual de vínculo':next.cycleBasis==='owner_declaration'?'Perfil financeiro LATAM/comissários declarado nesta conta':'Ciclo empresarial revisado nesta conta';
+  return {kind:'payroll',range:next.range,timing:`Crédito esperado em ${timing}`,source:`${origin}: variáveis de ${next.operationalMonth}, fixos da folha ${next.fixedMonth}. Ciclo de variáveis ACT e orientação empresarial para fixos; dia exato e liquidação não confirmados.`,lines:next.lines,totals:issues.length?null:{BRL:total},calculationTotals:Object.prototype.hasOwnProperty.call(next,'calculationTotals')?next.calculationTotals:knownPaymentTotals(next.lines),calculationPartial:issues.length>0,issues,caption:'Folha · bruto estimado, antes dos descontos'};
 }

@@ -119,9 +119,9 @@ try {
  const component=explorerAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='FinancialHistoryExplorer');assert(component);
  const effects=component.body.statements.filter(n=>ts.isExpressionStatement(n)&&ts.isCallExpression(n.expression)&&n.expression.expression.getText(explorerAst)==='useEffect');
  const effect=effects.find(n=>n.getText(explorerAst).includes('setCalculationRevision'));assert(effect);
- let revision=0,authRevision=0;const cleanups=[];
+ let revision=0,authRevision=0,recovery={revision:7,source:true,inventory:true};const cleanups=[];
  const effectContext=vm.createContext({window:globalThis.window,localStorage:globalThis.localStorage,financialRateOwner:learning.financialRateOwner,
-  useEffect:fn=>cleanups.push(fn()),setCalculationRevision:fn=>{revision=fn(revision);},setAuthRevision:fn=>{authRevision=fn(authRevision);},
+  useEffect:fn=>cleanups.push(fn()),setCalculationRevision:fn=>{revision=fn(revision);},setAuthRevision:fn=>{authRevision=fn(authRevision);},setRecovery:fn=>{recovery=fn(recovery);},
   epoch:{current:0},fetching:{current:new Map()},setLoaded:()=>{},setInventory:()=>{},setConflicts:()=>{},setCoverageReady:()=>{},setNotice:()=>{}});
  const authEffect=effects.find(n=>n.getText(explorerAst).includes('setAuthRevision'));assert(authEffect);
  for(const source of [effect,authEffect])vm.runInContext(ts.transpileModule(source.getText(explorerAst),{compilerOptions:{target:99}}).outputText,effectContext);
@@ -131,7 +131,7 @@ try {
  window.dispatchEvent(new Event('crewcheck:financial-config-changed'));assert.equal(revision,3);
  login('synthetic-b');emit(key);assert.equal(revision,3,'listener rechecks current owner');emit('crewcheck_financial_learned_rates_v2:synthetic-b');assert.equal(revision,4);
  emit(null,{});assert.equal(authRevision,0,'sessionStorage clear is not an account reset');
- storage.clear();emit(null);assert.equal(authRevision,1,'clear event resets loaded account history');
+ storage.clear();emit(null);assert.equal(authRevision,1,'clear event resets loaded account history');assert.equal(recovery.source,false,'account reset clears stale source recovery');assert.equal(recovery.inventory,false,'account reset clears stale inventory recovery');assert.equal(recovery.revision,7,'reset preserves monotonic recovery revision');
  for(const cleanup of cleanups)cleanup();login('synthetic-a');emit(key);window.dispatchEvent(new Event('crewcheck:financial-config-changed'));assert.equal(revision,4,'unmounted listeners removed');
  console.log('PASS rate archive: complete-total counterproof, one snapshot, corruption/owner/version/date/conflict/archive-and-auth-storage-unavailable states, immutable history, manual/international independence, expiry, cross-tab/account/clear/cleanup; synthetic only');
 } finally {modules.cleanup();Object.assign(globalThis,previous);}

@@ -1,7 +1,81 @@
 import { observedStatementCycle, rosterOperationalIso, type AllowanceClockBasis, type AllowanceStatementCycle } from './compensationPolicy';
+import { validFinancialDay, allowanceSourceRange, type FinancialRange } from './financialHistoryPeriods';
 
 type ForecastRow = { iso: string; currency: string; value: number; convertedBRL: number | null };
 type UnclassifiedItem = { iso: string; airport: string };
+type AllowanceEvidenceRow = ForecastRow & {
+  label: string; eventId?: string; source?: string; airport?: string; partial?: boolean; originIso?: string;
+  rateKey?: string; rateSource?: string; rateVersion?: string;
+  calculationStart?: string; calculationEnd?: string;
+  expectedPaymentDate?: string; expectedPaymentTimezone?: string;
+  occurrenceIso?: string; referenceDateBasis?: 'latam_observed_tuesday_flight_supper';
+};
+type AllowancePending = UnclassifiedItem & { reason?: string; pendingKind?: string; sourceIssueId?: string; actCause?: string; originIso?: string };
+
+// At a competence boundary an unreadable operational origin can carry into
+// the selection. This does not propagate unrelated ACT/taxi rates or earlier
+// warnings; authority filtering by source competence happens before this step.
+export function allowancePendingInRange<T extends { iso: string; pendingKind?: string }>(pending: readonly T[], range: FinancialRange): T[] {
+  const origin = allowanceSourceRange(range).start;
+  return pending.filter(item => !validFinancialDay(item.iso) || range.valid && (
+    item.iso>=range.start && item.iso<=range.end || origin!==range.start && item.iso===origin && item.pendingKind==='source_coverage'
+  ));
+}
+
+// A nominal source may prove meals after midnight in the next competence.
+// Keep the producer's full rows; date filtering belongs to the consumer. This
+// does not activate a source or select a superseded roster revision.
+export function aggregateAllowanceEvidence<R extends AllowanceEvidenceRow, P extends AllowancePending>(snapshots: readonly {
+  roster?: { year?: number; month?: number };
+  perdiem: { rows?: readonly R[]; monthlyRows: readonly R[]; unclassifiedItems?: readonly P[]; monthlyUnclassifiedItems: readonly P[] };
+}[]): { rows: R[]; unclassifiedItems: AllowancePending[] } {
+  const groups = new Map<string, R[]>(), pending = new Map<string, AllowancePending>();
+  const addPending = (item: AllowancePending) => pending.set(JSON.stringify([item.iso,item.airport,item.reason,item.pendingKind,item.sourceIssueId,item.actCause,item.originIso]), item);
+  for (const snapshot of snapshots) {
+    const month = snapshot.roster?.year && snapshot.roster?.month ? `${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}` : '';
+    for (const item of snapshot.perdiem.unclassifiedItems ?? snapshot.perdiem.monthlyUnclassifiedItems) {
+      if (!month || !item.iso || item.iso.slice(0,7)===month || validFinancialDay(item.originIso||'')&&item.originIso?.slice(0,7)===month) addPending(item);
+    }
+    for (const row of snapshot.perdiem.rows ?? snapshot.perdiem.monthlyRows) {
+      if (!validFinancialDay(row.iso)) { addPending({iso:'',airport:row.airport||'',pendingKind:'source_coverage',reason:'Data de origem da diária não verificada.'}); continue; }
+      if ((row.occurrenceIso||row.referenceDateBasis) && (row.referenceDateBasis!=='latam_observed_tuesday_flight_supper'
+        ||!validFinancialDay(row.occurrenceIso||'')||row.label!=='Ceia'||row.currency!=='BRL'
+        ||new Date(row.iso+'T12:00:00Z').getUTCDay()!==2
+        ||Date.parse(row.occurrenceIso+'T12:00:00Z')-Date.parse(row.iso+'T12:00:00Z')!==86400000)) {
+        addPending({iso:row.iso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Vínculo da ocorrência física e referência da ceia não verificado.'});continue;
+      }
+      if (month && row.iso.slice(0,7)!==month) {
+        // A literal activity printed in a different competence is not carry-in.
+        // Only a journey beginning in this source's nominal month can carry
+        // its meals forward. Preserve the nominal publication's authority.
+        const originIso = row.originIso;
+        if (!originIso || !validFinancialDay(originIso) || originIso > row.iso) { addPending({iso:row.iso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Origem da jornada entre competências não verificada.'}); continue; }
+        if (originIso.slice(0,7)!==month) continue;
+      }
+      if (row.partial===true) addPending({iso:row.iso,originIso:row.originIso,airport:row.airport||'',pendingKind:'source_coverage',reason:'Completude da jornada de origem da diária não comprovada.'});
+      // Existing producer: one of each meal and at most one taxi per civil day.
+      // Currency or amount must not turn conflicting versions into two meals.
+      const key = JSON.stringify([row.occurrenceIso||row.iso,row.label]);
+      const group = groups.get(key) || []; group.push(row); groups.set(key,group);
+    }
+  }
+  const evidence = (row: R) => JSON.stringify([row.eventId,row.iso,row.occurrenceIso,row.referenceDateBasis,row.originIso,row.currency,row.value,row.convertedBRL,row.source,row.airport,row.partial,
+    row.rateKey,row.rateSource,row.rateVersion,row.calculationStart,row.calculationEnd,row.expectedPaymentDate,row.expectedPaymentTimezone]);
+  const rows: R[] = [];
+  for (const group of groups.values()) {
+    const first = group[0];
+    // Without an occurrence identity two equal amounts are not proof that the
+    // records are duplicates. Divergence is explicit, never last-writer-wins.
+    if (group.length > 1 && (!first.eventId || group.some(row => evidence(row) !== evidence(first)))) {
+      // Old physical-date and new documented-reference versions can straddle
+      // a cycle boundary. Neither source order may certify the other cycle.
+      for(const iso of [...new Set(group.map(row=>row.iso))].sort())
+        addPending({iso,airport:'',pendingKind:'source_coverage',reason:`Evidências divergentes de ${first.label} em ${iso}; confira as escalas de origem.`});
+    } else rows.push(first);
+  }
+  rows.sort((a,b)=>a.iso.localeCompare(b.iso)||a.label.localeCompare(b.label)||String(a.eventId||'').localeCompare(String(b.eventId||'')));
+  return { rows, unclassifiedItems:[...pending.values()] };
+}
 // Native totals do not need FX, but do require every item in this scope to have
 // a known classification, rule and finite amount. Empty is not a known zero.
 export function summarizeNativeForecastRows(rows: readonly ForecastRow[], unclassified: readonly UnclassifiedItem[] = []) {

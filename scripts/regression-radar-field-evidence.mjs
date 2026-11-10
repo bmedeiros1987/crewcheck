@@ -6,6 +6,7 @@ import { build } from 'esbuild';
 import * as policy from '../shared/gate-query-day.mjs';
 import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import { customGateSourceUpdate } from '../server/gate-source-update.mjs';
+import { selectAeroDataBoxOccurrence } from '../server/aerodatabox-occurrence.mjs';
 import { prepareConciergeCanonicalBridge } from './p1-concierge-journey/bridge.mjs';
 // Synthetic flights/accounts only. No provider, Telegram, network or real data.
 globalThis.fetch = () => { throw Error('External network forbidden'); };
@@ -116,7 +117,7 @@ const leg = { flightNumber: 'LA100', origin: 'GRU', destination: 'REC', departur
 const roster = { year: 2032, month: 10, base: 'GRU', days: [{ date: '14/10/2032', type: 'VOO', dutyReport: '08:00', dutyDebrief: '11:30', legs: [leg] }] };
 const scope = vm.createContext({ ...policy, ...radarEvidence, Date: FixedDate, buildCanonicalRosterEvents, gateQueryDay: (x, t) => policy.gateQueryDay(x, t ?? now), URL, setTimeout, clearTimeout, process: { env: { CREWCHECK_RADAR_TIMEOUT_MS: '800' } },
   envAny: keys => keys.find(key => envs.has(key)) ? (keys.includes('CREWCHECK_FLIGHT_STATUS_URL') ? 'https://fixture.invalid/{flight}' : 'OFFLINE_ONLY') : '',
-  providerAvailable: keys => true, markProvider: () => {}, customGateSourceUpdate: payload => customGateSourceUpdate(payload, now),
+  providerAvailable: keys => true, markProvider: () => {}, customGateSourceUpdate: payload => customGateSourceUpdate(payload, now), selectAeroDataBoxOccurrence,
   jsonFetch: async url => { const host = new URL(url).hostname; const key = host.includes('aerodatabox') ? 'aerodatabox' : host.includes('airlabs') ? 'airlabs' : 'custom'; return { response: { ok: key in bodies }, payload: structuredClone(bodies[key] ?? null) }; },
   providerFlightAware: async () => null, providerAviationstack: async () => null,
   ciriumRadarInjectionEnabled: () => false, defaultCiriumRadarOptions: () => undefined, ciriumRadarProjection: () => ({}), configuredProviders: () => [],
@@ -148,6 +149,34 @@ assert.equal(payloads.agreeingRich.alternatives, 2, 'custom proof was already av
 assert.equal(verifiedRadarFields(payloads.agreeingRich, identity, now).gate, '12', 'agreeing custom field proof survives a richer winner');
 assert.equal(payloads.agreeingRich.gateUpdate.provider, 'custom', 'proof provenance stays separate from the winning response');
 assert.equal(payloads.agreeingRich.operationalEvidenceGaps.gate, undefined);
+// Compare equivalent gate spellings and explicit absence, not raw provider strings.
+// A position is NOT a proved equivalent gate: keep that disagreement conservative.
+for (const [gate, conflict] of [['TBD', false], ['N/A', false], ['Gate 12', false], ['Portão 12', false], ['14', true], ['STAND 5', true], ['STAND 12', true], ['12/14', true]]) {
+  const other = aerodatabox({ aircraft: {}, departure: { gate, airport: { iata: 'GRU' }, scheduledTime: { utc: '2032-10-14 12:00Z' } } });
+  const p = await scenario(['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'], { custom: custom(), aerodatabox: other });
+  assert.equal(p.alternatives, 2, 'both actual adapters answered before conflict comparison');
+  assert.equal(p.operationalConflicts.includes('gate'), conflict, `real race gate 12 versus ${gate}`);
+  assert.equal(verifiedRadarFields(p, identity, now).gate, conflict ? '' : '12', `only agreeing fresh source proof survives the actual race: ${gate} selected ${p.gate} proof ${Boolean(p.gateUpdate)}`);
+  payloads[`comparison-${gate}`] = p;
+}
+for (const [status, conflict] of [['Monitorando', false], ['N/A', false], ['Embarque', false], ['Cancelado', true]]) {
+  const other = aerodatabox({ aircraft: {}, status, departure: { gate: '12', airport: { iata: 'GRU' }, scheduledTime: { utc: '2032-10-14 12:00Z' } } });
+  const p = await scenario(['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'], { custom: custom(), aerodatabox: other });
+  assert.equal(p.operationalConflicts.includes('status'), conflict, `real race Embarque versus ${status}`);
+  payloads[`status-${status}`] = p;
+}
+const placeholderWinner = await scenario(['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'], { custom: custom(), aerodatabox: aerodatabox({ departure: { gate: 'TBD', airport: { iata: 'GRU' }, scheduledTime: { utc: '2032-10-14 12:00Z' } } }) });
+assert.equal(placeholderWinner.gate, 'TBD', 'this delta does not change whole-response ranking or blend a gate');
+assert.equal(verifiedRadarFields(placeholderWinner, identity, now).gate, '', 'no invented value/proof when the winner lacks a usable gate');
+for (const rows of [[item(), item({ gate: 'Gate 12', status: 'Monitorando' })], [item({ gate: 'Portão 12' }), item()]]) {
+  const before = JSON.stringify(rows);
+  assert.deepEqual(radarEvidence.radarOperationalConflicts(rows), []);
+  assert.deepEqual(radarEvidence.radarOperationalConflicts([...rows].reverse()), []);
+  assert.equal(JSON.stringify(rows), before, 'comparison never mutates evidence or receipt');
+}
+assert.deepEqual(radarEvidence.radarOperationalConflicts([{ ok: true, registration: 'PR-ABC' }, { ok: true, registration: false }]), [], 'registration false retains original absence semantics');
+assert.deepEqual(radarEvidence.radarOperationalConflicts([{ ok: true, registration: 'PR  ABC' }, { ok: true, registration: 'PR ABC' }]), ['registration'], 'registration whitespace is not silently made equivalent');
+console.log('PASS real race: placeholders and canonical gate spellings, conservative positions and genuine conflicts, generic status');
 payloads.customStale = await scenario(['CREWCHECK_FLIGHT_STATUS_URL'], { custom: custom({ departureGateUpdate: { ...custom().departureGateUpdate, updatedAt: iso(now - RADAR_FIELD_FRESH_MS - 60000) } }) });
 assert.equal(payloads.customStale.operationalEvidenceGaps.gate, 'source-observation-stale');
 payloads.conflict = await scenario(['CREWCHECK_FLIGHT_STATUS_URL', 'AERODATABOX_API_KEY'], { custom: custom(), aerodatabox: aerodatabox() });
@@ -159,7 +188,7 @@ assert.equal(payloads.otherDay.ok, false, 'other occurrence is suppressed before
 console.log('PASS actual adapters: AeroDataBox lastUpdatedUtc and AirLabs updated stay unproven; custom gate proof only; stale/conflict/other day');
 
 // 3. Parity with the actual app consumer (no relaxation, same decision).
-const compiled = await build({ stdin: { contents: "export * from './client/src/lib/nextFlightGate';", resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'cjs', write: false });
+const compiled = await build({ stdin: { contents: "export * from './client/src/lib/nextFlightGate'; export * from './client/src/lib/nextFlightWatch';", resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'cjs', write: false, alias: { '@': process.cwd() + '/client/src' } });
 const app = { exports: {} }; Function('module', 'exports', 'require', compiled.outputFiles[0].text)(app, app.exports, () => ({}));
 const event = { id: 'synthetic-la100', kind: 'flight', flightNumber: 'LA100', origin: 'GRU', destination: 'REC', day: { date: '14/10/2032' }, canonical: { date: '2032-10-14', startDateTime: '2032-10-14T12:00:00Z' }, date: new Date('2032-10-14T12:00:00Z') };
 const appGate = (payload, at) => app.exports.resolveNextFlightGate({ event, radar: { ...payload, sourceOrigin: payload.origin, sourceDestination: payload.destination, updatedAt: now }, now: at });
@@ -172,6 +201,21 @@ for (const [name, payload] of Object.entries(payloads)) for (const at of [now, n
   decided[server.gate ? 'accepted' : 'refused']++;
 }
 assert(decided.accepted >= 2 && decided.refused >= 10, JSON.stringify(decided));
+for (const [name, p] of Object.entries(payloads).filter(([name]) => name.startsWith('comparison-'))) {
+  const info = appGate(p, now);
+  const conflict = p.operationalConflicts.includes('gate');
+  assert.equal(info.gate, conflict ? '' : '12', name + ': real app projection');
+  const base = { generatedAtEpochMs: now, validUntilEpochMs: now + 3600000, currentFlight: 'LA100', schedule: [{ id: event.id, gate: '' }] };
+  const projected = app.exports.applyNextFlightToWatchSnapshot(base, info, { primaryEventId: event.id, nextFlightScheduleId: event.id });
+  assert.equal(projected.schedule[0].gate, conflict ? '' : '12', name + ': same Watch producer');
+  if (!conflict) {
+    assert.equal(info.gateSource, 'radar', name + ': only existing valid proof');
+    assert(projected.validUntilEpochMs <= now - 60000 + RADAR_FIELD_FRESH_MS, name + ': no renewed validity');
+  }
+  assert.equal(appGate(p, now + RADAR_FIELD_FRESH_MS + 1).gate, '', name + ': expiry remains enforced');
+}
+console.log('PASS actual app to Watch projection: canonical agreements survive; positions/conflicts stay hidden; TTL unchanged');
+
 console.log(`PASS server/app parity for gate decision (TZ=${process.env.TZ || 'default'})`);
 
 // 4. Telegram /radar and Concierge persistence through the actual reply.

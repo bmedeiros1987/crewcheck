@@ -22,7 +22,7 @@ import { alertAccount, alertDigest, alertIsReviewed, complianceAlertIdentity, AL
 import { alertText } from '@/lib/alertExperienceText';
 import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
 import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailability';
-import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
+import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate, radarSourceEpoch } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {OperationalBriefing} from '@/components/notifications/OperationalBriefing';
 import {ConciergeChannels} from '@/components/concierge/ConciergeChannels';
@@ -116,6 +116,7 @@ import { buildRoutineSuggestions, defaultRoutineActivities } from '@/lib/routine
 import { sendRosterByEmail } from '@/lib/emailClient';
 import { connectGoogleCalendar, syncRosterToGoogleCalendar, loadGoogleCalendarSettings, saveGoogleCalendarSettings, listGoogleCalendars, googleCalendarIntegrationDiagnostics, type GoogleCalendarOption, type GoogleCalendarSettings } from '@/lib/googleCalendarSync';
 import { saveRosterAnalysis, listSavedRosters, openSavedRoster, openActiveRoster, getDatabaseStatus } from '@/lib/databaseClient';
+import { DATABASE_STATUS_MESSAGES } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
@@ -139,17 +140,18 @@ import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
 import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceReference';
 import FinancialActApplicability, { AllowanceMinimumReference } from '@/components/finance/FinancialActApplicability';
 import { readFinancialActApplicability, type FinancialActSnapshot } from '@/lib/financialActApplicability';
-import { resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
+import { financialPresetScope } from '@/lib/payrollProjectionPeriods';
+import { latamSupperReference, resolveLatamCabinAllowanceJourney, resolveAllowanceOccurrenceGeography, resolveSharedAllowanceSlot, summarizeMinimumAllowanceRows, type FinancialActPendingCause, type OwnedAllowanceValue } from '@/lib/sharedAllowanceResolution';
 import type { AllowanceSlot } from '@/lib/latamAllowanceCatalog';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
-import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { financialRowsInRange, financialWeeks, financialRange, financialDayCoverage, allowanceSourceRange, nominalFinancialDays, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { confirmedPerDiemReferencesAt, confirmedPayrollDsrContext, financialRateOwner, confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
-import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
+import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue, aggregateAllowanceEvidence, allowancePendingInRange } from '@/lib/financialForecastPeriods';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
@@ -1732,27 +1734,137 @@ function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
     return null;
   }
 }
+// Presentation continuity only. This registry is not an operational admission,
+// grant or disk cache: only the accepted authenticated fetch below can add a record.
+type BrowserRadarContext = {
+  owner: string; revision: string; session: ReturnType<typeof captureAuthSession>;
+  primary: CrewRoster | null; primaryRevision: string; publication: CrewRoster | null; signatures: ReadonlySet<string> | null;
+};
+let browserRadarContext: BrowserRadarContext = { owner: '', revision: '', session: captureAuthSession(), primary: null, primaryRevision: '', publication: null, signatures: null };
+type BrowserRadarRecord = {
+  context: typeof browserRadarContext; session: ReturnType<typeof captureAuthSession>;
+  signature: string; serial: number; bytes: string; snapshot: RadarSnapshot;
+};
+const browserRadarResponses = new Map<string, BrowserRadarRecord>();
+const browserRadarInvalidations = new Map<string, { value: number }>();
+function browserRadarGeneration(key: string) {
+  let generation = browserRadarInvalidations.get(key);
+  if (!generation) {
+    // Eviction invalidates captured references too; it cannot reset an old read
+    // to a numerically equal generation or make the registry grow indefinitely.
+    if (browserRadarInvalidations.size >= 128) browserRadarInvalidations.delete(browserRadarInvalidations.keys().next().value!);
+    generation = { value: 0 };
+    browserRadarInvalidations.set(key, generation);
+  }
+  return generation;
+}
+function setBrowserRadarContext(revision: string) {
+  const session = captureAuthSession();
+  const owner = session.token ? session.owner : '';
+  if (owner !== browserRadarContext.owner || revision !== browserRadarContext.revision || !browserRadarContext.session.isCurrent()) {
+    browserRadarContext = { owner, revision, session, primary: null, primaryRevision: '', publication: null, signatures: null };
+    browserRadarResponses.clear();
+  }
+}
+// The materialized display-window reader calls these private lifecycle hooks.
+// A UI selection/disk snapshot cannot establish ownership or mint a response.
+function invalidateBrowserRadarWindow(primary: CrewRoster, primaryRevision: string, notify = true) {
+  const session = captureAuthSession();
+  browserRadarContext = { owner: session.token ? session.owner : '', revision: '', session,
+    primary, primaryRevision, publication: null, signatures: new Set<string>() };
+  browserRadarResponses.clear();
+  if (notify) window.dispatchEvent(new Event('crewcheck:radar-presentation-context-changed'));
+  return browserRadarContext;
+}
+function syncBrowserRadarWindow(primary: CrewRoster, primaryRevision: string) {
+  if (browserRadarContext.primary !== primary || browserRadarContext.primaryRevision !== primaryRevision || !browserRadarContext.session.isCurrent())
+    invalidateBrowserRadarWindow(primary, primaryRevision, false); // Parent render already invalidates visible state; never set child state during render.
+}
+function acceptBrowserRadarWindow(read: BrowserRadarContext, publication: CrewRoster) {
+  if (read !== browserRadarContext || !read.session.token || !read.session.isCurrent() || !read.primary
+    || !String(read.primary.crewId || '').trim() || !alertRosterOwned(read.primary) || read.primaryRevision !== JSON.stringify(read.primary)
+    || publication?.crewId !== read.primary.crewId || publication?.year !== read.primary.year || publication?.month !== read.primary.month
+    || !Array.isArray(publication?.days) || !publication.days.length) return false;
+  const signatures = new Set([...buildLegs(read.primary), ...buildLegs(publication)]
+    .filter(event => event.kind === 'flight' && !event.placeholder).map(browserRadarSignature));
+  browserRadarContext = { ...read, revision: JSON.stringify(publication), publication, signatures };
+  browserRadarResponses.clear();
+  window.dispatchEvent(new Event('crewcheck:radar-presentation-context-changed'));
+  return true;
+}
+function browserRadarContextIsCurrent(context: BrowserRadarContext) {
+  return context === browserRadarContext && context.session.isCurrent()
+    && (!context.primary || context.primaryRevision === JSON.stringify(context.primary))
+    && (!context.publication || context.revision === JSON.stringify(context.publication));
+}
+function invalidateBrowserRadarResponse(key: string) {
+  browserRadarResponses.delete(key);
+  browserRadarGeneration(key).value += 1;
+}
+function browserRadarSignature(event: ZeroLeg): string {
+  return JSON.stringify([event.id, event.flightNumber, event.origin, event.destination, event.canonical]);
+}
+function readBrowserRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
+  const key = radarSnapshotKey(event), record = browserRadarResponses.get(key);
+  if (!record) return null;
+  if (!browserRadarContextIsCurrent(record.context) || !record.context.revision || !record.session.token || !record.session.isCurrent()
+    || record.session.owner !== record.context.owner || record.signature !== browserRadarSignature(event)
+    || (record.context.signatures !== null && !record.context.signatures.has(record.signature))
+    || storage.get(key, 'null') !== record.bytes || JSON.stringify(record.snapshot) !== record.bytes
+    || !readRadarSnapshot(event) || !validatedRadarForEvent(event, record.snapshot)
+    || !gateQueryDay({ flight: String(event.flightNumber || ''), origin: String(event.origin || ''), destination: String(event.destination || ''),
+      departureDate: originFlightDate(event.canonical?.startDateTime || '', String(event.origin || '')), scheduledDepartureUtc: event.canonical?.startDateTime }).allowed) {
+    invalidateBrowserRadarResponse(key);
+    return null;
+  }
+  return record.snapshot;
+}
+// One local expiry wake-up, never a fetch/poll. Field expiry and origin midnight
+// can precede receipt expiry; preserve each existing validator's own boundary.
+function browserRadarDisplayDeadline(event: ZeroLeg, snapshot: RadarSnapshot): number {
+  const now = Date.now();
+  const deadlines = [Number(snapshot.updatedAt) + RADAR_GATE_STALE_MS,
+    ...Object.values(radarGateInfo(event, snapshot).automaticFieldValidUntilEpochMs).filter((x): x is number => typeof x === 'number' && x >= now)];
+  let end = Math.min(...deadlines);
+  const identity = { flight: String(event.flightNumber || ''), origin: String(event.origin || ''), destination: String(event.destination || ''),
+    departureDate: originFlightDate(event.canonical?.startDateTime || '', String(event.origin || '')), scheduledDepartureUtc: event.canonical?.startDateTime };
+  if (!gateQueryDay(identity, end).allowed) {
+    let lo = now, hi = end;
+    while (hi - lo > 1) { const mid = Math.floor((hi + lo) / 2); if (gateQueryDay(identity, mid).allowed) lo = mid; else hi = mid; }
+    end = hi;
+  }
+  return end;
+}
 function confirmedRadarGate(value?: string): string {
   const normalized = String(value || '').trim().toUpperCase();
   if (!normalized || normalized === '—' || normalized === '-' || /CONFIRMAR|INFORMAD|UNKNOWN|N\/A/.test(normalized)) return '';
   return normalized;
 }
-function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: ReturnType<typeof beginOperationalRadarRead> = null, receipt = ""): RadarSnapshot {
+function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: ReturnType<typeof beginOperationalRadarRead> = null, receipt = "", emitUpdate = true): RadarSnapshot {
   const previous = readRadarSnapshot(event);
+  // Âncora da janela de 30 min do portão: o recebimento original da fonte, o mesmo que a
+  // admissão conferiu (nunca no futuro do celular; sem ele, agora). Gravar no celular não
+  // renova a idade da fonte, e recebimento não é hora observada do portão.
+  const savedAt = Date.now(), sourceReceipt: unknown = payload.sourceReceivedAt ?? payload.updatedAt;
+  const sourceAt = typeof sourceReceipt === 'number' ? sourceReceipt : typeof sourceReceipt === 'string' ? radarSourceEpoch(sourceReceipt) : NaN;
+  const receivedAt = Number.isFinite(sourceAt) && sourceAt > 0 ? Math.min(sourceAt, savedAt) : savedAt;
+  const incoming = { ...payload, sourceReceivedAt: receivedAt, updatedAt: receivedAt };
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
-  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
-  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, incoming) : incoming;
+  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, incoming) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: receivedAt };
   const key = radarSnapshotKey(event);
+  invalidateBrowserRadarResponse(key); // Generic saves revoke; they never create a presentation binding.
   storage.set(key, JSON.stringify(snapshot));
   retainOperationalRadarResponse(snapshot,key,JSON.stringify(event.canonical),readTicket,receipt);
-  window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
+  if (emitUpdate) window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
   const manualEntry = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event);
   const manualGate = manualEntry?.gate || '';
   // Alerts must accept exactly the same source/occurrence as the phone/watch decision.
   const before = resolveNextFlightGate({ event, radar: previous });
   const after = resolveNextFlightGate({ event, radar: snapshot });
-  const previousGate = manualGate || before.gate;
+  // A provider-reported gate never starts or anchors a change alert.
+  const previousGate = manualGate || (before.gateSource === 'radar' ? before.gate : '');
   const nextGate = after.operationalDate && after.gateSource === 'radar' && !after.radarRejected && !after.stale ? after.gate : '';
   const previousRadarGate = before.gateSource === 'radar' && !before.radarRejected ? before.gate : '';
   const reviewAfter = manualEntry ? resolveNextFlightGate({ event, radar: snapshot, manual: manualEntry }).manualReview : null;
@@ -1807,14 +1919,36 @@ async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarS
   // Preserve the legacy preparation anchor, then pin its outgoing instant to canonical UTC.
   params.set('scheduledDeparture', queryIdentity.scheduledDepartureUtc);
   const readTicket=beginOperationalRadarRead();
+  const browserSession = captureAuthSession(), browserContext = browserRadarContext;
+  const browserSignature = browserRadarSignature(event), browserKey = radarSnapshotKey(event);
+  const browserGeneration = browserRadarGeneration(browserKey), browserInvalidation = browserGeneration.value;
+  const browserBytes = storage.get(browserKey, 'null');
+  if (browserContext.signatures !== null && !browserContext.signatures.has(browserSignature)) return gateQuerySuppressed({reason:'published-revision-unverified'});
   let payload: RadarSnapshot;
   try { payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' }); }
   catch (error) { payload = radarFailurePayload(error); }
-  if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed)
+  if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed
+    || !browserSession.isCurrent() || browserContext !== browserRadarContext
+    || (browserContext.signatures !== null && !browserRadarContextIsCurrent(browserContext)) || browserSignature !== browserRadarSignature(event)
+    || (browserRadarInvalidations.get(browserKey) !== browserGeneration || browserGeneration.value !== browserInvalidation) || storage.get(browserKey, 'null') !== browserBytes)
     return { ...gateQuerySuppressed({ reason: 'response-context-expired' }), httpStatus: payload.httpStatus };
   if (payload?.ok !== true || payload?.querySuppressed) return payload;
   if (payload?.ok && !radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS).allowed) return gateQuerySuppressed(radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS));
-  return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' },readTicket,new Date().toISOString());
+  const snapshot = saveRadarSnapshot(event, payload, readTicket, new Date().toISOString(), false);
+  const bytes = JSON.stringify(snapshot);
+  // Sole writer: neither events, a generic saver nor caller-supplied owners can
+  // mint this binding. Recheck after saver side-effects and bind final bytes.
+  if (browserSession.isCurrent() && browserRadarContextIsCurrent(browserContext) && browserContext.revision
+    && browserContext.owner === browserSession.owner && browserSignature === browserRadarSignature(event)
+    && (browserContext.signatures === null || browserContext.signatures.has(browserSignature))
+    && radarQuerySerial.get(serialKey) === serial && browserRadarInvalidations.get(browserKey) === browserGeneration
+    && browserGeneration.value === browserInvalidation + 1 && storage.get(browserKey, 'null') === bytes
+    && validatedRadarForEvent(event, snapshot) && gateQueryDay(queryIdentity).allowed) {
+    if (browserRadarResponses.size >= 128 && !browserRadarResponses.has(browserKey)) browserRadarResponses.delete(browserRadarResponses.keys().next().value!);
+    browserRadarResponses.set(browserKey, { context: browserContext, session: browserSession, signature: browserSignature, serial, bytes, snapshot });
+  }
+  window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key: browserKey, snapshot } }));
+  return snapshot;
 }
 function useRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   const [snapshot, setSnapshot] = useState<RadarSnapshot | null>(() => readRadarSnapshot(event));
@@ -1858,7 +1992,7 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
     {isFlight ? <div className="cz-flight-pills"><span className="cz-work-type-badge"><b>Operação</b>{workTypeLabel(workType)}</span><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Chegada planejada</b>{event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>{isFlight ? 'Decolagem' : 'Início'}</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>{isFlight ? 'Chegada' : 'Fim'}</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{gateInfo.gateSource === 'manual' ? 'Informado por você' : gateInfo.gateSource === 'radar' ? 'Fonte com evidência válida' : 'Sem confirmação operacional'}{gateInfo.gate ? ` · ${terminal}` : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong>{status}</strong>{isFlight && <small>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</small>}<small>{isFlight ? `Aeronave planejada: ${aircraft} · Matrícula: ${registration}${gateInfo.registrationSource === 'manual' ? ' · informada por você' : gateInfo.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
+    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{gateInfo.gateSource === 'manual' ? 'Informado por você' : gateInfo.gateSource === 'radar' ? 'Fonte com evidência válida' : gateInfo.gateSource === 'reported' ? `Informado por ${gateInfo.reportedProvider} · a confirmar` : 'Sem confirmação operacional'}{gateInfo.gate ? ` · ${terminal}` : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong>{status}</strong>{isFlight && <small>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</small>}<small>{isFlight ? `Aeronave planejada: ${aircraft} · Matrícula: ${registration}${gateInfo.registrationSource === 'manual' ? ' · informada por você' : gateInfo.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
     {!compact && gateInfo.manualGateUnlinked && <p role="note">Portão manual anterior preservado; confirme o vínculo com este voo no editor.</p>}
     {!compact && Boolean(gateInfo.operationalConflicts?.length) && <p role="note">Há divergência nos dados operacionais. Valores manuais preservados; confirme a informação.</p>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
@@ -2320,7 +2454,8 @@ function timelineStateClass(event: ZeroLeg): string {
 function homeAllowancePayment(roster: CrewRoster) {
   if(!roster.days?.length)return null;
   const snapshot=financeSnapshot(roster),month=String(roster.year)+'-'+String(roster.month).padStart(2,'0');
-  return nextAllowancePayment(snapshot.perdiem.monthlyRows,snapshot.perdiem.monthlyUnclassifiedItems,[month],new Date(),roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date));
+  const evidence=aggregateAllowanceEvidence([snapshot]);
+  return nextAllowancePayment(evidence.rows,evidence.unclassifiedItems,[month],new Date(),nominalFinancialDays([roster]));
 }
 function financeSnapshot(roster: CrewRoster, salaryScope = 'forecast') {
   const events = buildLegs(roster);
@@ -3043,11 +3178,11 @@ function DatabaseConnectionCard({ admin }: { admin: boolean }) {
   const connected = Boolean(status?.connected);
   const degraded = Boolean(status?.degraded || status?.localOnly);
   return <section className={'cz-toolbox cz-database-status ' + (connected ? 'connected' : 'offline')}>
-    <header><span><Database/></span><div><h2>{connected ? degraded ? 'Banco conectado · modo resiliente' : 'Banco conectado' : 'Modo local protegido'}</h2><p>{status?.message || (connected ? 'Sincronização segura disponível para os módulos internos.' : 'Seus dados permanecem neste dispositivo e serão sincronizados quando a conexão voltar.')}</p></div></header>
+    <header><span><Database/></span><div><h2>{connected ? degraded ? 'Banco conectado · modo resiliente' : 'Banco conectado' : 'Modo local protegido'}</h2><p>{status?.message || (connected ? 'Sincronização segura disponível para os módulos internos.' : DATABASE_STATUS_MESSAGES.unavailable)}</p></div></header>
     <div className="cz-routine-strip">
       <span>{connected ? 'Aiven MySQL ativo' : 'Histórico local ativo'}</span>
-      <span>{connected ? degraded ? 'Fallback local ativo' : 'Sincronização liberada' : 'Fila de sincronização'}</span>
-      {admin && <span>{connected ? status?.migrationRequired ? `${status?.missingOptionalCount || 0} módulo(s) aguardando migration` : String(status?.database || 'Banco principal') : 'Verifique conexão e migration'}</span>}
+      <span>{connected ? degraded ? 'Fallback local ativo' : 'Sincronização liberada' : 'Sincronização pendente'}</span>
+      {admin && <span>{connected ? status?.migrationRequired ? <>{status?.missingOptionalCount || 0} módulo(s) aguardando migração</> : String(status?.database || 'Banco principal') : 'Verifique conexão e migração'}</span>}
     </div>
     <div className="cz-tool-actions"><button onClick={refresh} disabled={busy}><RotateCcw/> {busy ? 'Verificando…' : 'Verificar conexão'}</button></div>
   </section>;
@@ -3282,24 +3417,35 @@ function FeatureHub({ bundle, events, setBundle, setView, actions }: { bundle: B
 
 
 function RadarView({ event }: { event: ZeroLeg }) {
-  const [state, setState] = useState<RadarSnapshot | null>(() => readRadarSnapshot(event));
+  const [snapshot, setState] = useState<RadarSnapshot | null>(() => readBrowserRadarSnapshot(event));
   const [loading, setLoading] = useState(false);
+  const [displayTick, setDisplayTick] = useState(0);
   const flight = safe(event.flightNumber, '');
   const airlineCode = event.airlineCode || normalizedAirlineCode(flight);
   const airlineName = airlineNameFor(airlineCode, event.airlineName);
   const owner = manualGateAccountKey(getStoredUser());
   const token = getToken();
-  const contextKey = [event.id, event.canonical?.startDateTime, flight, event.origin, event.destination, owner].join('|');
-  const requestState = useRef({ key: contextKey, serial: 0 });
-  if (requestState.current.key !== contextKey) requestState.current = { key: contextKey, serial: requestState.current.serial + 1 };
+  const contextKey = [event.id, event.canonical?.startDateTime, flight, event.origin, event.destination, owner, browserRadarSignature(event)].join('|');
+  const requestState = useRef({ key: contextKey, serial: 0, owner, token, live: Boolean(token && owner !== 'local'), skipAutomaticRead: false });
+  if (requestState.current.key !== contextKey || requestState.current.token !== token) {
+    const accountChanged = requestState.current.owner !== owner || requestState.current.token !== token;
+    requestState.current = { ...requestState.current, key: contextKey, owner, token, serial: requestState.current.serial + 1, live: false, skipAutomaticRead: accountChanged };
+  }
+  const state = requestState.current.live && (!snapshot?.ok || readBrowserRadarSnapshot(event) === snapshot) ? snapshot : null;
+  const sameContext = () => requestState.current.key === contextKey && getToken() === token && manualGateAccountKey(getStoredUser()) === owner;
+  function currentCache() {
+    if (!requestState.current.live || !sameContext()) return null;
+    return readBrowserRadarSnapshot(event);
+  }
   async function refresh(force = false) {
-    if (requestState.current.key !== contextKey) return;
+    if (!sameContext() || !token || owner === 'local' || (!requestState.current.live && !force)) return;
+    requestState.current.live = true;
     const serial = ++requestState.current.serial;
-    const current = () => requestState.current.key === contextKey && requestState.current.serial === serial && getToken() === token && manualGateAccountKey(getStoredUser()) === owner;
+    const current = () => requestState.current.live && sameContext() && requestState.current.serial === serial;
     setLoading(true);
     try {
       const payload = await fetchRadarSnapshot(event, force);
-      if (current()) setState(payload || { ok: false, message: 'Radar indisponível.' });
+      if (current()) setState(payload?.ok ? currentCache() : payload || { ok: false, message: 'Radar indisponível.' });
     } catch (error) {
       if (current()) setState(radarFailurePayload(error));
     } finally {
@@ -3307,11 +3453,57 @@ function RadarView({ event }: { event: ZeroLeg }) {
     }
   }
   useEffect(() => {
-    const cached = readRadarSnapshot(event);
-    setState(cached);
-    refresh(false);
-    return () => { requestState.current.serial += 1; };
+    const key = radarSnapshotKey(event);
+    requestState.current.live = Boolean(token && owner !== 'local');
+    setState(currentCache());
+    setLoading(false);
+    const onRadar = (incoming: Event) => {
+      if ((incoming as CustomEvent).detail?.key !== key || !sameContext() || !requestState.current.live) return;
+      requestState.current.serial += 1;
+      const cached = currentCache();
+      if (!cached) invalidateBrowserRadarResponse(key); // Removal/replacement also revokes a pending read when no binding exists yet.
+      setState(cached); // The signal cannot supply or admit a snapshot.
+      setDisplayTick(value => value + 1);
+      setLoading(false);
+    };
+    const onAccount = (incoming: Event) => {
+      if (incoming.type === 'storage' && (incoming as StorageEvent).key === key) { onRadar(new CustomEvent('crewcheck:radar-updated', {detail:{key}})); return; }
+      if (incoming.type === 'storage' && ![null, 'crewcheck_auth_user', 'crewcheck_auth_token'].includes((incoming as StorageEvent).key)) return;
+      requestState.current.serial += 1;
+      requestState.current.skipAutomaticRead = true;
+      requestState.current.live = incoming.type === 'crewcheck:auth-changed' && Boolean(token && owner !== 'local') && sameContext();
+      setState(null);
+      setLoading(false);
+    };
+    const accountEvents = ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'storage'];
+    const onPublication = () => {
+      requestState.current.serial += 1;
+      setState(currentCache());
+      setLoading(false);
+      setDisplayTick(value => value + 1);
+    };
+    window.addEventListener('crewcheck:radar-presentation-context-changed', onPublication);
+    window.addEventListener('crewcheck:radar-updated', onRadar);
+    for (const name of accountEvents) window.addEventListener(name, onAccount);
+    if (!requestState.current.skipAutomaticRead) refresh(false);
+    requestState.current.skipAutomaticRead = false;
+    return () => {
+      requestState.current.live = false;
+      requestState.current.serial += 1;
+      browserRadarGeneration(key).value += 1; // Cancel pending reads; keep an already accepted response for remount.
+      window.removeEventListener('crewcheck:radar-presentation-context-changed', onPublication);
+      window.removeEventListener('crewcheck:radar-updated', onRadar);
+      for (const name of accountEvents) window.removeEventListener(name, onAccount);
+    };
   }, [contextKey, token]);
+  useEffect(() => {
+    const cached = currentCache();
+    if (!cached) return;
+    const expire = () => { setState(currentCache()); setDisplayTick(value => value + 1); };
+    const timer = window.setTimeout(expire, Math.max(1, browserRadarDisplayDeadline(event, cached) - Date.now() + 1));
+    window.addEventListener('focus', expire);
+    return () => { window.clearTimeout(timer); window.removeEventListener('focus', expire); };
+  }, [snapshot, contextKey, token, displayTick]);
   const verified = validatedRadarForEvent(event,state);
   const gateInfo = radarGateInfo(event,verified);
   const status = gateInfo.status || 'Não confirmado';
@@ -3486,6 +3678,9 @@ type FlightEarningRow = {
 type PerDiemRow = {
   partial: boolean;
   eventId: string;
+  originIso: string;
+  occurrenceIso?: string;
+  referenceDateBasis?: 'latam_observed_tuesday_flight_supper';
   date: string;
   iso: string;
   label: string;
@@ -3624,8 +3819,8 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
   return Math.round(routeDistanceKm(from, to));
 }
 function perDiemConfig(roster: CrewRoster, effectiveDate: string, applicability: FinancialActSnapshot = readFinancialActApplicability()) {
-  // ACT metadata/geography is not evidence of this owner's employment. Only the
-  // separate explicit financial declaration may enable a shared reference.
+  // Product preset is explicitly labelled and separate from employment proof.
+  // Existing personal declarations/values retain their own source and fences.
   const act = resolveActFinancialRules(roster);
   const references = confirmedPerDiemReferencesAt(effectiveDate);
   const learnedMealRate = references.mainMeal, learnedMeal = learnedMealRate?.value ?? null;
@@ -3657,7 +3852,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string, applicability:
       const manual = readOptionalNumberSetting('crewcheck_perdiem_rate_' + category);
       if (manual !== null) selected = owned(perDiemSlotAmount(manual, slot === 'breakfast' ? 'breakfast' : 'mainMeal', act.breakfastPercent), false, true);
     }
-    return resolveSharedAllowanceSlot({ category, slot, date: effectiveDate, context: applicability, owned: selected, archiveIssue: rateArchiveIssue });
+    return resolveSharedAllowanceSlot({ category, slot, date: effectiveDate, context: applicability, owned: selected, archiveIssue: rateArchiveIssue,roster });
   };
   const domestic = resolveSlot('domestic', 'mainMeal'), breakfast = resolveSlot('domestic', 'breakfast'), taxi = resolveSlot('domestic', 'taxi');
   const rates = Object.fromEntries(act.perDiem.map(rule => {
@@ -3680,17 +3875,28 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const seen = new Set<string>();
   const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
   const pendingAirports = new Set<string>();
-  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' | 'source_coverage' | 'allowance_reference'; sourceIssueId?: string }> = aimsFlightSourceCoveragePending(roster, events);
+  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' | 'source_coverage' | 'allowance_reference'; sourceIssueId?: string; actCause?: FinancialActPendingCause; originIso?: string }> = aimsFlightSourceCoveragePending(roster, events);
   const usedRateKeys = new Set<PerDiemRateKey>();
   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date, partial = false) => {
-    const classification = resolveAllowanceOccurrenceGeography({ origin: event.origin, destination: event.destination, base: roster.base || '',
+    const geography = resolveAllowanceOccurrenceGeography({ origin: event.origin, destination: event.destination, base: roster.base || '',
       breakfastAtProvenBase: slot === 'breakfast', overrides: airportOverrides, classify: resolvePerDiemRule });
+    const classification = resolveLatamCabinAllowanceJourney({ geography, event, events, base: roster.base || '',
+      airline: roster.airline || '', date: iso, context: applicability, classify: resolvePerDiemRule,roster });
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
-      unclassifiedItems.push({ iso, airport: classification.airport, reason: classification.reason });
+      unclassifiedItems.push({ iso, originIso:rosterOperationalIso(calculationStart), airport: classification.airport, reason: classification.reason });
       return;
     }
-    const key = iso + '-' + slot;
+    const physicalIso=iso;
+    const reference=latamSupperReference({event,slot,rateKey:classification.rateKey,iso,roster,context:applicability});
+    if(reference.pendingReason){
+      for(const candidate of new Set([physicalIso,reference.candidateIso].filter(Boolean)))unclassifiedItems.push({iso:candidate!,originIso:rosterOperationalIso(calculationStart),airport:classification.airport,reason:reference.pendingReason});
+      return;
+    }
+    iso=reference.iso;
+    // Entitlement dedup remains keyed by the physical meal window, even when
+    // a documented financial reference belongs to the preceding cycle.
+    const key = physicalIso + '-' + slot;
     if (seen.has(key)) return;
     seen.add(key);
     usedRateKeys.add(classification.rateKey);
@@ -3698,7 +3904,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const rate = cfg.rates[classification.rateKey];
     const selected = cfg.resolveSlot(classification.rateKey, slot === 'breakfast' ? 'breakfast' : 'mainMeal');
     if (selected.kind === 'pending' || selected.value === null || !selected.currency) {
-      unclassifiedItems.push({ iso, airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason });
+      unclassifiedItems.push({ iso, originIso:rosterOperationalIso(calculationStart), airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason, ...(selected.actCause ? { actCause: selected.actCause } : {}) });
       if (selected.reference?.state === 'unresolved_scope' && selected.reference.publishedFloorMinor !== null && selected.reference.currency) {
         referenceInspections.push({ iso, currency: selected.reference.currency, publishedFloorMinor: selected.reference.publishedFloorMinor, reason: selected.reason });
       }
@@ -3706,13 +3912,15 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     }
     const value = selected.value, currency = selected.currency;
     if (!Number.isFinite(value) || value < 0 || !rate) {
-      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Valor da referência de diária inválido para o período.' });
+      unclassifiedItems.push({ iso, originIso:rosterOperationalIso(calculationStart), airport: classification.airport, reason: 'Valor da referência de diária inválido para o período.' });
       return;
     }
-    if (selected.kind === 'reference') unclassifiedItems.push({ iso, airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason });
+    if (selected.kind === 'reference') unclassifiedItems.push({ iso, originIso:rosterOperationalIso(calculationStart), airport: classification.airport, pendingKind: 'allowance_reference', reason: selected.reason });
     const target = selected.kind === 'reference' ? referenceRows : rows;
     target.push({
       eventId: event.id,
+      originIso: rosterOperationalIso(calculationStart),
+      ...reference,
       partial,
       ...(currency!=='BRL'&&event.kind==='flight'&&!financialPublishedFlightIntervalIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
       date: dateChip(new Date(iso + 'T12:00:00')),
@@ -3722,7 +3930,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       currency: currency,
       // FX is projected separately from native entitlements using dated quotes.
       convertedBRL: currency === 'BRL' ? value : null,
-      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + (selected.reference ? classification.reason : 'Categoria geográfica da ocorrência; sem declaração de aplicabilidade do ACT por esta classificação.') + ' · ' + selected.reason + ' · vigência consultada em ' + iso
+      source: source + (reference.occurrenceIso ? ` · ceia ocorrida em ${reference.occurrenceIso}; referência observada no demonstrativo para trecho de terça: ${reference.iso}; não é regra geral de data de apresentação` : '') + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + (classification !== geography ? classification.reason : selected.reference ? classification.reason : 'Categoria geográfica da ocorrência; sem declaração de aplicabilidade do ACT por esta classificação.') + ' · ' + selected.reason + ' · vigência consultada em ' + iso
         + ' · versão ' + selected.version + (selected.reference?.sourceUrls.length ? ' · fontes: ' + selected.reference.sourceUrls.join(' ; ') : '')
         + (classification.rateKey==='domestic'&&(slot==='breakfast'?cfg.personalReferences?.breakfast:cfg.personalReferences?.mainMeal)?' · premissa pessoal recorrente para previsão; tarifa empresarial e pagamento não confirmados':''),
       airport: classification.airport,
@@ -3775,7 +3983,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const evidenceIssue = financialIntervalEvidenceIssue(dutyFlights);
     if (evidenceIssue || allowanceIntervalState(start, end) !== 'available') {
       const iso = rosterOperationalIso(eventStartDateTime(representative));
-      unclassifiedItems.push({ iso, airport: String(representative.origin || ''), reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
+      unclassifiedItems.push({ iso, airport: String(representative.origin || ''), pendingKind:'source_coverage', reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
       // Preserve only meals proved by literal flight intervals. Unknown APZ
       // still blocks duty completeness, base breakfast and taxi. Do not extend
       // to preflight, connections or arrival+30 in this partial-evidence path.
@@ -3873,9 +4081,9 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
       + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · Tarifa de táxi para o período pendente. ' + selected.reason });
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · Tarifa de táxi para o período pendente. ' + selected.reason, ...(selected.actCause ? { actCause: selected.actCause } : {}) });
     } else {
-      rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
+      rows.push({ partial:false, eventId: taxi.event.id, originIso:taxi.iso, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
         source: source + ' · ' + selected.reason,
         airport: taxi.event.origin, rateKey: 'domestic', rateSource: selected.source, rateVersion: selected.version,
@@ -4166,7 +4374,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <p>Estimativa por moeda · sem confirmação de pagamento.</p>
     </section>
     </FinancialScreen>
-    <FinancialActApplicability/>
+    <FinancialActApplicability pending={forecast.monthlyUnclassifiedItems.filter(item => item.actCause && item.iso)} preset={forecast.monthlyRows.some(item=>item.rateSource?.startsWith('system_default:'))}/>
     {nextPayment}
     <FinancialScreen names={['statement']}>
     <section className="cz-finance-grid cc-per-diem-summary" aria-label="Resumo da competência">
@@ -4223,15 +4431,17 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
 
 function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[], quotes?:Record<string,FxQuote>,today=new Date().toISOString().slice(0,10)) {
   const base = snapshots[0]?.perdiem || {};
-  const nativeRows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
+  const evidence = aggregateAllowanceEvidence(snapshots);
+  const nativeRows = financialRowsInRange(evidence.rows, range);
   const referenceRows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.referenceRows || []), range);
   const referenceInspections = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.referenceInspections || []), range);
   const referenceTotalsByCurrency = summarizeMinimumAllowanceRows(referenceRows);
   const rows = quotes===undefined?nativeRows:projectAllowanceFxRows(nativeRows,quotes,today);
-  const pending = snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems);
-  const unclassifiedItems = [...financialRowsInRange(pending, range), ...pending.filter(item => !item.iso)];
+  const pending = evidence.unclassifiedItems;
+  const unclassifiedItems = allowancePendingInRange(pending,range);
   const native = summarizeNativeForecastRows(rows, unclassifiedItems), converted = summarizeForecastRows(rows, unclassifiedItems);
-  const scopeIncomplete = !range.valid || missing.length > 0;
+  const coverage = financialDayCoverage(allowanceSourceRange(range), nominalFinancialDays(snapshots.map(snapshot=>snapshot.roster)));
+  const scopeIncomplete = !coverage.valid || missing.length > 0 || coverage.missingDays.length > 0;
   const nativeSummary = scopeIncomplete ? { ...native, complete:false, totalsByCurrency:{}, state:'unclassified' } : native;
   const monthlySummary = scopeIncomplete ? { ...converted, convertedComplete:false, convertedTotalBRL:null, state:'invalid_amount' } : converted;
   const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
@@ -4255,14 +4465,16 @@ function PerDiemView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDay
     weeks={(snapshots,range)=>financialWeeks(range).map(week=>({range:week,value:scopedFinancialForecast(snapshots,week,[]).currencySummary}))}
     render={({snapshots,range,missing,controls,graph,coverageReady,requestRange})=>{
       const forecast = scopedFinancialForecast(snapshots.map(item=>item.snapshot),range,missing,fx.quotes);
+      const evidence = aggregateAllowanceEvidence(snapshots.map(item=>item.snapshot));
+      const coveredDays = nominalFinancialDays(snapshots.map(item=>item.roster));
       // Capture identity and payload use native evidence only, never live FX projections.
-      const captureRows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows),range).map(row=>({iso:row.iso,label:row.label,currency:row.currency,value:row.value,source:row.source,rateVersion:row.rateVersion}));
+      const captureRows = financialRowsInRange(evidence.rows,range).map(row=>({iso:row.iso,label:row.label,currency:row.currency,value:row.value,source:row.source,rateVersion:row.rateVersion}));
       const selected = snapshots.find(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===range.start.slice(0,7)) || {roster:bundle.roster,source:bundle.source};
       const knownPeriods = new Set(snapshots.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`));
-      const auditRows = projectAllowanceFxRows(snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows),fx.quotes,new Date().toISOString().slice(0,10));
-      const payment = nextAllowancePayment(auditRows, snapshots.flatMap(item=>item.snapshot.perdiem.monthlyUnclassifiedItems), coverageReady?[...knownPeriods]:[], new Date(), snapshots.flatMap(item=>item.roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date)));
+      const auditRows = projectAllowanceFxRows(evidence.rows,fx.quotes,new Date().toISOString().slice(0,10));
+      const payment = nextAllowancePayment(auditRows, evidence.unclassifiedItems, coverageReady?[...knownPeriods]:[], new Date(), coveredDays);
       const captureFlights = [...new Map(snapshots.flatMap(item=>buildLegs(item.roster).filter(event=>event.kind==='flight'&&event.salaryClockKnown===true&&item.roster.days.some(day=>day.date===event.day.date&&(day.legs||[]).some(leg=>leg.flightNumber===event.flightNumber&&leg.origin===event.origin&&leg.destination===event.destination&&leg.departureTime===event.leg?.departureTime&&leg.arrivalTime===event.leg?.arrivalTime))&&/^\d{2}\/\d{2}\/\d{4}$/.test(event.day.date)).map(event=>({id:event.id,published:true,localDate:event.day.date.split('/').reverse().join('-'),timezone:'America/Sao_Paulo',airport:event.origin,label:`${event.day.date} · ${event.flightNumber} · ${event.origin} → ${event.destination} · ${event.departure} BRT`}))).map(flight=>[flight.id,flight])).values()];
-      return <><CanonicalForecastCapture key={JSON.stringify([getStoredUser()?.email,range,captureRows,captureFlights,forecast.nativeSummary.complete&&!forecast.scopeIncomplete])} flights={captureFlights} rows={captureRows} range={range} complete={forecast.nativeSummary.complete&&!forecast.scopeIncomplete} crewId={selected.roster.crewId} airline={selected.roster.airline||''} coveredDays={snapshots.flatMap(item=>item.roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date))}/><PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} fxControl={<FinancialFxSourceControl/>} onExchangeConfigured={()=>fx.setMode('manual')} nextPayment={<NextPaymentCard payment={payment} requestRange={requestRange} extraDetails={graph}/>} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<><FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} quotes={fx.quotes} today={new Date().toISOString().slice(0,10)} rows={snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows)} unclassified={snapshots.flatMap(item=>item.snapshot.perdiem.monthlyUnclassifiedItems)}/></>}/></>;
+      return <><CanonicalForecastCapture key={JSON.stringify([getStoredUser()?.email,range,captureRows,captureFlights,forecast.nativeSummary.complete&&!forecast.scopeIncomplete])} flights={captureFlights} rows={captureRows} range={range} complete={forecast.nativeSummary.complete&&!forecast.scopeIncomplete} crewId={selected.roster.crewId} airline={selected.roster.airline||''} coveredDays={coveredDays}/><PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} fxControl={<FinancialFxSourceControl/>} onExchangeConfigured={()=>fx.setMode('manual')} nextPayment={<NextPaymentCard payment={payment} requestRange={requestRange} extraDetails={graph}/>} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<><FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} coveredDays={coverageReady?coveredDays:[]} quotes={fx.quotes} today={new Date().toISOString().slice(0,10)} rows={evidence.rows} unclassified={evidence.unclassifiedItems}/></>}/></>;
     }}/>
 }
 function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
@@ -4297,7 +4509,7 @@ function SalaryReliableView({ bundle,freeDayEvaluation }: { bundle: BundleState;
   const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
   const moneyCurrency = (value: number, currency: PerDiemCurrency) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value));
   return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} changesDetails={<FinancialFreeDayDetails evaluation={freeDayEvaluation}/>} mode="salary" rangeMetric={metricForBasis} metric={snapshot=>metricForBasis(snapshot,financialRange('month',`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`,'','',''))}
-    render={({snapshots,range,missing,controls,graph,requestRange})=>{
+    render={({snapshots,availableMonths,selectReferenceMonth,range,missing,controls,graph,requestRange})=>{
       const fullMonths = range.valid && range.start.endsWith('-01') && range.end===financialRange('month',range.end.slice(0,7),'','','').end;
       const selected = snapshots.filter(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`>=range.start.slice(0,7)&&`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`<=range.end.slice(0,7));
       const diagnosticItems = selected.map(item => salaryDiagnosticItem(item.snapshot));
@@ -4305,15 +4517,23 @@ function SalaryReliableView({ bundle,freeDayEvaluation }: { bundle: BundleState;
       const available = diagnostic.ready;
       const deductionScopeReady = fullMonths && missing.length===0 && selected.length>0 && selected.every(item=>item.snapshot.salary.dsr.isCurrent());
       const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
+      // A monthly observed subtotal is independently valid even when the
+      // exhaustive inventory/DSR gate prevents a complete salary. Never rate it
+      // over a partial month or reuse a revoked/different account projection.
+      const observed = selected.map(item=>item.snapshot.salary.dsr);
+      const observedOwner = financialRateOwner();
+      const observedMinor = fullMonths && observed.length>0 && new Set(selected.map(item=>`${item.roster.year}-${item.roster.month}`)).size===selected.length && observed.every((dsr,index)=>dsr.isCurrent()&&dsr.composition.ownerId===observedOwner&&dsr.composition.competence===`${selected[index].roster.year}-${String(selected[index].roster.month).padStart(2,'0')}`) ? observed.flatMap(dsr=>dsr.observedSubtotalMinor===null?[]:[dsr.observedSubtotalMinor]) : [];
+      const observedSum = observedMinor.reduce((sum,value)=>sum+value,0);
+      const statementGross = gross ?? (observedMinor.length>0&&observedMinor.every(value=>Number.isSafeInteger(value)&&value>=0)&&Number.isSafeInteger(observedSum)?observedSum/100:null);
       const completeNetScope=available&&fullMonths&&selected.length>0&&selected.every(item=>payrollOperationalCoverage(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,item.roster.days.map(day=>day.date)).complete);
-      const displaySummary=basis==='gross'?salaryDisplaySummary(basis,gross,available&&fullMonths,[],[]):sumSalaryDisplaySummaries(basis,selected.map(item=>summaryForMonth(item.snapshot,item.snapshot.salary.gross,available&&fullMonths)));
+      const displaySummary=basis==='gross'?salaryDisplaySummary(basis,statementGross,available&&fullMonths,[],[]):sumSalaryDisplaySummaries(basis,selected.map(item=>summaryForMonth(item.snapshot,item.snapshot.salary.gross,available&&fullMonths)));
       const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
       const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
       return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">
         <FinancialScreen names={['overview']}><section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Estimativa do próximo ciclo</p></section></FinancialScreen>
-        <PayrollPaymentCard basis={basis} chooseBasis={chooseBasis} snapshots={snapshots.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary:item.snapshot.salary,publishedDays:item.roster.days.map(day=>day.date)}))} requestRange={requestRange} extraDetails={<><SalaryBreakdownChart gross={gross} deductions={deductionScopeReady?selected.reduce((sum,item)=>sum+item.snapshot.salary.inss+item.snapshot.salary.irrf+item.snapshot.salary.otherDeductions,0):null} net={completeNetScope?selected.reduce((sum,item)=>sum+item.snapshot.salary.net,0):null} period={`${range.start} a ${range.end}`} entries={deductionScopeReady?selected.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,inss:item.snapshot.salary.inss,irrf:item.snapshot.salary.irrf,otherDeductions:item.snapshot.salary.otherDeductions})):[]}/>{graph}</>}/>
+        <PayrollPaymentCard basis={basis} chooseBasis={chooseBasis} availableMonths={availableMonths} selectReferenceMonth={selectReferenceMonth} snapshots={snapshots.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary:item.snapshot.salary,publishedDays:item.roster.days.map(day=>day.date),presetScope:financialPresetScope(item.roster,readFinancialActApplicability())}))} requestRange={requestRange} extraDetails={<><SalaryBreakdownChart gross={gross} deductions={deductionScopeReady?selected.reduce((sum,item)=>sum+item.snapshot.salary.inss+item.snapshot.salary.irrf+item.snapshot.salary.otherDeductions,0):null} net={completeNetScope?selected.reduce((sum,item)=>sum+item.snapshot.salary.net,0):null} period={`${range.start} a ${range.end}`} entries={deductionScopeReady?selected.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,inss:item.snapshot.salary.inss,irrf:item.snapshot.salary.irrf,otherDeductions:item.snapshot.salary.otherDeductions})):[]}/>{graph}</>}/>
         <FinancialScreen names={['overview']}><section data-salary-known-subtotal aria-label="Subtotal salarial estimado">{selected.map(item=>{const dsr=item.snapshot.salary.dsr;return dsr.isCurrent()?<p key={`${item.roster.year}-${item.roster.month}`}><strong>Subtotal estimado · {item.roster.month}/{item.roster.year}: {moneyBRL(dsr.observedSubtotalMinor===null?null:dsr.observedSubtotalMinor/100)}</strong> · DSR pendente</p>:null;})}</section></FinancialScreen>
-        <FinancialScreen names={['statement']}><section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title={basis==='gross'?'Bruto previsto no período':'Líquido previsto no período'} value={moneyBRL(displaySummary.amount)} detail={displaySummary.reason||(fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.')}/></section>
+        <FinancialScreen names={['statement']}><section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title={basis==='gross'?(displaySummary.complete?'Bruto previsto no período':'Subtotal bruto estimado no período'):'Líquido previsto no período'} value={moneyBRL(displaySummary.amount)} detail={basis==='gross'&&!displaySummary.complete?'Parcelas observadas, sem DSR. Inventário integral ainda não comprovado.':displaySummary.reason||(fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.')}/></section>
         </FinancialScreen>
         <FinancialScreen names={['payment']}>
         <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>
@@ -4326,7 +4546,7 @@ function SalaryReliableView({ bundle,freeDayEvaluation }: { bundle: BundleState;
 }
 function ReportsView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle);
-  return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>Índice de intensidade da escala.</p></article><article><h2>Alertas</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Itens confirmados e para revisão.</p></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>{(compliance as any).loadAnalysis?.aggregateStatus === 'indeterminate' ? 'Índice indeterminado: disponibilidade pendente nos dias mensuráveis.' : (compliance as any).loadAnalysis?.aggregateStatus === 'partial' ? 'Índice parcial: datas com disponibilidade pendente fora do cálculo.' : 'Índice de intensidade da escala.'}</p></article><article><h2>Alertas</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Itens confirmados e para revisão.</p></article></section></>;
 }
 function CalendarToolsView({ actions, bundle, gym }: { actions: QuickActions; bundle: BundleState; gym: any[] }) {
   const [calendars, setCalendars] = useState<GoogleCalendarOption[]>([]);
@@ -5423,6 +5643,7 @@ export default function Home() {
   const rosterReadRevision=useMemo(()=>JSON.stringify(bundle.roster),[bundle.roster]);
   // Changes invalidate original response admission before a new render can use it.
   setOperationalRadarContext(captureAuthSession().owner,alertRosterOwned(bundle.roster)?rosterReadRevision:'');
+  setBrowserRadarContext(alertRosterOwned(bundle.roster)?rosterReadRevision:'');
   const [,refreshOperationalArrival]=useState(0);
   useEffect(()=>{
     const changed=()=>refreshOperationalArrival(n=>n+1);

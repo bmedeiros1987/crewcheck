@@ -40,6 +40,7 @@ const server=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEv
  conciergeLoadSnapshot:async()=>({email:'fictional@test.invalid',roster}),conciergeAccessMatches:()=>true,conciergeFindFlight:()=>({leg:roster.days[0].legs[0]}),
  conciergeApplyRadar:()=>{},conciergeSaveSnapshotAsync:async()=>{exports++;},sendJson:(_r,_s,data)=>data});
 const before=process.argv.includes('--before');
+
 vm.runInContext(functions(before?'/tmp/crewcheck-gate-cost-before-server.mjs':'server.mjs',['runRadarRace','handleRadar']),server);
 const request=(extra={})=>new URL('https://fixture.invalid/api/radar-flight?'+new URLSearchParams({flight:'LA100',origin:'GRU',destination:'REC',departureDate:date,scheduledDepartureUtc:identity.scheduledDepartureUtc,...extra}));
 now=Date.parse('2032-10-14T02:59:59Z');
@@ -65,6 +66,19 @@ const client=vm.createContext({...radarAdmission,...policy,RADAR_GATE_STALE_MS:3
  flightOperationalDate:e=>e.canonical.date,eventStartDateTime:()=>new Date(identity.scheduledDepartureUtc),readRadarSnapshot:()=>cacheReadable?cache:null,telegramConciergeIdentity:()=>({}),
  authFetch:(url)=>{lastQueryUrl=new URL(url,'https://fixture.invalid');fetches++;return new Promise(r=>{resolve=r;});},fetch:()=>{throw Error('legacy fetch forbidden');},
  saveRadarSnapshot:(_event,payload)=>{saves++;return payload;},radarQuerySerial:new Map()});
+// Actual new Home dependencies; this legacy transport fixture has no accepted
+// publication context. Real browser ownership is covered by the dedicated suite.
+if (!client.captureAuthSession) client.captureAuthSession=()=>{const token=client.getToken(),owner=JSON.stringify(client.getStoredUser());return {token,owner,isCurrent:()=>token===client.getToken()&&owner===JSON.stringify(client.getStoredUser())}};
+client.storage ||= {get:()=> 'null'};
+client.radarSnapshotKey ||= event=>'unbound-transport-fixture:'+event.id;
+client.window ||= {dispatchEvent(){}};
+client.CustomEvent ||= class {};
+const presentationSource=fs.readFileSync(before?'/tmp/crewcheck-gate-cost-before-Home.tsx':'client/src/pages/Home.tsx','utf8'),presentationAst=ts.createSourceFile('Home.tsx',presentationSource,99,true,ts.ScriptKind.TSX);
+if(presentationSource.includes('let browserRadarContext')) {
+const presentationDeclarations=['browserRadarContext','browserRadarResponses','browserRadarInvalidations'].map(name=>{const n=presentationAst.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(presentationAst)===name));assert(n,name);return n.getText(presentationAst)}).join('\n');
+const presentationFunctions=['browserRadarGeneration','browserRadarContextIsCurrent','browserRadarSignature'].map(name=>{const n=presentationAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(n,name);return n.getText(presentationAst)}).join('\n');
+vm.runInContext(ts.transpileModule(presentationDeclarations+'\n'+presentationFunctions,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,client);
+}
 vm.runInContext(functions(before?'/tmp/crewcheck-gate-cost-before-Home.tsx':'client/src/pages/Home.tsx',['fetchRadarSnapshot']),client);
 now=Date.parse('2032-10-14T02:59:59Z');assert.equal(await client.fetchRadarSnapshot(event),cache);assert.equal(fetches,0);
 cacheReadable=false;assert.equal((await client.fetchRadarSnapshot({...event,origin:'XYZ'},true)).querySuppressed,true);assert.equal(fetches,0);

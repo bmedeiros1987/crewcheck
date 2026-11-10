@@ -52,7 +52,8 @@ for(const width of [320,360,390,1440])for(const theme of ['light','dark'])for(co
     const gateText=await card.locator('.cc-next-gate-gate b').innerText(),status=await card.locator('.cc-next-gate-facts b').innerText();
     if(state==='missing'){assert.equal(gateText,'-');assert.equal(status,'-');assert.doesNotMatch(await summary.innerText(),/não confirmado/i);assert.equal(await summary.getByRole('img',{name:'Portão de embarque não confirmado'}).count(),1);assert.equal(await summary.getByRole('img',{name:'Status operacional não confirmado'}).count(),1);}
     if(state==='gate-only'){assert.equal(gateText,'9');assert.equal(status,'-');}
-    if(state==='status-only'){assert.equal(gateText,'-');assert.equal(status,'Programado');}
+    // Gate without its own observation instant is shown as provider-reported (docs/gate-behavior-rule.md).
+    if(state==='status-only'){assert.equal(gateText,'9');assert.equal(status,'Programado');assert.match(await summary.innerText(),/a confirmar/);}
     if(state==='manual'){assert.equal(gateText,'24');assert.match(await summary.innerText(),/Portão manual/);assert.match(await summary.innerText(),/o Radar indica 9/);assert.doesNotMatch(await summary.innerText(),/Autoria sintética/);}
     if(state==='conflict'){assert.equal(gateText,'24');assert.equal(status,'-');assert.match(await summary.innerText(),/divergência nos dados operacionais/);}
     if(state==='stale')assert.match(await summary.innerText(),/Desatualizado/);
