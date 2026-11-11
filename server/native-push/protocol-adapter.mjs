@@ -69,10 +69,17 @@ export async function nativeProtocolHost(){return {enabled:false,configured:fals
 
 export const NATIVE_REGISTRY_PATH='/api/platform/notifications/android-installation';
 const hostError=(code,status)=>Object.assign(new Error(code),{code,status});
-const sendHost=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(value));};
-async function nativeHostBody(req){
+const responseUnavailable=res=>res.destroyed===true||res.writableEnded===true||res.headersSent===true;
+const requestCancelled=(req,res)=>req.aborted===true||(req.destroyed===true&&req.complete===false)||responseUnavailable(res);
+const sendHost=(res,status,value)=>{
+  if(responseUnavailable(res))return false;
+  // A failed write cannot undo SQL or justify a second response/automatic retry.
+  try{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(value));return true;}catch{return false;}
+};
+async function nativeHostBody(req,live){
   const chunks=[];let size=0;
-  for await(const chunk of req){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>16384)throw hostError('NATIVE_INPUT_TOO_LARGE',413);chunks.push(bytes);}
+  for await(const chunk of req){live();const bytes=Buffer.from(chunk);size+=bytes.length;if(size>16384)throw hostError('NATIVE_INPUT_TOO_LARGE',413);chunks.push(bytes);}
+  live();
   try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));}catch{throw hostError('NATIVE_INVALID_JSON',400);}
 }
 const publicErrors=new Set(['NATIVE_PROTOCOL_INVALID','NATIVE_IDENTITY_REQUIRED','NATIVE_INVALID_INSTALLATION','NATIVE_INVALID_MUTATION','NATIVE_INVALID_TOKEN','NATIVE_OWNER_HINT_MISMATCH','NATIVE_REGISTRY_STATE_INVALID','NATIVE_TOKEN_CLAIM_INVALID','NATIVE_TOKEN_CLAIM_CHANGED','NATIVE_MUTATION_REUSED','NATIVE_REVISION_CHANGED','NATIVE_STALE_GENERATION','NATIVE_GENERATION_REVOKED','NATIVE_TOKEN_VERSION_REUSED','NATIVE_ROTATION_STALE','NATIVE_EXPLICIT_CONSENT_REQUIRED','NATIVE_TOKEN_ALREADY_BOUND','NATIVE_SESSION_REVOKED','NATIVE_PROTECTION_INVALID','NATIVE_PROTECTION_FAILED','NATIVE_INPUT_TOO_LARGE','NATIVE_INVALID_JSON','NATIVE_AUTH_REQUIRED','NATIVE_ORIGIN_REQUIRED','NATIVE_JSON_REQUIRED','NATIVE_INVALID_QUERY','NATIVE_REGISTRY_LIMITED','NATIVE_INGRESS_LIMITED','NATIVE_IDENTITY_CHANGED','NATIVE_HOST_UNCONFIGURED']);
@@ -85,23 +92,28 @@ export function createNativeRegistryAuthenticatedHandler({enabled=false,admitIng
   if(typeof enabled!=='boolean')throw hostError('NATIVE_HOST_UNCONFIGURED',503);
   return async(req,res,url)=>{
     if(url.pathname!==NATIVE_REGISTRY_PATH)return false;
+    if(responseUnavailable(res))return true;
     if(!enabled){sendHost(res,503,{ok:false,code:'NATIVE_REGISTRY_OFF',state:'disabled',registryConfirmed:false,received:null});return true;}
-    if(!['GET','POST'].includes(req.method)){res.setHeader('Allow','GET, POST');sendHost(res,405,{ok:false,code:'METHOD_NOT_ALLOWED',registryConfirmed:false,received:null});return true;}
+    let cancelled=false;
+    const live=()=>{if(cancelled||requestCancelled(req,res)){cancelled=true;throw hostError('NATIVE_REQUEST_CANCELLED',503);}};
+    const waitLive=async value=>{const result=await value;live();return result;};
     try{
+      live();
+      if(!['GET','POST'].includes(req.method)){res.setHeader('Allow','GET, POST');sendHost(res,405,{ok:false,code:'METHOD_NOT_ALLOWED',registryConfirmed:false,received:null});return true;}
       if([admitIngress,identityProvider,isIdentityCurrent,admitRequest,poolProvider,allowedOrigin].some(fn=>typeof fn!=='function'))throw hostError('NATIVE_HOST_UNCONFIGURED',503);
       // No cookie-only or development email/header fallback for enrollment.
       if(!/^Bearer\s+\S+$/i.test(req.headers.authorization||''))throw hostError('NATIVE_AUTH_REQUIRED',401);
-      const origin=await allowedOrigin();let trusted=false;
+      const origin=await waitLive(allowedOrigin());let trusted=false;
       try{const u=new URL(origin);trusted=u.protocol==='https:'&&u.origin===origin&&!u.username&&!u.password;}catch{}
       if(!trusted||(req.headers.origin&&req.headers.origin!==origin)||(req.method==='POST'&&req.headers.origin!==origin))throw hostError('NATIVE_ORIGIN_REQUIRED',403);
       // Separate trusted ingress budget from authenticated-owner admission.
       // No verifier/key/profile work starts without an explicit ingress grant.
-      if(await admitIngress(req)!==true)throw hostError('NATIVE_INGRESS_LIMITED',429);
-      const authority=await identityProvider(req);
+      if(await waitLive(admitIngress(req))!==true)throw hostError('NATIVE_INGRESS_LIMITED',429);
+      const authority=await waitLive(identityProvider(req));
       if(authority?.authenticated!==true||authority.role!=='owner'||!identifier(authority.ownerId)||typeof authority.email!=='string'||authority.email.length>254||!authority.email.includes('@'))throw hostError('NATIVE_AUTH_REQUIRED',401);
       const captured=Object.freeze({...authority}),identity=Object.freeze({ownerId:captured.ownerId,email:captured.email});
-      if(await isIdentityCurrent(req,captured)!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
-      if(await admitRequest(req,captured)!==true)throw hostError('NATIVE_REGISTRY_LIMITED',429);
+      if(await waitLive(isIdentityCurrent(req,captured))!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
+      if(await waitLive(admitRequest(req,captured))!==true)throw hostError('NATIVE_REGISTRY_LIMITED',429);
       const query=[...url.searchParams];let body,installationId,protection;
       if(req.method==='GET'){
         if(query.length!==1||query[0][0]!=='installationId'||!identifier(query[0][1]))throw hostError('NATIVE_INVALID_QUERY',400);
@@ -109,23 +121,24 @@ export function createNativeRegistryAuthenticatedHandler({enabled=false,admitIng
       }else{
         if(query.length)throw hostError('NATIVE_INVALID_QUERY',400);
         if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))throw hostError('NATIVE_JSON_REQUIRED',415);
-        body=await nativeHostBody(req);nativeProtocolMutation(identity,body);
+        body=await waitLive(nativeHostBody(req,live));nativeProtocolMutation(identity,body);
         if(body.action!=='revoke'){
           if(typeof protectionProvider!=='function')throw hostError('NATIVE_HOST_UNCONFIGURED',503);
-          protection=await protectionProvider();
+          protection=await waitLive(protectionProvider());
           if(typeof protection?.seal!=='function')throw hostError('NATIVE_HOST_UNCONFIGURED',503);
         }
       }
-      if(await isIdentityCurrent(req,captured)!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
-      const platformDb=await poolProvider();
-      if(await isIdentityCurrent(req,captured)!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
+      if(await waitLive(isIdentityCurrent(req,captured))!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
+      const platformDb=await waitLive(poolProvider());
+      if(await waitLive(isIdentityCurrent(req,captured))!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
       const {registryDb}=createNativeRegistryPlatformAdapter(platformDb);
-      const receipt=req.method==='GET'?await readNativeProtocolInstallation(registryDb,identity,installationId):await applyNativeProtocolMutation(registryDb,identity,body,{protection});
+      const receipt=await waitLive(req.method==='GET'?readNativeProtocolInstallation(registryDb,identity,installationId):applyNativeProtocolMutation(registryDb,identity,body,{protection}));
       // A mutation may already be durable. A late revoked/replaced scope gets no
       // ACK; the client's fixed mutation ID must reconcile any uncertainty.
-      if(await isIdentityCurrent(req,captured)!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
+      if(await waitLive(isIdentityCurrent(req,captured))!==true)throw hostError('NATIVE_IDENTITY_CHANGED',401);
       sendHost(res,200,{ok:true,...receipt});
     }catch(error){
+      if(cancelled||requestCancelled(req,res))return true;
       const known=publicErrors.has(error?.code),status=known&&[400,401,403,409,413,415,429,503].includes(error.status)?error.status:503;
       sendHost(res,status,{ok:false,code:known?error.code:'NATIVE_REGISTRY_UNAVAILABLE',state:'unconfirmed',registryConfirmed:false,received:null});
     }

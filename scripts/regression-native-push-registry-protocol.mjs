@@ -117,9 +117,11 @@ const fixtureSecret=crypto.randomBytes(32).toString('hex');
 const auth=Function('crypto','authSecret',declarations+';return {verifyJwt,requestToken};')(crypto,()=>fixtureSecret);
 const jwt=claims=>{const prefix=[{alg:'HS256',typ:'JWT'},{email:identity.email,role:'free',aud:'crewcheck',exp:Math.floor(Date.now()/1000)+120,...claims}].map(v=>Buffer.from(JSON.stringify(v)).toString('base64url')).join('.');return prefix+'.'+crypto.createHmac('sha256',fixtureSecret).update(prefix).digest('base64url');};
 const bearer=jwt({});
-async function invoke(handler,{method='GET',query='?installationId='+wire.installationId,headers={},body='',pathname=NATIVE_REGISTRY_PATH}={}){
+async function invoke(handler,{method='GET',query='?installationId='+wire.installationId,headers={},body='',pathname=NATIVE_REGISTRY_PATH,requestPatch={},responsePatch={}}={}){
  const req=Readable.from([Buffer.isBuffer(body)?body:Buffer.from(body)]);req.method=method;req.headers={authorization:'Bearer '+bearer,...headers};
+ Object.assign(req,requestPatch);
  const res={headers:{},status:null,body:null,setHeader(k,v){this.headers[k]=v;},writeHead(status,h){this.status=status;Object.assign(this.headers,h);},end(s){this.body=JSON.parse(s);}};
+ Object.assign(res,responsePatch);
  const handled=await handler(req,res,new URL('https://synthetic.example.test'+pathname+query));return {handled,...res};
 }
 function hostFixture(overrides={}){
@@ -227,4 +229,34 @@ for(const gate of [undefined,async()=>false,async()=>({allowed:true}),async()=>{
  const h=createNativeRegistryExistingIdentityHandler({enabled:true,admitIngress:()=>false,admitRequest:()=>true,allowedOrigin:()=> 'https://synthetic.example.test',identify:()=>{authorityCalls++;throw Error('SYNTHETIC_NO_AUTH_WORK');}});
  const denied=await invoke(h);check(()=>assert.equal(denied.status,429));check(()=>assert.equal(denied.body.code,'NATIVE_INGRESS_LIMITED'));check(()=>assert.equal(authorityCalls,0));
 }
-console.log('PASS '+count+' native protocol wire/CAS/ACK/existing-owner/authenticated-host/platform-transaction/revoke/OFF synthetic checks');
+{
+ let authorities=0;
+ const f=hostFixture({identityProvider:()=>{authorities++;return {...identity,authenticated:true,role:'owner'};}});
+ const early=await invoke(f.handler,{requestPatch:{aborted:true}});
+ check(()=>assert.equal(authorities,0,'already aborted request cannot reach authority'));check(()=>assert.equal(f.opens(),0));check(()=>assert.equal(early.status,null));
+ const incomplete=await invoke(f.handler,{requestPatch:{destroyed:true,complete:false}});
+ check(()=>assert.equal(incomplete.status,null));check(()=>assert.equal(f.opens(),0,'destroyed incomplete HTTP request starts no work'));
+}
+for(const responsePatch of [{destroyed:true},{writableEnded:true},{headersSent:true}]){
+ const f=hostFixture(),reply=await invoke(f.handler,{responsePatch});check(()=>assert.equal(f.opens(),0));check(()=>assert.equal(reply.status,null,'closed response gets no second write'));
+}
+{
+ let authorities=0;const f=hostFixture({admitIngress:req=>{req.aborted=true;return true;},identityProvider:()=>{authorities++;throw Error('AUTH_MUST_NOT_RUN');}});
+ await invoke(f.handler);check(()=>assert.equal(authorities,0,'abort during ingress stops next stage'));check(()=>assert.equal(f.opens(),0));
+ let request;const pending=hostFixture({identityProvider:req=>{request=req;return {...identity,authenticated:true,role:'owner'};},poolProvider:async()=>{request.aborted=true;return pending.db;}});
+ const stopped=await invoke(pending.handler);check(()=>assert.equal(pending.opens(),0,'abort while resolving pool starts no SQL'));check(()=>assert.equal(stopped.status,null));
+ let fences=0;const late=hostFixture({isIdentityCurrent:req=>{if(++fences===4)req.aborted=true;return true;}}),reply=await invoke(late.handler);
+ check(()=>assert.equal(late.opens(),1));check(()=>assert.equal(reply.status,null,'abort after SQL does not create a receipt'));
+}
+for(const stage of ['headers','body']){
+ let attempts=0;const f=hostFixture(),responsePatch=stage==='headers'?{writeHead(){attempts++;throw Error('SYNTHETIC_WRITE_FAILED');}}:{end(){attempts++;throw Error('SYNTHETIC_END_FAILED');}};
+ await assert.doesNotReject(invoke(f.handler,{responsePatch}));count++;
+ check(()=>assert.equal(attempts,1,'response I/O failure is not retried'));
+}
+{
+ const f=hostFixture(),reply=await invoke(f.handler,{method:'POST',query:'',requestPatch:{complete:true},headers:{origin:'https://synthetic.example.test','content-type':'application/json'},body:JSON.stringify(wire)});
+ check(()=>assert.equal(reply.status,200,'completed body is not an aborted HTTP request'));check(()=>assert.equal(reply.body.registryConfirmed,true));
+ let writes=0;await assert.doesNotReject(invoke(createNativeRegistryAuthenticatedHandler(),{responsePatch:{end(){writes++;throw Error('SYNTHETIC_OFF_RESPONSE_FAILURE');}}}));count++;
+ check(()=>assert.equal(writes,1,'OFF response failure is not retried'));
+}
+console.log('PASS '+count+' native protocol wire/CAS/ACK/cancellation/existing-owner/authenticated-host/platform-transaction/revoke/OFF synthetic checks');

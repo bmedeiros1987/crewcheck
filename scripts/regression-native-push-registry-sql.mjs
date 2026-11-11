@@ -176,9 +176,11 @@ try {
  const reconciled=await applyNativeProtocolMutation(platformBridge.registryDb,platformOwner,platformRotate,{protection});
  assertCheck(reconciled.duplicate&&reconciled.revision===2,'platform commit uncertainty reconciles fixed ID without new mutation');
  const hostOptions={enabled:true,admitIngress:()=>true,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:()=>({...platformOwner,authenticated:true,role:'owner'}),isIdentityCurrent:()=>true,admitRequest:()=>true,poolProvider:()=>mysqlAdapter(platformPool),protectionProvider:()=>protection};
- async function invokeHost(handler,{method='GET',body,query='?installationId='+platformWire.installationId}={}){
+ async function invokeHost(handler,{method='GET',body,query='?installationId='+platformWire.installationId,requestPatch={},responsePatch={}}={}){
    const req=Readable.from([Buffer.from(body?JSON.stringify(body):'')]);req.method=method;req.headers={authorization:'Bearer SYNTHETIC_HOST_AUTH_NOT_REAL',origin:'https://synthetic.example.test','content-type':'application/json'};
+   Object.assign(req,requestPatch);
    const res={status:0,value:null,writeHead(status){this.status=status;},end(value){this.value=JSON.parse(value);},setHeader(){}};
+   Object.assign(res,responsePatch);
    assert.equal(await handler(req,res,new URL('https://synthetic.example.test'+NATIVE_REGISTRY_PATH+query)),true);return res;
  }
  const host=createNativeRegistryAuthenticatedHandler(hostOptions),hostRead=await invokeHost(host);
@@ -213,6 +215,25 @@ try {
  await db.query('UPDATE crewcheck_platform_profiles SET must_change_password=FALSE,public_id=? WHERE email=?',['synthetic-recreated-profile',platformOwner.email]);
  const recreatedReply=await invokeHost(existingHost);assertCheck(recreatedReply.status===401&&!recreatedReply.value.registryConfirmed,'recreated profile cannot inherit old native identity');
  await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[platformOwner.ownerId,platformOwner.email]);
+ const abortOpensBefore=platformOpens;let abortAuthCalls=0;
+ const earlyAbortHost=createNativeRegistryAuthenticatedHandler({...hostOptions,identityProvider:()=>{abortAuthCalls++;throw Error('SYNTHETIC_NO_ABORTED_AUTH');}});
+ const earlyAbort=await invokeHost(earlyAbortHost,{requestPatch:{aborted:true}});
+ assertCheck(earlyAbort.status===0&&earlyAbort.value===null&&abortAuthCalls===0&&platformOpens===abortOpensBefore,'already aborted HTTP request performs no authority or SQL work');
+ let abortFences=0;
+ const afterCommitAbort=createNativeRegistryAuthenticatedHandler({...hostOptions,isIdentityCurrent:req=>{if(++abortFences===4)req.aborted=true;return true;}});
+ const abortedRotate={...hostRotate,expectedRevision:3,tokenRevision:'4',mutationId:'synthetic-aborted-rotate',token:token+'ABORTED_ROTATED'};
+ const abortedReply=await invokeHost(afterCommitAbort,{method:'POST',query:'',body:abortedRotate});
+ assertCheck(abortedReply.status===0&&abortedReply.value===null,'abort after actual commit emits no ACK or second response');
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).revision===4,'abort does not erase or pretend to roll back committed SQL');
+ const abortReconcile=await invokeHost(host,{method:'POST',query:'',body:abortedRotate});
+ assertCheck(abortReconcile.value.duplicate&&abortReconcile.value.revision===4,'aborted response reconciles fixed mutation ID without second increment');
+ let responseAttempts=0;
+ const writeFailureRotate={...abortedRotate,expectedRevision:4,tokenRevision:'5',mutationId:'synthetic-write-failure-rotate',token:token+'WRITE_FAILURE_ROTATED'};
+ const failedWrite=await invokeHost(host,{method:'POST',query:'',body:writeFailureRotate,responsePatch:{end(){responseAttempts++;throw Error('SYNTHETIC_RESPONSE_WRITE_FAILURE');}}});
+ assertCheck(failedWrite.value===null&&responseAttempts===1,'response write exception is not retried');
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).revision===5,'failed response write preserves actual committed revision');
+ const writeReconcile=await invokeHost(host,{method:'POST',query:'',body:writeFailureRotate});
+ assertCheck(writeReconcile.value.duplicate&&writeReconcile.value.revision===5,'write failure fixed-ID reconcile does not duplicate mutation');
  const opensBeforeDelete=platformOpens;
  const platformDeleted=await deleteNativeAccountWithRegistry(platformBridge.registryDb,platformOwner,platformBridge.canonicalDeletion(async client=>{
    const result=await client.query('SELECT CONNECTION_ID() AS connectionId');
@@ -296,7 +317,7 @@ try {
  assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[clientOwners[0].email]))[0].length===0,'client request cannot recreate erased account');
  const [allClientState]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-native-push:%'");
  assertCheck(allClientState.every(row=>!String(row.payload).includes('SYNTHETIC_CLIENT_FCM_TOKEN')),'new end-to-end tokens are never stored plaintext');
- const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,existingIdentityComposition:true,ingressBeforeAuthority:true,
+ const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,existingIdentityComposition:true,ingressBeforeAuthority:true,requestCancellationAndResponseUncertainty:true,
    realClientProtocol:{commit:clientManifest.commit,gitBlob:clientManifest.gitBlob,sha256:clientManifest.sha256},testedSourceCommit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
    socketNativeAndWebLockSimulated:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
  fs.mkdirSync('artifacts/native-registry-off',{recursive:true});fs.writeFileSync('artifacts/native-registry-off/sql-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));

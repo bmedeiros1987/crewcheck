@@ -1,5 +1,25 @@
 # Native Android registry primitives — unmounted, OFF
 
+## Cancellation and response uncertainty — no transport activation
+
+The unmounted host checks aborted/incomplete requests and unavailable responses
+before starting work and after each awaited boundary. It does not treat a normally
+completed body as cancellation: request `destroyed` is only an incomplete-message
+signal when `complete` is false. A response already ended/destroyed/started gets no
+second response. Synchronous header/body write errors are not retried.
+
+These guards stop subsequent stages; they do not interrupt an already delegated
+SQL transaction or claim to roll back a commit because the client disconnected.
+Cancellation after commit or failure to write a receipt remains uncertain to the
+client and uses the existing fixed-ID reconciliation. Returning handled=true from
+the HTTP factory means the route was handled, never receipt/delivery confirmation.
+OFF and all provider/sender gates remain unchanged. No new timeout, queue or retry
+policy is introduced. Tests simulate request/response cancellation flags and write
+errors, with real disposable SQL for committed-state/reconciliation assertions;
+they do not certify actual TCP, WebView or physical-device timeout behavior.
+
+Node22 API reference: https://github.com/nodejs/node/blob/v22.x/doc/api/http.md
+
 ## Read-only cross-PR client/SQL integration test
 
 The existing CI job first reads only `androidPushLifecycle.ts` from #1218 commit
