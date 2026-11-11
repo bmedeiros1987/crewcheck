@@ -82,3 +82,7 @@ shipping-font availability, WebKit or physical-device acceptance is claimed.
 Raw/prepared/build and exact-tree review results must be recorded separately.
 
 Review hardening: source kind/document/revision/canonical item and component are required. Manual screen scenarios use explicit aggregate slots, not inferred documentary rows. Each gozo requires explicit retention, consigned and advance coverage, including reviewed zeros. Negative cash remains signed and requires reconciliation review. Entitlement and employer rounding are not assessed. Substantive edits clear all confirmations; changing a proportional period clears its amounts. Do not add this forecast automatically to monthly payroll.
+
+## Account boundary under deferred rendering
+
+Drafts are fenced by the existing auth generation as well as owner/token. A rapid A→B→A return, same-owner token replacement/return, logout/relogin or auth storage event cannot revive the previous scenario while React resets are deferred. Reset callbacks capture identity at the event; stale callbacks and edits cannot lend their old draft to the new context. Nothing is persisted. The browser regression deliberately defers resets using React transitions while forcing higher-priority renders, and checks dates/year, money and confirmations in both real components. It does not use sleeps or relax the original account-return assertions.

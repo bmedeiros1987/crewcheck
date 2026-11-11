@@ -70,3 +70,7 @@ is shared with vacation and has a separate--thirteenth mode; no parallel financi
 engine or real backend is substituted. Exact executed results are recorded in the
 private checkpoint, separately from historical results. CI and independent review
 remain required; this contract is not a claim of real-account or device accuracy.
+
+## Account boundary under deferred rendering
+
+Drafts are fenced by the existing auth generation as well as owner/token. A rapid A→B→A return, same-owner token replacement/return, logout/relogin or auth storage event cannot revive the previous scenario while React resets are deferred. Reset callbacks capture identity at the event; stale callbacks and edits cannot lend their old draft to the new context. Nothing is persisted. The browser regression deliberately defers resets using React transitions while forcing higher-priority renders, and checks dates/year, money and confirmations in both real components. It does not use sleeps or relax the original account-return assertions.

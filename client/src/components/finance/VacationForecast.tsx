@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import {captureAuthSession} from '@/lib/authClient';
 import {financialRateOwner,financialRateSession} from '@/lib/financialStatementLearning';
 import {vacationForecast,type VacationEvidence} from '../../../../shared/financialVacationForecast.mjs';
 import {useFinancialPrivacy} from './FinancialPrivacy';
@@ -9,16 +10,24 @@ const empty=()=>({acquisitionStart:'',acquisitionEnd:'',split:false,starts:['','
 // writer, an import confirmation, or a bank settlement. No automatic carryover.
 export default function VacationForecast(){
  const session=financialRateSession(),owner=financialRateOwner(),privacy=useFinancialPrivacy();
- const [state,setState]=useState(()=>({session,revision:1,draft:empty()}));
+ const guard=owner?captureAuthSession():null;
+ const [state,setState]=useState(()=>({session,guard,revision:1,draft:empty()}));
  useEffect(()=>{
-  const reset=()=>setState(current=>({session:financialRateSession(),revision:current.revision+1,draft:empty()}));
+  const reset=()=>{
+   // Capture at the event, never when a deferred React updater later runs.
+   const nextSession=financialRateSession(),nextGuard=financialRateOwner()?captureAuthSession():null;
+   setState(current=>nextSession===financialRateSession()&&(!nextGuard||nextGuard.isCurrent())
+    ?{session:nextSession,guard:nextGuard,revision:current.revision+1,draft:empty()}:current);
+  };
   const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key))reset();};
   const events=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];
   events.forEach(event=>window.addEventListener(event,reset));window.addEventListener('storage',storage);
   return()=>{events.forEach(event=>window.removeEventListener(event,reset));window.removeEventListener('storage',storage);};
  },[]);
- const draft=state.session===session?state.draft:empty();
- const change=(patch:Partial<ReturnType<typeof empty>>)=>setState(current=>({session,revision:current.revision+1,draft:{...(current.session===session?current.draft:empty()),...(Object.keys(patch).some(key=>!['reviewed','earningsComplete','deductionsComplete'].includes(key))?{reviewed:false,earningsComplete:false,deductionsComplete:false}:{}),...patch}}));
+ // A token/owner string may return to A before a deferred reset commits.
+ // The existing auth generation fence makes that old draft permanently stale.
+ const draft=state.session===session&&state.guard?.isCurrent()?state.draft:empty();
+ const change=(patch:Partial<ReturnType<typeof empty>>)=>{if(!guard?.isCurrent())return;setState(current=>!guard.isCurrent()?current:({session,guard,revision:current.revision+1,draft:{...(current.session===session&&current.guard?.isCurrent()?current.draft:empty()),...(Object.keys(patch).some(key=>!['reviewed','earningsComplete','deductionsComplete'].includes(key))?{reviewed:false,earningsComplete:false,deductionsComplete:false}:{}),...patch}}));};
  const amount=(s:string)=>/^\d+(?:[.,]\d{1,2})?$/.test(s)?Math.round(Number(s.replace(',','.'))*100):null;
  const periods=Array.from({length:draft.split?2:1},(_,i)=>({id:String(i),startDate:draft.starts[i]||null,days:draft.split?15:30}));
  const source={kind:'manual_scenario' as const,id:draft.source.trim(),itemId:'remuneration',revision:state.revision,reviewed:draft.reviewed};

@@ -156,6 +156,7 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-finance-actionable-browser.mjs
           node scripts/regression-financial-long-history.cjs
           node scripts/regression-salary-display-basis-browser.cjs
+          node scripts/regression-financial-vacation-session-browser.mjs
           node scripts/regression-financial-vacation-browser.cjs
           node scripts/regression-financial-vacation-app.cjs
           node scripts/regression-financial-vacation-app.cjs --thirteenth

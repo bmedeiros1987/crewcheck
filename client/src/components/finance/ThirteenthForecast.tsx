@@ -1,3 +1,4 @@
+import {captureAuthSession} from '@/lib/authClient';
 import {useEffect,useState} from 'react';
 import {financialRateOwner,financialRateSession} from '@/lib/financialStatementLearning';
 import {thirteenthForecast,type ThirteenthEvidence} from '../../../../shared/financialThirteenthForecast.mjs';
@@ -7,10 +8,12 @@ import './vacation-forecast.css';
 const empty=()=>({year:'',start:'',end:'',avos:'',amount:'',basis:'full_year_equivalent' as ThirteenthEvidence['basis'],source:'',reviewed:false,complete:false,offsetsComplete:false,applicable:false,tax:'',loan:'',advance:''});
 export default function ThirteenthForecast(){
  const owner=financialRateOwner(),session=financialRateSession(),privacy=useFinancialPrivacy();
- const [state,setState]=useState(()=>({session,revision:1,draft:empty()}));
- useEffect(()=>{const reset=()=>setState(s=>({session:financialRateSession(),revision:s.revision+1,draft:empty()}));const storage=(e:StorageEvent)=>{if(e.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(e.key))reset();};const events=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];events.forEach(e=>addEventListener(e,reset));addEventListener('storage',storage);return()=>{events.forEach(e=>removeEventListener(e,reset));removeEventListener('storage',storage);};},[]);
- const draft=state.session===session?state.draft:empty();
- const change=(patch:Partial<ReturnType<typeof empty>>)=>setState(s=>({session,revision:s.revision+1,draft:{...(s.session===session?s.draft:empty()),...(Object.keys(patch).some(k=>!['reviewed','complete','offsetsComplete'].includes(k))?{reviewed:false,complete:false,offsetsComplete:false}:{}),...patch}}));
+ const guard=owner?captureAuthSession():null;
+ const [state,setState]=useState(()=>({session,guard,revision:1,draft:empty()}));
+ useEffect(()=>{const reset=()=>{const nextSession=financialRateSession(),nextGuard=financialRateOwner()?captureAuthSession():null;setState(s=>nextSession===financialRateSession()&&(!nextGuard||nextGuard.isCurrent())?{session:nextSession,guard:nextGuard,revision:s.revision+1,draft:empty()}:s);};const storage=(e:StorageEvent)=>{if(e.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(e.key))reset();};const events=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];events.forEach(e=>addEventListener(e,reset));addEventListener('storage',storage);return()=>{events.forEach(e=>removeEventListener(e,reset));removeEventListener('storage',storage);};},[]);
+ // The generation fence also invalidates a rapid same-token A→B→A return.
+ const draft=state.session===session&&state.guard?.isCurrent()?state.draft:empty();
+ const change=(patch:Partial<ReturnType<typeof empty>>)=>{if(!guard?.isCurrent())return;setState(s=>!guard.isCurrent()?s:({session,guard,revision:s.revision+1,draft:{...(s.session===session&&s.guard?.isCurrent()?s.draft:empty()),...(Object.keys(patch).some(k=>!['reviewed','complete','offsetsComplete'].includes(k))?{reviewed:false,complete:false,offsetsComplete:false}:{}),...patch}}));};
  const integer=(v:string)=>/^\d+$/.test(v)?Number(v):null;
  const amount=(v:string)=>/^\d+(?:[.,]\d{1,2})?$/.test(v)?Math.round(Number(v.replace(',','.'))*100):null;
  const source={kind:'manual_scenario' as const,id:draft.source.trim(),itemId:'remuneration',revision:state.revision,reviewed:draft.reviewed},averagePeriod={start:draft.start,end:draft.end},year=integer(draft.year)??NaN;
