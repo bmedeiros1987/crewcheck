@@ -1,4 +1,4 @@
-import { associateCrewOccurrences } from './crewOccurrenceAssociation';
+import { associateCrewOccurrences, leadingCrewVisualRecords } from './crewOccurrenceAssociation';
 import type { AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { isAimsFormat, parseAimsRoster } from './aimsParser';
 import { getRosterCodeDefinition, isKnownRosterCode } from './rosterCodes';
@@ -305,7 +305,7 @@ function parseCrewRosterReportRows(rows: VisualRow[], fullText: string): CrewRos
   const rescuedDays = useStrongTransposed
     ? mergedDays
     : rescueFlightsFromFullText(mergedDays, fullText, header.month, header.year, header.base);
-  const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month);
+  const crewRecords = parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month, rows);
   const days = applyGenericTripulationRecordsToDays(normalizeCrewRosterReportContinuationDays(rescuedDays, header.month, header.year, header.base), crewRecords, header.crewName);
 
   return normalizeRosterDays({
@@ -686,6 +686,7 @@ type GenericTripulationRecord = {
   flightNumber: string;
   crew: CrewMember[];
   leadCcm: CrewMember | null;
+  sourceAmbiguous?: boolean;
 };
 
 function normalizeTripulationFlightKey(value: string): string {
@@ -764,7 +765,19 @@ function parseCrewMembersFromTripulationText(text: string, rosterName: string): 
   return crew;
 }
 
-function parseGenericTripulationRecords(fullText: string, rosterName: string, fallbackYear: number, fallbackMonth: number): GenericTripulationRecord[] {
+function parseGenericTripulationRecords(fullText: string, rosterName: string, fallbackYear: number, fallbackMonth: number, visualRows?: VisualRow[]): GenericTripulationRecord[] {
+  const visual = leadingCrewVisualRecords(visualRows, fallbackYear);
+  if (visual !== null) {
+    const records = visual.records.map(row => {
+      const crew = row.sourceAmbiguous ? [] : parseCrewMembersFromTripulationText(row.crewText, rosterName);
+      return { date: row.date, flightNumber: row.flightNumber, crew, leadCcm: null, sourceAmbiguous: row.sourceAmbiguous || crew.length === 0 };
+    });
+    // Keep date-first evidence on other pages, never text-fallback a page whose
+    // leading layout was handled (including a page withheld as ambiguous).
+    const otherPages = [...new Set((visualRows || []).map(row => row.page))].filter(page => !visual.handledPages.includes(page));
+    const legacy = otherPages.flatMap(page => parseGenericTripulationRecords((visualRows || []).filter(row => row.page === page).map(row => row.text).join('\n'), rosterName, fallbackYear, fallbackMonth));
+    return [...records, ...legacy];
+  }
   const raw = String(fullText || '');
   const sectionMatch = raw.match(/(?:Tripula(?:ç|c)[oõ]es|Tripulacao|Tripula(?:ç|c)[aã]o|Crew\s+List|Crew\s+Complement|Crew\s+Members)([\s\S]*)/i);
   const sectionSource = sectionMatch ? sectionMatch[1] : raw;

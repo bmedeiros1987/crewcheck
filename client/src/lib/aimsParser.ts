@@ -1,4 +1,4 @@
-import { associateCrewOccurrences } from './crewOccurrenceAssociation';
+import { associateCrewOccurrences, leadingCrewVisualRecords } from './crewOccurrenceAssociation';
 import { aimsSourceDateIso, aimsFlightSourceIdentity, newAimsFlightSourceCoverage, finalizeAimsFlightSourceCoverage, mergeAimsFlightSourceCoverage, type AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { capturePublishedFreeDayStart, attachPublishedFreeDayTimeZone } from './freeDayStartEvidence';
 /**
@@ -825,6 +825,9 @@ function formatAimsDurationMinutes(minutes: number): string {
 }
 
 export function parseAimsRoster(fullText: string, visualRows?: AimsVisualRow[]): CrewRoster {
+  const withVisualCrew = (roster: CrewRoster): CrewRoster => visualRows?.length
+    ? { ...roster, days: applyTripulationRecords(roster.days, parseTripulationRecords(fullText, roster.crewName, roster.year, visualRows), roster.crewName) }
+    : roster;
   const visualParsed = visualRows?.length ? parseAimsRosterFromVisualRows(fullText, visualRows) : null;
   const humanTextParsed = parseAimsRosterHumanText(fullText);
   const legacyParsed = parseAimsRosterLegacy(fullText);
@@ -836,15 +839,15 @@ export function parseAimsRoster(fullText: string, visualRows?: AimsVisualRow[]):
   if (aimsVisualRosterLooksReliable(visualParsed)) {
     const secondary = humanTextParsed?.days?.length ? humanTextParsed : legacyParsed;
     const merged = mergeAimsParsedRosters(visualParsed as CrewRoster, secondary);
-    return finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed)));
+    return withVisualCrew(finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed))));
   }
 
   if (humanTextParsed && aimsHumanRosterLooksComplete(humanTextParsed)) {
-    return finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(humanTextParsed), visualParsed, humanTextParsed)));
+    return withVisualCrew(finalizeAimsFlightSourceCoverage(attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(humanTextParsed), visualParsed, humanTextParsed))));
   }
 
   const merged = visualParsed?.days?.length ? mergeAimsParsedRosters(visualParsed, legacyParsed) : legacyParsed;
-  return { ...attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed)), aimsFlightSourceCoverage: undefined };
+  return withVisualCrew({ ...attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed)), aimsFlightSourceCoverage: undefined });
 }
 
 // Enrich rest provenance without changing the selected canonical parser days.
@@ -875,6 +878,7 @@ type TripulationRecord = {
   flightNumber: string;
   crew: CrewMember[];
   leadCcm: CrewMember | null;
+  sourceAmbiguous?: boolean;
 };
 
 function normalizeCrewNameForMatch(value: string): string {
@@ -959,7 +963,19 @@ function parseAimsCrewMembersFromTripulationText(text: string, rosterName: strin
   return crew;
 }
 
-function parseTripulationRecords(fullText: string, rosterName: string, fallbackYear: number): TripulationRecord[] {
+function parseTripulationRecords(fullText: string, rosterName: string, fallbackYear: number, visualRows?: AimsVisualRow[]): TripulationRecord[] {
+  const visual = leadingCrewVisualRecords(visualRows, fallbackYear);
+  if (visual !== null) {
+    const records = visual.records.map(row => {
+      const crew = row.sourceAmbiguous ? [] : parseAimsCrewMembersFromTripulationText(row.crewText, rosterName);
+      return { date: row.date, flightNumber: row.flightNumber, crew, leadCcm: null, sourceAmbiguous: row.sourceAmbiguous || crew.length === 0 };
+    });
+    // Keep date-first evidence on other pages, never text-fallback a page whose
+    // leading layout was handled (including a page withheld as ambiguous).
+    const otherPages = [...new Set((visualRows || []).map(row => row.page))].filter(page => !visual.handledPages.includes(page));
+    const legacy = otherPages.flatMap(page => parseTripulationRecords((visualRows || []).filter(row => row.page === page).map(row => row.text).join('\n'), rosterName, fallbackYear));
+    return [...records, ...legacy];
+  }
   const raw = String(fullText || '');
   const sectionMatch = raw.match(/(?:Tripula(?:ç|c)[oõ]es|Tripulacao|Tripula(?:ç|c)[aã]o|Crew\s+List|Crew\s+Complement|Crew\s+Members)([\s\S]*)/i);
   const sectionSource = sectionMatch ? sectionMatch[1] : raw;

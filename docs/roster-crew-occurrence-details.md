@@ -13,3 +13,23 @@ Os anexos pessoais não foram incorporados. Todo PDF, nome, matrícula, voo e sc
 Limite: server/rosterParser.mjs possui outro parser para fallback/Telegram e não lê esta tabela. Este incremento cobre parsePDF local, seus parsers e objetos persistidos; não afirma extração de tripulações pelo fallback do servidor.
 
 P2 date-separator follow-up: AIMS crew records capture slash, hyphen and dotted civil dates consistently with preprocessing, including the next-record boundary. They still require a valid date and exact flight occurrence; no flight-only fallback is restored. Synthetic regressions cover full/short/inferred year, line breaks, adjacent records, invalid dates and the actual PDF-to-app chain.
+
+## CrewTopia leading/wrapped crew table follow-up (synthetic validation)
+
+The PDF.js row geometry can place the crew column before its centered date/flight
+line. A narrow horizontal-table reader uses the Tripulações heading, distinct
+left date/flight and right crew columns, separated crew paragraphs, and exactly
+one enclosed anchor per paragraph. It does not reorder arbitrary extracted text
+or choose the nearest flight. Invalid or non-unique geometry withholds the page;
+ambiguous dates remain unassociated. A date-first page retains the existing text
+contract, but a leading/ambiguous page cannot fall back to that text contract.
+Conflicting records across pages remain ambiguous. Members and roles are display
+data only: no ccmLead, confirmed chief status or financial entitlement is created.
+
+The old date-first synthetic PDF and the spatial leading-table synthetic PDF both
+run through PDF.js/parsePDF, actual import, Home and details. Fixtures contain only
+fictitious identities. The private real input was readable as Library-extracted
+text, but the official materialization helper failed twice with a network error;
+no private PDF bytes or actual PDF.js visual rows were available in this executor.
+Therefore this follow-up does not claim an end-to-end test of that real document,
+an official LATAM format homologation, or validation of the user's stored import.
