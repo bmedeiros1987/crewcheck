@@ -20,7 +20,9 @@ Approval now holds the existing canonical auth-generation capability. Changes in
 amount, contribution/payment month, session text or completeness revoke approval;
 returning to the previous context does not restore it. A stale queued checkbox
 update checks the captured auth generation and context revision again. No global
-auth implementation is changed. Invalid/overflowing cent arithmetic remains
+auth implementation is changed. Session capture/validation fail closed when
+storage is absent, blocked or becomes unavailable after approval; an independent
+review finding was reproduced before that correction (SSR localStorage error). Invalid/overflowing cent arithmetic remains
 pending, with an explicit reason. The signed deficit remains visible for review
 when money is shown; both its digits and classification disappear when hidden.
 

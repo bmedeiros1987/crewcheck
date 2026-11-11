@@ -55,6 +55,7 @@ on:
       - 'scripts/regression-salary-tariff-pending-browser.mjs'
       - 'scripts/regression-financial-known-values*'
       - 'scripts/regression-payroll-net-session-browser.mjs'
+      - 'scripts/regression-payroll-net-storage.mjs'
       - 'scripts/regression-financial-vacation-*'
       - 'scripts/regression-financial-thirteenth-*'
       - 'scripts/regression-financial-review-owner-negative.mjs'
@@ -77,6 +78,7 @@ jobs:
       - run: npm ci
       - name: Raw real-function contracts in three device timezones
         run: |
+          node scripts/regression-payroll-net-storage.mjs
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
           node scripts/regression-financial-review-hardening.mjs
@@ -105,6 +107,7 @@ jobs:
           TZ=America/Los_Angeles node scripts/regression-payroll-projection-periods.mjs
       - name: Prepared real-function contracts and existing negative gates
         run: |
+          node scripts/regression-payroll-net-storage.mjs
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
           node scripts/regression-financial-review-hardening.mjs
