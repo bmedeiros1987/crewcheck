@@ -1,3 +1,5 @@
+import {startCanonicalWhatsAppChallenge} from '../server/whatsapp-link-proof.mjs';
+import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
 import {withConciergeConversationWritesOnly,restrictConciergeSnapshotWrite,isConciergeConversationWritesOnly} from '../server/concierge-read-only-scope.mjs';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -240,7 +242,7 @@ for(const change of [s=>s.link.consent_concierge=0,s=>s.link.revoked_at='synthet
 }
 for(const linkOnly of [false,true]) {
  const f=setup();f.singleTest=true;f.linkHandshake=true;f.linkOnly=linkOnly;f.state.link=null;
- f.state.linkChallenge={email:'synthetic@example.invalid',codeHash:createHmac('sha256',secrets.linkHashKey).update('crewcheck-whatsapp-link|123456').digest('hex'),expiresAt:epoch+600000};
+ await createInfobipSqlBudget(f.db)(c=>startCanonicalWhatsAppChallenge(c,{email:'synthetic@example.invalid',publicId:f.state.owner,codeHash:createHmac('sha256',secrets.linkHashKey).update('crewcheck-whatsapp-link|123456').digest('hex')}));
  let s=await makeServer(f);
  const code=id=>JSON.stringify({results:[{...event(id),message:{type:'TEXT',text:'123456'}}]});
  try{

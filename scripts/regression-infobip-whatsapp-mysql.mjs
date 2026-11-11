@@ -1,3 +1,4 @@
+import {startCanonicalWhatsAppChallenge} from '../server/whatsapp-link-proof.mjs';
 // REAL MYSQL QA: only a task-owned ephemeral Unix socket, never a shared DB.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -124,7 +125,7 @@ try{
    console.log(JSON.stringify({head:HEAD,phase:'restart' ,passed:['real engine restart retained claim','HMAC after engine restart uses same durable claim','delivery and seen receipts and projections survive actual engine restart','production quantity reservation survives actual engine restart','preparing marker prevents engine/provider retry after restart','active engine fence survives restart and expired-content cleanup without permitting erasure','operational pilot uncertain slot and quantity survive actual MySQL/process restart without repeat','renewal revision audit original digest and consumed pickup survive actual MySQL/process restart'],externalCalls:0}));
  }else{
    await db.query('CREATE TABLE crewcheck_telegram_state(state_key VARCHAR(255) PRIMARY KEY,payload JSON NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
-   await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64),created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
+   await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(64) UNIQUE,created_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
    const source=fs.readFileSync(path.join(checkout,'server/whatsapp.mjs'),'utf8');
    const ddl=source.match(/CREATE TABLE IF NOT EXISTS crewcheck_whatsapp_links \([\s\S]*?COLLATE=utf8mb4_unicode_ci/)[0];
    await db.query(ddl);
@@ -139,7 +140,7 @@ try{
    await run('canonical handshake commits link and receipt without confirmation job',async()=>{
      await db.query('DELETE FROM crewcheck_whatsapp_links');
      const code='123456',codeHash=createHmac('sha256',salt).update('crewcheck-whatsapp-link|'+code).digest('hex');
-     await db.query('INSERT INTO crewcheck_whatsapp_link_codes(email,code_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 10 MINUTE))',[email,codeHash]);
+     await createInfobipSqlBudget(db)(c=>startCanonicalWhatsAppChallenge(c,{email,publicId:owner,codeHash}));
      const store=make().store;
      const receiver=()=>createOfflineInfobipReceiver({sender,authentication:{mode:'hmac-sha256',secretKey:password},store,now:()=>clock,queueLinkConfirmation:false});
      const item={...event,messageId:'synthetic-link-handshake',message:{type:'TEXT',text:code}};
