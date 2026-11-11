@@ -33,3 +33,14 @@ text, but the official materialization helper failed twice with a network error;
 no private PDF bytes or actual PDF.js visual rows were available in this executor.
 Therefore this follow-up does not claim an end-to-end test of that real document,
 an official LATAM format homologation, or validation of the user's stored import.
+
+Independent private QA subsequently obtained the original bytes and found a real
+counterexample on dbdc0801: three two-line paragraphs have gaps slightly below
+twice their line spacing, so the old separator merged them and withheld all three
+records. Raw and canonical-prepared results were identical. The synthetic suite
+now reproduces that centered geometry with fictitious identities. Separation
+requires a gap greater than normal spacing plus the larger of four PDF points or
+half the spacing; one enclosed anchor per group and all ambiguity guards remain
+mandatory. Near-uniform spacing remains pending. This is a bounded horizontal
+table contract, not arbitrary PDF layout recognition. The successor still needs
+independent original-document QA; no private bytes or names are test fixtures.

@@ -14,6 +14,15 @@ const fixture=()=>[
  row(580,[[165,'CP Footer Person']])
 ];
 const ambiguousFixture=()=>{const rows=fixture();rows[3].items[0].str='10/11/2032 11/11/2032';rows[3].text=rows[3].items.map(i=>i.str).join(' ');return rows;};
+// Fictitious text/dates; two-line paragraphs with a 1.98x inter-paragraph gap.
+// Each date/flight anchor is vertically centered between its two crew lines.
+const centeredFixture=(gap=22.89859)=>{
+ const ys=[600,588.44,588.44-gap,576.88-gap,576.88-2*gap,565.32-2*gap];
+ const labels=['CP Fictitious Captain FO Fictitious Officer','CC Sol','CC Single','Person','CCM Fictitious Lead CCM Other','Lead'];
+ const rows=[row(800,[[35,'Tripulações']]),...ys.map((y,i)=>row(y,[[175.75,labels[i]]]))];
+ for(let i=0;i<3;i++)rows.push(row((ys[i*2]+ys[i*2+1])/2,[[34,`${10+i}/11/2032`,55],[104.88,`LA900${i+1}`,32]]));
+ return rows;
+};
 const days=()=>[{date:'10/11/2032',legs:[{flightNumber:'LA9001',aimsSourceDate:'2032-11-10'}]},{date:'11/11/2032',legs:[{flightNumber:'LA9001'},{flightNumber:'LA9002'}]}];
 const h=loadClientModules({files:['client/src/lib/aimsParser.ts','client/src/lib/pdfParser.ts','client/src/lib/crewOccurrenceAssociation.ts'],expose:{aimsParser:['parseTripulationRecords','applyTripulationRecords'],pdfParser:['parseGenericTripulationRecords','applyGenericTripulationRecordsToDays']},prefix:'synthetic-crewtopia-layout-'});
 const compiled=path.join(h.dir,'pdfParser.js');fs.writeFileSync(compiled,fs.readFileSync(compiled,'utf8').replace('require("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")','({default:"synthetic-worker-url"})'));
@@ -22,6 +31,13 @@ try{
   const m=h.load(module),parse=rows=>{const text=rows.map(r=>r.text).join('\n');return module==='aimsParser'?m[records](text,'FICTITIOUS OWNER',2032,rows):m[records](text,'FICTITIOUS OWNER',2032,11,rows);};
   const run=(rows,roster=days())=>m[apply](roster,parse(rows),'FICTITIOUS OWNER');
   const source=fixture(),before=JSON.stringify(source),parsed=parse(source),out=run(source);
+  const centered=parse(centeredFixture());assert.equal(centered.length,3);
+  assert.deepEqual(centered.map(r=>r.crew.length),[3,1,2],module+' separates visibly distinct centered paragraphs below twice line spacing');
+  assert(centered.every(r=>!r.sourceAmbiguous),'one centered anchor per separate paragraph is supported');
+  assert.equal(centered[1].crew[0].name,'Single Person');assert.equal(centered[2].leadCcm,null);
+  assert(parse(centeredFixture(11.56*1.49)).every(r=>r.sourceAmbiguous),'near-uniform paragraph spacing remains uncertain');
+  const centeredDuplicate=centeredFixture();centeredDuplicate.push(row(598,[[34,'10/11/2032',55],[104.88,'LA9001',32]]));
+  assert(parse(centeredDuplicate).every(r=>r.sourceAmbiguous),'a second centered anchor cannot be resolved by proximity');
   assert.equal(parsed.length,3,module+' reads three independently anchored rows');
   assert.equal(out[0].legs[0].crew.length,4);assert.equal(out[0].legs[0].crew[3].name,'Last Person','wrapped continuation remains in its own paragraph');
   assert.equal(out[1].legs[1].crew[0].name,'Sol','one-word name retained');assert(!out[1].legs[0].crew,'wrong date never spreads by number');

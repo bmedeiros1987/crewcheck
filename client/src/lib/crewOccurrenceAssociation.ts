@@ -51,7 +51,11 @@ export function leadingCrewVisualRecords(rows:TableRow[]|undefined,year:number):
   const gaps=lines.slice(1).map((line,i)=>lines[i].y-line.y).filter(g=>g>4);
   const spacing=gaps.length?Math.min(...gaps):0;
   const groups:(typeof lines)[]=[];
-  for(const line of lines){const last=groups[groups.length-1];if(!last||last[last.length-1].y-line.y>spacing*2)groups.push([line]);else last.push(line);}
+  // Centered table cells may have paragraph gaps just below two line heights.
+  // Require a visible separation from normal line spacing; exact anchor
+  // enclosure/uniqueness below still decides whether any names can be used.
+  const paragraphGap=spacing+Math.max(4,spacing/2);
+  for(const line of lines){const last=groups[groups.length-1];if(!last||last[last.length-1].y-line.y>paragraphGap)groups.push([line]);else last.push(line);}
   const members=groups.map(g=>anchors.filter(a=>a.y<=g[0].y+4&&a.y>=g[g.length-1].y-4));
   const ambiguous=badGeometry||!spacing||body.length>500||anchors.some(a=>a.invalid)||members.some(a=>a.length!==1)||anchors.some(a=>members.filter(group=>group.includes(a)).length!==1)||groups.some(g=>!role(g[0].text));
   if(ambiguous){result.push(...anchors.map(a=>({date:a.date,flightNumber:a.flightNumber,crewText:'',sourceAmbiguous:true})));continue;}
