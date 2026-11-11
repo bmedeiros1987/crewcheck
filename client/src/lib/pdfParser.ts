@@ -1,3 +1,4 @@
+import { associateCrewOccurrences } from './crewOccurrenceAssociation';
 import type { AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { isAimsFormat, parseAimsRoster } from './aimsParser';
 import { getRosterCodeDefinition, isKnownRosterCode } from './rosterCodes';
@@ -53,6 +54,8 @@ export interface FlightLeg {
    */
   presentationTime?: string;
   crew?: CrewMember[];
+  /** Display-only date/flight association; never payroll or crew-composition proof. */
+  crewAssociation?: import('./crewOccurrenceAssociation').CrewAssociation;
   ccmLead?: CrewMember | null;
   ccmBonusStatus?: 'confirmed' | 'not_applicable' | 'pending';
 }
@@ -747,8 +750,7 @@ function parseCrewMembersFromTripulationText(text: string, rosterName: string): 
     const role = normalizeTripulationRoleForDisplay(match[1]);
     const name = cleanTripulationCrewName(match[2]);
     const normalized = normalizeCrewNameForTripulation(name);
-    const minPartsOk = normalized.split(' ').length >= 2 || ['CP','FO'].includes(role);
-    if (!normalized || normalized.length < 2 || !minPartsOk) continue;
+    if (!normalized || normalized.length < 2) continue;
     const key = `${role}|${normalized}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -756,7 +758,7 @@ function parseCrewMembersFromTripulationText(text: string, rosterName: string): 
       role,
       name,
       order: crew.length,
-      isCurrentCrew: isSameCrewMemberInTripulation(name, rosterName),
+      isCurrentCrew: normalized.split(' ').length >= 2 && isSameCrewMemberInTripulation(name, rosterName),
     });
   }
   return crew;
@@ -790,49 +792,11 @@ function parseGenericTripulationRecords(fullText: string, rosterName: string, fa
     records.push({ date, flightNumber, crew, leadCcm });
   }
 
-  return records.filter((record, index, all) => all.findIndex((other) => other.date === record.date && normalizeTripulationFlightKey(other.flightNumber) === normalizeTripulationFlightKey(record.flightNumber)) === index);
+  return records;
 }
 
 function applyGenericTripulationRecordsToDays(days: RosterDay[], records: GenericTripulationRecord[], rosterName: string): RosterDay[] {
-  if (!records.length) return days;
-  const byExact = new Map<string, GenericTripulationRecord>();
-  const byDate = new Map<string, GenericTripulationRecord[]>();
-  const byFlight = new Map<string, GenericTripulationRecord>();
-  for (const record of records) {
-    const flightKey = normalizeTripulationFlightKey(record.flightNumber);
-    if (record.date) {
-      byExact.set(`${record.date}|${flightKey}`, record);
-      const list = byDate.get(record.date) || [];
-      list.push(record);
-      byDate.set(record.date, list);
-    }
-    if (!byFlight.has(flightKey)) byFlight.set(flightKey, record);
-  }
-
-  return days.map((day) => ({
-    ...day,
-    legs: (day.legs || []).map((leg, legIndex) => {
-      const flightKey = normalizeTripulationFlightKey(leg.flightNumber || '');
-      const exact = byExact.get(`${day.date}|${flightKey}`);
-      const sameDateFallback = !exact && legIndex === 0 ? byDate.get(day.date)?.find((record) => normalizeTripulationFlightKey(record.flightNumber) === flightKey) : undefined;
-      const flightFallback = !exact && !sameDateFallback ? byFlight.get(flightKey) : undefined;
-      const record = exact || sameDateFallback || flightFallback;
-      if (!record) return leg;
-      const crew = record.crew.map((member, index) => ({
-        ...member,
-        order: index,
-        isCurrentCrew: member.isCurrentCrew || isSameCrewMemberInTripulation(member.name, rosterName),
-      }));
-      const leadCcm = crew.find((member) => String(member.role || '').toUpperCase() === 'CCM') || null;
-      const current = crew.find((member) => member.isCurrentCrew) || null;
-      const ccmBonusStatus: FlightLeg['ccmBonusStatus'] = leadCcm
-        ? (current && String(current.role || '').toUpperCase() === 'CCM'
-          ? (leadCcm.order === current.order ? 'confirmed' : 'not_applicable')
-          : (isSameCrewMemberInTripulation(leadCcm.name, rosterName) ? 'confirmed' : 'pending'))
-        : 'pending';
-      return { ...leg, crew, ccmLead: leadCcm, ccmBonusStatus };
-    }),
-  }));
+  return associateCrewOccurrences(days, records);
 }
 
 function extractDutyReportFromReportBlock(text: string, firstFlightNumber: string): string | null {

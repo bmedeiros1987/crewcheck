@@ -112,6 +112,7 @@ try{
  };
  const uiRequire=id=>{
   if(id==='react')return reactFixture;
+  if(id==='@/components/roster/FlightCrewDetails')return loadUi('client/src/components/roster/FlightCrewDetails.tsx');
   if(id==='react/jsx-runtime')return nodeRequire(id);
   if(id.endsWith('.css'))return {};
   if(shell[id])return shell[id];
