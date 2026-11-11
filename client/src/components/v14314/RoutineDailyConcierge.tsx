@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   BellRing,
   CalendarPlus,
@@ -274,25 +274,10 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
     }
   }, [loadPlaces]);
 
-  useEffect(() => {
-    if (location) {
-      void loadPlaces(location);
-      const age = Date.now() - new Date(location.capturedAt).getTime();
-      if (settings.autoLocation && age > 30 * 60_000) void locate();
-      return;
-    }
-    if (settings.autoLocation) void locate();
-  }, []);
-
-  useEffect(() => {
-    if (location) void loadPlaces(location);
-  }, [plan.recoveryPriority, plan.tripEligible]);
-
   function saveGuideSettings() {
     saveSettings(settings);
     setSettingsOpen(false);
     toast.success('Preferências do guia diário salvas.');
-    if (settings.autoLocation && !location) void locate();
   }
 
   async function connectHealth() {
@@ -419,7 +404,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
     </section>
 
     <section className="cc-life-day-nearby">
-      <header><div><small>SUGESTÕES REAIS PERTO DE VOCÊ</small><h3>{locationName}</h3><p>{plan.recoveryPriority ? 'Locais leves e opções de alimentação ou relaxamento foram priorizados.' : plan.tripEligible ? 'Passeios, natureza e opções compatíveis com uma folga longa.' : 'Modalidades escolhidas, lazer e locais abertos próximos.'}</p></div><button onClick={() => location ? void loadPlaces(location, true) : void locate(true)} disabled={busyPlaces}>{busyPlaces ? <LoaderCircle className="spin"/> : <RefreshCw/>} Atualizar</button></header>
+      <header><div><small>SUGESTÕES REAIS PERTO DE VOCÊ</small><h3>{locationName}</h3><p>{plan.recoveryPriority ? 'Locais leves e opções de alimentação ou relaxamento foram priorizados.' : plan.tripEligible ? 'Passeios, natureza e opções compatíveis com uma folga longa.' : 'Modalidades escolhidas, lazer e locais abertos próximos.'}</p></div><button onClick={() => location && !settings.autoLocation ? void loadPlaces(location, true) : void locate(true)} disabled={busyPlaces}>{busyPlaces ? <LoaderCircle className="spin"/> : <RefreshCw/>} Atualizar</button></header>
       {!location && <div className="cc-life-day-empty"><MapPin/><h4>Ative a localização para o CrewCheck escolher locais reais</h4><p>A coordenada é usada para a busca e fica salva apenas no aparelho como referência recente.</p><button className="primary" onClick={() => void locate(true)}><LocateFixed/> Ativar localização automática</button></div>}
       {location && busyPlaces && !places.length && <div className="cc-life-day-loading"><LoaderCircle className="spin"/> Buscando locais compatíveis com o plano do dia…</div>}
       {message && <div className="cc-life-day-message"><CircleAlert/> {message}</div>}
@@ -437,7 +422,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
         <label><span>Margem antes da apresentação</span><input type="number" min="60" max="240" step="15" value={settings.preparationMinutes} onChange={(event) => setSettings({ ...settings, preparationMinutes: Number(event.target.value) })}/><small>Inclui preparação e margem conservadora; a Saída Inteligente continua calculando o deslocamento real.</small></label>
         <label><span>Desaceleração antes de dormir</span><input type="number" min="15" max="120" step="15" value={settings.windDownMinutes} onChange={(event) => setSettings({ ...settings, windDownMinutes: Number(event.target.value) })}/></label>
         <label><span>Folga mínima para sugerir bate-volta</span><input type="number" min="18" max="72" step="1" value={settings.tripMinGapHours} onChange={(event) => setSettings({ ...settings, tripMinGapHours: Number(event.target.value) })}/></label>
-        <label className="check"><input type="checkbox" checked={settings.autoLocation} onChange={(event) => setSettings({ ...settings, autoLocation: event.target.checked })}/><span><strong>Atualizar localização automaticamente</strong><small>Somente quando a tela de rotina estiver aberta ou quando o usuário solicitar.</small></span></label>
+        <label className="check"><input type="checkbox" checked={settings.autoLocation} onChange={(event) => setSettings({ ...settings, autoLocation: event.target.checked })}/><span><strong>Atualizar localização ao buscar sugestões</strong><small>Somente ao tocar em Atualizar; abrir a rotina não solicita localização.</small></span></label>
         <button className="primary" onClick={saveGuideSettings}><Check/> Salvar ajustes</button>
       </div>}
     </section>
