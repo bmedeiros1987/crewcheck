@@ -233,6 +233,16 @@ export async function getPlatformBilling(): Promise<PlatformBilling & { ok: bool
   }
 }
 
+/** Subscription UI requires a current server read. Do not adopt or overwrite
+ * the shared legacy cache while a checkout refresh is awaiting another account. */
+export async function getFreshPlatformBilling(session: ReturnType<typeof captureAuthSession>): Promise<PlatformBilling & { ok: boolean; plans: PlatformPlan[] }> {
+  const current = () => { try { return session.isCurrent(); } catch { return false; } };
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const payload = await authFetch<PlatformBilling & { ok: boolean; plans: PlatformPlan[] }>('/api/platform/billing/status');
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  return payload;
+}
+
 export async function createWebSubscription(plan: 'premium_monthly' | 'premium_annual', cpfCnpj: string, billingType = 'UNDEFINED') {
   return authFetch<any>('/api/platform/billing/asaas/checkout', {
     method: 'POST',

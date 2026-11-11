@@ -16,7 +16,7 @@ import {
   createVisitor,
   createWebSubscription,
   defaultVisitorPermissions,
-  getPlatformBilling,
+  getFreshPlatformBilling,
   getPlatformCatalog,
   getPlatformProfile,
   hasGooglePlayBillingBridge,
@@ -122,7 +122,9 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
     setPlayProducts({});playCatalogRequest.current=null;
     playCatalogRequest.current=queryGooglePlayProducts(plans.map(plan=>plan.googlePlayProductId||'').filter(Boolean));
   }
-  async function load() {
+  async function loadForSession(session: ReturnType<typeof captureAuthSession>) {
+    const current = () => { try { return session.isCurrent(); } catch { return false; } };
+    if (!current()) return;
     setError('');
     playCatalogRequest.current=null;
     setPlayProducts({});
@@ -130,22 +132,32 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
     let catalogResult: PlatformCatalog | null = null;
     try {
       catalogResult = await getPlatformCatalog();
+      if (!current()) return;
       setCatalog(catalogResult);
       if (hasGooglePlayBillingBridge()) queryCatalog(catalogResult.plans);
     } catch {
+      if (!current()) return;
       setError('Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.');
       return;
     }
     try {
-      const [profileResult, billingResult] = await Promise.all([getPlatformProfile(), getPlatformBilling()]);
+      const [profileResult, billingResult] = await Promise.all([getPlatformProfile(), getFreshPlatformBilling(session)]);
+      if (!current()) return;
       setProfile(profileResult.profile);
       setBilling({ ...profileResult.billing, ...billingResult });
     } catch {
+      if (!current()) return;
       setProfile({ publicId: '—', displayName: 'Tripulante CrewCheck' } as PlatformProfile);
       setBilling({ plan: 'free', status: 'unavailable', usage: { used: 0, limit: 0, remaining: 0, monthKey: '' } } as PlatformBilling);
       setBusy('database');
       setError('A conexão segura com o banco está temporariamente indisponível. Você pode consultar os planos, mas contratar, restaurar ou alterar a assinatura ficará pausado até a conexão voltar.');
     }
+  }
+
+  async function load() {
+    let session: ReturnType<typeof captureAuthSession>;
+    try { session = captureAuthSession(); } catch { setError('Sessão indisponível. Abra os planos novamente.'); return; }
+    return loadForSession(session);
   }
 
   useEffect(() => { load(); }, []);
@@ -204,17 +216,17 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
         toast.message('Conclua a compra na janela segura da Google Play.');
       } else {
         const cpf = window.prompt('CPF do titular para a cobrança web pelo Asaas') || '';
-        if (!cpf.trim()) return;
+        if (!cpf.trim() || !current()) return;
         const result = await createWebSubscription(plan.id, cpf);
         if (!current()) return;
         if (!result.checkoutUrl || (result.checkoutState && result.checkoutState !== 'ready')) {
           toast.message('O link de pagamento ainda não está disponível. A assinatura permanece pendente.');
-          await load();
+          await loadForSession(session);
           return;
         }
         window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
         toast.message('Continue o pagamento no link. O acesso depende da confirmação do pagamento.');
-        await load();
+        await loadForSession(session);
       }
     } catch (err) {
       if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui iniciar a assinatura.');
