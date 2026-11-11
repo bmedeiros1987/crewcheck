@@ -249,6 +249,14 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
     status = cached ? (automatic ? 'cached' : 'off') : (automatic ? 'disconnected' : 'off');
   };
 
+  // Age alone cannot revalidate a restored, expired or interrupted session.
+  // Keep its last verified facts readable, but never grant fresh-only access.
+  const sessionFact = (fact, options) => {
+    if (!fact) return null;
+    const selected = status === 'connected' ? fact : Object.freeze({ ...fact, dataState: 'cached' });
+    return selected.dataState === 'cached' && options.allowCached === false ? null : selected;
+  };
+
   async function storageRead(accountId) {
     if (typeof storage?.read !== 'function') return null;
     try {
@@ -447,7 +455,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         cleanupInProgress: cleaningAccounts.has(context?.accountId ?? cleanupOwnerAccount),
         lastSuccessfulSyncAt: syncedAt === null ? null : new Date(syncedAt).toISOString(),
         dataAgeMs: ageMs,
-        live: ageMs !== null && ageMs <= MYCREWCARE_LIVE_MAX_AGE_MS,
+        live: status === 'connected' && ageMs !== null && ageMs <= MYCREWCARE_LIVE_MAX_AGE_MS,
         lastAttemptAt: lastAttemptAt === null ? null : new Date(lastAttemptAt).toISOString(),
         lastError,
         changes,
@@ -460,8 +468,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         now: now(),
         freshForMs: MYCREWCARE_LIVE_MAX_AGE_MS,
       });
-      if (!hotel || (hotel.dataState === 'cached' && options.allowCached === false)) return null;
-      return hotel;
+      return sessionFact(hotel, options);
     },
 
     pickup(stayId, options = {}) {
@@ -470,8 +477,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         now: now(),
         freshForMs: MYCREWCARE_LIVE_MAX_AGE_MS,
       });
-      if (!pickup || (pickup.dataState === 'cached' && options.allowCached === false)) return null;
-      return pickup;
+      return sessionFact(pickup, options);
     },
 
     async sync({ reason = 'automatic' } = {}) {
