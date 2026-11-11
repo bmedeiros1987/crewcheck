@@ -50,6 +50,7 @@ on:
       - 'scripts/regression-financial-history-loading-ui.cjs'
       - 'scripts/regression-financial-persisted-comparison.mjs'
       - 'scripts/regression-cabin-rate-audit.mjs'
+      - 'scripts/regression-salary-tariff-pending-browser.mjs'
       - 'scripts/regression-financial-known-values*'
       - 'scripts/regression-financial-review-owner-negative.mjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
@@ -137,6 +138,7 @@ jobs:
           node scripts/regression-owner-per-diem-browser.mjs
           node scripts/regression-taxi-pending-row-browser.mjs
           node scripts/regression-roster-daily-allowance-browser.mjs
+          node scripts/regression-salary-tariff-pending-browser.mjs
           node scripts/regression-allowance-closed-duty-browser.cjs
           TZ=UTC node scripts/regression-finance-actionable-browser.mjs
           TZ=America/Sao_Paulo node scripts/regression-finance-actionable-browser.mjs
@@ -153,4 +155,5 @@ jobs:
             artifacts/SYNTHETIC-allowance-closed-duty/
             artifacts/financial-long-history/
             artifacts/salary-display-basis/
+            artifacts/SYNTHETIC-salary-tariff-pending/
           if-no-files-found: ignore

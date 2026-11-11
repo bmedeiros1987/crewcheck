@@ -113,6 +113,7 @@ type RosterFinance = {
     kmTotal?: number;
     production?: number;
     configured?: boolean;
+    config?: { pendingTariff?: { productionMonth: string; rateMonth: string; reason: string } };
   };
 };
 
@@ -401,6 +402,12 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
               const ground = Number(event.canonical?.groundBeforeMinutes || 0);
               const eventPerDiems = perDiemForEvent(event);
               const earning = salaryByEvent.get(event.id);
+              const pendingTariff = scopedFinance?.salary?.config?.pendingTariff;
+              const awaitingDecemberTariff = pendingTariff?.reason === 'awaiting_december_2026_inpc'
+                && pendingTariff.productionMonth === selectedMonth && selectedMonth === '2026-11'
+                && pendingTariff.rateMonth === '2026-12' && earning
+                && ((earning.dayKm > 0 && !Number.isFinite(earning.dayRateApplied))
+                  || (earning.nightKm > 0 && !Number.isFinite(earning.nightRateApplied)));
 
               return <article key={`${event.id}:${allOrdered.indexOf(event)}:${eventIndex}`} className="cc-roster-program-v1397 cc-roster-event-v1394 cc-roster-token" data-roster-mode={mode} data-mode={mode} data-work-mode={mode} data-event-kind={event.kind || ''} data-roster-event-id={event.id} aria-label={(mode === 'operating' || mode === 'extra') ? `${card.title} · ${card.context || 'Rota não informada'} · ${formatDate(rosterLabelDate(event))}` : undefined}>
                 <header className="cc-roster-program-head-v1397">
@@ -437,8 +444,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
                   </div>}
                   {earning && <div className="cc-roster-km-gain-v1397">
                     <small><Route/> Ganho por KM</small>
-                    <strong>{scopedFinance?.salary?.configured ? money(salaryRowsTotal([earning])) : 'Tarifa pendente'}</strong>
-                    {salaryRowsTotal([earning]) === null ? <p>Horários, distância ou parcelas pendentes; valor não calculável.</p> : <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>}
+                    <strong>{awaitingDecemberTariff ? 'Tarifa de dezembro/2026 pendente' : scopedFinance?.salary?.configured ? money(salaryRowsTotal([earning])) : 'Tarifa pendente'}</strong>
+                    {awaitingDecemberTariff ? <p>Produção novembro/2026 · mês tarifário dezembro/2026. Aguardando INPC completo · ACT 3.2.8.{(!earning.timeKnown || !earning.distanceKnown) && ' Horários ou distância também pendentes.'}</p> : salaryRowsTotal([earning]) === null ? <p>Horários, distância ou parcelas pendentes; valor não calculável.</p> : <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>}
                     {earning.payRule && <em>{earning.payRule}</em>}
                   </div>}
                 </section>}

@@ -28,7 +28,17 @@ try{
  vm.runInContext(ts.transpileModule(fn.getText(ast)+'\nglobalThis.load=loadActCompensationConfig',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope);
  const actual=scope.load({year:2026,month:10});assert.equal(actual.dayKmMetric,reference('2026-10').dayKm);assert.notEqual(actual.dayKmMetric,.057349,'counterproof: previous printed rate understated the derived reference');
  overrides={crewcheck_act_day_km_metric_brl:2};learned={'salary.nightKm':3};const personal=scope.load({year:2026,month:10});assert.equal(personal.dayKmMetric,2);assert.equal(personal.nightKmMetric,3,'reviewed rates are never indexed a second time');assert.equal(personal.reserveHourMetric,reference('2026-10').reserveHour);
- overrides={};learned={};assert(Number.isNaN(scope.load({year:2026,month:11}).dayKmMetric));
+ overrides={};learned={};const pending=scope.load({year:2026,month:11});assert(Number.isNaN(pending.dayKmMetric));
+ assert(pending.pendingTariff,'loader must expose the specific missing tariff reference');assert.deepEqual(JSON.parse(JSON.stringify(pending.pendingTariff)),{productionMonth:'2026-11',rateMonth:'2026-12',reason:'awaiting_december_2026_inpc'});
+ assert.equal(actual.pendingTariff,undefined,'known reference has no pending index');
+ overrides={crewcheck_act_day_km_metric_brl:2,crewcheck_act_night_km_metric_brl:3};assert.equal(scope.load({year:2026,month:11}).pendingTariff,undefined,'complete reviewed/manual rates keep precedence');
+ overrides={};assert.equal(scope.load({year:2026,month:12}).pendingTariff,undefined,'specific December reason is not extrapolated to later years/months');
+ const baseResolver=scope.resolveActFinancialRules;
+ scope.resolveActFinancialRules=()=>({...baseResolver(),requiresManualFunction:true});assert.equal(scope.load({year:2026,month:11}).pendingTariff,undefined,'unconfirmed function does not acquire a cabin index reason');
+ scope.resolveActFinancialRules=()=>({...baseResolver(),profileLabel:'Copiloto(a)'});assert.equal(scope.load({year:2026,month:11}).pendingTariff,undefined,'pilot tariff scope is not reclassified');
+ scope.resolveActFinancialRules=baseResolver;
+ for(const tz of ['UTC','America/Sao_Paulo','Pacific/Auckland']){process.env.TZ=tz;assert.equal(scope.load({year:2026,month:11}).pendingTariff.rateMonth,'2026-12');}
+
  const productionStatements=[];
  function collect(n){if(ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>['dayProduction','nightProduction','production'].includes(d.name.getText(ast))))productionStatements.push(n.getText(ast));ts.forEachChild(n,collect);}
  const calc=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='calculateSalary');collect(calc);
