@@ -3,7 +3,7 @@ import { formatWeatherNoticeDetails } from '../../../shared/weatherNoticeDetails
 import { openStayProgramEditor as editOperationalStay } from '@/lib/stayEditorNavigation';
 import { readStayOperationalProjection, selectCurrentStayOperationalProjection } from '@/lib/stayOperationalProjection';
 import {resolveRegulationProgram,regulationProgramDay} from '@shared/regulationScenarioPrefill.mjs';
-import {cabinSalaryRateReference} from '@/lib/cabinSalaryRateReference';
+import {cabinSalaryRateReference,cabinSalaryRatePendingScope} from '@/lib/cabinSalaryRateReference';
 import { EscalaContactButton } from '@/components/EscalaContact';
 import ConciergeFinancialPreview from '@/components/finance/ConciergeFinancialPreview';
 import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialEstimate';
@@ -3773,7 +3773,7 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   return applyMonthlySalaryInputs({
     // This reason is specific to the documented December/2026 adjustment;
     // it neither supplies a tariff nor extends the previous reference window.
-    pendingTariff: cabin && !act.requiresManualFunction && roster.year === 2026 && roster.month === 11
+    pendingTariff: cabin && !act.requiresManualFunction && roster.year === 2026 && roster.month === 11 && cabinSalaryRatePendingScope(roster)
       && (!Number.isFinite(dayKmMetric) || !Number.isFinite(nightKmMetric))
       ? {productionMonth:'2026-11',rateMonth:'2026-12',reason:'awaiting_december_2026_inpc' as const} : undefined,
     kmMetric: dayKmMetric,

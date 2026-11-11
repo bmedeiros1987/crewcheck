@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {loadClientModules} from './lib/ts-module-harness.mjs';
-const m=loadClientModules({files:['client/src/lib/financialPayrollPeriods.ts','client/src/lib/financialReferenceCatalog.ts','client/src/lib/cabinSalaryRateReference.ts'],prefix:'synthetic-cabin-rate-audit-'});
+const m=loadClientModules({files:['client/src/lib/financialPayrollPeriods.ts','client/src/lib/financialReferenceCatalog.ts','client/src/lib/cabinSalaryRateReference.ts','client/src/lib/financialRules.ts'],prefix:'synthetic-cabin-rate-audit-'});
 try{
  const {cabinSalaryRateReference:reference}=m.load('cabinSalaryRateReference');
  for(const tz of ['UTC','America/Sao_Paulo','Asia/Tokyo']){
@@ -24,20 +24,32 @@ try{
  const source=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='loadActCompensationConfig');assert(fn);
  let overrides={},learned={};
- const scope=vm.createContext({cabinSalaryRateReference:reference,resolveActFinancialRules:()=>({profileLabel:'Comissário(a) - ACT 2025/2027',legalReference:'ACT3.2.7/3.2.8',salary:{dayKm:.057349,nightKm:.114698,reserveHour:48.75,standbyHour:16.25}}),rosterFinancialDate:r=>r.year+'-'+String(r.month).padStart(2,'0')+'-01',readOptionalNumberSetting:k=>overrides[k]??null,readNumberSetting:(k,d)=>d,confirmedRateValueAt:k=>learned[k]??null,readMonthlyFinancialSettings:()=>null,applyMonthlySalaryInputs:x=>x});
+ const scope=vm.createContext({cabinSalaryRateReference:reference,cabinSalaryRatePendingScope:m.load('cabinSalaryRateReference').cabinSalaryRatePendingScope,resolveActFinancialRules:()=>({profileLabel:'Comissário(a) - ACT 2025/2027',legalReference:'ACT3.2.7/3.2.8',salary:{dayKm:.057349,nightKm:.114698,reserveHour:48.75,standbyHour:16.25}}),rosterFinancialDate:r=>r.year+'-'+String(r.month).padStart(2,'0')+'-01',readOptionalNumberSetting:k=>overrides[k]??null,readNumberSetting:(k,d)=>d,confirmedRateValueAt:k=>learned[k]??null,readMonthlyFinancialSettings:()=>null,applyMonthlySalaryInputs:x=>x});
  vm.runInContext(ts.transpileModule(fn.getText(ast)+'\nglobalThis.load=loadActCompensationConfig',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,scope);
- const actual=scope.load({year:2026,month:10});assert.equal(actual.dayKmMetric,reference('2026-10').dayKm);assert.notEqual(actual.dayKmMetric,.057349,'counterproof: previous printed rate understated the derived reference');
- overrides={crewcheck_act_day_km_metric_brl:2};learned={'salary.nightKm':3};const personal=scope.load({year:2026,month:10});assert.equal(personal.dayKmMetric,2);assert.equal(personal.nightKmMetric,3,'reviewed rates are never indexed a second time');assert.equal(personal.reserveHourMetric,reference('2026-10').reserveHour);
- overrides={};learned={};const pending=scope.load({year:2026,month:11});assert(Number.isNaN(pending.dayKmMetric));
+ const actual=scope.load({days:[],year:2026,month:10});assert.equal(actual.dayKmMetric,reference('2026-10').dayKm);assert.notEqual(actual.dayKmMetric,.057349,'counterproof: previous printed rate understated the derived reference');
+ overrides={crewcheck_act_day_km_metric_brl:2};learned={'salary.nightKm':3};const personal=scope.load({days:[],year:2026,month:10});assert.equal(personal.dayKmMetric,2);assert.equal(personal.nightKmMetric,3,'reviewed rates are never indexed a second time');assert.equal(personal.reserveHourMetric,reference('2026-10').reserveHour);
+ overrides={};learned={};const pending=scope.load({days:[],year:2026,month:11,rank:'CC'});assert(Number.isNaN(pending.dayKmMetric));
  assert(pending.pendingTariff,'loader must expose the specific missing tariff reference');assert.deepEqual(JSON.parse(JSON.stringify(pending.pendingTariff)),{productionMonth:'2026-11',rateMonth:'2026-12',reason:'awaiting_december_2026_inpc'});
  assert.equal(actual.pendingTariff,undefined,'known reference has no pending index');
- overrides={crewcheck_act_day_km_metric_brl:2,crewcheck_act_night_km_metric_brl:3};assert.equal(scope.load({year:2026,month:11}).pendingTariff,undefined,'complete reviewed/manual rates keep precedence');
- overrides={};assert.equal(scope.load({year:2026,month:12}).pendingTariff,undefined,'specific December reason is not extrapolated to later years/months');
+ overrides={crewcheck_act_day_km_metric_brl:2,crewcheck_act_night_km_metric_brl:3};assert.equal(scope.load({days:[],year:2026,month:11,rank:'CC'}).pendingTariff,undefined,'complete reviewed/manual rates keep precedence');
+ overrides={};assert.equal(scope.load({days:[],year:2026,month:12}).pendingTariff,undefined,'specific December reason is not extrapolated to later years/months');
  const baseResolver=scope.resolveActFinancialRules;
- scope.resolveActFinancialRules=()=>({...baseResolver(),requiresManualFunction:true});assert.equal(scope.load({year:2026,month:11}).pendingTariff,undefined,'unconfirmed function does not acquire a cabin index reason');
- scope.resolveActFinancialRules=()=>({...baseResolver(),profileLabel:'Copiloto(a)'});assert.equal(scope.load({year:2026,month:11}).pendingTariff,undefined,'pilot tariff scope is not reclassified');
+ scope.resolveActFinancialRules=()=>({...baseResolver(),requiresManualFunction:true});assert.equal(scope.load({days:[],year:2026,month:11,rank:'CC'}).pendingTariff,undefined,'unconfirmed function does not acquire a cabin index reason');
+ scope.resolveActFinancialRules=()=>({...baseResolver(),profileLabel:'Copiloto(a)'});assert.equal(scope.load({days:[],year:2026,month:11,rank:'CC'}).pendingTariff,undefined,'pilot tariff scope is not reclassified');
  scope.resolveActFinancialRules=baseResolver;
- for(const tz of ['UTC','America/Sao_Paulo','Pacific/Auckland']){process.env.TZ=tz;assert.equal(scope.load({year:2026,month:11}).pendingTariff.rateMonth,'2026-12');}
+ const realResolver=m.load('financialRules').resolveActFinancialRules;
+ scope.resolveActFinancialRules=realResolver;
+ const unknown={year:2026,month:11,rank:'',rawText:'',crewName:'',days:[]};
+ assert.equal(realResolver(unknown).requiresManualFunction,false,'counterproof: unknown real role does not set manual guard');
+ assert.equal(scope.load(unknown).pendingTariff,undefined,'unknown default cabin is not evidence');
+ assert.equal(scope.load({...unknown,rank:'CC'}).pendingTariff.rateMonth,'2026-12');
+ assert.equal(scope.load({...unknown,rank:'FO'}).pendingTariff,undefined);
+ const memory=new Map([['crewcheck_profile_rank','Comissário']]);globalThis.localStorage={getItem:key=>memory.get(key)??null};
+ assert.equal(scope.load({...unknown,rank:'FO'}).pendingTariff,undefined,'cabin profile conflicting with pilot roster is not a grant');
+ memory.set('crewcheck_profile_rank','Copiloto');assert.equal(scope.load({...unknown,rank:'CC'}).pendingTariff,undefined,'pilot profile cannot acquire cabin reason');
+ delete globalThis.localStorage;scope.resolveActFinancialRules=baseResolver;
+
+ for(const tz of ['UTC','America/Sao_Paulo','Pacific/Auckland']){process.env.TZ=tz;assert.equal(scope.load({days:[],year:2026,month:11,rank:'CC'}).pendingTariff.rateMonth,'2026-12');}
 
  const productionStatements=[];
  function collect(n){if(ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>['dayProduction','nightProduction','production'].includes(d.name.getText(ast))))productionStatements.push(n.getText(ast));ts.forEachChild(n,collect);}
