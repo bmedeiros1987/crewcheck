@@ -11,7 +11,7 @@ try{
  const control=page.locator('[data-financial-act-context]');
  const key='crewcheck_financial_act_applicability_v1:synthetic-act-a',saved=()=>page.evaluate(k=>localStorage.getItem(k),key);
  // The notice follows the displayed period's pending items (prop), not the absence of any declaration event.
- assert.equal(await saved(),null);assert(await page.getByText('Confirme seus dados para calcular as diárias.',{exact:true}).isVisible());
+ assert.equal(await saved(),null);assert(await page.getByText('Aplicação do ACT pendente neste período.',{exact:true}).isVisible());
  await page.getByText('Confirmar ou revisar aplicação financeira do ACT',{exact:true}).click();
  assert.equal(await control.getByLabel(/^Empregador/).count(),1);assert.equal(await control.getByLabel(/^Perfil do ACT/).count(),1);assert.equal(await control.getByLabel(/^Ação/).count(),1);
  assert.equal(await control.getByLabel(/^Empregador/).inputValue(),'');assert.equal(await control.getByLabel(/^Perfil do ACT/).inputValue(),'');

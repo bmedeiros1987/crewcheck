@@ -1,8 +1,8 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),vm=require('node:vm'),http=require('node:http');
-// Format and zoom sit under the collapsed "Exibição" expander of the roster.
-const openView=async p=>{const d=p.locator('details.cc-roster-view-options');await d.waitFor({state:'attached'});if(!await d.evaluate(e=>e.open))await d.locator(':scope > summary').click();};
+const {chooseRosterFormat,assertRosterFormat}=require('./lib/roster-format-controls.cjs');
 const {createRequire}=require('node:module'),ts=require('typescript');
 const {stabilizeAimsPreAction}=require('./lib/aims-preaction-stability.cjs');
+const {installAimsScrollProbe,waitForAimsScrollAffordance}=require('./lib/aims-scroll-affordance.cjs');
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
 const out=path.resolve('artifacts/aims-document-app');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
@@ -19,19 +19,22 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.PL
 try{for(const theme of ['light','dark'])for(const size of [100,200])for(const width of [320,390]){
 const context=await browser.newContext({viewport:{width,height:844},isMobile:true,hasTouch:true,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
 await context.route('**/*',r=>{const url=new URL(r.request().url());return url.origin!==origin?r.abort():url.pathname.startsWith('/api/')?r.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'}):r.continue();});
-await context.addInitScript(seedScope.seed,{theme,kind:roster,amount:100});await context.addInitScript(size=>localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size)),size);
+await context.addInitScript(installAimsScrollProbe);await context.addInitScript(seedScope.seed,{theme,kind:roster,amount:100});await context.addInitScript(size=>localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size)),size);
 const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');window.dispatchEvent(new Event('resize'));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'}));});
-await openView(page);await page.locator('select[aria-label="Formato da escala"]').selectOption('aims');await page.locator('.cc-doc-sheet').waitFor();assert.equal(await page.locator('.cc-doc-day').count(),29);
+await chooseRosterFormat(page,'aims');await page.locator('.cc-doc-sheet').waitFor();assert.equal(await page.locator('.cc-doc-day').count(),29);
 await page.locator('.cc-doc-viewport').scrollIntoViewIfNeeded();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const canvasClearance=await page.locator('.cc-doc-viewport').evaluate(el=>{const r=el.getBoundingClientRect(),h=document.querySelector('.cz-global-header').getBoundingClientRect(),f=document.querySelector('body > nav.cz-bottom-nav').getBoundingClientRect();return {top:r.top,bottom:r.bottom,headerBottom:h.bottom,footerTop:f.top};});assert.ok(canvasClearance.top>=canvasClearance.headerBottom-1&&canvasClearance.bottom<=canvasClearance.footerTop+1,JSON.stringify({theme,size,width,canvasClearance}));
 await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));const head=await page.locator('.cz-global-header').boundingBox();assert.equal(await page.locator('.cz-global-header .cz-logo').isVisible(),true);assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),size===100,'Decorative tagline is omitted at enlarged mobile font; core logo stays visible');
 const focusBounds=[];for(const zoomLabel of ['Ajustar','100%']){await page.getByRole('button',{name:zoomLabel,exact:true}).click();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));if(zoomLabel==='100%'){await page.locator('.cc-doc-viewport').focus();await page.keyboard.press('End');assert.ok(await page.locator('.cc-doc-viewport').evaluate(e=>e.scrollLeft>2000));}
 // Read-only native event evidence: retain the pre-action baseline and 1px assertions.
 await page.evaluate(()=>{if(window.__aimsNativeTraceInstalled){window.__aimsNativeTrace=[];return;}window.__aimsNativeTraceInstalled=true;window.__aimsNativeTrace=[];for(const name of ['pointerdown','mousedown','focus','focusin','pointerup','mouseup','click','scroll'])document.addEventListener(name,event=>{const frame=document.querySelector('.cc-doc-viewport'),target=event.target;window.__aimsNativeTrace.push({event:name,y:scrollY,left:frame?.scrollLeft,top:frame?.scrollTop,active:document.activeElement?.getAttribute('data-roster-event-id')||document.activeElement?.className||document.activeElement?.tagName,target:target?.getAttribute?.('data-roster-event-id')||target?.className||target?.tagName,at:performance.now()});},{capture:true,passive:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).scrollIntoViewIfNeeded();
-// Finish preparation before measuring the return baseline. Layout changes fail; only
-// scroll settling is allowed. A bounded wait cannot turn perpetual movement green.
+// Complete the initiated native scroll before requiring a frozen position. The
+// existing bounded stabilizer rejects layout/zoom shifts and perpetual motion.
 const preparation=await page.evaluate(stabilizeAimsPreAction);
 console.log('AIMS stable preparation',JSON.stringify({theme,size,width,zoomLabel,...preparation}));
+// The floating arrow has zero flow contribution. Its observable update must now
+// complete without any further layout/scroll movement, before the strict baseline.
+const affordance=await page.evaluate(waitForAimsScrollAffordance);console.log('AIMS observable scroll affordance',JSON.stringify({theme,size,width,zoomLabel,...affordance}));
 const preparedBeforePointerAction=await page.evaluate(()=>({y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent}));
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).evaluate(el=>{window.__qaAimsActivationPosition=null;el.addEventListener('click',()=>{window.__qaAimsActivationPosition={y:scrollY,left:document.querySelector('.cc-doc-viewport').scrollLeft,top:document.querySelector('.cc-doc-viewport').scrollTop,zoom:document.querySelector('.cc-doc-toolbar output').textContent};},{capture:true,once:true});});
 await page.locator('.cc-doc-token button').filter({hasText:'QA9029'}).click();
@@ -55,7 +58,7 @@ const openerBounds=await page.locator('.cc-doc-token button').filter({hasText:'Q
 if(movingAncestor){assert.ok(openerBounds.top>=openerBounds.safeTop+12-1&&openerBounds.bottom<=openerBounds.safeBottom-12+1,'returned focused opener stays visible after ancestor animation');assert.equal(openerBounds.headerPosition,'relative','global header follows normal document flow');assert.ok(Math.abs(openerBounds.headerDocumentY-head.y)<=1,'ancestor animation must preserve the header document position while the page scrolls');}
 const bounds={preparedBeforePointerAction,before,activated,after,movingAncestor,openerBounds};focusBounds.push({zoomLabel,...bounds});
 }
-await page.locator('body > nav.cz-bottom-nav > button').last().click();await page.locator('.cz-menu-overlay').waitFor();await page.keyboard.press('Escape');await page.locator('.cz-menu-overlay').waitFor({state:'detached'});assert.equal(await page.locator('select[aria-label="Formato da escala"]').inputValue(),'aims');
+await page.locator('body > nav.cz-bottom-nav > button').last().click();await page.locator('.cz-menu-overlay').waitFor();await page.keyboard.press('Escape');await page.locator('.cz-menu-overlay').waitFor({state:'detached'});await assertRosterFormat(page,'aims');
 assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await page.screenshot({path:path.join(out,theme+'-'+size+'-'+width+'.png'),fullPage:true});cases.push({theme,size,width,canvasClearance,focusBounds,monthDays:29,exactLastEvent:true,header:head,detailBelowHeader:true,menuRecovery:true,synthetic:true});await context.close();
 }assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({head:require('node:child_process').execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),cases,errors,scope:'Compiled real app, original header/menu/canonical engine; synthetic roster/account only; Chromium emulation, not physical Android'},null,2));console.log('PASS real app document:8 viewport/theme/font cases, leap-month last event, safe-area/header clearance, exact position/zoom return, menu recovery');
 }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});

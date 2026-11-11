@@ -40,7 +40,8 @@ const active = (revision, from, through) => ({ revision, from, through, confirme
 const revoke = (revision, from, through) => ({ revision, from, through, confirmed: true, source: 'owner_financial_confirmation', active: false });
 const journal = (owner, events) => JSON.stringify({ schema: 1, ownerId: owner, revision: events.length, events });
 const STATES = {
-  absent: { notice: true, cause: 'act_missing', causeText: /Empresa e ACT não confirmados para estas datas\./ },
+  absent: { notice: false, amount: /109,44/, preset: true },
+  unknownRank: { unknownRank: true, notice: true, cause: 'act_missing', causeText: /Empresa e ACT não confirmados para estas datas\./ },
   confirmed: { notice: false, journal: owner => journal(owner, [active(1, '2026-01-01', '2027-11-30')]), amount: /109,44/ },
   manual: { notice: false, manual: '120', amount: /120,00/ },
   zero: { notice: false, manual: '0', amount: /R\$\s?0,00/ },
@@ -50,7 +51,7 @@ const STATES = {
   invalid: { error: true, journal: () => '{corrupt' },
 };
 
-function seed({ owner, other, language, journalRaw, manual, throwOnJournal, international }) {
+function seed({ owner, other, language, journalRaw, manual, throwOnJournal, international, unknownRank }) {
   const NativeDate = Date, instant = Date.parse('2026-10-18T15:00:00Z');
   globalThis.Date = class extends NativeDate { constructor(...args) { super(...(args.length ? args : [instant])); } static now() { return instant; } };
   if (throwOnJournal) {
@@ -67,9 +68,13 @@ function seed({ owner, other, language, journalRaw, manual, throwOnJournal, inte
   const days = Array.from({ length: 31 }, (_, i) => ({ date: String(i + 1).padStart(2, '0') + '/10/2026', dayOfWeek: 'SYN', type: 'DO', pairingCode: 'DO', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null, base: 'GRU', rawText: 'SYNTHETIC QA ONLY' }));
   const leg = (flightNumber, origin, destination, departureTime, arrivalTime) => ({ flightNumber, origin, destination, departureTime, arrivalTime, workType: 'OP', duration: 120, aircraftType: 'SYN' });
   days[19] = { ...days[19], type: 'FLIGHT', pairingCode: 'SYN-DOM', dutyReport: '08:00', dutyDebrief: '17:00', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYN1001', 'GRU', 'BSB', '10:00', '12:00'), leg('SYN1002', 'BSB', 'GRU', '14:00', '16:00')], dutyHours: 9, flyingHours: 4 };
-  // Optional international day (synthetic JFK leg) so the ACT minimum reference has rows.
-  if (international) days[22] = { ...days[22], type: 'FLIGHT', pairingCode: 'SYN-INT', base: 'JFK', dutyReport: '11:00', dutyDebrief: '21:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNUSD', 'JFK', 'GRU', '13:00', '21:00')], dutyHours: 10.5, flyingHours: 8 };
-  const roster = { crewName: 'SYNTHETIC ACT', crewId: 'SYNTHETIC', base: 'GRU', rank: 'CC', airline: 'LA', month: 10, year: 2026, days, rawText: 'SYNTHETIC — NO REAL ROSTER' };
+  // A positive foreign reference requires the published outbound, overnight and return.
+  if (international) {
+    days[21] = { ...days[21], type: 'FLIGHT', pairingCode: 'SYN-OUT', dutyReport: '09:00', dutyDebrief: '18:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNOUT', 'GRU', 'JFK', '10:00', '18:00')] };
+    days.push({ date: '22/10/2026', type: 'PERNOITE', pairingCode: 'SYN-STAY', base: 'JFK', dutyReport: '20:00', dutyDebrief: '08:00', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [] });
+    days[22] = { ...days[22], type: 'FLIGHT', pairingCode: 'SYN-INT', base: 'JFK', dutyReport: '11:00', dutyDebrief: '21:30', dutyReportSource: 'published', dutyDebriefSource: 'published', legs: [leg('SYNUSD', 'JFK', 'GRU', '13:00', '21:00')], dutyHours: 10.5, flyingHours: 8 };
+  }
+  const roster = { crewName: 'SYNTHETIC ACT', crewId: 'SYNTHETIC', base: 'GRU', rank: unknownRank ? '' : 'CC', airline: 'LA', month: 10, year: 2026, days, rawText: 'SYNTHETIC — NO REAL ROSTER' };
   for (const id of [owner, other]) {
     localStorage.setItem('crewcheck_roster_choice_v1_' + id, JSON.stringify({ owner: id, roster, selection: 'explicit', cacheSchema: 'p0-operational-date-anchor-v2', sourceFileName: 'Synthetic ACT only' }));
     localStorage.setItem('crewcheck:financial-privacy:v2:' + id, 'shown');
@@ -80,8 +85,8 @@ function seed({ owner, other, language, journalRaw, manual, throwOnJournal, inte
 }
 
 const TEXT = {
-  pt: { notice: 'Confirme seus dados para calcular as diárias.', review: 'Revisar dados', summary: 'Confirmar ou revisar aplicação financeira do ACT', error: 'Não foi possível ler seus dados de diárias neste aparelho.', dates: 'Datas pendentes neste período:' },
-  en: { notice: 'Confirm your details to calculate allowances.', review: 'Review details', summary: 'Confirm or review the ACT financial application', error: 'Could not read your allowance details on this device.', dates: 'Pending dates in this period:' },
+  pt: { notice: 'Aplicação do ACT pendente neste período.', review: 'Revisar dados', summary: 'Confirmar ou revisar aplicação financeira do ACT', error: 'Não foi possível ler seus dados de diárias neste aparelho.', dates: 'Datas pendentes neste período:' },
+  en: { notice: 'ACT application pending for this period.', review: 'Review details', summary: 'Confirm or review the ACT financial application', error: 'Could not read your allowance details on this device.', dates: 'Pending dates in this period:' },
 };
 const OFFICIAL = /TAM Linhas Aéreas S\/A|LATAM Brasil|ABSA\/LATAM Cargo|\((Comissários|Pilotos|Lei 7\.064\/1982)\)/g;
 const PORTUGUESE = /\b(Confirme|Confirmar|Revisar|Datas|Declaração|declaração|Empresa|Não|Detalhes|Ação|Empregador|Perfil|Selecione|Declarar|Revogar|Comissários|Pilotos|Aplicar|Fim|Preparar|Histórico|período|aparelho|vínculo|Sem|abrange|titular)\b/;
@@ -119,7 +124,7 @@ try {
   for (const language of ['pt', 'en']) {
     const T = TEXT[language];
     for (const [name, state] of Object.entries(STATES)) {
-      const { context, page } = await openApp(language, { journalRaw: state.journal?.(OWNER_A), manual: state.manual });
+      const { context, page } = await openApp(language, { journalRaw: state.journal?.(OWNER_A), manual: state.manual, unknownRank: state.unknownRank });
       const control = page.locator('[data-financial-act-context]');
       const shown = await textOf(control);
       const details = control.locator(':scope > details');
@@ -144,6 +149,7 @@ try {
       } else {
         assert.equal(await control.getAttribute('class'), 'cc-act-discreet', `${name}/${language}: discreet control`);
         assert.equal(Number(await control.getAttribute('data-financial-act-pending')), 0, `${name}: nothing waits on the declaration`);
+        if (state.preset) assert.equal(await control.locator('[data-financial-preset]').count(), 1, 'configured default is explicit, not a personal declaration');
         assert.ok(!shown.includes(T.notice), `${name}/${language}: no notice`);
         assert.equal(await details.evaluate(node => node.open), false, `${name}/${language}: collapsed`);
         assert.ok(shown.includes(T.summary), `${name}/${language}: control label (${shown})`);
@@ -224,7 +230,7 @@ try {
       await page.locator('[data-financial-act-context]').waitFor();
       await page.waitForTimeout(250);
       const control = page.locator('[data-financial-act-context]');
-      assert.ok((await textOf(control)).startsWith(T.notice), `account switch/${language}: B sees its own notice`);
+      assert.equal(await control.locator('[data-financial-preset]').count(), 1, `account switch/${language}: B has its own configured default, not A's declaration`);
       assert.equal(await page.evaluate(key => localStorage.getItem(key), journalKey(OWNER_A)), raw, 'A journal unchanged');
       assert.equal(await page.evaluate(key => localStorage.getItem(key), journalKey(OWNER_B)), null, 'B not enrolled');
       await control.screenshot({ path: path.join(out, `account-switch-${language}.png`) });

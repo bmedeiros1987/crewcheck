@@ -63,6 +63,7 @@ on:
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
       - 'scripts/regression-financial-ui-browser.cjs'
+      - 'scripts/regression-financial-reconciliation-day-coverage.mjs'
       - 'scripts/regression-financial-privacy-browser.cjs'
       - 'scripts/regression-static-module-mime.mjs'
       - 'server.mjs'
@@ -72,9 +73,19 @@ on:
       - 'client/src/lib/rosterPublication*.ts'
       - 'scripts/regression-financial-changes-browser.mjs'
       - 'scripts/regression-financial-changes-home-compiled.mjs'
+      - 'scripts/lib/roster-format-controls.cjs'
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/payrollPaymentComposition.ts'
+      - 'client/src/lib/payrollProjectionPeriods.ts'
+      - 'client/src/lib/allowanceStatementReconciliation.ts'
+      - 'scripts/regression-allowance-occurrence-reconciliation.mjs'
+      - 'scripts/regression-allowance-page-continuity.mjs'
+      - 'scripts/regression-allowance-import-continuity-browser.mjs'
+      - 'scripts/regression-financial-preset-allowances.mjs'
+      - 'scripts/regression-financial-period-invalid-browser.mjs'
+      - 'scripts/regression-payroll-projection-periods.mjs'
+      - 'scripts/regression-financial-act-cycles-browser.cjs'
       - 'scripts/regression-payroll-payment-coverage.mjs'
       - 'scripts/regression-next-financial-payment.mjs'
       - 'scripts/regression-financial-payment-preview.cjs'
@@ -85,6 +96,7 @@ on:
       - 'scripts/regression-salary-activity-browser.cjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
       - 'scripts/regression-salary-review-callers.mjs'
+      - 'scripts/regression-financial-act-read-recovery-browser.mjs'
       - 'scripts/regression-salary-operational-clock.mjs'
       - 'scripts/fixtures/salary-night-3900-4527.json'
       - 'scripts/fixtures/salary-clock-missing-counterproofs.json'
@@ -99,7 +111,7 @@ permissions:
   contents: read
 jobs:
   synthetic-finance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -118,6 +130,7 @@ jobs:
         run: |
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" FINANCIAL_COVERAGE_PHASE=raw node scripts/regression-financial-aims-source-coverage.mjs
+            TZ="$TZ" node scripts/regression-financial-day-coverage.mjs
           done
           node scripts/regression-financial-capture-source-race.mjs
       - run: node scripts/regression-financial-payroll-dsr-source.mjs
@@ -130,6 +143,7 @@ jobs:
         run: |
           for TZ in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$TZ" FINANCIAL_COVERAGE_PHASE=prepared node scripts/regression-financial-aims-source-coverage.mjs
+            TZ="$TZ" node scripts/regression-financial-day-coverage.mjs
           done
           node scripts/regression-financial-capture-source-race.mjs
       - name: Private payroll counterproofs after preparation
@@ -228,13 +242,21 @@ jobs:
           # Run both independent UI proofs; retain failure from either suite.
           component_status=0
           node scripts/regression-financial-act-applicability-browser.mjs || component_status=$?
+          recovery_status=0
+          node scripts/regression-financial-act-read-recovery-browser.mjs || recovery_status=$?
           app_status=0
           node scripts/regression-financial-act-applicability-app.mjs || app_status=$?
           notice_status=0
           node scripts/regression-financial-act-notice-app.mjs || notice_status=$?
           test "$component_status" -eq 0
+          test "$recovery_status" -eq 0
           test "$app_status" -eq 0
           test "$notice_status" -eq 0
+      - name: Verify daily coverage in statement reconciliation (synthetic PDF)
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-reconciliation-day-coverage.mjs
       - name: Save synthetic ACT notice screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -312,7 +334,11 @@ jobs:
         timeout-minutes: 10
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-ui-browser.cjs
+        run: |
+          node scripts/regression-financial-ui-browser.cjs
+          node scripts/regression-financial-act-cycles-browser.cjs
+          node scripts/regression-financial-period-invalid-browser.mjs
+          node scripts/regression-allowance-import-continuity-browser.mjs
       - name: Explain free-day pending data and open roster dates (synthetic)
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json

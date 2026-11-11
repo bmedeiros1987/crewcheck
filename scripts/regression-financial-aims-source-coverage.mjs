@@ -33,7 +33,11 @@ const dateRange=(start,end=start)=>libs.financialRange('custom','','',start,end)
 const results=[];
 function forecast(roster,range=monthRange(8),others=[]) {
   const before=JSON.stringify(roster),snapshot=context.subject.financeSnapshot(roster);
-  const value=context.subject.scopedFinancialForecast([snapshot,...others],range,[]);
+  // This parser fixture explicitly witnesses the preceding source date; do not
+  // use its money rows to fabricate boundary coverage. Actual provided sources
+  // take precedence over this empty adjacent publication fixture.
+  const sourceRange=libs.allowanceSourceRange(range),adjacent=sourceRange.start!==range.start&&!others.some(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===sourceRange.start.slice(0,7))?[{roster:{year:+sourceRange.start.slice(0,4),month:+sourceRange.start.slice(5,7),days:[{date:sourceRange.start.split('-').reverse().join('/'),type:'DO',legs:[]}]},perdiem:{rows:[],monthlyRows:[],unclassifiedItems:[],monthlyUnclassifiedItems:[]}}]:[];
+  const value=context.subject.scopedFinancialForecast([snapshot,...others,...adjacent],range,[]);
   const html=renderToStaticMarkup(React.createElement(context.subject.PerDiemMonthView,{bundle:{roster,source:'synthetic'},forecastOverride:value,rangeLabel:'Synthetic source coverage'}));
   assert.equal(JSON.stringify(roster),before,'source and manual annotations are never mutated');
   return {value,html,snapshot};
@@ -79,12 +83,12 @@ for(const source of ['text','visual']) {
   pending(forecast(parse(textFor(good,4)+'31Apr '+civilFlight+'\n'),monthRange(4)));
   pending(forecast(parse(textFor(good,2,{},2033)+'29Feb '+civilFlight+'\n'),libs.financialRange('month','2033-02','','','')));
   complete(forecast(parse(textFor(good,2,{29:civilFlight})),monthRange(2)));
-  const september=parse(textFor(good,9));complete(forecast(september,monthRange(9),[b.snapshot]));
+  const september=parse(textFor(good,9));const priorUncertain=forecast(september,monthRange(9),[b.snapshot]);pending(priorUncertain);assert.ok(priorUncertain.value.unclassifiedItems.some(item=>item.iso==='2032-08-31'&&item.pendingKind==='source_coverage'),'existing source uncertainty extends through the prior source boundary');
   const spillover=parse(textFor()+'01Sep '+bad+'\n08Sep '+good+'\n'),spillEvents=context.subject.buildLegs(spillover);
   for(const day of ['2032-09-01','2032-09-08']){const allRows=context.subject.calculatePerDiem(spillEvents,spillover,new Date(day+'T15:00:00Z'));assert.equal(allRows.monthlySummary.convertedComplete,true,'August authority is not poisoned by later printed issue');assert.equal(allRows.weeklySummary.convertedComplete,false,'weekly all-row consumer retains explicit spillover uncertainty');assert.ok(allRows.unclassifiedItems.some(item=>item.iso===day&&item.pendingKind==='source_coverage'));assert.equal(allRows.monthlyUnclassifiedItems.length,0);}
   complete(forecast(september,monthRange(9),[context.subject.financeSnapshot(spillover)]));
   const monthEnd=parse(textFor(good,8,{31:bad})),end=forecast(monthEnd,dateRange('2032-08-31'));pending(end);
-  complete(forecast(september,monthRange(9),[end.snapshot]));pending(forecast(monthEnd,dateRange('2032-08-31','2032-09-05'),[context.subject.financeSnapshot(september)]));
+  const boundaryUncertain=forecast(september,monthRange(9),[end.snapshot]);pending(boundaryUncertain);assert.ok(boundaryUncertain.value.unclassifiedItems.some(item=>item.iso==='2032-08-31'&&item.pendingKind==='source_coverage'),'malformed prior origin cannot certify the following competence');pending(forecast(monthEnd,dateRange('2032-08-31','2032-09-05'),[context.subject.financeSnapshot(september)]));
   results.push({source,knownMeals:650,knownTaxi:31.5,finalTotal:null,sourceIssues:new Set(b.value.unclassifiedItems.map(item=>item.sourceIssueId)).size,coverageDays:b.value.unclassifiedItems.length});
 }
 const secondaryText=textFor(good,8,{14:'08:00 LA 4501 09:00 BSB GRU 10:30 (320) LA 4502 11:30 GRU BSB 13:00 (320) 13:30'});
@@ -109,10 +113,12 @@ assert.equal(upcoming([{iso:'',airport:'',pendingKind:'source_coverage',reason:'
 assert.equal(upcoming([{iso:'2032-08-16',airport:'',pendingKind:'source_coverage'}]).partial,false,'unrelated source date does not contaminate this foreign item');
 assert.equal(upcoming([{iso:'2032-08-15',airport:'BSB',pendingKind:'taxi_rate'}]).partial,false,'BRL taxi tariff pending is not a currency-independent source gap');
 // Evaluate the actual Home caller argument expressions, not a hand-built cohort:
-// monthly rows must use monthly pending, while the engine weekly path keeps all.
+// genuine cross-competence journeys stay available; foreign nominal activities
+// remain owned by their own competence, including their pending source warnings.
 const spilloverRoster=libs.parseAimsRoster(textFor()+'01Sep '+bad+'\n'),septemberRoster=libs.parseAimsRoster(textFor(good,9));
 const cohorts=[spilloverRoster,septemberRoster].map(roster=>({roster,snapshot:context.subject.financeSnapshot(roster)}));
-const cohortContext=vm.createContext({snapshots:cohorts,snapshot:cohorts[0].snapshot});
+const cohortEvidence=libs.aggregateAllowanceEvidence(cohorts.map(item=>item.snapshot));
+const cohortContext=vm.createContext({snapshots:cohorts,snapshot:cohorts[0].snapshot,evidence:cohortEvidence});
 let paymentPendingArgs=[],reconciliationPending;
 function findPendingArguments(node){
  if(ts.isCallExpression(node)&&node.expression.getText(ast)==='nextAllowancePayment')paymentPendingArgs.push(node.arguments[1]);
@@ -121,8 +127,8 @@ function findPendingArguments(node){
 }
 findPendingArguments(ast);assert.equal(paymentPendingArgs.length,2);assert.ok(reconciliationPending);
 for(const expression of [...paymentPendingArgs,reconciliationPending])assert.equal(vm.runInContext(expression.getText(ast),cohortContext).length,0,'actual nominal-row caller cannot inherit old-source spillover warnings');
-const combinedRows=cohorts.flatMap(item=>item.snapshot.perdiem.monthlyRows),combinedDays=cohorts.flatMap(item=>item.roster.days.map(day=>day.date.split('/').reverse().join('-')));
-const coherentPending=vm.runInContext(paymentPendingArgs.find(node=>node.getText(ast).includes('snapshots.')).getText(ast),cohortContext);
+const combinedRows=cohortEvidence.rows,combinedDays=cohorts.flatMap(item=>item.roster.days.map(day=>day.date.split('/').reverse().join('-')));
+const coherentPending=vm.runInContext(paymentPendingArgs.find(node=>node.getText(ast).includes('evidence.')).getText(ast),cohortContext);
 const independentPayment=paymentExports.nextAllowancePayment(combinedRows,coherentPending,['2032-08','2032-09'],new Date('2032-09-03T15:00:00Z'),combinedDays);
 assert.equal(independentPayment.calculationPartial,false,'independently witnessed September payment remains complete');
 
@@ -143,9 +149,12 @@ const reconciliationNodes=reconciliationAst.statements.filter(node=>ts.isFunctio
 let stateIndex=0;
 const reconciliationContext=vm.createContext({...libs,React,useFinancialPrivacy:()=>({amount:value=>value,text:value=>value}),useEffect:()=>{},useRef:()=>({current:0}),useState:initial=>[stateIndex++===0?{owner:'synthetic:synthetic-token',session:'synthetic-session',result:{periodStart:'2032-08-01',periodEnd:'2032-08-05',paymentDate:null,totals:{deposited:1000},warnings:[],rates:[]}}:initial,()=>{}],getStoredUser:()=>({id:'synthetic'}),getToken:()=> 'synthetic-token',FinancialStatementImporter:()=>null});
 vm.runInContext(ts.transpileModule(reconciliationNodes.map(node=>node.getText(reconciliationAst).replace('export default ','')).join('\n')+'\nglobalThis.component=FinancialStatementReconciliation;',{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,reconciliationContext);
-const reconciliationRows=context.subject.financeSnapshot(libs.parseAimsRoster(textFor())).perdiem.monthlyRows;
-function reconcile(pending){stateIndex=0;return renderToStaticMarkup(reconciliationContext.component({rows:reconciliationRows,unclassified:pending,coveredMonths:['2032-08'],requestRange:()=>{}}))}
+const reconciliationRoster=libs.parseAimsRoster(textFor());
+const reconciliationRows=context.subject.financeSnapshot(reconciliationRoster).perdiem.monthlyRows;
+const reconciliationDays=libs.nominalFinancialDays([reconciliationRoster,{year:2032,month:7,days:[{date:'31/07/2032',type:'DO',legs:[]}]}]);
+function reconcile(pending,coveredDays=reconciliationDays){stateIndex=0;return renderToStaticMarkup(reconciliationContext.component({rows:reconciliationRows,unclassified:pending,coveredMonths:['2032-08'],coveredDays,requestRange:()=>{}}))}
 assert.match(reconcile([]),/Diferença a conferir/,'complete comparison control remains available');
+assert.doesNotMatch(reconcile([],reconciliationDays.filter(day=>day!=='2032-08-03')),/Diferença a conferir/,'nominal month cannot replace missing daily evidence');
 for(const iso of ['', '2032-08-99']){const html=reconcile([{iso,airport:'',pendingKind:'source_coverage'}]);assert.match(html,/Não calculável/);assert.doesNotMatch(html,/Diferença a conferir/);}
 
 const report={synthetic:true,homeSha256:crypto.createHash('sha256').update(home).digest('hex'),scope:'AIMS source-flight coverage only; no real tariff, payment, salary, provider or browser claim',results};

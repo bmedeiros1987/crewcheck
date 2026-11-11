@@ -6,7 +6,7 @@ import { getStoredUser, getToken } from '@/lib/authClient';
 import { financialRateOwner } from '@/lib/financialStatementLearning';
 import { listSavedRosters, openSavedRoster, financialRosterCrewIdentity, type SavedRosterSummary } from '@/lib/databaseClient';
 import type { CrewRoster } from '@/lib/pdfParser';
-import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, allowanceSourceRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { financialComparisonPeriods } from '@/lib/financialComparisonPeriods';
 import './financial-history.css';
 import { FinancialScreenContext } from './FinancialScreen';
@@ -24,7 +24,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   changesDetails?:ReactNode;
   roster: CrewRoster; calculate: (roster: CrewRoster) => S; metric: (snapshot: S) => Record<string, number>;
   rangeMetric?: (snapshot: S, range: FinancialRange) => Record<string, number>;
-  mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode; coverageReady: boolean; requestRange: (range:FinancialRange)=>void }) => ReactNode;
+  mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>;availableMonths:string[];selectReferenceMonth:(month:string,explicit?:boolean)=>void; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode; coverageReady: boolean; requestRange: (range:FinancialRange)=>void }) => ReactNode;
   periodMetric?: (snapshots: S[], range: FinancialRange, missing: string[]) => Record<string,number>;
   weeks?: (snapshots: S[], range: FinancialRange) => Array<{ range: FinancialRange; value: string }>;
 }) {
@@ -36,13 +36,15 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const navigation=useFinancialNavigation(mode,initialMonth,owner+'|'+crew);
   const {screen,kind,month,day,from,to,currency,comparison}=navigation.context;
   const expanded=screen==='charts';
+  const sourceMonths=(scope:FinancialRange)=>financialMonths(mode==='allowance'?allowanceSourceRange(scope):scope);
   const setKind=(v:FinancialRange['kind'])=>navigation.update('kind',v),setMonth=(v:string)=>navigation.update('month',v),setDay=(v:string)=>navigation.update('day',v),setFrom=(v:string)=>navigation.update('from',v),setTo=(v:string)=>navigation.update('to',v),setCurrency=(v:string)=>navigation.update('currency',v),setComparison=(v:'month'|'week')=>navigation.update('comparison',v);
   const [inventory,setInventory] = useState<SavedRosterSummary[]>([]), [conflicts,setConflicts] = useState<string[]>([]);
   const [loaded,setLoaded] = useState<Array<{roster:CrewRoster;source:string}>>([]);
   const [coverageReady,setCoverageReady]=useState(false);
   const [requestedPeriods,setRequestedPeriods]=useState<string[]>([]);
   const [busy,setBusy] = useState(false), [notice,setNotice] = useState('');
-  const epoch = useRef(0), fetching = useRef(new Set<string>());
+  const [recovery,setRecovery]=useState({revision:0,source:false,inventory:false});
+  const epoch = useRef(0), fetching = useRef(new Map<string,{epoch:number;state:'pending'|'failed'|'complete'}>());
   const account = String(getStoredUser()?.id || getStoredUser()?.email || '');
   const bound = useRef({ account, roster });
   if (roster !== bound.current.roster) bound.current = { account, roster };
@@ -51,7 +53,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const current = useMemo(()=>({roster, snapshot:calculate(roster), source:'Escala selecionada'}),[roster,calculate,authRevision,calculationRevision]);
   const snapshots = useMemo(()=>[...(!conflicts.includes(initialMonth)&&!inventory.some(item=>`${item.year}-${String(item.month).padStart(2,'0')}`===initialMonth)?[current]:[]),...loaded.filter(item=>!conflicts.includes(monthOf(item.roster))).map(item=>({...item,snapshot:calculate(item.roster)}))],[current,loaded,initialMonth,calculate,authRevision,calculationRevision,inventory,conflicts]);
   const months = [...new Set([initialMonth,...inventory.map(item=>`${item.year}-${String(item.month).padStart(2,'0')}`)])].filter(value=>validFinancialDay(value+'-01')).sort();
-  const missing = financialMonths(range).filter(period=>!snapshots.some(item=>monthOf(item.roster)===period));
+  const missing = sourceMonths(range).filter(period=>!snapshots.some(item=>monthOf(item.roster)===period));
   useEffect(()=>{
     const refresh=()=>setCalculationRevision(value=>value+1);
     const storage=(event:StorageEvent)=>{
@@ -64,43 +66,61 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     return()=>{window.removeEventListener('crewcheck:financial-config-changed',refresh);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
-    const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
+    const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setRecovery(value=>({...value,source:false,inventory:false}));setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
     window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);
     const storage=(event:StorageEvent)=>{if((event.key===null&&event.storageArea===localStorage)||['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key || ''))changed();};window.addEventListener('storage',storage);
     return ()=>{epoch.current++;window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
-    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);
+    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);setRecovery(value=>({...value,source:false,inventory:false}));
     if(!owner||!crew)return;
     setBusy(true);setNotice('');
-    listSavedRosters(72,false,{preserveRevisions:true}).then(items=>{
+    let localFallback=false;
+    listSavedRosters(72,false,{preserveRevisions:true,onUnavailable:()=>{localFallback=true;}}).then(items=>{
       if(version!==epoch.current||session()!==owner)return;
       const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);setCoverageReady(true);
-      if(items.length>=72)setNotice('Histórico limitado às 72 escalas retornadas; não representa todos os períodos da conta.');
-    }).catch(()=>{if(version===epoch.current&&session()===owner)setNotice('Não foi possível consultar outros meses. A escala selecionada continua disponível.');})
+      if(localFallback){setRecovery(value=>({...value,inventory:true}));setNotice('Histórico remoto indisponível; consulta baseada nas fontes locais disponíveis.');}
+      if(!localFallback&&items.length>=72)setNotice('Histórico limitado às 72 escalas retornadas; não representa todos os períodos da conta.');
+    }).catch(()=>{if(version===epoch.current&&session()===owner){setRecovery(value=>({...value,inventory:true}));setNotice('Não foi possível consultar outros meses. A escala selecionada continua disponível.');}})
       .finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
   },[owner,crew,initialMonth,roster,authRevision]);
   useEffect(()=>{
     if(!owner||!crew)return;
-    const wanted=[...financialMonths(range),...(expanded?financialMonths(comparisonRange):[]),...requestedPeriods], version=epoch.current;
+    // Salary needs the adjacent published source to project the next credit.
+    // This only requests an existing owned publication; no period policy or
+    // employment scope is inferred until that source is actually loaded.
+    const adjacent:string[]=[];
+    if(mode==='salary'&&validFinancialDay(initialMonth+'-01')){const previous=new Date(initialMonth+'-01T12:00:00Z');previous.setUTCMonth(previous.getUTCMonth()-1);adjacent.push(previous.toISOString().slice(0,7));}
+    const wanted=[...sourceMonths(range),...(expanded?sourceMonths(comparisonRange):[]),...requestedPeriods,...adjacent], version=epoch.current;
     const requests=inventory.filter(item=>wanted.includes(`${item.year}-${String(item.month).padStart(2,'0')}`)&&!loaded.some(entry=>monthOf(entry.roster)===`${item.year}-${String(item.month).padStart(2,'0')}`)&&!fetching.current.has(item.id));
     if(!requests.length)return;
-    for(const item of requests)fetching.current.add(item.id);
+    const attempts=requests.map(item=>({item,token:{epoch:version,state:'pending' as 'pending'|'failed'|'complete'}}));
+    for(const {item,token} of attempts)fetching.current.set(item.id,token);
     setBusy(true);
     // Read-only history lookup: never activates, saves or changes the selected roster.
     Promise.allSettled(requests.map(async item=>({roster:(await openSavedRoster(item.id,item)).roster,source:item.sourceFileName || 'Histórico da escala'}))).then(results=>{
       if(version!==epoch.current||session()!==owner)return;
-      const accepted=results.flatMap(result=>result.status==='fulfilled'&&financialRosterCrewIdentity(result.value.roster)===crew?[result.value]:[]);
+      const accepted=results.flatMap((result,index)=>{
+        const {item,token}=attempts[index];if(fetching.current.get(item.id)!==token)return [];
+        const valid=result.status==='fulfilled'&&financialRosterCrewIdentity(result.value.roster)===crew;
+        token.state=valid?'complete':'failed';return valid&&result.status==='fulfilled'?[result.value]:[];
+      });
       setLoaded(previous=>[...previous,...accepted]);
-      if(results.some(result=>result.status==='rejected'))setNotice('Algumas escalas não estão disponíveis. Seus totais não foram presumidos.');
-    }).finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
-  },[owner,crew,inventory,expanded,kind,month,day,from,to,initialMonth,loaded,requestedPeriods,comparisonRange]);
+      if(attempts.some(({token})=>token.state==='failed')){setRecovery(value=>({...value,source:true}));setNotice('Algumas escalas não estão disponíveis. Seus totais não foram presumidos.');}
+    }).finally(()=>{if(version===epoch.current&&session()===owner)setBusy([...fetching.current.values()].some(token=>token.epoch===version&&token.state==='pending'));});
+  },[owner,crew,inventory,expanded,kind,month,day,from,to,initialMonth,loaded,requestedPeriods,comparisonRange,mode,recovery.revision]);
+  const retryHistory=()=>{
+    if(busy||session()!==owner)return;
+    if(recovery.inventory){setAuthRevision(value=>value+1);return;}
+    for(const [id,token] of fetching.current)if(token.epoch===epoch.current&&token.state==='failed')fetching.current.delete(id);
+    setNotice('');setRecovery(value=>({revision:value.revision+1,source:false,inventory:false}));
+  };
   if(!owner || account !== bound.current.account)return <section className="cz-empty-real"><h1>Financeiro da sua conta</h1><p>Entre na conta proprietária e carregue sua escala para consultar valores. Visitantes não têm acesso financeiro.</p></section>;
   if(!validFinancialDay(initialMonth+'-01'))return <section className="cz-empty-real"><h1>Competência não informada</h1><p>Uma escala com mês e ano válidos é necessária.</p></section>;
   if(!crew)return <section className="cz-empty-real"><h1>Identificação da escala pendente</h1><p>Não foi possível vincular o histórico ao tripulante da escala selecionada.</p></section>;
   const periods=financialComparisonPeriods(comparisonRange,comparison);
   const rows=periods.map(({range:period,complete})=>{
-    const needed=financialMonths(period), selected=snapshots.filter(item=>needed.includes(monthOf(item.roster)));
+    const needed=sourceMonths(period), selected=snapshots.filter(item=>needed.includes(monthOf(item.roster)));
     const absent=needed.filter(value=>!selected.some(item=>monthOf(item.roster)===value));
     const values=absent.length?{}:periodMetric?periodMetric(selected.map(item=>item.snapshot),period,absent):comparison==='month'&&selected.length===1?(rangeMetric?rangeMetric(selected[0].snapshot,period):metric(selected[0].snapshot)):{};
     return {range:period,values,absent,fullWeek:complete,title:comparison==='month'?label(period.start.slice(0,7))+(!complete?` (${period.start} até ${period.end})`:''):`${period.start} até ${period.end}`};
@@ -120,6 +140,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
       {kind==='custom'&&<><label>Início<input type="date" aria-label="Início financeiro" value={from} onChange={event=>setFrom(event.target.value)}/></label><label>Fim<input type="date" aria-label="Fim financeiro" value={to} onChange={event=>setTo(event.target.value)}/></label></>}
       <p role="status">{range.valid?`Trabalho: ${range.start} até ${range.end}. `:'Informe um intervalo válido.'}{busy?' Consultando histórico…':''}</p>
       {missing.length>0&&<p>Sem escala para {missing.join(', ')}. Total do intervalo indisponível.</p>}
+      {(recovery.source||recovery.inventory)&&<button type="button" className="cc-financial-retry" disabled={busy} onClick={retryHistory}>Tentar leitura novamente</button>}
       {(notice||conflicts.length>0)&&<p>{notice} {conflicts.length>0?'Revisões ambíguas em '+conflicts.join(', ')+': não somadas.':''}</p>}
     </section>
   </>;
@@ -147,5 +168,5 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Toque no mês para consultar o período.'}</p>
     {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Datas de trabalho · não são datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
   </section>;
-  return <FinancialScreenContext.Provider value={{screen,range,changesDetails,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
+  return <FinancialScreenContext.Provider value={{screen,range,changesDetails,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,availableMonths:months.filter(month=>!conflicts.includes(month)),selectReferenceMonth:(value,explicit=false)=>{if(!explicit&&kind!=='month')return;if(months.includes(value)&&!conflicts.includes(value)){if(month!==value)setMonth(value);if(kind!=='month')setKind('month');}},range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(sourceMonths(range))})}</FinancialScreenContext.Provider>;
 }

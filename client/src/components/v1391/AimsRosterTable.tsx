@@ -1,3 +1,4 @@
+import { FlightCrewDetails } from '@/components/roster/FlightCrewDetails';
 import { rosterCardPresentation, rosterSourceSignature } from '@/lib/rosterPresentation';
 import { RosterActivityIcon } from './RosterLegend';
 import { StayOperationalDetails } from './StayOperationalDetails';
@@ -138,6 +139,7 @@ export function AimsRosterTable({ events, filtered = false, operationalEvents = 
                 {card.mode === 'stay' ? <StayOperationalDetails event={event} events={operationalEvents}/> : <>
                   <strong>Detalhes publicados</strong>
                   <p>{details(event)}</p>
+                  {['operating','extra'].includes(card.mode) && <FlightCrewDetails leg={event.leg}/>}
                 </>}
                 {review && changes.map(change => <PublicationChangeDetail key={`${review.owner}:${change.id}`} owner={review.owner} change={change}/>)}
               </div>}

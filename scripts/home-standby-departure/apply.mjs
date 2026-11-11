@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { repairSelectedDepartureContext } from './selected-context.mjs';
 const path = 'client/src/pages/Home.tsx';
 let home = fs.readFileSync(path, 'utf8');
 const marker = '// home-standby-airport-departure-v1';
@@ -18,8 +19,12 @@ if (!home.includes(marker)) {
 }
 function AirportDeparture({ event, events, setView }: { event: ZeroLeg; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {`);
   home = home.replaceAll('isSmartDepartureEligible(event)', 'isAirportDepartureEligible(event)');
-  fs.writeFileSync(path, marker + '\n' + home);
+  home = marker + '\n' + home;
+  fs.writeFileSync(path, home);
 }
+
+const selectedContext = repairSelectedDepartureContext(home);
+if (selectedContext !== home) fs.writeFileSync(path, selectedContext);
 
 const regression = 'scripts/regression-v14-3-50-p0-activity-classification.mjs';
 let source = fs.readFileSync(regression, 'utf8');

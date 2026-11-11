@@ -68,9 +68,15 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  for(const [kind,width] of [['domestic',390],['multi',1440],['unknown',390],['empty',390]]){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'}),errors=[];
   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
-  const jan={...roster('domestic',1),days:[day('31/01/2032')]};
-  const history=kind==='domestic'?[{id:'local-synthetic-current-february',checksum:'synthetic-current-february',createdAt:'2032-02-02T14:00:00Z',roster:roster(kind),sourceFileName:'Synthetic current February'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
-  await context.addInitScript(seed,{theme:'light',kind:roster(kind),amount:123.45,salaryBase:4321.67,history});
+  const off=date=>({...day(date),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,dutyHours:0});
+  const payload=roster(kind);
+  // The two proportional bars are a complete-publication control. Missing-day
+  // scenarios retain their original gaps; privacy must hide their pending state too.
+  if(kind==='domestic')for(let n=25;n<=29;n++)payload.days.push(off(n+'/02/2032'));
+  const jan={...roster('domestic',1),days:[...Array.from({length:30},(_,i)=>off(String(i+1).padStart(2,'0')+'/01/2032')),day('31/01/2032')]};
+  const prior={id:'local-synthetic-prior-december',checksum:'synthetic-prior-december',createdAt:'2031-12-31T00:00:00Z',roster:{...jan,year:2031,month:12,days:[off('31/12/2031')]},sourceFileName:'Synthetic boundary rest'};
+  const history=kind==='domestic'?[prior,{id:'local-synthetic-current-february',checksum:'synthetic-current-february',createdAt:'2032-02-02T14:00:00Z',roster:payload,sourceFileName:'Synthetic current February'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
+  await context.addInitScript(seed,{theme:'light',kind:payload,amount:123.45,salaryBase:4321.67,history});
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
   await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);await showFinancial(page,'charts');
   if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);

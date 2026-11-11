@@ -55,13 +55,13 @@ for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const 
   await page.getByRole('button',{name:'Gráficos',exact:true}).click();assert.equal(await page.locator('.cc-financial-bar-track').count(),0,'partial monthly net never produces complete graph bars');
   await page.screenshot({path:path.join(out,`${width}-${theme}-partial-net.png`),fullPage:false});results.push({width,theme,publishedDays:1,expectedDays:29,heroNetUnavailable:true,statementNetUnavailable:true,graphNetUnavailable:true});await context.close();continue;
  }
- await page.getByRole('switch',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.250,00/);
- await page.getByRole('switch',{name:'Líquido',exact:true}).focus();await page.keyboard.press('Space');assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).isChecked(),false);assert.match(await hero.locator('h2').innerText(),/bruto/);await page.keyboard.press('Space');assert.match(await hero.locator('h2').innerText(),/líquido/);
- await page.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).first().click();assert.doesNotMatch(await page.locator('.cc-salary-basis-amount').innerText(),/2.250/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/R\$ •••/);
- await page.getByRole('button',{name:'Mostrar valores financeiros',exact:true}).first().click();
+ await page.getByRole('switch',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/Não calculável/,'a full calendar plus scalar settings is not a complete category inventory');
+ await page.getByRole('switch',{name:'Líquido',exact:true}).focus();await page.keyboard.press('Space');assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).isChecked(),false);assert.match(await hero.locator('h2').innerText(),/bruto/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/subtotal bruto estimado/);
+ await page.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).first().click();assert.doesNotMatch(await page.locator('.cc-salary-basis-amount').innerText(),/2.400/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/R\$ •••/);
+ await page.getByRole('button',{name:'Mostrar valores financeiros',exact:true}).first().click();await page.getByRole('switch',{name:'Líquido',exact:true}).focus();await page.keyboard.press('Space');assert.match(await hero.locator('h2').innerText(),/líquido/);
  await open();assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).isChecked(),true,'reload keeps account choice');
  await page.evaluate(()=>{const key='crewcheck_financial_month_settings_v1:financial-ui-qa:2032-02',r=JSON.parse(localStorage.getItem(key));delete r.values.irrf;localStorage.setItem(key,JSON.stringify(r));window.dispatchEvent(new Event('crewcheck:financial-config-changed'));});
- await page.waitForFunction(()=>document.querySelector('.cc-salary-basis-amount')?.textContent.includes('Não calculável'));assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/IRRF/);
+ await page.waitForFunction(()=>document.querySelector('.cc-salary-basis-amount')?.textContent.includes('Não calculável'));await page.locator('.cc-payroll-net-details summary').click();assert.match(await page.locator('.cc-payroll-net-details').innerText(),/IRRF/);
  await page.evaluate(()=>{document.documentElement.style.setProperty('font-size','32px','important');});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
  await page.screenshot({path:path.join(out,`${width}-${theme}.png`),fullPage:false});
  // Existing per-owner store: switching owner cannot inherit this preference.
@@ -69,7 +69,8 @@ for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const 
  assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_financial_settings_v1:another-synthetic:crewcheck_salary_display_basis')),null);
  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));
  if(await page.getByRole('switch',{name:'Líquido',exact:true}).count())assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).isChecked(),false);
- results.push({width,theme,net2250:true,missingIRRF:true,reload:true,nativeKeyboard:true,masked:true,ownerIsolated:true});await context.close();
+ results.push({width,theme,publishedDays:29,integralInventoryPending:true,netUnavailable:true,missingIRRF:true,reload:true,nativeKeyboard:true,masked:true,ownerIsolated:true});await context.close();
 }
-assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({results,errors,realAPIRequests:0,network:'all requests intercepted; static compiled dist only'},null,2));console.log('PASS compiled salary basis UI:12 viewport/theme/coverage cases, exact monthly net, missing IRRF, native keyboard, masking, reload and owner preference');
+await require('./regression-salary-display-basis-contract-browser.cjs')({browser,out});
+assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({results,errors,realAPIRequests:0,network:'all requests intercepted; static compiled dist only'},null,2));console.log('PASS compiled salary basis UI:12 viewport/theme/coverage cases retain unknown integral salary; separate complete-component contract checks exact net2250, missing IRRF, keyboard, masking, reload and owner isolation');
 }finally{await browser.close();}})();

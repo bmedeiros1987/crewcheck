@@ -128,7 +128,7 @@ function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterS
   });
 }
 
-export async function listSavedRosters(limit = 72, strictHistory = false, options: { preserveRevisions?: boolean } = {}): Promise<SavedRosterSummary[]> {
+export async function listSavedRosters(limit = 72, strictHistory = false, options: { preserveRevisions?: boolean; onUnavailable?: () => void } = {}): Promise<SavedRosterSummary[]> {
   const session = captureRosterReadSession();
   const assertListSession = () => {
     if (!session.isCurrent()) throw Object.assign(new Error('A sessão mudou durante a leitura do histórico.'), { code: 'STALE_SESSION' });
@@ -141,6 +141,11 @@ export async function listSavedRosters(limit = 72, strictHistory = false, option
     const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}&manager=1`);
     assertListSession();
     if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');
+    if (!payload.ok || !Array.isArray(payload.rosters)) {
+      options.onUnavailable?.();
+      assertListSession();
+      return normalizeSingleActiveSummary(local);
+    }
     let online = payload.rosters || [];
     if (!strictHistory && !online.some((item) => item.isActive)) {
       try {
@@ -167,6 +172,10 @@ export async function listSavedRosters(limit = 72, strictHistory = false, option
   } catch (error) {
     assertListSession();
     if (strictHistory) throw error;
+    // Opt-in read status: preserve local history without presenting an offline
+    // fallback as a successful remote inventory. Never expose transport payloads.
+    options.onUnavailable?.();
+    assertListSession();
     return normalizeSingleActiveSummary(local);
   }
 }
