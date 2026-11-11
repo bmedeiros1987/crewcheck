@@ -12,6 +12,7 @@ const columns=['RUBRICA','QTDE','RAZAO','DESCRICAO','PROVENTOS','DESCONTOS'];
 const header=(s:string)=>norm(s).replace(/\.$/,'');
 export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePayrollExtraction|null{
  if(!pages.some(p=>p.geometry?.version===1&&Array.isArray(p.geometry.rows)&&p.geometry.rows.some(r=>columns.every(name=>r.cells.some(c=>header(c.text)===name)))))return null;
+ let monthlyPaymentTypeSeen=false;
  const result:PrivatePayrollExtraction={version:1,competence:empty(),creditDate:empty(),monthlyBase:empty(),items:[],totals:{gross:empty(),deductions:empty(),net:empty()},layout:'positioned-table',incomplete:false,unresolvedSources:[],reconciliation:'unavailable',itemReconciliation:'unavailable',requiresReview:true,warnings:[]};
  const fail=(s:PayrollSource,message:string)=>{result.incomplete=true;result.unresolvedSources.push(s);result.warnings.push(message);};
  const conflict=<T>(f:PayrollField<T>,s:PayrollSource,message:string)=>{f.unresolvedSources.push(s);refresh(f);fail(s,message);};
@@ -38,7 +39,7 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
    // A second text-only baseline at the same X completes a wrapped header.
    const next=rows[i+1];let headerRows=1;
    if(next&&next.cells.every(c=>!/[\d]/.test(c.text)&&row.cells.some(h=>Math.abs(h.x-c.x)<=0.5))){for(const c of next.cells){const h=headingCells.find(h=>Math.abs(h.x-c.x)<=0.5)!;h.text=header(h.text+' '+c.text);}headerRows=2;}
-   const meta=headingCells.filter(c=>['COMPETENCIA','SALARIO BASE','DATA DO DEPOSITO','LIQUIDO'].includes(c.text));
+   const meta=headingCells.filter(c=>['COMPETENCIA','TIPO DE PAGAMENTO','SALARIO BASE','DATA DO DEPOSITO','LIQUIDO'].includes(c.text));
    if(meta.length&&!bounds){
     recognized=true;
     const valuesRow=rows[i+headerRows];bounds=null;
@@ -47,6 +48,7 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
     for(const h of meta){const raw=grouped.values[headingCells.indexOf(h)],s=source(valuesRow,h.text);
      if(!grouped.valid){fail(s,'Células atravessam colunas; vínculo indisponível.');continue;}
      if(h.text==='COMPETENCIA'){const m=/^(\d{2})[/.](\d{4})$/.exec(raw);if(m&&+m[1]>=1&&+m[1]<=12)put(result.competence,`${m[2]}-${m[1]}`,s);else conflict(result.competence,s,'Competência tabular inválida ou ausente.');}
+     else if(h.text==='TIPO DE PAGAMENTO'){if(norm(raw)==='MENSAL')monthlyPaymentTypeSeen=true;else fail(s,'Tipo de pagamento não comprova folha mensal; benefício, adiantamento ou ausência exigem revisão separada.');}
      else if(h.text==='SALARIO BASE')readNumber(result.monthlyBase,raw,s);
      else if(h.text==='DATA DO DEPOSITO'){const v=date(raw);if(v)put(result.creditDate,v,s);else conflict(result.creditDate,s,'Data de depósito inválida ou ausente.');}
      else readNumber(result.totals.net,raw,s);
@@ -78,6 +80,7 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
   // Metadata alone cannot certify an unknown continuation as fully read.
   if(!recognized||!tableSeen)fail({page:page.page,origin:page.origin??'document-logical',line:1,field:'layout',text:''},'Página adicional sem estrutura reconhecida; revisão obrigatória.');
  }
+ if(!monthlyPaymentTypeSeen)fail({page:pages[0]?.page??1,origin:pages[0]?.origin??'document-logical',line:1,field:'paymentType',text:''},'Tipo de pagamento mensal não identificado; não promover base mensal.');
  for(const item of result.items)if(ready(result.competence))item.competence=result.competence.candidates[0].value;
  const fields=[result.competence,result.creditDate,result.monthlyBase,...Object.values(result.totals)];
  if(fields.some(f=>!ready(f))){result.incomplete=true;result.warnings.push('Metadados/totais ausentes ou conflitantes; revisão obrigatória.');}
