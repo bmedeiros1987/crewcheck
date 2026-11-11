@@ -18,6 +18,10 @@ HTTP deletion handler: external cancellation/preflight stays outside the SQL
 transaction in the future composition. Foreign, released or inactive registry
 connections cannot enter this callback. Missing canonical deletion remains an
 error; commit uncertainty is not acknowledged or blindly retried.
+The platform client must support `discard()`. An uncertain BEGIN, failed rollback
+or release while a transaction is still active destroys that connection instead
+of returning it to the pool. A successful rollback after a lost commit ACK does
+not create an ACK; fixed-ID reconciliation remains required.
 
 This closes an API incompatibility, not production mounting or authorization.
 The current account-deletion route and authenticated registry route remain

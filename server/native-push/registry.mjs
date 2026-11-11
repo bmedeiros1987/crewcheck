@@ -21,13 +21,13 @@ export function createNativeRegistryPlatformAdapter(platformDb) {
   const owned = new WeakMap();
   const registryDb = {async getConnection() {
     const client = await platformDb.connect();
-    if (!client || typeof client.query !== 'function' || typeof client.release !== 'function') {
+    if (!client || typeof client.query !== 'function' || typeof client.release !== 'function' || typeof client.discard !== 'function') {
       if(typeof client?.release==='function')client.release();fail('NATIVE_PLATFORM_CONNECTION_INVALID',503);
     }
-    const state = {client,active:false,released:false};
+    const state = {client,active:false,released:false,mustDiscard:false};
     const live = () => {if(state.released)fail('NATIVE_PLATFORM_CONNECTION_RELEASED',503);};
     const connection = {
-      async beginTransaction(){live();if(state.active)fail('NATIVE_PLATFORM_TRANSACTION_INVALID',503);await client.query('BEGIN');state.active=true;},
+      async beginTransaction(){live();if(state.active)fail('NATIVE_PLATFORM_TRANSACTION_INVALID',503);try{await client.query('BEGIN');state.active=true;}catch(error){state.mustDiscard=true;throw error;}},
       async query(sql,params=[]) {
         live();if(!state.active)fail('NATIVE_PLATFORM_TRANSACTION_REQUIRED',503);
         if(!statements.has(sql)||!Array.isArray(params))fail('NATIVE_PLATFORM_SQL_INVALID',503);
@@ -38,8 +38,8 @@ export function createNativeRegistryPlatformAdapter(platformDb) {
         return [result.rows];
       },
       async commit(){live();if(!state.active)fail('NATIVE_PLATFORM_TRANSACTION_REQUIRED',503);await client.query('COMMIT');state.active=false;},
-      async rollback(){live();await client.query('ROLLBACK');state.active=false;},
-      release(){if(!state.released){state.released=true;owned.delete(connection);client.release();}},
+      async rollback(){live();try{await client.query('ROLLBACK');state.active=false;}catch(error){state.mustDiscard=true;throw error;}},
+      release(){if(!state.released){state.released=true;owned.delete(connection);if(state.active||state.mustDiscard)client.discard();else client.release();}},
     };
     owned.set(connection,state);return connection;
   }};

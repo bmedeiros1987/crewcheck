@@ -135,8 +135,19 @@ try {
  assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[platformOwner.email]))[0].length===1,'callback failure restores canonical profile on same transaction');
  await assert.rejects(deleteNativeAccountWithRegistry(platformBridge.registryDb,platformOwner,platformBridge.canonicalDeletion(async()=>{})),e=>e.code==='NATIVE_ACCOUNT_DELETION_NOT_CONFIRMED');checks++;
  assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).registered,'unconfirmed deletion preserves binding');
+ let taintedReleases=0,taintedDiscards=0;
+ const taintedPool={getConnection:async()=>{
+   const c=await db.getConnection();return {query:async(sql,params)=>{if(sql==='ROLLBACK')throw Error('SYNTHETIC_PLATFORM_ROLLBACK_FAILED');return c.query(sql,params);},release:()=>{taintedReleases++;c.release();},destroy:()=>{taintedDiscards++;c.destroy();}};
+ }};
+ const taintedBridge=createNativeRegistryPlatformAdapter(mysqlAdapter(taintedPool));
+ await assert.rejects(deleteNativeAccountWithRegistry(taintedBridge.registryDb,platformOwner,taintedBridge.canonicalDeletion(async client=>{
+   await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1',[platformOwner.email]);throw Error('SYNTHETIC_DELETE_FAILED');
+ })),/SYNTHETIC_PLATFORM_ROLLBACK_FAILED/);checks++;
+ assertCheck(taintedReleases===0&&taintedDiscards===1,'failed rollback destroys actual connection without returning it to pool');
+ assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[platformOwner.email]))[0].length===1,'destroyed uncommitted connection leaves canonical profile intact');
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).registered,'destroyed uncommitted connection leaves binding/claim intact');
  const uncertainPlatformPool={getConnection:async()=>{
-   const c=await db.getConnection();return {query:async(sql,params)=>{const result=await c.query(sql,params);if(sql==='COMMIT')throw Error('SYNTHETIC_PLATFORM_ACK_LOST');return result;},release:()=>c.release()};
+   const c=await db.getConnection();return {query:async(sql,params)=>{const result=await c.query(sql,params);if(sql==='COMMIT')throw Error('SYNTHETIC_PLATFORM_ACK_LOST');return result;},release:()=>c.release(),destroy:()=>c.destroy()};
  }};
  const uncertainPlatform=createNativeRegistryPlatformAdapter(mysqlAdapter(uncertainPlatformPool));
  const platformRotate={...platformWire,action:'rotate',consent:false,expectedRevision:1,expectedConsentRevision:1,tokenRevision:'2',mutationId:'synthetic-platform-rotate',token:token+'PLATFORM_ROTATED'};

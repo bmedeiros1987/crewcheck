@@ -33,20 +33,40 @@ await assert.rejects(()=>applyNativeProtocolMutation(poison,identity,{...wire,ex
 assert.deepEqual(await nativeProtocolHost(poison),{enabled:false,configured:false,registered:false,received:null});count++;
 assert.equal(accesses,0);count++;
 // Execute the real platform SQL adapter, not a copy of its result/parameter API.
-function platformFixture({commitFailure=false,queryFailure=false}={}) {
-  const calls=[];let opens=0,releases=0,profile=true;
+function platformFixture({commitFailure=false,queryFailure=false,beginFailure=false,rollbackFailure=false}={}) {
+  const calls=[];let opens=0,releases=0,discards=0,profile=true;
   const native={getConnection:async()=>{opens++;return {
     query:async(sql,params=[])=>{
       calls.push({sql,params});
       if(queryFailure&&sql.startsWith('SELECT'))throw Error('SYNTHETIC_QUERY_FAILED');
       if(commitFailure&&sql==='COMMIT')throw Error('SYNTHETIC_COMMIT_UNCERTAIN');
+      if(beginFailure&&sql==='BEGIN')throw Error('SYNTHETIC_BEGIN_UNCERTAIN');
+      if(rollbackFailure&&sql==='ROLLBACK')throw Error('SYNTHETIC_ROLLBACK_UNCERTAIN');
       if(sql.startsWith('DELETE FROM crewcheck_platform_profiles')){profile=false;return [{affectedRows:1}];}
       if(sql.startsWith('SELECT public_id'))return [profile?[{public_id:identity.ownerId}]:[]];
       if(sql.startsWith('SELECT'))return [[]];
       return [{affectedRows:0}];
-    },release(){releases++;}
+    },release(){releases++;},destroy(){discards++;}
   };}};
-  return {db:mysqlAdapter(native),calls,opens:()=>opens,releases:()=>releases};
+  return {db:mysqlAdapter(native),calls,opens:()=>opens,releases:()=>releases,discards:()=>discards};
+}
+for(const failure of [{queryFailure:true},{commitFailure:true},{beginFailure:true}]) {
+ const f=platformFixture({...failure,rollbackFailure:true}),bridge=createNativeRegistryPlatformAdapter(f.db);
+ await assert.rejects(readNativeInstallation(bridge.registryDb,identity,wire.installationId));count++;
+ check(()=>assert.equal(f.releases(),0,'uncertain transaction must not return to pool'));
+ check(()=>assert.equal(f.discards(),1,'uncertain transaction is discarded exactly once'));
+ check(()=>assert.equal(f.opens(),1,'uncertain transaction never auto-retries'));
+}
+{
+ const f=platformFixture({beginFailure:true}),bridge=createNativeRegistryPlatformAdapter(f.db);
+ await assert.rejects(readNativeInstallation(bridge.registryDb,identity,wire.installationId));count++;
+ check(()=>assert.equal(f.releases(),0));check(()=>assert.equal(f.discards(),1,'uncertain BEGIN is discarded even if cleanup responds'));
+ const unfinished=platformFixture(),other=createNativeRegistryPlatformAdapter(unfinished.db),c=await other.registryDb.getConnection();
+ await c.beginTransaction();c.release();c.release();check(()=>assert.equal(unfinished.discards(),1,'active connection cannot return to pool'));check(()=>assert.equal(unfinished.releases(),0));
+ let releases=0,queries=0;
+ const invalid=createNativeRegistryPlatformAdapter({dialect:'mysql',connect:async()=>({query:async()=>{queries++;},release(){releases++;}})});
+ await assert.rejects(invalid.registryDb.getConnection(),e=>e.code==='NATIVE_PLATFORM_CONNECTION_INVALID');count++;
+ check(()=>assert.equal(releases,1));check(()=>assert.equal(queries,0,'missing discard capability rejected before BEGIN'));
 }
 {
   const f=platformFixture(),bridge=createNativeRegistryPlatformAdapter(f.db);
@@ -79,7 +99,7 @@ for(const kind of ['callback','notDeleted','query','commit']) {
   count++;check(()=>assert(f.calls.some(c=>c.sql==='ROLLBACK'),kind+' failure rolls back before release'));check(()=>assert.equal(f.releases(),1));
 }
 {
- const bridge=createNativeRegistryPlatformAdapter({dialect:'mysql',connect:async()=>({query:async()=>({rows:'invalid'}),release(){}})});
+ const bridge=createNativeRegistryPlatformAdapter({dialect:'mysql',connect:async()=>({query:async()=>({rows:'invalid'}),release(){},discard(){}})});
  const connection=await bridge.registryDb.getConnection();await connection.beginTransaction();
  await assert.rejects(connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',['x']),e=>e.code==='NATIVE_PLATFORM_RESULT_INVALID');count++;
  await connection.rollback();connection.release();
