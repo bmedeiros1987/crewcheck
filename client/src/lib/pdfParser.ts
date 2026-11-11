@@ -1,4 +1,4 @@
-import { associateCrewOccurrences, leadingCrewVisualRecords } from './crewOccurrenceAssociation';
+import { associateCrewOccurrences, leadingCrewVisualRecords, unhandledCrewPageTexts } from './crewOccurrenceAssociation';
 import type { AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { isAimsFormat, parseAimsRoster } from './aimsParser';
 import { getRosterCodeDefinition, isKnownRosterCode } from './rosterCodes';
@@ -774,8 +774,7 @@ function parseGenericTripulationRecords(fullText: string, rosterName: string, fa
     });
     // Keep date-first evidence on other pages, never text-fallback a page whose
     // leading layout was handled (including a page withheld as ambiguous).
-    const otherPages = [...new Set((visualRows || []).map(row => row.page))].filter(page => !visual.handledPages.includes(page));
-    const legacy = otherPages.flatMap(page => parseGenericTripulationRecords((visualRows || []).filter(row => row.page === page).map(row => row.text).join('\n'), rosterName, fallbackYear, fallbackMonth));
+    const legacy = unhandledCrewPageTexts(visualRows, visual.handledPages).flatMap(text => parseGenericTripulationRecords(text, rosterName, fallbackYear, fallbackMonth));
     return [...records, ...legacy];
   }
   const raw = String(fullText || '');

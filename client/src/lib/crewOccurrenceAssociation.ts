@@ -63,6 +63,20 @@ export function leadingCrewVisualRecords(rows:TableRow[]|undefined,year:number):
  }
  return used?{records:result,handledPages}:null;
 }
+/** Preserve legacy text continuation only within consecutive unhandled pages.
+ * A geometrically handled page (even withheld) or missing page is a hard fence.
+ */
+export function unhandledCrewPageTexts(rows:TableRow[]|undefined,handledPages:number[]):string[]{
+ const texts:string[]=[];let previous:number|undefined;
+ for(const page of [...new Set((rows||[]).map(r=>r.page))].sort((a,b)=>a-b)){
+  if(handledPages.includes(page)){previous=undefined;continue;}
+  const text=(rows||[]).filter(r=>r.page===page).map(r=>r.text).join('\n');
+  if(previous!==undefined&&page===previous+1)texts[texts.length-1]+='\n'+text;
+  else texts.push(text);
+  previous=page;
+ }
+ return texts;
+}
 /** Display association only. No crew composition, identity or payroll authority. */
 export function associateCrewOccurrences(days:RosterDay[],records:RecordRow[]):RosterDay[]{
  const occurrences=new Map<string,number>();

@@ -1,4 +1,4 @@
-import { associateCrewOccurrences, leadingCrewVisualRecords } from './crewOccurrenceAssociation';
+import { associateCrewOccurrences, leadingCrewVisualRecords, unhandledCrewPageTexts } from './crewOccurrenceAssociation';
 import { aimsSourceDateIso, aimsFlightSourceIdentity, newAimsFlightSourceCoverage, finalizeAimsFlightSourceCoverage, mergeAimsFlightSourceCoverage, type AimsFlightSourceCoverage } from './aimsFlightSourceCoverage';
 import { capturePublishedFreeDayStart, attachPublishedFreeDayTimeZone } from './freeDayStartEvidence';
 /**
@@ -972,8 +972,7 @@ function parseTripulationRecords(fullText: string, rosterName: string, fallbackY
     });
     // Keep date-first evidence on other pages, never text-fallback a page whose
     // leading layout was handled (including a page withheld as ambiguous).
-    const otherPages = [...new Set((visualRows || []).map(row => row.page))].filter(page => !visual.handledPages.includes(page));
-    const legacy = otherPages.flatMap(page => parseTripulationRecords((visualRows || []).filter(row => row.page === page).map(row => row.text).join('\n'), rosterName, fallbackYear));
+    const legacy = unhandledCrewPageTexts(visualRows, visual.handledPages).flatMap(text => parseTripulationRecords(text, rosterName, fallbackYear));
     return [...records, ...legacy];
   }
   const raw = String(fullText || '');

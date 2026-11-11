@@ -49,6 +49,15 @@ try{
   const mixedAmbiguous=[...ambiguousFixture(),...mixed.filter(r=>r.page===4)];assert.equal(run(mixedAmbiguous,mixedDays)[0].legs[1].crew?.[0].name,'Mixed Person','held leading page cannot suppress a separate unambiguous page');
   const noHeading=mixed.filter(r=>!(r.page===4&&r.key===800));assert.equal(run(noHeading,mixedDays)[0].legs[1].crew?.[0].name,'Mixed Person','supported date-first row without heading remains available on its own page');
   const conflict=[...fixture(),row(800,[[35,'Tripulações']],4),row(760,[[35,'10/11/2032',55],[110,'LA9001',32],[165,'CC Conflicting Person']],4)];assert(!run(conflict)[0].legs[0].crew,'conflicting source on another page must not be hidden by visual precedence');assert.equal(run(conflict)[0].legs[0].crewAssociation,'ambiguous');
+  const continuation=[...fixture(),row(100,[[35,'11/11/2032 LA9003 CP Second Captain']],4),row(780,[[35,'FO Second Officer']],5)];
+  const continued=parse(continuation).find(r=>r.flightNumber==='LA9003');
+  assert.deepEqual(continued?.crew.map(c=>c.role),['CP','FO'],module+' retains date-first continuation across consecutive unhandled pages');
+  const continueDays=days();continueDays[1].legs.push({flightNumber:'LA9003'});
+  assert.equal(run(continuation,continueDays)[1].legs[2].crew?.length,2,'matched occurrence includes continuation members');
+  const separated=[...fixture().map(r=>({...r,page:5,items:r.items.map(i=>({...i,page:5}))})),row(100,[[35,'11/11/2032 LA9003 CP Second Captain']],4),row(780,[[35,'FO Must Not Attach']],6)];
+  assert.equal(parse(separated).find(r=>r.flightNumber==='LA9003')?.crew.length,1,'handled page is a hard text boundary');
+  const gap=[...fixture(),row(100,[[35,'11/11/2032 LA9003 CP Second Captain']],4),row(780,[[35,'FO Must Not Attach']],6)];
+  assert.equal(parse(gap).find(r=>r.flightNumber==='LA9003')?.crew.length,1,'missing physical page is a hard text boundary');
   const oldDisplay=days();oldDisplay[0].legs[0].crew=[{role:'CC',name:'Old Unverified Person',order:0}];assert(!run(ambiguousFixture(),oldDisplay)[0].legs[0].crew,'uncertain new source cannot retain unverified old display names');
   const duplicate=days();duplicate[0].legs.push({...duplicate[0].legs[0]});assert(run(source,duplicate)[0].legs.every(l=>!l.crew),'duplicate occurrence stays ambiguous');
   const invalid=fixture();invalid[3].items[0].str='31/11/2032';invalid[3].text=invalid[3].items.map(i=>i.str).join(' ');assert(!run(invalid)[0].legs[0].crew);
