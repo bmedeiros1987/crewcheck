@@ -52,6 +52,8 @@ try{
   const continuation=[...fixture(),row(100,[[35,'11/11/2032 LA9003 CP Second Captain']],4),row(780,[[35,'FO Second Officer']],5)];
   const continued=parse(continuation).find(r=>r.flightNumber==='LA9003');
   assert.deepEqual(continued?.crew.map(c=>c.role),['CP','FO'],module+' retains date-first continuation across consecutive unhandled pages');
+  const repeatedHeading=[...continuation,row(800,[[35,'Tripulações']],5)];
+  assert.deepEqual(parse(repeatedHeading).find(r=>r.flightNumber==='LA9003')?.crew.map(c=>c.role),['CP','FO'],'a repeated section heading cannot discard the preceding anchor');
   const continueDays=days();continueDays[1].legs.push({flightNumber:'LA9003'});
   assert.equal(run(continuation,continueDays)[1].legs[2].crew?.length,2,'matched occurrence includes continuation members');
   const separated=[...fixture().map(r=>({...r,page:5,items:r.items.map(i=>({...i,page:5}))})),row(100,[[35,'11/11/2032 LA9003 CP Second Captain']],4),row(780,[[35,'FO Must Not Attach']],6)];

@@ -2,6 +2,7 @@ import type {RosterDay,CrewMember} from './pdfParser';
 type RecordRow={date?:string;flightNumber:string;crew:CrewMember[];sourceAmbiguous?:boolean};
 type TableRow={page:number;key:number;text:string;items:{str:string;x:number;y:number;width?:number}[]};
 type TableRecord={date?:string;flightNumber:string;crewText:string;sourceAmbiguous?:boolean};
+const crewHeading=(s:string)=>/^(?:Tripula(?:ç|c)[oõ]es|Tripula(?:ç|c)[aã]o|Crew\s+(?:List|Complement|Members))$/i.test(s.trim());
 export type CrewAssociation='matched'|'ambiguous'|'date_missing'|'date_mismatch'|'unmatched';
 const flight=(value:string)=>String(value||'').toUpperCase().replace(/\s/g,'');
 function civil(value:string|undefined){
@@ -16,7 +17,7 @@ const signature=(row:RecordRow)=>JSON.stringify(row.crew.map(m=>[m.role,m.name.n
  */
 export function leadingCrewVisualRecords(rows:TableRow[]|undefined,year:number):{records:TableRecord[];handledPages:number[]}|null{
  if(!rows?.length)return null;
- const heading=(s:string)=>/^(?:Tripula(?:ç|c)[oõ]es|Tripula(?:ç|c)[aã]o|Crew\s+(?:List|Complement|Members))$/i.test(s.trim());
+ const heading=crewHeading;
  const role=(s:string)=>/^(?:CP|FO|CCM|CC|CM)(?:\s|$)/.test(s.trim());
  const result:TableRecord[]=[];const handledPages:number[]=[];let used=false;
  for(const page of new Set(rows.map(r=>r.page))){
@@ -70,8 +71,11 @@ export function unhandledCrewPageTexts(rows:TableRow[]|undefined,handledPages:nu
  const texts:string[]=[];let previous:number|undefined;
  for(const page of [...new Set((rows||[]).map(r=>r.page))].sort((a,b)=>a-b)){
   if(handledPages.includes(page)){previous=undefined;continue;}
-  const text=(rows||[]).filter(r=>r.page===page).map(r=>r.text).join('\n');
-  if(previous!==undefined&&page===previous+1)texts[texts.length-1]+='\n'+text;
+  const continues=previous!==undefined&&page===previous+1;
+  // A repeated section title must not make the legacy section matcher discard
+  // the preceding page's anchor. Only exact crew headings are removed.
+  const text=(rows||[]).filter(r=>r.page===page&&(!continues||!crewHeading(r.text))).map(r=>r.text).join('\n');
+  if(continues)texts[texts.length-1]+='\n'+text;
   else texts.push(text);
   previous=page;
  }
