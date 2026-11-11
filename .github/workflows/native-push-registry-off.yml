@@ -1,0 +1,96 @@
+name: Native Android registry OFF synthetic
+on:
+  pull_request:
+    paths:
+      - 'server/native-push/**'
+      - 'server/mysql-platform-adapter.mjs'
+      - 'server/platform.mjs'
+      - 'server/v139/common.mjs'
+      - 'scripts/regression-native-push-registry*.mjs'
+      - '.github/workflows/native-push-registry-off.yml'
+permissions:
+  contents: read
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: synthetic_root_only
+          MYSQL_DATABASE: crewcheck_native_fixture_test
+          MYSQL_USER: native_fixture
+          MYSQL_PASSWORD: synthetic_native_only
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -psynthetic_root_only"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      NATIVE_CLIENT_PROTOCOL_REF: '56bd1f061207c815a4dac8095c7fe1eaea42b13d'
+      NATIVE_PUSH_SQL_DISPOSABLE: '1'
+      NATIVE_PUSH_TEST_MYSQL_URL: mysql://native_fixture:synthetic_native_only@127.0.0.1:3306/crewcheck_native_fixture_test
+    steps:
+      - name: Read pinned client contract without integrating its branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.NATIVE_CLIENT_PROTOCOL_REF }}
+          persist-credentials: false
+          sparse-checkout: client/src/lib/androidPushLifecycle.ts
+          sparse-checkout-cone-mode: false
+      - name: Preserve verified client source outside candidate checkout
+        run: |
+          python3 - <<'PY'
+          import pathlib,os,subprocess,hashlib,json
+          source=pathlib.Path('client/src/lib/androidPushLifecycle.ts')
+          commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert commit==os.environ['NATIVE_CLIENT_PROTOCOL_REF']
+          blob=subprocess.check_output(['git','rev-parse','HEAD:'+source.as_posix()],text=True).strip()
+          assert blob==subprocess.check_output(['git','hash-object',str(source)],text=True).strip()
+          data=source.read_bytes(); directory=pathlib.Path(os.environ['RUNNER_TEMP'])/'native-client-contract'; directory.mkdir()
+          target=directory/'androidPushLifecycle.ts'; target.write_bytes(data)
+          manifest=directory/'manifest.json'
+          manifest.write_text(json.dumps({'commit':commit,'sourcePath':source.as_posix(),'gitBlob':blob,'sha256':hashlib.sha256(data).hexdigest(),'sizeBytes':len(data)}))
+          with open(os.environ['GITHUB_ENV'],'a') as env:
+            env.write('NATIVE_CLIENT_PROTOCOL_SOURCE='+str(target)+'\n')
+            env.write('NATIVE_CLIENT_PROTOCOL_MANIFEST='+str(manifest)+'\n')
+          PY
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Preserve complete candidate checkout after source-only read
+        run: git sparse-checkout disable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify pinned input and reject source tampering before SQL
+        run: |
+          node scripts/regression-native-push-registry-sql.mjs --verify-client-source-only
+          cp "$NATIVE_CLIENT_PROTOCOL_SOURCE" "$RUNNER_TEMP/native-client-tampered.ts"
+          printf '\n// SYNTHETIC_SOURCE_TAMPER\n' >> "$RUNNER_TEMP/native-client-tampered.ts"
+          if NATIVE_CLIENT_PROTOCOL_SOURCE="$RUNNER_TEMP/native-client-tampered.ts" node scripts/regression-native-push-registry-sql.mjs --verify-client-source-only > "$RUNNER_TEMP/native-client-tamper.log" 2>&1; then
+            echo 'FAIL: changed source unexpectedly accepted'
+            exit 1
+          fi
+      - name: Raw native registry and actual disposable SQL
+        run: |
+          node scripts/regression-native-push-registry.mjs
+          node scripts/regression-native-push-registry-protocol.mjs
+          node scripts/regression-native-push-registry-sql.mjs
+      - name: Preserve canonical preparation
+        run: node scripts/v139/apply.mjs
+      - name: Prepared native registry and actual disposable SQL
+        run: |
+          node scripts/regression-native-push-registry.mjs
+          node scripts/regression-native-push-registry-protocol.mjs
+          node scripts/regression-native-push-registry-sql.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-registry-synthetic
+          path: artifacts/native-registry-off/
+          if-no-files-found: warn
+          retention-days: 7
