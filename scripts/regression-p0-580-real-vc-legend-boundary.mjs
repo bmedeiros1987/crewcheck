@@ -19,11 +19,16 @@ const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-580-real-vc-lege
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
 }).outputText;
-fs.writeFileSync(path.join(outDir, 'pdfParser.js'), compiled);
+fs.writeFileSync(path.join(outDir, 'pdfParser.js'), compiled + `
+let observedCrewScope;
+const actualCrewRecords = parseGenericTripulationRecords;
+parseGenericTripulationRecords = function(...args) { observedCrewScope = { text: args[0], rows: args[4] }; return actualCrewRecords(...args); };
+exports.observedCrewScope = () => observedCrewScope;
+`);
 // Compile the real new parser dependency; retain every boundary assertion.
 fs.writeFileSync(path.join(outDir, 'crewOccurrenceAssociation.js'), ts.transpileModule(fs.readFileSync(path.join(root, 'client/src/lib/crewOccurrenceAssociation.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText);
 const require = createRequire(import.meta.url);
-const { parseCrewRosterReportRows } = require(path.join(outDir, 'pdfParser.js'));
+const { parseCrewRosterReportRows, observedCrewScope } = require(path.join(outDir, 'pdfParser.js'));
 
 function item(str, x, y, page) {
   return { str, x, y, page, width: 10 };
@@ -75,6 +80,12 @@ rows.push({ page, key: 31, text: [...finalDates, 'LEGEND', 'HSB', 'DO', 'VC', 'D
 // valid activity labels and therefore prove the terminal boundary as well.
 rows.push({ page, key: 88, text: 'Home Stand by Day off Vacation Requested day off Pairing/Flight extends to previous day(s)', items: [item('Home Stand by Day off Vacation Requested day off Pairing/Flight extends to previous day(s)', 60, 88, page)] });
 
+// Crew-looking material after LEGEND must never enter either text or visual
+// crew acquisition. No flight needs to be invented to observe that boundary.
+rows.push(horizontalRow(4, 800, ['Tripulações']));
+rows.push(horizontalRow(4, 760, ['CP Synthetic Sentinel FO Synthetic Other']));
+rows.push(horizontalRow(4, 750, ['21/09/2026', 'LA9001', 'CC Synthetic Tail']));
+
 const fullText = ['Roster Report 01-Sep-2026 to 01-Oct-2026', ...rows.map((row) => row.text)].join('\n');
 const roster = parseCrewRosterReportRows(rows, fullText);
 const vcDates = roster.days
@@ -88,5 +99,11 @@ for (const day of roster.days.filter((entry) => expected.includes(entry.date))) 
 }
 assert.ok(!roster.days.some((day) => /\bLEGEND\b|Home Stand by|Requested day off/i.test(day.rawText || '')), 'legend must remain terminal');
 
+const crewScope = observedCrewScope();
+assert(crewScope && !crewScope.text.includes('Synthetic Sentinel'), 'post-legend crew text must be excluded');
+if (source.includes('leadingCrewVisualRecords')) {
+  assert(Array.isArray(crewScope.rows), 'visual crew reader must receive the bounded rows');
+  assert(!crewScope.rows.some(row => row.page === 4), 'post-legend visual crew rows must be excluded');
+}
 console.log('PASS regression-p0-580-real-vc-legend-boundary');
 fs.rmSync(outDir, { recursive: true, force: true });
