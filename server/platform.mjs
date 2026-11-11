@@ -1407,10 +1407,13 @@ async function handleAsaasCheckout(req, res) {
   const pendingResult = await context.db.query("SELECT provider_ref,metadata FROM crewcheck_platform_subscriptions WHERE email=$1 AND provider='asaas' AND plan=$2 AND status='pending' LIMIT 1", [context.identity.email, plan]);
   const pending = pendingResult.rows[0];
   if (pending?.provider_ref) {
-    const existingPayments = await asaasRequest(`/subscriptions/${encodeURIComponent(pending.provider_ref)}/payments?limit=1`).catch(() => null);
+    let existingPayments;
+    try { existingPayments = await asaasRequest(`/subscriptions/${encodeURIComponent(pending.provider_ref)}/payments?limit=1`); }
+    catch { return sendJson(res, 503, { ok: false, code: 'CHECKOUT_LINK_UNAVAILABLE', provider: 'asaas', plan, reused: true, checkoutState: 'unavailable', checkoutUrl: null, message: 'Sua assinatura pendente foi preservada. Não foi possível consultar o link de pagamento agora.' }); }
     const existing = existingPayments?.data?.[0] || null;
     const checkoutUrl = existing?.invoiceUrl || existing?.bankSlipUrl || null;
-    return sendJson(res, 200, { ok: true, provider: 'asaas', plan, reused: true, firstDueDate: pending.metadata?.firstDue || null, checkoutUrl, message: 'A cobrança pendente existente foi reutilizada; nenhuma assinatura duplicada foi criada.' });
+    if (!checkoutUrl) return sendJson(res, 202, { ok: true, code: 'CHECKOUT_LINK_PENDING', provider: 'asaas', plan, reused: true, firstDueDate: pending.metadata?.firstDue || null, checkoutState: 'pending', checkoutUrl: null, message: 'Sua assinatura continua pendente. O link de pagamento ainda não está disponível.' });
+    return sendJson(res, 200, { ok: true, provider: 'asaas', plan, reused: true, firstDueDate: pending.metadata?.firstDue || null, checkoutState: 'ready', checkoutUrl, message: 'Link de pagamento disponível. O acesso depende da confirmação do pagamento.' });
   }
   const customers = await asaasRequest(`/customers?email=${encodeURIComponent(context.identity.email)}&limit=1`);
   let customerId = customers?.data?.[0]?.id;
@@ -1420,12 +1423,21 @@ async function handleAsaasCheckout(req, res) {
   }
   const firstDue = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const subscription = await asaasRequest('/subscriptions', { method: 'POST', headers: { 'asaas-request-id': sha256(`subscription:${context.profile.public_id}:${plan}:${firstDue}`).slice(0, 36) }, body: JSON.stringify({ customer: customerId, billingType: normalizeText(body.billingType || 'UNDEFINED', 30), value: price, nextDueDate: firstDue, cycle: plan === 'premium_annual' ? 'YEARLY' : 'MONTHLY', description: plan === 'premium_annual' ? 'CrewCheck Premium Anual' : 'CrewCheck Premium Mensal', externalReference: `${context.profile.public_id}:${plan}` }) });
-  const paymentPage = await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.id)}/payments?limit=1`).catch(() => null);
+  let paymentLookupAvailable = true;
+  const paymentPage = await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.id)}/payments?limit=1`).catch(() => { paymentLookupAvailable = false; return null; });
   const firstPayment = paymentPage?.data?.[0] || null;
-  await context.db.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
-    VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)
-    ON DUPLICATE KEY UPDATE plan=VALUES(plan),status='pending',provider='asaas',product_id=VALUES(product_id),provider_ref=VALUES(provider_ref),metadata=VALUES(metadata),updated_at=NOW()`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
-  return sendJson(res, 200, { ok: true, provider: 'asaas', plan, firstDueDate: firstDue, checkoutUrl: firstPayment?.invoiceUrl || firstPayment?.bankSlipUrl || subscription.invoiceUrl || subscription.paymentLink || null, message: 'Assinatura web criada. A primeira cobrança ocorrerá após o período informado.' });
+  try {
+    await context.db.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
+      VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)
+      ON DUPLICATE KEY UPDATE plan=VALUES(plan),status='pending',provider='asaas',product_id=VALUES(product_id),provider_ref=VALUES(provider_ref),metadata=VALUES(metadata),updated_at=NOW()`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
+  } catch {
+    // The provider may already have accepted creation, and a lost DB ACK does
+    // not prove rollback. Never create again or claim an unrecorded success.
+    return sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', provider: 'asaas', plan, checkoutState: 'unconfirmed', checkoutUrl: null, message: 'Não foi possível confirmar o registro da assinatura. Confira o status antes de tentar novamente.' });
+  }
+  const checkoutUrl = firstPayment?.invoiceUrl || firstPayment?.bankSlipUrl || subscription.invoiceUrl || subscription.paymentLink || null;
+  if (!checkoutUrl) return sendJson(res, 202, { ok: true, code: paymentLookupAvailable ? 'CHECKOUT_LINK_PENDING' : 'CHECKOUT_LINK_UNAVAILABLE', provider: 'asaas', plan, firstDueDate: firstDue, checkoutState: paymentLookupAvailable ? 'pending' : 'unavailable', checkoutUrl: null, message: 'Sua assinatura foi registrada como pendente. O link de pagamento ainda não está disponível; nenhum pagamento foi confirmado.' });
+  return sendJson(res, 200, { ok: true, provider: 'asaas', plan, firstDueDate: firstDue, checkoutState: 'ready', checkoutUrl, message: 'Link de pagamento disponível. O acesso depende da confirmação do pagamento.' });
 }
 
 async function handleBillingCancel(req, res) {

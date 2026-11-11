@@ -1,3 +1,4 @@
+import { captureAuthSession } from '@/lib/authClient';
 import { playPlanReady } from '@shared/play-catalog-readiness.mjs';
 import { consumePendingNavigationContext } from '@/lib/navigationContext';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -191,6 +192,10 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
 
   async function subscribe(plan: PlatformPlan) {
     if (plan.id !== 'premium_monthly' && plan.id !== 'premium_annual') return;
+    let session: ReturnType<typeof captureAuthSession>;
+    try { session = captureAuthSession(); } catch { toast.error('Sessão indisponível. Abra os planos novamente.'); return; }
+    const current = () => { try { return session.isCurrent(); } catch { return false; } };
+    if (!session.token || !current()) return;
     setBusy(plan.id);
     try {
       if (hasGooglePlayBillingBridge()) {
@@ -201,13 +206,19 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
         const cpf = window.prompt('CPF do titular para a cobrança web pelo Asaas') || '';
         if (!cpf.trim()) return;
         const result = await createWebSubscription(plan.id, cpf);
-        if (result.checkoutUrl) window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
-        toast.success(result.message || 'Assinatura web criada.');
+        if (!current()) return;
+        if (!result.checkoutUrl || (result.checkoutState && result.checkoutState !== 'ready')) {
+          toast.message('O link de pagamento ainda não está disponível. A assinatura permanece pendente.');
+          await load();
+          return;
+        }
+        window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
+        toast.message('Continue o pagamento no link. O acesso depende da confirmação do pagamento.');
         await load();
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Não consegui iniciar a assinatura.');
-    } finally { setBusy(''); }
+      if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui iniciar a assinatura.');
+    } finally { if (current()) setBusy(''); }
   }
 
   function restore() {

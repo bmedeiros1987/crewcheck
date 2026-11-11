@@ -70,6 +70,7 @@ jobs:
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
+          node scripts/regression-billing-checkout-confirmation.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs
@@ -92,6 +93,7 @@ jobs:
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
+          node scripts/regression-billing-checkout-confirmation.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs
@@ -131,6 +133,7 @@ jobs:
           NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-billing-checkout-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -159,6 +162,7 @@ jobs:
           NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-billing-checkout-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -171,6 +175,13 @@ jobs:
           node scripts/regression-escala-contact-browser.mjs
           node scripts/regression-standby-sequence-card-browser.mjs
           node scripts/regression-wakeup-session-browser.mjs
+      - name: Retain synthetic billing confirmation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: billing-checkout-synthetic
+          path: artifacts/billing-checkout/
+          if-no-files-found: warn
   web-and-server:
     name: Web, TypeScript and server
     runs-on: ubuntu-latest
