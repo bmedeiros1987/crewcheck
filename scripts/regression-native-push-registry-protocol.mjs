@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import {Readable} from 'node:stream';
+import {createRequire} from 'node:module';
 import {nativeMutationPlan,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter,readNativeInstallation,deleteNativeAccountWithRegistry} from '../server/native-push/registry.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
-import {nativeProtocolMutation as parse,nativeProtocolAcknowledgement as ack,nativeProtocolHost,applyNativeProtocolMutation} from '../server/native-push/protocol-adapter.mjs';
+import {nativeProtocolMutation as parse,nativeProtocolAcknowledgement as ack,nativeProtocolHost,applyNativeProtocolMutation,createNativeRegistryAuthenticatedHandler,NATIVE_REGISTRY_PATH} from '../server/native-push/protocol-adapter.mjs';
 const identity={ownerId:'synthetic-owner-a',email:'native-a@example.test'};
 const wire={action:'register',projectId:NATIVE_PROJECT,package:NATIVE_PACKAGE,installationId:'synthetic-device-a',mutationId:'synthetic-operation-1',expectedRevision:0,expectedConsentRevision:0,generation:'1',tokenRevision:'1',consent:true,token:'SYNTHETIC_PROTOCOL_TOKEN_NOT_REAL'};
 let count=0;function check(fn){fn();count++;}
@@ -104,4 +108,64 @@ for(const kind of ['callback','notDeleted','query','commit']) {
  await assert.rejects(connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',['x']),e=>e.code==='NATIVE_PLATFORM_RESULT_INVALID');count++;
  await connection.rollback();connection.release();
 }
-console.log('PASS '+count+' native protocol wire/CAS/ACK/platform-transaction/revoke/OFF synthetic checks');
+// Real existing JWT verification/request-token functions, AST-selected without
+// importing platform startup or reading its secret. Only the key is synthetic.
+const platformSource=fs.readFileSync(new URL('../server/platform.mjs',import.meta.url),'utf8');
+const ast=createRequire(import.meta.url)('@babel/parser').parse(platformSource,{sourceType:'module'});
+const declarations=['verifyJwt','requestToken'].map(name=>{const n=ast.program.body.find(n=>n.type==='FunctionDeclaration'&&n.id.name===name);assert(n);return platformSource.slice(n.start,n.end);}).join('\n');
+const fixtureSecret=crypto.randomBytes(32).toString('hex');
+const auth=Function('crypto','authSecret',declarations+';return {verifyJwt,requestToken};')(crypto,()=>fixtureSecret);
+const jwt=claims=>{const prefix=[{alg:'HS256',typ:'JWT'},{email:identity.email,role:'free',aud:'crewcheck',exp:Math.floor(Date.now()/1000)+120,...claims}].map(v=>Buffer.from(JSON.stringify(v)).toString('base64url')).join('.');return prefix+'.'+crypto.createHmac('sha256',fixtureSecret).update(prefix).digest('base64url');};
+const bearer=jwt({});
+async function invoke(handler,{method='GET',query='?installationId='+wire.installationId,headers={},body='',pathname=NATIVE_REGISTRY_PATH}={}){
+ const req=Readable.from([Buffer.isBuffer(body)?body:Buffer.from(body)]);req.method=method;req.headers={authorization:'Bearer '+bearer,...headers};
+ const res={headers:{},status:null,body:null,setHeader(k,v){this.headers[k]=v;},writeHead(status,h){this.status=status;Object.assign(this.headers,h);},end(s){this.body=JSON.parse(s);}};
+ const handled=await handler(req,res,new URL('https://synthetic.example.test'+pathname+query));return {handled,...res};
+}
+function hostFixture(overrides={}){
+ const f=platformFixture(),protectionKey=crypto.randomBytes(32);let current=true;
+ const options={enabled:true,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:req=>{
+   const claims=auth.verifyJwt(auth.requestToken(req));
+   return claims?.email===identity.email&&claims.aud!=='crewcheck-visitor'&&claims.role!=='visitor'?{...identity,authenticated:true,role:'owner'}:null;
+ },isIdentityCurrent:()=>current,admitRequest:()=>true,poolProvider:()=>f.db,protectionProvider:()=>({seal(token,context){const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',protectionKey,iv);cipher.setAAD(Buffer.from(context));const bytes=Buffer.concat([cipher.update(token),cipher.final()]);return {format:'native-token-aes256gcm-v1',iv:iv.toString('base64url'),tag:cipher.getAuthTag().toString('base64url'),ciphertext:bytes.toString('base64url')};}}),...overrides};
+ return {...f,handler:createNativeRegistryAuthenticatedHandler(options),options,setCurrent:v=>current=v};
+}
+{
+ const off=createNativeRegistryAuthenticatedHandler({identityProvider(){throw Error('OFF authority I/O');},poolProvider(){throw Error('OFF DB I/O');}});
+ const res={writeHead(status){assert.equal(status,503);},end(body){assert.equal(JSON.parse(body).code,'NATIVE_REGISTRY_OFF');}};
+ assert.equal(await off(new Proxy({},{get(){throw Error('OFF request read');}}),res,{pathname:NATIVE_REGISTRY_PATH}),true);count++;
+ const f=hostFixture(),result=await invoke(f.handler);
+ check(()=>assert.equal(result.status,200));check(()=>assert.equal(result.body.registryConfirmed,true));check(()=>assert.equal(result.body.revision,0));
+ check(()=>assert.equal(result.headers['cache-control'],'no-store'));
+ const post=await invoke(f.handler,{method:'POST',query:'',headers:{origin:'https://synthetic.example.test','content-type':'application/json'},body:JSON.stringify(wire)});
+ check(()=>assert.equal(post.status,200));check(()=>assert.equal(post.body.mutationId,wire.mutationId));check(()=>assert.equal(post.body.received,null));check(()=>assert(!JSON.stringify(post.body).includes(wire.token)));
+ check(()=>assert.equal(f.opens(),2));
+}
+for(const [input,status] of [
+ [{headers:{authorization:'',cookie:'crewcheck_auth_token='+bearer,'x-crewcheck-email':identity.email}},401],
+ [{headers:{authorization:'Bearer '+bearer+'forged'}},401],
+ [{headers:{authorization:'Bearer '+jwt({exp:1})}},401],
+ [{headers:{authorization:'Bearer '+jwt({aud:'crewcheck-visitor',role:'visitor'})}},401],
+ [{headers:{origin:'https://other.example.test'}},403],
+ [{query:'?installationId='+wire.installationId+'&installationId='+wire.installationId},400],
+ [{query:'?installationId='+wire.installationId+'&ownerId=other'},400],
+ [{method:'POST',query:'',headers:{'content-type':'application/json'},body:JSON.stringify(wire)},403],
+ [{method:'POST',query:'',headers:{origin:'https://synthetic.example.test','content-type':'text/plain'},body:'{}'},415],
+ [{method:'POST',query:'',headers:{origin:'https://synthetic.example.test','content-type':'application/json'},body:JSON.stringify({...wire,ownerId:'synthetic-other-owner'})},400],
+ [{method:'POST',query:'',headers:{origin:'https://synthetic.example.test','content-type':'application/json'},body:Buffer.from([255])},400],
+ [{method:'POST',query:'',headers:{origin:'https://synthetic.example.test','content-type':'application/json'},body:' '.repeat(16385)},413],
+ ]){
+ const f=hostFixture(),result=await invoke(f.handler,input);check(()=>assert.equal(result.status,status));check(()=>assert.equal(f.opens(),0,'rejection precedes DB I/O'));
+ check(()=>assert(!JSON.stringify(result.body).includes(bearer)&&!JSON.stringify(result.body).includes(wire.token)));
+}
+for(const overrides of [{admitRequest:()=>false},{isIdentityCurrent:undefined},{allowedOrigin:()=>'*'},{poolProvider:()=>{throw Error(wire.token);}}]){
+ const f=hostFixture(overrides),result=await invoke(f.handler);check(()=>assert(result.status>=400));check(()=>assert(!JSON.stringify(result.body).includes(wire.token)));
+}
+{
+ let f;f=hostFixture({poolProvider:async()=>{f.setCurrent(false);return f.db;}});const result=await invoke(f.handler);
+ check(()=>assert.equal(result.body.code,'NATIVE_IDENTITY_CHANGED'));check(()=>assert.equal(f.opens(),0,'scope replaced while awaiting pool cannot start transaction'));
+ let fences=0;const late=hostFixture({isIdentityCurrent:()=>++fences<4}),reply=await invoke(late.handler);
+ check(()=>assert.equal(reply.status,401));check(()=>assert.equal(reply.body.registryConfirmed,false,'late authority gets no receipt'));check(()=>assert.equal(late.opens(),1));
+ const other=await invoke(hostFixture().handler,{pathname:'/synthetic-unrelated'});check(()=>assert.equal(other.handled,false));
+}
+console.log('PASS '+count+' native protocol wire/CAS/ACK/authenticated-host/platform-transaction/revoke/OFF synthetic checks');

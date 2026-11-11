@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import {Readable} from 'node:stream';
 import mysql from 'mysql2/promise';
 import {mutateNativeInstallation,readNativeInstallation,deleteNativeAccountWithRegistry,nativeBindingKey,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter} from '../server/native-push/registry.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
-import {applyNativeProtocolMutation,readNativeProtocolInstallation} from '../server/native-push/protocol-adapter.mjs';
+import {applyNativeProtocolMutation,readNativeProtocolInstallation,createNativeRegistryAuthenticatedHandler,NATIVE_REGISTRY_PATH} from '../server/native-push/protocol-adapter.mjs';
 
 const value=process.env.NATIVE_PUSH_TEST_MYSQL_URL;
 const url=new URL(value||'mysql://invalid/');
@@ -154,6 +155,25 @@ try {
  await assert.rejects(applyNativeProtocolMutation(uncertainPlatform.registryDb,platformOwner,platformRotate,{protection}),/SYNTHETIC_PLATFORM_ACK_LOST/);checks++;
  const reconciled=await applyNativeProtocolMutation(platformBridge.registryDb,platformOwner,platformRotate,{protection});
  assertCheck(reconciled.duplicate&&reconciled.revision===2,'platform commit uncertainty reconciles fixed ID without new mutation');
+ const hostOptions={enabled:true,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:()=>({...platformOwner,authenticated:true,role:'owner'}),isIdentityCurrent:()=>true,admitRequest:()=>true,poolProvider:()=>mysqlAdapter(platformPool),protectionProvider:()=>protection};
+ async function invokeHost(handler,{method='GET',body,query='?installationId='+platformWire.installationId}={}){
+   const req=Readable.from([Buffer.from(body?JSON.stringify(body):'')]);req.method=method;req.headers={authorization:'Bearer SYNTHETIC_HOST_AUTH_NOT_REAL',origin:'https://synthetic.example.test','content-type':'application/json'};
+   const res={status:0,value:null,writeHead(status){this.status=status;},end(value){this.value=JSON.parse(value);},setHeader(){}};
+   assert.equal(await handler(req,res,new URL('https://synthetic.example.test'+NATIVE_REGISTRY_PATH+query)),true);return res;
+ }
+ const host=createNativeRegistryAuthenticatedHandler(hostOptions),hostRead=await invokeHost(host);
+ assertCheck(hostRead.status===200&&hostRead.value.registryConfirmed&&hostRead.value.revision===2,'unmounted authenticated host composes actual platform SQL read');
+ let fenceCalls=0;
+ const lateHost=createNativeRegistryAuthenticatedHandler({...hostOptions,isIdentityCurrent:()=>++fenceCalls<4});
+ const hostRotate={...platformRotate,expectedRevision:2,mutationId:'synthetic-host-rotate',tokenRevision:'3',token:token+'HOST_ROTATED'};
+ const lateReply=await invokeHost(lateHost,{method:'POST',query:'',body:hostRotate});
+ assertCheck(lateReply.status===401&&!lateReply.value.registryConfirmed&&lateReply.value.received===null,'late identity change receives no committed mutation ACK');
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).revision===3,'late response is not misrepresented as no durable write');
+ const duplicateReply=await invokeHost(host,{method:'POST',query:'',body:hostRotate});
+ assertCheck(duplicateReply.status===200&&duplicateReply.value.duplicate&&duplicateReply.value.revision===3,'host fixed-ID reconcile returns exactly the existing committed receipt');
+ assertCheck(!JSON.stringify(duplicateReply.value).includes(hostRotate.token),'host receipt redacts token');
+ const deniedHost=createNativeRegistryAuthenticatedHandler({...hostOptions,identityProvider:()=>({...platformOwner,ownerId:'synthetic-unmatched-owner',authenticated:true,role:'owner'})});
+ const deniedReply=await invokeHost(deniedHost);assertCheck(deniedReply.status===401&&deniedReply.value.code==='NATIVE_SESSION_REVOKED','canonical profile mismatch blocks host state read');
  const opensBeforeDelete=platformOpens;
  const platformDeleted=await deleteNativeAccountWithRegistry(platformBridge.registryDb,platformOwner,platformBridge.canonicalDeletion(async client=>{
    const result=await client.query('SELECT CONNECTION_ID() AS connectionId');

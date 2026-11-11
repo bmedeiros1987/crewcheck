@@ -1,5 +1,33 @@
 # Native Android registry primitives — unmounted, OFF
 
+## Authenticated composition factory — not a mounted endpoint
+
+`createNativeRegistryAuthenticatedHandler` is default OFF and is not imported by
+the platform router. The existing `nativeProtocolHost`, registry gate and sender
+remain OFF. There is no environment toggle, route registration, consent prompt,
+token acquisition or send. Test-only instances explicitly enable this isolated
+factory and supply synthetic dependencies.
+
+A future reviewed composition must supply independently verified owner identity,
+current-identity fencing, request admission, the existing platform pool, a trusted
+HTTPS app origin and authorized protection. Missing dependencies fail closed.
+Cookie-only and development email/header fallbacks are not accepted. POST needs
+the exact configured origin and bounded JSON; body/query owner overrides are
+rejected. GET accepts only one installation ID. Authority is checked again after
+async preparation and after SQL, before sending a redacted receipt. A late change
+can withhold the ACK after a durable mutation: it does not mean nothing was
+written, and fixed-ID reconciliation is required. Errors disclose neither bearer,
+FCM token nor SQL/provider messages. Responses are no-store.
+
+Tests select the actual existing platform JWT verification/token-reader functions
+by AST and inject only a synthetic in-memory key; no production secret or startup
+is accessed. The HTTP boundary is invoked in memory, without a listening socket.
+SQL CI composes the same host factory with the real platform adapter and disposable
+MySQL, including late-identity receipt withholding and duplicate reconciliation.
+These proofs do not certify a production authentication/admission/protection
+provider, native permission, background delivery or physical receipt. Mounting
+and account-deletion route ownership remain a separate composition step.
+
 ## Explicit platform-connection bridge (still unmounted)
 
 `createNativeRegistryPlatformAdapter(platformDb)` accepts the existing MySQL
