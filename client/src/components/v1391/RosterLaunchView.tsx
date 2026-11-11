@@ -1,3 +1,4 @@
+import { FlightCrewDetails } from '@/components/roster/FlightCrewDetails';
 import { filterRosterEvents, rosterCardPresentation, rosterProgramMode, rosterModeMeta, type RosterMode } from '@/lib/rosterPresentation';
 import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';
 import { RosterActivityIcon, RosterLegend, useRosterCategoryFilter } from './RosterLegend';
@@ -426,6 +427,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
                 {card.datesUnconfirmed && <p>Virada de dia indicada; datas a confirmar.</p>}
                 {['reserve', 'standby', 'training', 'duty'].includes(mode) && <p className="cc-roster-summary-v1397">{event.subtitle || `${card.start === '—' ? 'Horário a confirmar' : card.start} → ${card.end === '—' ? 'Horário a confirmar' : card.end}`}</p>}
 
+                {['operating','extra'].includes(mode) && <FlightCrewDetails leg={event.leg}/> }
                 <details className="cc-roster-source-code"><summary>Dados da fonte</summary><small className="cc-roster-published-code">Código da fonte: {card.code}</small></details>
 
                 {(eventPerDiems.length > 0 || earning) && <section className="cc-roster-event-finance-v1397">

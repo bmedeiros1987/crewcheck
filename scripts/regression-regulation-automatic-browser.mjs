@@ -15,7 +15,7 @@ const events=buildCanonicalRosterEvents({days:[day],year:2032,month:10,base:'BSB
 const row={carrierFsCode:'QA',flightNumber:'1234',departureAirportFsCode:'BSB',arrivalAirportFsCode:'GRU',status:'S',operationalTimes:{estimatedRunwayArrival:{dateUtc:'2032-10-20T14:10:23Z'}},flightStatusUpdates:[{updatedAt:{dateUtc:'2032-10-20T13:00:00Z'},updatedDateFields:[{field:'ERA',newDateUtc:'2032-10-20T14:10:23Z'}]}]};
 const candidate={...normalizeCiriumFlightStatus(row),scheduledDepartureUtc:events[0].startDateTime,departureDate:'2032-10-20'};
 window.hostCurrent=true;const admitted={candidate,session:captureAuthSession(),ownerScope:'synthetic-owner',revision:'r1',receivedAt:'2032-10-20T13:00:02Z',isCurrent:()=>window.hostCurrent};
-const root=createRoot(document.getElementById('root'));window.renderAircraft=(code)=>{const changed={...day,legs:day.legs.map(leg=>({...leg,aircraftType:code}))};const updated=buildCanonicalRosterEvents({days:[changed],year:2032,month:10,base:'BSB'}).filter(e=>e.kind==='flight');const rows=updated.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));root.render(<View scheduleDay={regulationProgramDay(rows,rows[0])} program={updated[0]}/>);};window.renderAdmission=(kind='good')=>root.render(<View scheduleDay={regulationProgramDay(ui,ui[0])} program={events[0]} operationalArrival={kind==='none'?null:{...admitted,candidate:kind==='other'?{...candidate,destination:'REC'}:kind==='seconds'?{...normalizeCiriumFlightStatus({...row,operationalTimes:{estimatedRunwayArrival:{dateUtc:'2032-10-20T15:30:01Z'}},flightStatusUpdates:[{updatedAt:{dateUtc:'2032-10-20T13:00:00Z'},updatedDateFields:[{field:'ERA',newDateUtc:'2032-10-20T15:30:01Z'}]}]}),scheduledDepartureUtc:events[0].startDateTime,departureDate:'2032-10-20'}:candidate}}/>);window.renderAdmission();`;
+const root=createRoot(document.getElementById('root'));window.renderAircraft=(code,workType='OP')=>{const changed={...day,legs:day.legs.map(leg=>({...leg,aircraftType:code,workType}))};const updated=buildCanonicalRosterEvents({days:[changed],year:2032,month:10,base:'BSB'}).filter(e=>e.kind==='flight');const rows=updated.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));root.render(<View scheduleDay={regulationProgramDay(rows,rows[0])} program={updated[0]}/>);};window.renderAdmission=(kind='good')=>root.render(<View scheduleDay={regulationProgramDay(ui,ui[0])} program={events[0]} operationalArrival={kind==='none'?null:{...admitted,candidate:kind==='other'?{...candidate,destination:'REC'}:kind==='seconds'?{...normalizeCiriumFlightStatus({...row,operationalTimes:{estimatedRunwayArrival:{dateUtc:'2032-10-20T15:30:01Z'}},flightStatusUpdates:[{updatedAt:{dateUtc:'2032-10-20T13:00:00Z'},updatedDateFields:[{field:'ERA',newDateUtc:'2032-10-20T15:30:01Z'}]}]}),scheduledDepartureUtc:events[0].startDateTime,departureDate:'2032-10-20'}:candidate}}/>);window.renderAdmission();`;
 console.log('Bundling synthetic component');await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle:true,jsx:'automatic',format:'iife',outfile:path.join(dir,'app.js'),alias:{'@':path.resolve('client/src'),'@shared':path.resolve('shared')},logLevel:'silent'});
 const server=http.createServer((req,res)=>{const file=req.url==='/app.js'?'app.js':req.url==='/app.css'?'app.css':null;res.setHeader('Content-Type',file?.endsWith('.js')?'text/javascript':file?'text/css':'text/html');res.end(file?fs.readFileSync(file==='app.css'&&productionCss?productionCss:path.join(dir,file)):'<html><head>'+(!productionCss?'<style>body{margin:0}.cz-app button{width:100%}</style>':'')+'<link rel="stylesheet" href="/app.css"></head><body><div class="cz-app" style="padding:16px"><div id="root"></div></div><script src="/app.js"></script></body></html>');});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
@@ -54,6 +54,29 @@ let browser;try{
   await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('B789');assert.match(await result.innerText(),/WB/);assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'');
   await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('UNKNOWN');assert.match(await result.innerText(),/Equipamento \?/);assert.doesNotMatch(await result.innerText(),/\bNB\b/);
   await page.evaluate(()=>window.renderAircraft('B789'));await page.waitForFunction(()=>document.querySelector('[aria-label="Equipamento da etapa 1"]').value==='B789');assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).inputValue(),'0','source revision clears delay override');assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','new WB source does not inherit NB default');
+  await page.evaluate(()=>window.renderAircraft('A320','PS'));
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Atividade da etapa 1"]').value==='PS');
+  assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','PS A320 does not establish crew composition');
+  await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('B789');await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('A320');
+  assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','PS equipment editing must not restore NB default');
+  assert.equal(await result.locator('.cc-reg-deadlines strong').nth(1).innerText(),'-','PS needs an explicit simple-comparison parameter');
+  await page.getByLabel('Composição da tripulação',{exact:true}).selectOption('simple');
+  assert.equal(await result.locator('.cc-reg-deadlines strong').nth(1).innerText(),'13:10','PS conditional B.1 reference uses the same 04:10 row');
+  assert.match(await result.innerText(),/Operador e regime não comprovados/);
+  if(zone==='UTC')await page.screenshot({path:'/tmp/SYNTHETIC-regulation-PS-simple-comparison-390.png',fullPage:true});
+  await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('B789');
+  assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'simple','explicit scenario selection remains an edit, never applicability proof');
+  assert.equal(await result.locator('.cc-reg-deadlines strong').first().innerText(),'-','PS final leg has no operated engine-stop deadline');
+  await page.evaluate(()=>window.renderAircraft('A320','OP'));
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Atividade da etapa 1"]').value==='OP');
+  assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'simple','OP-only NB behavior preserved');
+  await page.getByLabel('Composição da tripulação',{exact:true}).click();
+  await page.keyboard.press('Escape'); // opening/cancelling a select is not a composition choice
+  await page.getByLabel('Atividade da etapa 1',{exact:true}).selectOption('PS');
+  assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','OP to PS revokes unedited automatic composition');
+  await page.getByLabel('Atividade da etapa 1',{exact:true}).selectOption('OP');
+  assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'simple','OP-only default may return without claiming proof');
+  await page.evaluate(()=>window.renderAircraft('B789'));
   await page.getByRole('button',{name:'Simulação manual',exact:true}).click();
   assert.match(await page.locator('body').innerText(),/REFERÊNCIA A CONFIRMAR|Referência a confirmar|Confirmar dados/);
   for(const width of [320,390,1440])for(const theme of ['light','dark']){
