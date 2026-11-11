@@ -63,6 +63,7 @@ export function createInfobipWhatsAppApplicationHost(options={}) {
     stage='host-preflight';
     host=createInfobipWhatsAppHost({enabled:true,ingress:policy.ingress,lifecycle,
      load:async()=>({configuration:policy.configuration,admission:policy.admission,
+      trustLegacyPremiumProfile:(String(environment.CREWCHECK_TRUST_LEGACY_PREMIUM_PROFILE||'').trim()||'false').toLowerCase()==='true',
       credentials:credentialProvider(environment,options.matchesLinkKey??matchesCanonicalWhatsAppLinkSecret),
       getPool:options.getPool??dbPool,...(options.request?{request:options.request}:{}),
       ...(options.scheduler?{scheduler:options.scheduler}:{}),...(options.now?{now:options.now}:{})})});

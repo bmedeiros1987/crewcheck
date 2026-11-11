@@ -1,5 +1,8 @@
-import {finiteReservePolicy,finiteReserveAmount,finiteReserveManifest} from './concierge-finite-reserve-off.mjs';
+import {paidEntitlementValid} from './concierge-paid-entitlement.mjs';
+import {finiteReservePolicy,finiteReserveAmount,finiteReserveManifest,finiteCohortPolicy,finiteCohortManifest,finiteCohortMemberId,
+ finiteCohortAmount,finiteCohortState,finiteCohortAccountValid,finiteCohortAuthorityValid} from './concierge-finite-reserve-off.mjs';
 import {createHash} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 
 // Unwired candidate only. Host assertions are not verification of prices,
 // billing reconciliation, entitlement or permission to call a provider.
@@ -35,7 +38,10 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
  const enabled=policy.enabled===true&&policy.budgetApproved===true;
  const budget=policy.monthlyBudgetMicroUsd,programId=policy.programId;
  const finite=policy.finiteReserve===undefined?null:finiteReservePolicy(policy.finiteReserve);
+ const cohort=policy.finiteCohort===undefined?null:finiteCohortPolicy(policy.finiteCohort);
+ const member=cohort?.members.find(m=>finiteCohortMemberId(cohort,m)===policy.cohortMemberId);
  if(finite&&(finite.programId!==programId||finite.monthlyBudgetMicroUsd!==budget))throw Error('CREDIT_CONFIGURATION');
+ if(cohort&&(!member||finite||cohort.programId!==programId||cohort.monthlyBudgetMicroUsd!==budget))throw Error('CREDIT_CONFIGURATION');
  const channels=Object.freeze([...(Array.isArray(policy.allowedChannels)?policy.allowedChannels:[])]);
  if(enabled&&(!int(budget)||budget<1||typeof programId!=='string'||!programId||programId.length>80||
   !channels.length||channels.some(channel=>!['whatsapp','voice'].includes(channel))))throw Error('CREDIT_CONFIGURATION');
@@ -49,7 +55,7 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
    !/^[a-f0-9]{64}$/.test(job.eventKey||'')||!Number.isSafeInteger(at)||
    !channels.includes(job.channel)||
    context.quote?.sender!==job.sender||context.quote?.country!=='BR')return false;
-  const amount=finite?finite.perAttemptMicroUsd:boundedQuoteReservation(context.quote,job.channel,at);if(amount===null)return false;
+  const amount=finite?finite.perAttemptMicroUsd:cohort?member.perAttemptMicroUsd:boundedQuoteReservation(context.quote,job.channel,at);if(amount===null)return false;
   const period=periodAt(at),account=context.accountKey;
   const requestKey=sharedCreditKey('request',[programId,job.eventKey]);
   const accountKey=sharedCreditKey('account',[programId,account]);
@@ -62,11 +68,12 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
   }
   const a=states.get(accountKey),g=states.get(globalKey);
   if(finite){const [proofs]=await c.query(select,[sharedCreditKey('finite-reserve-authorization',[finite.approvalId])]);const proof=parse(proofs[0]?.payload);if(proofs.length!==1||proof?.v!==1||proof.kind!=='finite-reserve-authorization'||proof.status!=='approved'||proof.manifest!==finiteReserveManifest(finite)||proof.evidenceReference!==finite.evidenceReference||proof.approvedAt!==finite.approvedAt)return false;}
-  const fresh=()=>{const current=now();return Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&(a.validFrom===undefined&&a.expiresAt===undefined||(int(a.validFrom)&&int(a.expiresAt)&&current>=a.validFrom&&current<a.expiresAt))&&(finite?finiteReserveAmount(finite,context,a,g,job,current)===amount:boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000);};
+  if(cohort){const [proofs]=await c.query(select,[sharedCreditKey('finite-reserve-authorization',[cohort.approvalId])]);if(proofs.length!==1||!finiteCohortAuthorityValid(cohort,parse(proofs[0]?.payload)))return false;}
+  const fresh=()=>{const current=now();return (!cohort||paidEntitlementValid(c,context.paidProof,context))&&Number.isSafeInteger(current)&&current>=at&&!c.signal?.aborted&&periodAt(current)===period&&(a.validFrom===undefined&&a.expiresAt===undefined||(int(a.validFrom)&&int(a.expiresAt)&&current>=a.validFrom&&current<a.expiresAt))&&(finite?finiteReserveAmount(finite,context,a,g,job,current)===amount:cohort?finiteCohortAmount(cohort,member,context,a,g,job,current)===amount:boundedQuoteReservation(context.quote,job.channel,current)===amount&&int(g?.reconciledAt)&&current>=g.reconciledAt&&current-g.reconciledAt<=15*60_000);};
   if(a.v!==1||a.kind!=='account-credit'||a.accountKey!==account||!int(a.availableMicroUsd)||!int(a.reservedMicroUsd)||
    g.v!==1||g.kind!=='global-credit'||g.period!==period||g.budgetMicroUsd!==budget||
    !int(g.knownSpentMicroUsd)||!int(g.reservedMicroUsd)||g.reconciled!==true||
-   (!finite&&(!int(g.reconciledAt)||at<g.reconciledAt||at-g.reconciledAt>15*60_000))||!fresh())return false;
+   (!finite&&!cohort&&(!int(g.reconciledAt)||at<g.reconciledAt||at-g.reconciledAt>15*60_000))||!fresh())return false;
   await c.query(insert,[requestKey,JSON.stringify({v:1,kind:'credit-request',state:'empty'})]);
   if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
   const [rows]=await c.query(select,[requestKey]);
@@ -74,17 +81,32 @@ export function createSharedCreditCandidate(policy,{resolveTrustedContext,now=Da
   const r=parse(rows[0]?.payload);
   if(r?.v!==1||r.kind!=='credit-request'||r.state!=='empty')return false;
   if(a.availableMicroUsd<amount||g.knownSpentMicroUsd>budget||g.reservedMicroUsd>budget-g.knownSpentMicroUsd||
-   (!finite&&amount>budget-g.knownSpentMicroUsd-g.reservedMicroUsd)||!int(a.reservedMicroUsd+amount)||!int(g.reservedMicroUsd+amount))return false;
+   (!finite&&!cohort&&amount>budget-g.knownSpentMicroUsd-g.reservedMicroUsd)||!int(a.reservedMicroUsd+amount)||!int(g.reservedMicroUsd+amount))return false;
+  const memberId=cohort?finiteCohortMemberId(cohort,member):null;
+  const nextAccount={...a,availableMicroUsd:a.availableMicroUsd-amount,reservedMicroUsd:a.reservedMicroUsd+amount};
+  const nextGlobal=cohort?{...g,finiteReserve:{...g.finiteReserve,
+   members:g.finiteReserve.members.map(row=>row.id===memberId?{...row,usedMicroUsd:row.usedMicroUsd+amount,attempts:row.attempts+1}:row),
+   usedMicroUsd:g.finiteReserve.usedMicroUsd+amount,attempts:g.finiteReserve.attempts+1}}
+   :finite?{...g,finiteReserve:{...g.finiteReserve,usedMicroUsd:g.finiteReserve.usedMicroUsd+amount,attempts:g.finiteReserve.attempts+1}}:{...g,reservedMicroUsd:g.reservedMicroUsd+amount};
+  const nextRequest={v:1,kind:'credit-request',state:'reserved',period,accountKey:account,amountMicroUsd:amount,channel:job.channel,quoteSourceId:context.quote.sourceId,
+   ...(finite?{reservationBasis:'explicit-risk-reserve',finiteManifest:g.finiteReserve.manifest}:{}),
+   ...(cohort?{reservationBasis:'explicit-risk-cohort',cohortManifest:finiteCohortManifest(cohort),memberId,
+    targetHash:member.recipientHash,tariffEvidenceSha256:member.observedTariff.evidenceSha256}:{})};
+  if(cohort){const row=finiteCohortState(cohort,nextGlobal,now())?.get(memberId);if(!row||!finiteCohortAccountValid(member,nextAccount,row.usedMicroUsd,now()))throw Error('COHORT_CONSERVATION');}
   // Reservation precedes engine/provider I/O, in the same transaction as the
   // preparing marker. No refund/retry method exists, even for failed/uncertain.
-  for(const [k,value]of [
-   [accountKey,{...a,availableMicroUsd:a.availableMicroUsd-amount,reservedMicroUsd:a.reservedMicroUsd+amount}],
-   [globalKey,finite?{...g,finiteReserve:{...g.finiteReserve,usedMicroUsd:g.finiteReserve.usedMicroUsd+amount,attempts:g.finiteReserve.attempts+1}}:{...g,reservedMicroUsd:g.reservedMicroUsd+amount}],
-   [requestKey,{v:1,kind:'credit-request',state:'reserved',period,accountKey:account,amountMicroUsd:amount,channel:job.channel,quoteSourceId:context.quote.sourceId,...(finite?{reservationBasis:'explicit-risk-reserve',finiteManifest:g.finiteReserve.manifest}:{})}],
-  ]){
+  for(const [k,value]of [[accountKey,nextAccount],[globalKey,nextGlobal],[requestKey,nextRequest]]){
    if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
    const [result]=await c.query(update,[JSON.stringify(value),k]);if(result.affectedRows!==1)throw Error('CREDIT_WRITE');
    if(!fresh())throw Error('CREDIT_AUTHORIZATION_EXPIRED');
+  }
+  if(cohort){
+   // The complete prospective state was validated before mutation. Verify all
+   // written financial rows together before COMMIT; partial writes roll back.
+   for(const [key,expected]of [[accountKey,nextAccount],[globalKey,nextGlobal],[requestKey,nextRequest]]){
+    const [written]=await c.query(select,[key]);
+    if(written.length!==1||!isDeepStrictEqual(parse(written[0].payload),expected)||!fresh())throw Error('COHORT_CONSERVATION');
+   }
   }
   return true;
  }
