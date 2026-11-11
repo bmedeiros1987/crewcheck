@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'server/native-push/**'
+      - 'server/mysql-platform-adapter.mjs'
+      - 'server/platform.mjs'
       - 'scripts/regression-native-push-registry*.mjs'
       - '.github/workflows/native-push-registry-off.yml'
 permissions:
