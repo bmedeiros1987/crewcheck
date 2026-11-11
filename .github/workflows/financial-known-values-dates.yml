@@ -54,6 +54,7 @@ on:
       - 'scripts/regression-cabin-rate-audit.mjs'
       - 'scripts/regression-salary-tariff-pending-browser.mjs'
       - 'scripts/regression-financial-known-values*'
+      - 'scripts/regression-payroll-net-session-browser.mjs'
       - 'scripts/regression-financial-vacation-*'
       - 'scripts/regression-financial-thirteenth-*'
       - 'scripts/regression-financial-review-owner-negative.mjs'
@@ -156,6 +157,7 @@ jobs:
           TZ=Pacific/Auckland node scripts/regression-finance-actionable-browser.mjs
           node scripts/regression-financial-long-history.cjs
           node scripts/regression-salary-display-basis-browser.cjs
+          node scripts/regression-payroll-net-session-browser.mjs
           node scripts/regression-financial-vacation-session-browser.mjs
           node scripts/regression-financial-vacation-browser.cjs
           node scripts/regression-financial-vacation-app.cjs
@@ -170,6 +172,7 @@ jobs:
             artifacts/SYNTHETIC-allowance-closed-duty/
             artifacts/financial-long-history/
             artifacts/salary-display-basis/
+            artifacts/payroll-net-session/
             artifacts/vacation-forecast/
             artifacts/vacation-app/
             artifacts/thirteenth-app/
