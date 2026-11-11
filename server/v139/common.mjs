@@ -154,6 +154,7 @@ export function issueJwt(user) {
     plan: user.plan,
     admin: Boolean(user.admin),
     mustChangePassword: Boolean(user.mustChangePassword),
+    ...(flag('CREWCHECK_WATCH_AUTHORITY_ENABLED') ? {jti:'watch1_'+crypto.randomBytes(32).toString('hex')} : {}),
     iat: now,
     exp: now + 60 * 60 * 24 * 30,
   });
