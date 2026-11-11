@@ -1214,6 +1214,18 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String lifeReminderState() {
+            try { return new LifeReminderAndroid(MainActivity.this).ledger().state(); }
+            catch (Exception unavailable) { return "{\"schemaVersion\":1,\"module\":\"life\",\"available\":false}"; }
+        }
+
+        @JavascriptInterface
+        public String updateLifeReminder(final String requestJson) {
+            try { return new LifeReminderAndroid(MainActivity.this).ledger().update(requestJson); }
+            catch (Exception unavailable) { return LifeReminderLedger.unavailableUpdate(); }
+        }
+
+        @JavascriptInterface
         public boolean setNotificationCancellationScope(final String accountHint) {
             NotificationLedger ledger = new NotificationLedgerAndroid(MainActivity.this).ledger();
             if (accountHint != null && accountHint.length() > 512) { ledger.scope(""); return false; }
