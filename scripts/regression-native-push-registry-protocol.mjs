@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {nativeMutationPlan,NATIVE_PROJECT,NATIVE_PACKAGE} from '../server/native-push/registry.mjs';
+import {nativeMutationPlan,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter,readNativeInstallation,deleteNativeAccountWithRegistry} from '../server/native-push/registry.mjs';
+import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
 import {nativeProtocolMutation as parse,nativeProtocolAcknowledgement as ack,nativeProtocolHost,applyNativeProtocolMutation} from '../server/native-push/protocol-adapter.mjs';
 const identity={ownerId:'synthetic-owner-a',email:'native-a@example.test'};
 const wire={action:'register',projectId:NATIVE_PROJECT,package:NATIVE_PACKAGE,installationId:'synthetic-device-a',mutationId:'synthetic-operation-1',expectedRevision:0,expectedConsentRevision:0,generation:'1',tokenRevision:'1',consent:true,token:'SYNTHETIC_PROTOCOL_TOKEN_NOT_REAL'};
@@ -31,4 +32,56 @@ let accesses=0;const poison=new Proxy({}, {get(){accesses++;throw Error('unexpec
 await assert.rejects(()=>applyNativeProtocolMutation(poison,identity,{...wire,expectedRevision:undefined},poison));count++;
 assert.deepEqual(await nativeProtocolHost(poison),{enabled:false,configured:false,registered:false,received:null});count++;
 assert.equal(accesses,0);count++;
-console.log('PASS '+count+' native protocol wire/CAS/ACK/revoke/OFF synthetic checks');
+// Execute the real platform SQL adapter, not a copy of its result/parameter API.
+function platformFixture({commitFailure=false,queryFailure=false}={}) {
+  const calls=[];let opens=0,releases=0,profile=true;
+  const native={getConnection:async()=>{opens++;return {
+    query:async(sql,params=[])=>{
+      calls.push({sql,params});
+      if(queryFailure&&sql.startsWith('SELECT'))throw Error('SYNTHETIC_QUERY_FAILED');
+      if(commitFailure&&sql==='COMMIT')throw Error('SYNTHETIC_COMMIT_UNCERTAIN');
+      if(sql.startsWith('DELETE FROM crewcheck_platform_profiles')){profile=false;return [{affectedRows:1}];}
+      if(sql.startsWith('SELECT public_id'))return [profile?[{public_id:identity.ownerId}]:[]];
+      if(sql.startsWith('SELECT'))return [[]];
+      return [{affectedRows:0}];
+    },release(){releases++;}
+  };}};
+  return {db:mysqlAdapter(native),calls,opens:()=>opens,releases:()=>releases};
+}
+{
+  const f=platformFixture(),bridge=createNativeRegistryPlatformAdapter(f.db);
+  check(()=>assert.equal(f.opens(),0,'bridge construction has no I/O'));
+  const receipt=await readNativeInstallation(bridge.registryDb,identity,wire.installationId);
+  check(()=>assert.equal(receipt.revision,0));check(()=>assert.equal(f.opens(),1));check(()=>assert.equal(f.releases(),1));
+  check(()=>assert.deepEqual(f.calls.map(c=>c.sql),['BEGIN','SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE','SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE','COMMIT']));
+  check(()=>assert.deepEqual(f.calls[1].params,[identity.email],'numbered platform arguments survive translation'));
+  const deletion=await deleteNativeAccountWithRegistry(bridge.registryDb,identity,bridge.canonicalDeletion(async client=>{
+    const result=await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1',[identity.email]);
+    assert.equal(result.rowCount,1,'canonical callback retains platform result contract');
+  }));
+  check(()=>assert.equal(deletion.registryConfirmed,true));check(()=>assert.equal(f.opens(),2,'deletion uses exactly one additional connection'));
+  check(()=>assert.equal(f.releases(),2));
+  check(()=>assert.equal(f.calls.filter(c=>c.sql==='BEGIN').length,2,'callback does not open/nest transaction'));
+  await assert.rejects(bridge.canonicalDeletion(async()=>{} )({}),e=>e.code==='NATIVE_PLATFORM_TRANSACTION_REQUIRED');count++;
+  check(()=>assert.throws(()=>createNativeRegistryPlatformAdapter({dialect:'postgres',connect(){}}),e=>e.code==='NATIVE_PLATFORM_DB_REQUIRED'));
+  check(()=>assert.throws(()=>bridge.canonicalDeletion(null),e=>e.code==='NATIVE_DELETION_CALLBACK_REQUIRED'));
+  const connection=await bridge.registryDb.getConnection();await connection.beginTransaction();const prior=f.calls.length;
+  await assert.rejects(connection.query('SELECT ?',[]),e=>e.code==='NATIVE_PLATFORM_SQL_INVALID');count++;
+  await assert.rejects(connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[]),e=>e.code==='NATIVE_PLATFORM_SQL_INVALID');count++;
+  check(()=>assert.equal(f.calls.length,prior,'unsupported SQL/arity rejected before query'));
+  await connection.rollback();connection.release();connection.release();
+  await assert.rejects(connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',['x']),e=>e.code==='NATIVE_PLATFORM_CONNECTION_RELEASED');count++;
+}
+for(const kind of ['callback','notDeleted','query','commit']) {
+  const f=platformFixture({commitFailure:kind==='commit',queryFailure:kind==='query'}),bridge=createNativeRegistryPlatformAdapter(f.db);
+  if(kind==='query'||kind==='commit')await assert.rejects(readNativeInstallation(bridge.registryDb,identity,wire.installationId));
+  else await assert.rejects(deleteNativeAccountWithRegistry(bridge.registryDb,identity,bridge.canonicalDeletion(async()=>{if(kind==='callback')throw Error('SYNTHETIC_DELETE_FAILED');})));
+  count++;check(()=>assert(f.calls.some(c=>c.sql==='ROLLBACK'),kind+' failure rolls back before release'));check(()=>assert.equal(f.releases(),1));
+}
+{
+ const bridge=createNativeRegistryPlatformAdapter({dialect:'mysql',connect:async()=>({query:async()=>({rows:'invalid'}),release(){}})});
+ const connection=await bridge.registryDb.getConnection();await connection.beginTransaction();
+ await assert.rejects(connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',['x']),e=>e.code==='NATIVE_PLATFORM_RESULT_INVALID');count++;
+ await connection.rollback();connection.release();
+}
+console.log('PASS '+count+' native protocol wire/CAS/ACK/platform-transaction/revoke/OFF synthetic checks');

@@ -1,5 +1,33 @@
 # Native Android registry primitives — unmounted, OFF
 
+## Explicit platform-connection bridge (still unmounted)
+
+`createNativeRegistryPlatformAdapter(platformDb)` accepts the existing MySQL
+platform adapter; it creates no pool, connection, key, route or activation flag.
+The registry side keeps its mysql2 tuple/`?` contract. Only its fixed internal
+statements are translated to the platform `$n`/`{rows}` contract, with argument
+counts and result shapes checked. Unsupported statements fail before query I/O.
+The existing global platform adapter is unchanged.
+
+For account deletion, pass `bridge.canonicalDeletion(callback)` to
+`deleteNativeAccountWithRegistry(bridge.registryDb, identity, ...)`. The callback
+receives the exact original platform client from the registry transaction. It
+must perform only the existing canonical SQL deletion on that supplied client,
+without opening/committing/releasing another connection. It is not the whole
+HTTP deletion handler: external cancellation/preflight stays outside the SQL
+transaction in the future composition. Foreign, released or inactive registry
+connections cannot enter this callback. Missing canonical deletion remains an
+error; commit uncertainty is not acknowledged or blindly retried.
+
+This closes an API incompatibility, not production mounting or authorization.
+The current account-deletion route and authenticated registry route remain
+unmodified. Their ownership/composition, protection authority, consent UI,
+sender/outbox and native display barriers are still separate activation gates.
+Unit tests use the actual platform adapter with fake I/O. Disposable SQL tests
+exercise registration/read, callback rollback, missing deletion, lost commit ACK,
+fixed-ID reconciliation, one-connection identity and atomic erasure through the
+real platform adapter. No production DDL or real token/message is involved.
+
 This separate backend slice complements #1218; it does not enable native push,
 change that PR or replace #1183. Base main eeb77c3b. The notifications owner granted
 new native modules/tests only; no existing scheduler, server route, Web Push module,

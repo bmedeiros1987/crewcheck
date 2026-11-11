@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
-import {mutateNativeInstallation,readNativeInstallation,deleteNativeAccountWithRegistry,nativeBindingKey,NATIVE_PROJECT,NATIVE_PACKAGE} from '../server/native-push/registry.mjs';
+import {mutateNativeInstallation,readNativeInstallation,deleteNativeAccountWithRegistry,nativeBindingKey,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter} from '../server/native-push/registry.mjs';
+import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
 import {applyNativeProtocolMutation,readNativeProtocolInstallation} from '../server/native-push/protocol-adapter.mjs';
 
 const value=process.env.NATIVE_PUSH_TEST_MYSQL_URL;
@@ -116,6 +117,41 @@ try {
  assertCheck(revokedAck.revoked&&!revokedAck.registered&&revokedAck.revision===2,'wire revoke commits before correlated ACK');
  assertCheck(!(await readNativeProtocolInstallation(db,owners[0],protocolWire.installationId)).registered,'wire GET reports committed revocation');
  await assert.rejects(applyNativeProtocolMutation(db,owners[0],{...protocolWire,mutationId:'synthetic-protocol-stale',expectedRevision:2,expectedConsentRevision:2},{protection}),e=>e.code==='NATIVE_GENERATION_REVOKED');checks++;
- const report={passed:true,checks,realMySQL:true,disposableOnly:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
+ // Real production platform adapter → isolated native bridge → actual MySQL.
+ const platformOwner={ownerId:'synthetic-native-platform',email:'native-platform@example.test'};
+ await db.query('INSERT INTO crewcheck_platform_profiles(email,public_id) VALUES(?,?)',[platformOwner.email,platformOwner.ownerId]);
+ let platformOpens=0,lastThreadId;
+ const platformPool={getConnection:async()=>{platformOpens++;const c=await db.getConnection();lastThreadId=c.threadId;return c;}};
+ const platformBridge=createNativeRegistryPlatformAdapter(mysqlAdapter(platformPool));
+ const platformWire={...protocolWire,installationId:'synthetic-platform-install',mutationId:'synthetic-platform-register',token:token+'PLATFORM'};
+ const platformAck=await applyNativeProtocolMutation(platformBridge.registryDb,platformOwner,platformWire,{protection});
+ assertCheck(platformAck.registered&&platformAck.revision===1,'actual platform result/parameter adapter registers');
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).registered,'actual platform adapter reads redacted state');
+ await assert.rejects(deleteNativeAccountWithRegistry(platformBridge.registryDb,platformOwner,platformBridge.canonicalDeletion(async client=>{
+   await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1',[platformOwner.email]);
+   throw Error('SYNTHETIC_PLATFORM_DELETE_FAILURE');
+ })),/SYNTHETIC_PLATFORM_DELETE_FAILURE/);checks++;
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).registered,'callback failure restores binding and token claim');
+ assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[platformOwner.email]))[0].length===1,'callback failure restores canonical profile on same transaction');
+ await assert.rejects(deleteNativeAccountWithRegistry(platformBridge.registryDb,platformOwner,platformBridge.canonicalDeletion(async()=>{})),e=>e.code==='NATIVE_ACCOUNT_DELETION_NOT_CONFIRMED');checks++;
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId)).registered,'unconfirmed deletion preserves binding');
+ const uncertainPlatformPool={getConnection:async()=>{
+   const c=await db.getConnection();return {query:async(sql,params)=>{const result=await c.query(sql,params);if(sql==='COMMIT')throw Error('SYNTHETIC_PLATFORM_ACK_LOST');return result;},release:()=>c.release()};
+ }};
+ const uncertainPlatform=createNativeRegistryPlatformAdapter(mysqlAdapter(uncertainPlatformPool));
+ const platformRotate={...platformWire,action:'rotate',consent:false,expectedRevision:1,expectedConsentRevision:1,tokenRevision:'2',mutationId:'synthetic-platform-rotate',token:token+'PLATFORM_ROTATED'};
+ await assert.rejects(applyNativeProtocolMutation(uncertainPlatform.registryDb,platformOwner,platformRotate,{protection}),/SYNTHETIC_PLATFORM_ACK_LOST/);checks++;
+ const reconciled=await applyNativeProtocolMutation(platformBridge.registryDb,platformOwner,platformRotate,{protection});
+ assertCheck(reconciled.duplicate&&reconciled.revision===2,'platform commit uncertainty reconciles fixed ID without new mutation');
+ const opensBeforeDelete=platformOpens;
+ const platformDeleted=await deleteNativeAccountWithRegistry(platformBridge.registryDb,platformOwner,platformBridge.canonicalDeletion(async client=>{
+   const result=await client.query('SELECT CONNECTION_ID() AS connectionId');
+   assertCheck(Number(result.rows[0].connectionId)===lastThreadId,'canonical callback uses exact registry MySQL connection');
+   await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1',[platformOwner.email]);
+ }));
+ assertCheck(platformOpens===opensBeforeDelete+1,'canonical deletion acquires only one connection');
+ assertCheck(platformDeleted.registryDeleted===1&&platformDeleted.registryConfirmed,'canonical and native deletion confirm together');
+ await assert.rejects(readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId),e=>e.code==='NATIVE_SESSION_REVOKED');checks++;
+ const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
  fs.mkdirSync('artifacts/native-registry-off',{recursive:true});fs.writeFileSync('artifacts/native-registry-off/sql-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 } finally {fixtureKey.fill(0);await db.end();}

@@ -4,6 +4,54 @@ import crypto from 'node:crypto';
 export const NATIVE_REGISTRY_ENABLED = false;
 export const NATIVE_PROJECT = 'api-project-627296893301';
 export const NATIVE_PACKAGE = 'com.crewcheck.app';
+// Explicit, unmounted bridge to the existing platform adapter. It acquires no
+// connection until a registry operation starts and never chooses a DB or key.
+// Only this module's fixed SQL is translated; canonical deletion receives the
+// original platform client on the same transaction, not another pool/connection.
+export function createNativeRegistryPlatformAdapter(platformDb) {
+  if (platformDb?.dialect !== 'mysql' || typeof platformDb.connect !== 'function') fail('NATIVE_PLATFORM_DB_REQUIRED',503);
+  const statements = new Set([
+    'INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',
+    'SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',
+    'UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?',
+    'SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',
+    'DELETE FROM crewcheck_telegram_state WHERE state_key=?',
+    'SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key LIKE ? ORDER BY state_key FOR UPDATE',
+  ]);
+  const owned = new WeakMap();
+  const registryDb = {async getConnection() {
+    const client = await platformDb.connect();
+    if (!client || typeof client.query !== 'function' || typeof client.release !== 'function') {
+      if(typeof client?.release==='function')client.release();fail('NATIVE_PLATFORM_CONNECTION_INVALID',503);
+    }
+    const state = {client,active:false,released:false};
+    const live = () => {if(state.released)fail('NATIVE_PLATFORM_CONNECTION_RELEASED',503);};
+    const connection = {
+      async beginTransaction(){live();if(state.active)fail('NATIVE_PLATFORM_TRANSACTION_INVALID',503);await client.query('BEGIN');state.active=true;},
+      async query(sql,params=[]) {
+        live();if(!state.active)fail('NATIVE_PLATFORM_TRANSACTION_REQUIRED',503);
+        if(!statements.has(sql)||!Array.isArray(params))fail('NATIVE_PLATFORM_SQL_INVALID',503);
+        let count=0;const prepared=sql.replace(/\?/g,()=>'$'+(++count));
+        if(count!==params.length)fail('NATIVE_PLATFORM_SQL_INVALID',503);
+        const result=await client.query(prepared,params);
+        if(!result||!Array.isArray(result.rows))fail('NATIVE_PLATFORM_RESULT_INVALID',503);
+        return [result.rows];
+      },
+      async commit(){live();if(!state.active)fail('NATIVE_PLATFORM_TRANSACTION_REQUIRED',503);await client.query('COMMIT');state.active=false;},
+      async rollback(){live();await client.query('ROLLBACK');state.active=false;},
+      release(){if(!state.released){state.released=true;owned.delete(connection);client.release();}},
+    };
+    owned.set(connection,state);return connection;
+  }};
+  return {registryDb,canonicalDeletion(callback) {
+    if(typeof callback!=='function')fail('NATIVE_DELETION_CALLBACK_REQUIRED',503);
+    return async connection=>{
+      const state=owned.get(connection);
+      if(!state||!state.active||state.released)fail('NATIVE_PLATFORM_TRANSACTION_REQUIRED',503);
+      return callback(state.client);
+    };
+  }};
+}
 const PREFIX = 'crewcheck-native-push:';
 const fail = (code, status = 409) => { throw Object.assign(new Error(code), { code, status }); };
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,160}$/.test(value);
