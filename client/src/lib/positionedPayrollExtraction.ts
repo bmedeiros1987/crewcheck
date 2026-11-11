@@ -10,6 +10,8 @@ function date(s:string){const m=/^(\d{2})[./](\d{2})[./](\d{4})$/.exec(s);if(!m)
 const ready=(f:PayrollField<unknown>)=>f.state==='candidate'||f.state==='zero';
 const columns=['RUBRICA','QTDE','RAZAO','DESCRICAO','PROVENTOS','DESCONTOS'];
 const header=(s:string)=>norm(s).replace(/\.$/,'');
+const metadataCaption=(s:string)=>header(s).replace(/\./g,'').replace(/\s+/g,' ').trim();
+const metadataColumns=new Set(['COMPETENCIA','TIPO DE PAGAMENTO','SALARIO BASE','CARGA HRS MES','DEP SF','DEP IR','BANCO','AGENCIA','CONTA CORRENTE','DATA DE ADMISSAO','DATA DO DEPOSITO','FGTS','LIQUIDO']);
 type Cell=PayrollGeometryRow['cells'][number];
 const headingPhrases=['TIPO DE PAGAMENTO','SALARIO BASE','DATA DO DEPOSITO','DATA DE ADMISSAO','CONTA CORRENTE','CARGA HRS MES','DEP SF','DEP IR'];
 // Coalesce only a known heading phrase on the same measured baseline. Never
@@ -87,6 +89,8 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
     recognized=true;
     const valuesRow=rows[i+headerRows];bounds=null;
     if(!valuesRow){fail(ref('layout'),'Cabeçalho sem linha de valores.');continue;}
+    const captions=headingCells.map(h=>metadataCaption(h.text));
+    if(captions.some(c=>!metadataColumns.has(c))||new Set(captions).size!==captions.length)fail(source(valuesRow,'metadataSchema'),'Coluna de metadados desconhecida ou repetida; conteúdo não descartado como completo.');
     const grouped=metadataGroup(valuesRow,headingCells);
     for(const h of meta){const raw=grouped.values[headingCells.indexOf(h)],s=source(valuesRow,h.text);
      if(!grouped.valid){fail(s,'Células atravessam colunas; vínculo indisponível.');continue;}
