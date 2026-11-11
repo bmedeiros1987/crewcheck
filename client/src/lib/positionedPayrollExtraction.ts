@@ -12,6 +12,20 @@ const columns=['RUBRICA','QTDE','RAZAO','DESCRICAO','PROVENTOS','DESCONTOS'];
 const header=(s:string)=>norm(s).replace(/\.$/,'');
 const metadataCaption=(s:string)=>header(s).replace(/\./g,'').replace(/\s+/g,' ').trim();
 const metadataColumns=new Set(['COMPETENCIA','TIPO DE PAGAMENTO','SALARIO BASE','CARGA HRS MES','DEP SF','DEP IR','BANCO','AGENCIA','CONTA CORRENTE','DATA DE ADMISSAO','DATA DO DEPOSITO','FGTS','LIQUIDO']);
+// Informational columns are not income/deductions, but their entire contents
+// still need a supported grammar: never discard an appended unlabelled amount.
+function informationalMetadataValid(caption:string,raw:string){
+ if(!raw)return true; // absent optional information is not a numeric zero
+ if(['DEP SF','DEP IR','CARGA HRS MES'].includes(caption)){
+  if(!/^\d+(?:,\d+)?$|^\d{1,3}(?:\.\d{3})+,\d+$/.test(raw))return false;
+  const value=Number(raw.replaceAll('.','').replace(',','.'));
+  return Number.isFinite(value)&&value>=0&&value<=Number.MAX_SAFE_INTEGER&&(caption==='CARGA HRS MES'||Number.isSafeInteger(value));
+ }
+ if(caption==='FGTS')return money(raw)!==null;
+ if(caption==='DATA DE ADMISSAO')return date(raw)!==null;
+ if(['BANCO','AGENCIA','CONTA CORRENTE'].includes(caption))return !/R\$|\d+[.,]\d+|\b(?:PROVENTOS?|DESCONTOS?|INSS|IRRF|TOTAIS|SALARIO|LIQUIDO)\b/.test(norm(raw));
+ return true; // actual financial fields are validated by their typed readers below
+}
 type Cell=PayrollGeometryRow['cells'][number];
 const headingPhrases=['TIPO DE PAGAMENTO','SALARIO BASE','DATA DO DEPOSITO','DATA DE ADMISSAO','CONTA CORRENTE','CARGA HRS MES','DEP SF','DEP IR'];
 // Coalesce only a known heading phrase on the same measured baseline. Never
@@ -92,6 +106,7 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
     const captions=headingCells.map(h=>metadataCaption(h.text));
     if(captions.some(c=>!metadataColumns.has(c))||new Set(captions).size!==captions.length)fail(source(valuesRow,'metadataSchema'),'Coluna de metadados desconhecida ou repetida; conteúdo não descartado como completo.');
     const grouped=metadataGroup(valuesRow,headingCells);
+    if(grouped.valid&&captions.some((caption,j)=>!informationalMetadataValid(caption,grouped.values[j])))fail(source(valuesRow,'metadataInformation'),'Valor informacional sem gramática completa ou conteúdo financeiro não associado; revisão obrigatória.');
     for(const h of meta){const raw=grouped.values[headingCells.indexOf(h)],s=source(valuesRow,h.text);
      if(!grouped.valid){fail(s,'Células atravessam colunas; vínculo indisponível.');continue;}
      if(h.text==='COMPETENCIA'){const m=/^(\d{2})[/.](\d{4})$/.exec(raw);if(m&&+m[1]>=1&&+m[1]<=12)put(result.competence,`${m[2]}-${m[1]}`,s);else conflict(result.competence,s,'Competência tabular inválida ou ausente.');}
