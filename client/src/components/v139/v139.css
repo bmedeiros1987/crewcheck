@@ -16,6 +16,6 @@
 .cc139-choices.cc-routine-activities>button[aria-pressed="true"]{border-color:#22d3ee!important;background:#123f50!important;color:#fff!important}
 [data-crew-theme="light"] .cc139-choices.cc-routine-activities>button[aria-pressed="true"]{border-color:#087c91!important;background:#e5f7fb!important;color:#10243a!important}
 /* Gym origin/query controls retain their labels after touch and enlarged text. */
-.cz-gym-search .cz-location-selector{grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr))!important}
-.cz-app .cz-toolbox.cz-gym-search :is(.cz-location-selector,.cz-place-query-row)>button{min-width:0!important;max-width:100%!important;min-height:48px!important;height:auto!important;white-space:normal!important;overflow-wrap:anywhere!important}
-@media(max-width:480px){.cz-gym-search .cz-place-query-row{display:grid!important;grid-template-columns:minmax(0,1fr)!important}.cz-gym-search .cz-place-query-row>button{width:100%!important}}
+:is(.cz-gym-search,.cz-places-search) .cz-location-selector{grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr))!important}
+.cz-app .cz-toolbox:is(.cz-gym-search,.cz-places-search) :is(.cz-location-selector,.cz-place-query-row)>button{min-width:0!important;max-width:100%!important;min-height:48px!important;height:auto!important;white-space:normal!important;overflow-wrap:anywhere!important}
+@media(max-width:480px){:is(.cz-gym-search,.cz-places-search) .cz-place-query-row{display:grid!important;grid-template-columns:minmax(0,1fr)!important}:is(.cz-gym-search,.cz-places-search) .cz-place-query-row>button{width:100%!important}}
