@@ -29,16 +29,50 @@ jobs:
           --health-timeout=5s
           --health-retries=12
     env:
+      NATIVE_CLIENT_PROTOCOL_REF: '56bd1f061207c815a4dac8095c7fe1eaea42b13d'
       NATIVE_PUSH_SQL_DISPOSABLE: '1'
       NATIVE_PUSH_TEST_MYSQL_URL: mysql://native_fixture:synthetic_native_only@127.0.0.1:3306/crewcheck_native_fixture_test
     steps:
+      - name: Read pinned client contract without integrating its branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.NATIVE_CLIENT_PROTOCOL_REF }}
+          persist-credentials: false
+          sparse-checkout: client/src/lib/androidPushLifecycle.ts
+          sparse-checkout-cone-mode: false
+      - name: Preserve verified client source outside candidate checkout
+        run: |
+          python3 - <<'PY'
+          import pathlib,os,subprocess,hashlib,json
+          source=pathlib.Path('client/src/lib/androidPushLifecycle.ts')
+          commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert commit==os.environ['NATIVE_CLIENT_PROTOCOL_REF']
+          data=source.read_bytes(); directory=pathlib.Path(os.environ['RUNNER_TEMP'])/'native-client-contract'; directory.mkdir()
+          target=directory/'androidPushLifecycle.ts'; target.write_bytes(data)
+          manifest=directory/'manifest.json'
+          manifest.write_text(json.dumps({'commit':commit,'sourcePath':source.as_posix(),'gitBlob':subprocess.check_output(['git','hash-object',str(source)],text=True).strip(),'sha256':hashlib.sha256(data).hexdigest(),'sizeBytes':len(data)}))
+          with open(os.environ['GITHUB_ENV'],'a') as env:
+            env.write('NATIVE_CLIENT_PROTOCOL_SOURCE='+str(target)+'\n')
+            env.write('NATIVE_CLIENT_PROTOCOL_MANIFEST='+str(manifest)+'\n')
+          PY
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Preserve complete candidate checkout after source-only read
+        run: git sparse-checkout disable
       - uses: actions/setup-node@v6
         with:
           node-version: '22.13.0'
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify pinned input and reject source tampering before SQL
+        run: |
+          node scripts/regression-native-push-registry-sql.mjs --verify-client-source-only
+          cp "$NATIVE_CLIENT_PROTOCOL_SOURCE" "$RUNNER_TEMP/native-client-tampered.ts"
+          printf '\n// SYNTHETIC_SOURCE_TAMPER\n' >> "$RUNNER_TEMP/native-client-tampered.ts"
+          if NATIVE_CLIENT_PROTOCOL_SOURCE="$RUNNER_TEMP/native-client-tampered.ts" node scripts/regression-native-push-registry-sql.mjs --verify-client-source-only > "$RUNNER_TEMP/native-client-tamper.log" 2>&1; then
+            echo 'FAIL: changed source unexpectedly accepted'
+            exit 1
+          fi
       - name: Raw native registry and actual disposable SQL
         run: |
           node scripts/regression-native-push-registry.mjs

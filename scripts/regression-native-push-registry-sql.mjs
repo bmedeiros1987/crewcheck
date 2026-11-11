@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import {Readable} from 'node:stream';
+import path from 'node:path';
+import ts from 'typescript';
+import {execFileSync} from 'node:child_process';
+import {createRequire} from 'node:module';
 import mysql from 'mysql2/promise';
 import {mutateNativeInstallation,readNativeInstallation,deleteNativeAccountWithRegistry,nativeBindingKey,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter} from '../server/native-push/registry.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
@@ -9,12 +13,28 @@ import {applyNativeProtocolMutation,readNativeProtocolInstallation,createNativeR
 
 const value=process.env.NATIVE_PUSH_TEST_MYSQL_URL;
 const url=new URL(value||'mysql://invalid/');
+const verifyClientOnly=process.argv.includes('--verify-client-source-only');
+if(!verifyClientOnly){
 assert.equal(process.env.NATIVE_PUSH_SQL_DISPOSABLE,'1','explicit disposable fixture only');
 assert(['127.0.0.1','localhost'].includes(url.hostname),'no production/external database');
 assert(/^\/crewcheck_native_fixture_[a-z0-9_]+$/.test(url.pathname),'dedicated test database only');
 assert.equal(decodeURIComponent(url.username),'native_fixture','dedicated synthetic user only');
+}
+// Read-only #1218 source snapshot, never copied into product/runtime modules.
+const clientSourcePath=process.env.NATIVE_CLIENT_PROTOCOL_SOURCE,clientManifestPath=process.env.NATIVE_CLIENT_PROTOCOL_MANIFEST;
+assert(clientSourcePath&&path.isAbsolute(clientSourcePath)&&clientManifestPath&&path.isAbsolute(clientManifestPath),'verified pinned client snapshot required');
+const clientSource=fs.readFileSync(clientSourcePath),clientManifest=JSON.parse(fs.readFileSync(clientManifestPath,'utf8'));
+assert(/^[a-f0-9]{40}$/.test(process.env.NATIVE_CLIENT_PROTOCOL_REF||''));
+assert.equal(clientManifest.commit,process.env.NATIVE_CLIENT_PROTOCOL_REF);assert.equal(clientManifest.sourcePath,'client/src/lib/androidPushLifecycle.ts');
+assert.equal(clientManifest.sizeBytes,clientSource.length);assert.equal(clientManifest.sha256,crypto.createHash('sha256').update(clientSource).digest('hex'));
+assert.equal(clientManifest.gitBlob,crypto.createHash('sha1').update(Buffer.from('blob '+clientSource.length+'\0')).update(clientSource).digest('hex'));
+const clientJS=ts.transpileModule(clientSource.toString('utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText;
+const {createAndroidRegistryProtocol,createAndroidPushLifecycle}=await import('data:text/javascript;base64,'+Buffer.from(clientJS).toString('base64'));
+assert.equal(typeof createAndroidRegistryProtocol,'function');assert.equal(typeof createAndroidPushLifecycle,'function');
+if(verifyClientOnly){console.log(JSON.stringify({verifiedClientSource:true,clientCommit:clientManifest.commit,gitBlob:clientManifest.gitBlob,sha256:clientManifest.sha256,sqlExecuted:false}));process.exit(0);}
 let db=mysql.createPool({uri:value,connectionLimit:8});
 const fixtureKey=crypto.randomBytes(32);
+const clientAuthKey=crypto.randomBytes(32);
 const protection={seal(token,context){
  const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',fixtureKey,iv);
  cipher.setAAD(Buffer.from(context));
@@ -204,6 +224,80 @@ try {
  await assert.rejects(readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId),e=>e.code==='NATIVE_SESSION_REVOKED');checks++;
  const erasedReply=await invokeHost(existingHost);assertCheck(erasedReply.status===401&&!erasedReply.value.registryConfirmed,'deleted existing identity is not recreated');
  assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[platformOwner.email]))[0].length===0,'authority read creates no replacement profile');
- const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,existingIdentityComposition:true,ingressBeforeAuthority:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
+ // Pinned real client → actual existing-account/JWT helper → host → platform
+ // adapter → real SQL. Only socket transport, native device and Web Locks are
+ // simulated. This does not execute or integrate the Android branch itself.
+ const clientOwners=['alpha','bravo'].map(tag=>({ownerId:'synthetic-client-'+tag,email:'client-'+tag+'@example.test'}));
+ for(const owner of clientOwners)await db.query('INSERT INTO crewcheck_platform_profiles(email,public_id) VALUES(?,?)',[owner.email,owner.ownerId]);
+ const commonSource=fs.readFileSync(new URL('../server/v139/common.mjs',import.meta.url),'utf8');
+ const commonAst=createRequire(import.meta.url)('@babel/parser').parse(commonSource,{sourceType:'module'});
+ const commonCode=['secureCompare','safeEmail','verifyJwt','requestToken','requireExistingIdentity'].map(name=>{const n=commonAst.program.body.map(n=>n.type==='ExportNamedDeclaration'?n.declaration:n).find(n=>n?.type==='FunctionDeclaration'&&n.id.name===name);assert(n);return commonSource.slice(n.start,n.end);}).join('\n');
+ const identifyClient=Function('crypto','authSecret','dbPool','sendJson','isAdminEmail',commonCode+';return requireExistingIdentity;')(crypto,()=>clientAuthKey,async()=>db,(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));},()=>false);
+ const signClient=owner=>{const prefix=[{alg:'HS256',typ:'JWT'},{iss:'crewcheck',aud:'crewcheck-web',sub:owner.ownerId,email:owner.email,role:'free',mustChangePassword:false,exp:Math.floor(Date.now()/1000)+300}].map(v=>Buffer.from(JSON.stringify(v)).toString('base64url')).join('.');return prefix+'.'+crypto.createHmac('sha256',clientAuthKey).update(prefix).digest('base64url');};
+ const clientIdentities=clientOwners.map(owner=>({ownerId:owner.ownerId,session:signClient(owner)}));
+ const clientHost=createNativeRegistryExistingIdentityHandler({enabled:true,identify:identifyClient,admitIngress:()=>true,admitRequest:()=>true,allowedOrigin:hostOptions.allowedOrigin,protectionProvider:()=>protection});
+ const journal=new Map(),locks=new Map(),clientRequests=[];let currentClient=clientIdentities[0],clientSeq=0,loseClientAck=false,failClientRevoke=false;
+ const snapshot=(owner=currentClient,overrides={})=>({enabled:true,ownerId:owner.ownerId,installationId:'synthetic-client-install',generation:'1',tokenRevision:'1',token:'SYNTHETIC_CLIENT_FCM_TOKEN_NOT_REAL_A',...overrides});
+ const requestClient=async(identity,method,installationId,body)=>{
+   clientRequests.push({ownerId:identity.ownerId,method,action:body?.action,mutationId:body?.mutationId});
+   if(failClientRevoke&&body?.action==='revoke')throw Error('SYNTHETIC_REVOKE_TRANSPORT_UNAVAILABLE');
+   const req=Readable.from([Buffer.from(body?JSON.stringify(body):'')]);req.method=method;req.headers={authorization:'Bearer '+identity.session,origin:'https://synthetic.example.test','content-type':'application/json'};
+   const res={status:0,value:null,writeHead(status){this.status=status;},end(value){this.value=JSON.parse(value);},setHeader(){}};
+   await clientHost(req,res,new URL('https://synthetic.example.test'+NATIVE_REGISTRY_PATH+(method==='GET'?'?installationId='+installationId:'')));
+   if(res.status!==200)throw Object.assign(Error('SYNTHETIC_HTTP_UNCONFIRMED'),{status:res.status,code:res.value?.code});
+   if(loseClientAck&&method==='POST'){loseClientAck=false;throw Error('SYNTHETIC_CLIENT_ACK_LOST');}
+   return res.value;
+ };
+ const makeClient=()=>createAndroidRegistryProtocol({current:identity=>currentClient?.ownerId===identity.ownerId&&currentClient?.session===identity.session,
+   lock:async(id,run)=>{const prior=locks.get(id)||Promise.resolve();let release;const gate=new Promise(resolve=>release=resolve),queued=prior.then(()=>gate);locks.set(id,queued);await prior;try{return await run();}finally{release();if(locks.get(id)===queued)locks.delete(id);}},
+   journal:{read:key=>journal.get(key)||null,write:(key,value)=>journal.set(key,structuredClone(value)),remove:key=>journal.delete(key)},mutationId:()=> 'synthetic-client-operation-'+(++clientSeq),request:requestClient});
+ let client=makeClient();const clientSnapshot=snapshot();
+ assertCheck(!(await client.register(clientSnapshot,currentClient,false)).registered,'real client does not turn absent consent into registration');
+ assertCheck(clientRequests.every(r=>r.method==='GET'),'no client POST without explicit consent');
+ assertCheck((await client.register(clientSnapshot,currentClient,true)).registered,'real client registers through real JWT/host/SQL');
+ const firstClient=await readNativeProtocolInstallation(platformBridge.registryDb,clientOwners[0],clientSnapshot.installationId);
+ assertCheck(firstClient.revision===1&&firstClient.consentRevision===1,'real client ACK corresponds to durable SQL revision');
+ const postsBefore=clientRequests.filter(r=>r.method==='POST').length;
+ await client.register(clientSnapshot,currentClient,false);
+ assertCheck(clientRequests.filter(r=>r.method==='POST').length===postsBefore,'unchanged confirmed client registration performs no duplicate mutation');
+ const rotatedSnapshot=snapshot(currentClient,{tokenRevision:'2',token:'SYNTHETIC_CLIENT_FCM_TOKEN_NOT_REAL_ROTATED'});
+ assertCheck((await client.register(rotatedSnapshot,currentClient,false)).registered,'real client rotates without inventing new consent');
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,clientOwners[0],clientSnapshot.installationId)).consentRevision===1,'real client rotation preserves consent revision');
+ const uncertainSnapshot=snapshot(currentClient,{tokenRevision:'3',token:'SYNTHETIC_CLIENT_FCM_TOKEN_NOT_REAL_UNCERTAIN'});loseClientAck=true;
+ await assert.rejects(client.register(uncertainSnapshot,currentClient,false));checks++;
+ assertCheck(journal.size===1,'real client retains pending operation after actual committed SQL response loss');
+ const journalText=JSON.stringify([...journal.values()]);
+ assertCheck(!journalText.includes('SYNTHETIC_CLIENT_FCM_TOKEN')&&!clientIdentities.some(i=>journalText.includes(i.session)),'client durable metadata contains neither token nor bearer');
+ client=makeClient();assertCheck((await client.register(uncertainSnapshot,currentClient,false)).registered,'new client instance reconciles prior mutation after restart');
+ const clientAfterRestart=await readNativeProtocolInstallation(platformBridge.registryDb,clientOwners[0],clientSnapshot.installationId);
+ assertCheck(clientAfterRestart.revision===3&&journal.size===0,'lost response/restart does not duplicate SQL revision');
+ const uncertainPosts=clientRequests.filter(r=>r.method==='POST').slice(-2);
+ assertCheck(uncertainPosts[0].mutationId===uncertainPosts[1].mutationId,'real client preserves exact mutation ID during uncertainty');
+ await client.revoke(uncertainSnapshot,currentClient);
+ assertCheck(!(await readNativeProtocolInstallation(platformBridge.registryDb,clientOwners[0],clientSnapshot.installationId)).registered,'real client revocation commits tombstone');
+ // Actual lifecycle must retain the captured old session while revoke is held.
+ const lifecycleProtocol=makeClient(),sessionChanges=[];let nativeGeneration=1,nativeSnapshot=snapshot(currentClient,{installationId:'synthetic-lifecycle-install',ownerId:'',token:'SYNTHETIC_CLIENT_FCM_TOKEN_NOT_REAL_LIFE_A'});
+ const lifecycle=createAndroidPushLifecycle({target:new EventTarget(),identity:()=>currentClient,host:()=>({nativePushStatus:()=>JSON.stringify(nativeSnapshot),setNativePushSession:ownerId=>{sessionChanges.push(ownerId);nativeSnapshot={...nativeSnapshot,ownerId,generation:String(++nativeGeneration),token:ownerId?'SYNTHETIC_CLIENT_FCM_TOKEN_NOT_REAL_LIFE_'+ownerId:undefined};return true;},requestNativePushToken:()=>true}),register:(s,i,c)=>lifecycleProtocol.register(s,i,c),revoke:async(s,i)=>{await lifecycleProtocol.revoke(s,i);}});
+ assertCheck(await lifecycle.activate(false)==='disabled','actual lifecycle requires explicit user action');
+ assertCheck(await lifecycle.activate(true)==='registered','actual lifecycle reaches real registry through authenticated composition');
+ failClientRevoke=true;assertCheck(await lifecycle.revoke()===false,'failed revoke remains unconfirmed');
+ assertCheck(nativeSnapshot.ownerId===''&&!nativeSnapshot.token,'local native scope is cleared before failed backend revoke');
+ currentClient=clientIdentities[1];assertCheck(await lifecycle.activate(true)==='unconfirmed','new account cannot bypass unresolved old revoke');
+ assertCheck(!sessionChanges.includes(currentClient.ownerId),'unresolved revoke prevents assigning new native owner');
+ failClientRevoke=false;assertCheck(await lifecycle.activate(true)==='registered','confirmed old revoke permits explicit new-account enrollment');
+ const priorLifecycle=await readNativeProtocolInstallation(platformBridge.registryDb,clientOwners[0],nativeSnapshot.installationId),newLifecycle=await readNativeProtocolInstallation(platformBridge.registryDb,clientOwners[1],nativeSnapshot.installationId);
+ assertCheck(!priorLifecycle.registered&&newLifecycle.registered,'account switch leaves only new lifecycle binding active');
+ const lifecycleRevokes=clientRequests.filter(r=>r.action==='revoke'&&r.ownerId===clientOwners[0].ownerId).slice(-3);
+ assertCheck(lifecycleRevokes.length===3&&new Set(lifecycleRevokes.map(r=>r.mutationId)).size===1,'failed revoke retries captured old owner with fixed operation ID');
+ lifecycle.dispose();
+ await deleteNativeAccountWithRegistry(platformBridge.registryDb,clientOwners[0],platformBridge.canonicalDeletion(c=>c.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1',[clientOwners[0].email])));
+ assertCheck((await readNativeProtocolInstallation(platformBridge.registryDb,clientOwners[1],nativeSnapshot.installationId)).registered,'atomic deletion of old owner preserves replacement account binding');
+ currentClient=clientIdentities[0];await assert.rejects(makeClient().register(clientSnapshot,currentClient,true));checks++;
+ assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[clientOwners[0].email]))[0].length===0,'client request cannot recreate erased account');
+ const [allClientState]=await db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-native-push:%'");
+ assertCheck(allClientState.every(row=>!String(row.payload).includes('SYNTHETIC_CLIENT_FCM_TOKEN')),'new end-to-end tokens are never stored plaintext');
+ const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,existingIdentityComposition:true,ingressBeforeAuthority:true,
+   realClientProtocol:{commit:clientManifest.commit,gitBlob:clientManifest.gitBlob,sha256:clientManifest.sha256},testedSourceCommit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
+   socketNativeAndWebLockSimulated:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
  fs.mkdirSync('artifacts/native-registry-off',{recursive:true});fs.writeFileSync('artifacts/native-registry-off/sql-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
-} finally {fixtureKey.fill(0);await db.end();}
+} finally {fixtureKey.fill(0);clientAuthKey.fill(0);await db.end();}

@@ -1,5 +1,33 @@
 # Native Android registry primitives — unmounted, OFF
 
+## Read-only cross-PR client/SQL integration test
+
+The existing CI job first reads only `androidPushLifecycle.ts` from #1218 commit
+`56bd1f061207c815a4dac8095c7fe1eaea42b13d`, records actual Git commit/blob and byte
+hashes, and saves it in RUNNER_TEMP. It then restores the complete candidate
+checkout before installing/running its existing tests. Both checkouts disable
+credential persistence. No #1218 source, Android file or product dependency is
+merged or vendored into this branch. The pin must be reviewed if #1218 changes;
+this is not evidence for an unreviewed future client version.
+
+The SQL harness rejects missing/mismatched input provenance and tampered source.
+Its explicit `--verify-client-source-only` mode exits before pool creation and
+reports sqlExecuted=false; normal raw/prepared SQL runs remain mandatory.
+The real TypeScript protocol and lifecycle functions are transpiled using the
+existing dependency, then call the real existing-account/JWT helper, host,
+platform adapter and disposable MySQL. JWT and protection keys are separate,
+ephemeral test keys in memory. The HTTP socket adapter, native device/token API
+and Web Locks are simulated: no SDK, real WebView, physical device or FCM sender
+is invoked. Provider acceptance/physical receipt is never asserted.
+
+Coverage includes explicit consent, unchanged enrollment, rotation, lost response
+after durable commit, fixed-ID restart reconciliation, token-free operation
+journal, local cancellation before failed revoke, old-session revocation before
+new-account enrollment, atomic erasure and no cross-account erasure/recreation.
+Only synthetic accounts/tokens are used; the report records counts and source
+provenance, not payloads or keys. This closes a test-composition gap and does not
+activate production or transfer Android ownership.
+
 ## Pre-authentication ingress admission — required, not configured
 
 Both unmounted factories now require an explicit `admitIngress` adapter before
