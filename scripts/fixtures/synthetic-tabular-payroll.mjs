@@ -3,10 +3,11 @@ import {jsPDF} from 'jspdf';
 export function syntheticTabularPayroll(options={}){
  const pdf=new jsPDF({unit:'pt',format:'a4'});pdf.setFontSize(8);
  const at=(x,y,text)=>{if(text!==null&&text!==undefined&&text!=='')pdf.text(String(text),x,y);};
- const row=(y,cells)=>cells.forEach(([x,t])=>{if(options.fragmented&&typeof t==='string'&&t.includes(' ')){let cursor=x;for(const [index,word] of t.split(' ').entries()){pdf.setFont('helvetica',index%2?'bold':'normal');at(cursor,y,word);cursor+=pdf.getTextWidth(word)+(options.fragmentGap??pdf.getTextWidth(' '));}pdf.setFont('helvetica','normal');}else at(x,y,t);});
+ let paymentInternalX=null;
+ const row=(y,cells)=>cells.forEach(([x,t])=>{if(options.fragmented&&typeof t==='string'&&t.includes(' ')){let cursor=x;for(const [index,word] of t.split(' ').entries()){pdf.setFont('helvetica',index%2?'bold':'normal');if(t==='Tipo de Pagamento'&&index===1)paymentInternalX=cursor;at(cursor,y,word);cursor+=pdf.getTextWidth(word)+(options.fragmentGap??pdf.getTextWidth(' '));}pdf.setFont('helvetica','normal');}else at(x,y,t);});
  if(options.companyHeader)at(10,45,'EMPRESA FICTICIA CNPJ: 12.345.678/0001-90'+(options.companyUnknownMoney?' PROVENTO 777,00':''));
  at(10,20,'DEMONSTRATIVO DE PAGAMENTO - EMPRESA SINTETICA');at(10,34,'Titular: PESSOA FICTICIA - IDENTIFICADOR TESTE-000');
- row(55,[[10,'Competência'],[105,options.noPaymentTypeHeader?'Campo não identificado':'Tipo de Pagamento'],[210,options.noBaseHeader?'Campo sem identificação':options.broken?'Salário':'Salário Base'],[305,'Carga Hrs Mês'],[420,'Dep. SF'],[490,'Dep. IR']]);if(options.broken)at(210,65,'Base');
+ row(55,[[10,'Competência'],[105,options.noPaymentTypeHeader?'Campo não identificado':'Tipo de Pagamento'],[210,options.noBaseHeader?'Campo sem identificação':options.broken?'Salário':'Salário Base'],[305,'Carga Hrs Mês'],[420,'Dep. SF'],[490,'Dep. IR']]);if(options.broken)at(210,65,'Base');if(options.orphanFragmentLine&&paymentInternalX!==null)at(paymentInternalX,65,'Indefinido');
  row(80,[[10,options.competence??'10/2032'],[105,options.paymentType??'Mensal'],[210,options.base??'3.600,00'],[305,'220,00'],[420,'0'],[490,'0']]);
  row(100,[[10,'Banco'],[105,'Agência'],[210,'Conta Corrente'],[330,'Data de Admissão'],[480,'Data do Depósito']]);row(115,[[10,'BANCO FICTICIO'],[105,'0000'],[210,'TESTE-NAO-CONTA'],[330,'01.02.2030'],[480,options.date??'11.11.2032']]);
  if(options.orphanBeforeTable)row(135,[[10,'9999'],[195,'Provento sem cabeçalho'],[390,'777,00']]);

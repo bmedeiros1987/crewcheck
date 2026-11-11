@@ -67,7 +67,7 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
    const headingCells=headingCellsFor(row);
    // A second text-only baseline at the same X completes a wrapped header.
    const next=rows[i+1];let headerRows=1;
-   if(next&&next.cells.every(c=>!/[\d]/.test(c.text)&&row.cells.some(h=>Math.abs(h.x-c.x)<=0.5))){for(const c of next.cells){const h=headingCells.find(h=>Math.abs(h.x-c.x)<=0.5)!;h.text=header(h.text+' '+c.text);}headerRows=2;}
+   if(next&&next.cells.every(c=>!/[\d]/.test(c.text)&&headingCells.some(h=>Math.abs(h.x-c.x)<=0.5))){for(const c of next.cells){const h=headingCells.find(h=>Math.abs(h.x-c.x)<=0.5);if(!h){fail(ref('layout'),'Fragmento vertical sem cabeçalho correspondente; revisão obrigatória.');continue;}h.text=header(h.text+' '+c.text);}headerRows=2;}
    const meta=headingCells.filter(c=>['COMPETENCIA','TIPO DE PAGAMENTO','SALARIO BASE','DATA DO DEPOSITO','LIQUIDO'].includes(c.text));
    if(meta.length&&!bounds){
     recognized=true;
