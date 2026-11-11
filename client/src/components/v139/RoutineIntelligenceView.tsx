@@ -60,9 +60,13 @@ export default function RoutineIntelligenceView({ events }: { events: RoutineEve
   const preferenceRevision = useRef(0);
 
   useEffect(() => {
-    const session = captureAuthSession(), revision = preferenceRevision.current;
+    let session: ReturnType<typeof captureAuthSession> | null = null;
+    try { session = captureAuthSession(); } catch {}
+    const revision = preferenceRevision.current;
     let active = true;
-    const current = () => active && session.isCurrent() && revision === preferenceRevision.current;
+    const current = () => {
+      try { return Boolean(active && session?.isCurrent() && revision === preferenceRevision.current); } catch { return false; }
+    };
     v139Api('/api/platform/routine/preferences')
       .then((payload) => {
         if (!current()) return;
