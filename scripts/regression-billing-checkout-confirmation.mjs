@@ -24,11 +24,11 @@ for(const mode of cases){let stored=!mode.startsWith('new-'),sessionCurrent=mode
 // The checkout refresh uses the existing endpoint without adopting/writing the
 // unscoped legacy cache. Test its real function with revocable read authority.
 const freshSource=actual(fs.readFileSync('client/src/lib/platformClient.ts','utf8'),'getFreshPlatformBilling','tsx');
-for(const mode of ['current','expired-before','expired-after','network-error','storage-error']){
- let valid=mode!=='expired-before',reads=0;const payload={ok:true,plan:'free',status:'pending',plans:[]};
+for(const mode of ['current','expired-before','expired-after','network-error','storage-error','empty-receipt','missing-ok','invalid-usage']){
+ let valid=mode!=='expired-before',reads=0;const validPayload={ok:true,plan:'free',status:'pending',premiumAccess:false,plans:[],usage:{kind:'wakeup_call',monthKey:'2032-02',used:0,limit:0,remaining:0}},payload=mode==='empty-receipt'?{}:mode==='missing-ok'?{...validPayload,ok:undefined}:mode==='invalid-usage'?{...validPayload,usage:null}:validPayload;
  const guard={isCurrent(){if(mode==='storage-error')throw Error('SYNTHETIC_STORAGE_UNAVAILABLE');return valid;}};
  const fresh=new Function('authFetch','writeLocal','localBilling',freshSource+';return getFreshPlatformBilling;')(async()=>{reads++;if(mode==='network-error')throw Error('SYNTHETIC_NETWORK_UNAVAILABLE');if(mode==='expired-after')valid=false;return payload;},()=>assert.fail('fresh read cannot write shared cache'),()=>assert.fail('fresh read cannot adopt cached identity'));
  if(mode==='current')assert.equal(await fresh(guard),payload);else await assert.rejects(()=>fresh(guard));
  assert.equal(reads,mode==='expired-before'||mode==='storage-error'?0:1,'no fresh-read retries or request with revoked authority');
 }
-assert.equal(network,0);console.log('PASS actual billing handler/UI: '+results.length+' synthetic cases, missing/error/ready, pending reuse, no duplicate creation on explicit subsequent attempt, native/auth/account fences, five scoped fresh-read cases and zero real network');
+assert.equal(network,0);console.log('PASS actual billing handler/UI: '+results.length+' synthetic cases, missing/error/ready, pending reuse, no duplicate creation on explicit subsequent attempt, native/auth/account fences, eight scoped fresh-read cases and zero real network');

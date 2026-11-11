@@ -240,6 +240,13 @@ export async function getFreshPlatformBilling(session: ReturnType<typeof capture
   if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
   const payload = await authFetch<PlatformBilling & { ok: boolean; plans: PlatformPlan[] }>('/api/platform/billing/status');
   if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const usage = payload?.usage;
+  if (payload?.ok !== true || !['free','premium_monthly','premium_annual','premium_unlimited'].includes(payload.plan)
+      || typeof payload.status !== 'string' || !payload.status.trim() || typeof payload.premiumAccess !== 'boolean'
+      || !Array.isArray(payload.plans) || usage?.kind !== 'wakeup_call' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(usage.monthKey || '')
+      || ![usage.used,usage.limit,usage.remaining].every(value => Number.isSafeInteger(value) && value >= 0)) {
+    throw new Error('Não foi possível confirmar o status da assinatura.');
+  }
   return payload;
 }
 

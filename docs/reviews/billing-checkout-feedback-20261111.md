@@ -49,20 +49,33 @@ checks before/after, and neither writes nor adopts the legacy shared cache. Defa
 getPlatformBilling and its other callers remain unchanged: this is not a migration or
 a claim that every legacy cache consumer is repaired. No extra request or retry is added.
 
+The second review confirmed those fences but found that an HTTP200 empty receipt
+was still accepted by the new reader. A fail-first probe demonstrated the missing
+rejection. The fresh path now requires ok:true and the existing typed plan/status,
+premiumAccess, plans and usage fields (safe nonnegative integer counters, valid month).
+The UI uses that validated receipt directly, without merging profile fallback billing.
+The final cleanup clears only its own plan request, not the database-unavailable
+lock created by the refresh. The browser counterproof caught the old finally
+reenabling contracting after that error. Fresh reads also keep contracting paused while awaiting verification (the prior
+loader cleared busy too early; a controlled browser hold reproduced it). State
+updaters recheck their captured session when React applies the update. Invalid
+receipts pause contracting; stored data is not repaired/deleted or promoted.
+
 ## Validation
 
 The actual-handler/controller regression has20 synthetic cases: pending error/empty,
 invoice/boleto links, new pending/ready, explicit subsequent reuse, uncertain DB write,
 cancel, invalid CPF shape, existing active subscription, Android rejection, expired
-session, late ready/pending/error, legacy empty, unknown readiness and account change inside the CPF dialog. Five
+session, late ready/pending/error, legacy empty, unknown readiness and account change inside the CPF dialog. Eight
 additional real fresh-reader cases cover current/expired-before/expired-after, network
-failure and storage failure, with no cache adoption/write or retry. Provider/SQL/UI
+failure, storage failure, empty/missing-ok receipts and invalid usage, with no cache adoption/write or retry. Provider/SQL/UI
 capabilities are injected; no real service is called. It is not a real-DB test.
 
 The real SubscriptionCenter/platformClient/auth module runs against intercepted HTTP
-in48 browser cases (320/390/1440, light/dark):202/503/200, legacy response, keyboard,
+in54 browser cases (320/390/1440, light/dark):202/503/200, legacy response, keyboard,
 200% text containment, late A→B→A ready/error, revocation during catalog/private reload, preservation of
-the other-context cache sentinel and one explicit checkout request only.
+the other-context cache sentinel, invalid HTTP200 receipts against a cached-premium
+fallback, and one explicit checkout request only.
 Only fictional accounts/CPF/products/prices/URLs occur in tests and screenshots.
 
 The existing Play catalog AST harness needed the actual canonical auth module after

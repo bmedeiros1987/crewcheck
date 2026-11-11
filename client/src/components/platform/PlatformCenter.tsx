@@ -125,32 +125,33 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   async function loadForSession(session: ReturnType<typeof captureAuthSession>) {
     const current = () => { try { return session.isCurrent(); } catch { return false; } };
     if (!current()) return;
-    setError('');
+    setError(value => current() ? '' : value);
     playCatalogRequest.current=null;
     setPlayProducts({});
-    setBusy('');
+    setBusy(value => current() ? 'loading' : value);
     let catalogResult: PlatformCatalog | null = null;
     try {
       catalogResult = await getPlatformCatalog();
       if (!current()) return;
-      setCatalog(catalogResult);
+      setCatalog(value => current() ? catalogResult : value);
       if (hasGooglePlayBillingBridge()) queryCatalog(catalogResult.plans);
     } catch {
       if (!current()) return;
-      setError('Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.');
+      setError(value => current() ? 'Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.' : value);
       return;
     }
     try {
       const [profileResult, billingResult] = await Promise.all([getPlatformProfile(), getFreshPlatformBilling(session)]);
       if (!current()) return;
-      setProfile(profileResult.profile);
-      setBilling({ ...profileResult.billing, ...billingResult });
+      setProfile(value => current() ? profileResult.profile : value);
+      setBilling(value => current() ? billingResult : value);
+      setBusy(value => current() && value === 'loading' ? '' : value);
     } catch {
       if (!current()) return;
-      setProfile({ publicId: '—', displayName: 'Tripulante CrewCheck' } as PlatformProfile);
-      setBilling({ plan: 'free', status: 'unavailable', usage: { used: 0, limit: 0, remaining: 0, monthKey: '' } } as PlatformBilling);
-      setBusy('database');
-      setError('A conexão segura com o banco está temporariamente indisponível. Você pode consultar os planos, mas contratar, restaurar ou alterar a assinatura ficará pausado até a conexão voltar.');
+      setProfile(value => current() ? { publicId: '—', displayName: 'Tripulante CrewCheck' } as PlatformProfile : value);
+      setBilling(value => current() ? { plan: 'free', status: 'unavailable', usage: { used: 0, limit: 0, remaining: 0, monthKey: '' } } as PlatformBilling : value);
+      setBusy(value => current() ? 'database' : value);
+      setError(value => current() ? 'A conexão segura com o banco está temporariamente indisponível. Você pode consultar os planos, mas contratar, restaurar ou alterar a assinatura ficará pausado até a conexão voltar.' : value);
     }
   }
 
@@ -230,7 +231,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
       }
     } catch (err) {
       if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui iniciar a assinatura.');
-    } finally { if (current()) setBusy(''); }
+    } finally { setBusy(value => current() && value === plan.id ? '' : value); }
   }
 
   function restore() {
