@@ -7,3 +7,11 @@
 .cc-wakeup-history .cz-roster-icon{display:none}.cc-wakeup-history .cz-roster-main{flex-wrap:wrap;gap:12px}.cc-wakeup-history .cz-roster-copy{flex:1 1 100%;width:100%}.cc-wakeup-history .cz-roster-main>button{min-height:44px}
 
 .cz-app[data-view="wakeup"] .cc-wakeup-history .cz-roster-icon{display:none!important}.cz-app[data-view="wakeup"] .cc-wakeup-history .cz-roster-main{display:flex!important;flex-wrap:wrap!important;grid-template-columns:none!important}.cz-app[data-view="wakeup"] .cc-wakeup-history .cz-roster-copy{flex:1 1 100%!important;width:100%!important}
+
+/* Routine choices: retain explicit selection without clipping touched labels. */
+.cc139-choices.cc-routine-activities{grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr))!important}
+.cc139-choices.cc-routine-activities>button{grid-template-columns:20px minmax(0,1fr) 18px!important;min-height:52px!important;height:auto!important;padding:12px!important;overflow:visible!important;white-space:normal!important;overflow-wrap:anywhere}
+.cc139-choices.cc-routine-activities>button>svg{grid-row:auto!important;width:18px!important;height:18px!important}
+.cc139-choices.cc-routine-activities>button>span{min-width:0;line-height:1.35;white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important}
+.cc139-choices.cc-routine-activities>button[aria-pressed="true"]{border-color:#22d3ee!important;background:#123f50!important;color:#fff!important}
+[data-crew-theme="light"] .cc139-choices.cc-routine-activities>button[aria-pressed="true"]{border-color:#087c91!important;background:#e5f7fb!important;color:#10243a!important}

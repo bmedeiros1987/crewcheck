@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Activity, Bell, BookOpen, Clock, Dumbbell, Moon, Save, ShieldCheck, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, Bell, BookOpen, Check, Clock, Dumbbell, Moon, Save, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { v139Api } from './api';
+import { captureAuthSession } from '@/lib/authClient';
 import { V139Header } from './Shell';
 import './v139.css';
 
@@ -47,27 +48,44 @@ function timeLabel(preference: string, start: Date, end: Date): string {
   return hour < 12 ? 'melhor janela da manhã' : hour < 18 ? 'melhor janela da tarde' : 'melhor janela do início da noite';
 }
 
+function normalizedActivities(value: unknown): string[] {
+  return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === 'string' && ACTIVITIES.some(([id]) => id === item)))].slice(0, 3) : [];
+}
+
 export default function RoutineIntelligenceView({ events }: { events: RoutineEvent[] }) {
   const [activities, setActivities] = useState<string[]>([]);
   const [timePreference, setTimePreference] = useState('automatico');
   const [gymProvider, setGymProvider] = useState('wellhub');
   const [busy, setBusy] = useState(false);
+  const preferenceRevision = useRef(0);
 
   useEffect(() => {
+    const session = captureAuthSession(), revision = preferenceRevision.current;
+    let active = true;
+    const current = () => active && session.isCurrent() && revision === preferenceRevision.current;
     v139Api('/api/platform/routine/preferences')
       .then((payload) => {
+        if (!current()) return;
         const preferences = payload.preferences || {};
-        setActivities(Array.isArray(preferences.activities) ? preferences.activities.slice(0, 3) : []);
+        setActivities(normalizedActivities(preferences.activities));
         setTimePreference(preferences.timePreference || 'automatico');
         setGymProvider(preferences.gymProvider || 'wellhub');
       })
       .catch(() => {
+        if (!current()) return;
         try {
-          setActivities(JSON.parse(localStorage.getItem('crewcheck:routine:activities') || '[]'));
+          setActivities(normalizedActivities(JSON.parse(localStorage.getItem('crewcheck:routine:activities') || '[]')));
           setTimePreference(localStorage.getItem('crewcheck:routine:time') || 'automatico');
           setGymProvider(localStorage.getItem('crewcheck:gym-provider-plan') || 'wellhub');
         } catch {}
       });
+    const invalidate = () => {
+      active = false; preferenceRevision.current++;
+      setActivities([]); setTimePreference('automatico'); setGymProvider('wellhub');
+    };
+    window.addEventListener('crewcheck:auth-changed', invalidate);
+    window.addEventListener('crewcheck:auth-expired', invalidate);
+    return () => { active = false; window.removeEventListener('crewcheck:auth-changed', invalidate); window.removeEventListener('crewcheck:auth-expired', invalidate); };
   }, []);
 
   const operational = useMemo(() => events
@@ -108,6 +126,7 @@ export default function RoutineIntelligenceView({ events }: { events: RoutineEve
   }, [operational, activities, timePreference]);
 
   function toggle(value: string) {
+    preferenceRevision.current++;
     setActivities((current) => {
       if (current.includes(value)) return current.filter((item) => item !== value);
       if (current.length >= 3) {
@@ -151,17 +170,17 @@ export default function RoutineIntelligenceView({ events }: { events: RoutineEve
     <section className="cc139-card">
       <h2>Suas atividades</h2>
       <p>Escolha até três. Quando a escala estiver pesada, descanso terá prioridade automática.</p>
-      <div className="cc139-choices">
-        {ACTIVITIES.map(([id, label, Icon]) => <button key={id} className={activities.includes(id) ? 'active' : ''} onClick={() => toggle(id)}><Icon/>{label}</button>)}
+      <div className="cc139-choices cc-routine-activities">
+        {ACTIVITIES.map(([id, label, Icon]) => <button type="button" key={id} aria-pressed={activities.includes(id)} className={activities.includes(id) ? 'active' : ''} onClick={() => toggle(id)}><Icon aria-hidden="true"/><span>{label}</span>{activities.includes(id) ? <Check data-selection-mark aria-hidden="true"/> : <span aria-hidden="true"/>}</button>)}
       </div>
       <div className="cc139-form">
         <label>Horário preferido
-          <select value={timePreference} onChange={(event) => setTimePreference(event.target.value)}>
+          <select value={timePreference} onChange={(event) => { preferenceRevision.current++; setTimePreference(event.target.value); }}>
             <option value="automatico">Automático</option><option value="manha">Manhã</option><option value="tarde">Tarde</option><option value="noite">Noite</option>
           </select>
         </label>
         <label>Rede preferida
-          <select value={gymProvider} onChange={(event) => setGymProvider(event.target.value)}>
+          <select value={gymProvider} onChange={(event) => { preferenceRevision.current++; setGymProvider(event.target.value); }}>
             <option value="wellhub">Wellhub</option><option value="smartfit">Smart Fit</option><option value="ambos">Wellhub ou Smart Fit</option>
           </select>
         </label>

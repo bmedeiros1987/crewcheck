@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import fs from 'node:fs';
+import {createRequire} from 'node:module';
+import {createServer} from 'vite';
+const useShippingCss=process.argv.includes('--shipping-css');
+if(useShippingCss)assert(fs.existsSync('dist/index.html'),'prepared shipping CSS requires the canonical build');
+const shippingCss=useShippingCss?[...fs.readFileSync('dist/index.html','utf8').matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m=>m[0]).join(''):'<link rel="stylesheet" href="/src/index.css"><link rel="stylesheet" href="/src/components/v1407/layout-audit.css"><link rel="stylesheet" href="/src/components/v1407/component-polish.css">';
+const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
+const server=await createServer({configFile:false,root:path.resolve('client'),esbuild:{jsx:'automatic'},resolve:{alias:{'@':path.resolve('client/src')}},optimizeDeps:{noDiscovery:true,include:['react','react-dom/client','react/jsx-runtime','react/jsx-dev-runtime','lucide-react','sonner']},plugins:[{name:'synthetic-passive-routine',enforce:'pre',transform(code,id){if(id.endsWith('/RoutineDailyConcierge.tsx'))return code.replace("'@/lib/lifePlaces'","'virtual:places'");},resolveId(id){if(id==='virtual:places'||id==='@/lib/lifePlaces'||/\/lib\/lifePlaces(?:\.ts)?$/.test(id))return '\0stub-places';if(id==='virtual:routine-test')return '\0routine-test';},load(id){if(id==='\0stub-places')return `
+export const loadLifeLocation=()=>window.testLocation;
+export const lifeLocationLabel=()=> 'Synthetic location';
+export const lifePlaceCategoryLabel=x=>x;
+export const placeDistanceLabel=()=>'';
+export const openLifePlace=()=>{};
+export const requestLifeLocation=async()=>{window.calls.locate++;return {latitude:1,longitude:2,capturedAt:new Date().toISOString()}};
+export const reverseGeocodeLifeLocation=async()=>{window.calls.reverse++;return 'Synthetic location'};
+export const searchLifePlaceSet=async()=>{window.calls.search++;return []};`;
+if(id==='\0routine-test')return `import React from 'react';import{createRoot}from'react-dom/client';import Routine from '/src/components/v139/RoutineIntelligenceView.tsx';const root=createRoot(document.getElementById('root'));window.renderRoutine=(events=[])=>root.render(React.createElement('main',{className:'cz-app','data-view':'routine'},React.createElement(Routine,{events})));window.renderRoutine();`;},configureServer(s){s.middlewares.use(async(req,res,next)=>{if(req.url?.startsWith('/assets/')){const file=path.resolve('dist','.'+req.url.split('?')[0]);if(!file.startsWith(path.resolve('dist')+path.sep)||!fs.existsSync(file))return next();res.setHeader('Content-Type',file.endsWith('.css')?'text/css':'application/octet-stream');return res.end(fs.readFileSync(file));}if(req.url==='/__routine'){res.setHeader('Content-Type','text/html');res.end(await s.transformIndexHtml(req.url,shippingCss+'<div id="root"></div><script type="module">import "virtual:routine-test";</script>'));}else next();});}}],server:{host:'127.0.0.1',port:0}});
+let browser;
+try{
+ await server.listen();const origin=server.resolvedUrls.local[0];browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
+ const context=await browser.newContext({viewport:{width:390,height:900}});let pending;let external=0;const blockedHosts=[];
+ await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==new URL(origin).origin){external++;blockedHosts.push(u.hostname);return route.abort();}if(u.pathname==='/api/platform/routine/preferences'){pending=route;return;}if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,json:{ok:false}});return route.continue();});
+ await context.addInitScript(()=>{window.calls={locate:0,reverse:0,search:0,notification:0,health:0};window.testLocation=null;});
+ const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>console.error(e.message));await page.goto(origin+'__routine');
+ const choices=page.locator('.cc139-choices');await choices.getByRole('button',{name:'Academia',exact:true}).click();await choices.getByRole('button',{name:'CrossFit',exact:true}).click();await choices.getByRole('button',{name:'Pilates',exact:true}).click();assert.equal(await choices.locator('button.active').count(),3,'three selections before late preferences');
+ assert(pending);await pending.fulfill({json:{ok:true,preferences:{activities:[],timePreference:'automatico',gymProvider:'wellhub'}}});await page.waitForTimeout(150);
+ assert.equal(await choices.locator('button.active').count(),3,'late initial preference response must preserve the three choices');assert(blockedHosts.every(host=>['fonts.googleapis.com','fonts.gstatic.com'].includes(host)),'only shipping font requests may be blocked externally');
+ await choices.getByRole('button',{name:'Corrida',exact:true}).click();assert.equal(await choices.locator('button.active').count(),3,'a fourth selection cannot replace the chosen three');
+ for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const scale of [1,2]){
+  await page.setViewportSize({width,height:900});await page.evaluate(theme=>document.documentElement.setAttribute('data-crew-theme',theme),theme);
+  await choices.evaluate((el,scale)=>{window.routineFontSizes=[el,...el.querySelectorAll('*')].map(n=>[n,n.style.fontSize,getComputedStyle(n).fontSize]);for(const[n,,size]of window.routineFontSizes)n.style.fontSize=parseFloat(size)*scale+'px';},scale);
+  const button=choices.getByRole('button',{name:'Academia',exact:true});await button.focus();await page.keyboard.press('Enter');assert.equal(await choices.locator('button.active').count(),2);await page.keyboard.press('Space');assert.equal(await choices.locator('button.active').count(),3);
+  await button.scrollIntoViewIfNeeded();await button.dispatchEvent('pointerdown');
+  const bad=await choices.locator('button').evaluateAll(buttons=>buttons.map(b=>{const box=b.getBoundingClientRect();return {label:b.textContent,valid:box.width>=44&&box.height>=44&&b.scrollWidth<=b.clientWidth+1&&b.scrollHeight<=b.clientHeight+1&&[...b.children].every(c=>{const x=c.getBoundingClientRect();return x.left>=box.left-1&&x.right<=box.right+1&&x.top>=box.top-1&&x.bottom<=box.bottom+1;}),scroll:[b.scrollWidth,b.clientWidth,b.scrollHeight,b.clientHeight],box:[box.width,box.height],children:[...b.children].map(c=>{const x=c.getBoundingClientRect();return [x.left-box.left,x.right-box.right,x.top-box.top,x.bottom-box.bottom]})};}).filter(b=>!b.valid));assert.deepEqual(bad,[],'selected/focused buttons and labels fit at '+width+'/'+theme+'/'+scale);
+  fs.mkdirSync('artifacts/SYNTHETIC-routine-preferences',{recursive:true});await choices.screenshot({path:'artifacts/SYNTHETIC-routine-preferences/'+width+'-'+theme+'-'+scale+'.png'});await button.dispatchEvent('pointerup');await page.evaluate(()=>{for(const[n,original]of window.routineFontSizes)n.style.fontSize=original;});
+ }
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:auth-changed')));assert.equal(await choices.locator('button.active').count(),0,'account generation change clears prior selection');
+ pending=undefined;await page.reload();await choices.waitFor();await page.waitForTimeout(50);assert(pending);await pending.fulfill({json:{ok:true,preferences:{activities:['academia','academia','unknown','crossfit','pilates','corrida']}}});await page.waitForFunction(()=>document.querySelectorAll('.cc-routine-activities button[aria-pressed="true"]').length===3);assert.equal(await choices.locator('[data-selection-mark]').count(),3,'three distinct recognized activities have visible marks');
+ pending=undefined;await page.reload();await choices.waitFor();await choices.getByRole('button',{name:'Academia',exact:true}).click();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:auth-changed')));assert(pending);await pending.fulfill({json:{ok:true,preferences:{activities:['crossfit','pilates','estudo']}}});await page.waitForTimeout(100);assert.equal(await choices.locator('button.active').count(),0,'old response cannot revive choices after account generation change');
+ await context.close();
+ console.log('PASS real Routine activity selection survives delayed initial preferences');
+}finally{if(browser)await browser.close();await server.close();}
