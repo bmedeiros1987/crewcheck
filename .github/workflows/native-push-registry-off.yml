@@ -47,10 +47,12 @@ jobs:
           source=pathlib.Path('client/src/lib/androidPushLifecycle.ts')
           commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
           assert commit==os.environ['NATIVE_CLIENT_PROTOCOL_REF']
+          blob=subprocess.check_output(['git','rev-parse','HEAD:'+source.as_posix()],text=True).strip()
+          assert blob==subprocess.check_output(['git','hash-object',str(source)],text=True).strip()
           data=source.read_bytes(); directory=pathlib.Path(os.environ['RUNNER_TEMP'])/'native-client-contract'; directory.mkdir()
           target=directory/'androidPushLifecycle.ts'; target.write_bytes(data)
           manifest=directory/'manifest.json'
-          manifest.write_text(json.dumps({'commit':commit,'sourcePath':source.as_posix(),'gitBlob':subprocess.check_output(['git','hash-object',str(source)],text=True).strip(),'sha256':hashlib.sha256(data).hexdigest(),'sizeBytes':len(data)}))
+          manifest.write_text(json.dumps({'commit':commit,'sourcePath':source.as_posix(),'gitBlob':blob,'sha256':hashlib.sha256(data).hexdigest(),'sizeBytes':len(data)}))
           with open(os.environ['GITHUB_ENV'],'a') as env:
             env.write('NATIVE_CLIENT_PROTOCOL_SOURCE='+str(target)+'\n')
             env.write('NATIVE_CLIENT_PROTOCOL_MANIFEST='+str(manifest)+'\n')
