@@ -1,0 +1,17 @@
+.cc-inflight-rest{box-sizing:border-box;min-width:0;margin:0 0 16px;padding:20px;border:1px solid var(--cc-border,rgba(128,128,128,.3));border-radius:18px;background:var(--cc-surface,var(--surface,#17202d));color:var(--cc-text,var(--text,#f5f7fa))}
+.cc-inflight-rest h2{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:1.2rem;line-height:1.4}
+.cc-inflight-rest p{line-height:1.5;overflow-wrap:anywhere}
+.cc-inflight-rest-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12em),1fr));gap:12px;margin:16px 0}
+.cc-inflight-rest-fields label{display:flex;flex-direction:column;gap:8px;min-width:0;font-weight:600}
+.cc-inflight-rest-fields :is(input,select){box-sizing:border-box;min-width:0;width:100%;min-height:48px;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:10px;padding:8px}
+.cc-inflight-rest-zone,.cc-inflight-rest-note{font-size:.85rem}
+.cc-inflight-rest-check,.cc-inflight-rest-mode label{display:flex;align-items:center;gap:10px;min-height:48px;line-height:1.5}
+.cc-inflight-rest-check input,.cc-inflight-rest-mode input{width:22px;height:22px;flex-shrink:0;margin:0}
+.cc-inflight-rest-mode{min-width:0;border:1px solid var(--cc-border,rgba(128,128,128,.3));border-radius:12px;padding:8px 12px;margin:12px 0}
+.cc-inflight-rest-mode span{display:inline-flex;align-items:center;gap:6px}
+.cc-inflight-rest-turns{list-style:none;margin:12px 0;padding:0;display:grid;gap:8px}
+.cc-inflight-rest-turns li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding:10px 12px;border-radius:10px;background:rgba(128,128,128,.1);font-variant-numeric:tabular-nums}
+.cc-inflight-rest-turns li[data-mine]{outline:2px solid currentColor}
+.cc-inflight-rest-status{padding:12px;border-radius:10px;background:rgba(128,128,128,.1)}
+.cc-inflight-rest>button{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:48px;margin:8px 0 0;white-space:normal}
+@media(max-width:360px){.cc-inflight-rest{padding:16px}}
