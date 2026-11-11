@@ -1,0 +1,31 @@
+/* Scoped to the optional scenario. Financial tables/inputs elsewhere retain
+   their existing geometry; native fieldset min-content cannot widen this card. */
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) {
+  display: block !important;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) :is(fieldset, legend, details, section, label) {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+}
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) label { display: block; min-height: 44px; }
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) :is(input:not([type=checkbox]), select) {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+}
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) input[type=checkbox] {
+  appearance: auto !important;
+  display: inline-block !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  min-width: 20px !important;
+  padding: 0 !important;
+  margin: 8px 8px 8px 0 !important;
+  vertical-align: middle;
+}
