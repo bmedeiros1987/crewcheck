@@ -124,7 +124,7 @@ async function invoke(handler,{method='GET',query='?installationId='+wire.instal
 }
 function hostFixture(overrides={}){
  const f=platformFixture(),protectionKey=crypto.randomBytes(32);let current=true;
- const options={enabled:true,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:req=>{
+ const options={enabled:true,admitIngress:()=>true,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:req=>{
    const claims=auth.verifyJwt(auth.requestToken(req));
    return claims?.email===identity.email&&claims.aud!=='crewcheck-visitor'&&claims.role!=='visitor'?{...identity,authenticated:true,role:'owner'}:null;
  },isIdentityCurrent:()=>current,admitRequest:()=>true,poolProvider:()=>f.db,protectionProvider:()=>({seal(token,context){const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',protectionKey,iv);cipher.setAAD(Buffer.from(context));const bytes=Buffer.concat([cipher.update(token),cipher.final()]);return {format:'native-token-aes256gcm-v1',iv:iv.toString('base64url'),tag:cipher.getAuthTag().toString('base64url'),ciphertext:bytes.toString('base64url')};}}),...overrides};
@@ -181,7 +181,7 @@ function existingIdentityFixture({claims={},profilePatch={},clock=()=>Date.now()
  }};
  const identify=Function('crypto','authSecret','dbPool','sendJson','isAdminEmail',commonFunctions+';return requireExistingIdentity;')(crypto,()=>{if(keyUnavailable)throw Object.assign(Error('SYNTHETIC_KEY_UNAVAILABLE'),{status:503});return fixtureSecret;},async()=>++poolReads>=changeDbAt?{...raw}:raw,(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));},()=>false);
  const token=jwt({iss:'crewcheck',aud:'crewcheck-web',sub:identity.ownerId,mustChangePassword:false,...claims});
- const handler=createNativeRegistryExistingIdentityHandler({enabled:true,identify,allowedOrigin:()=> 'https://synthetic.example.test',admitRequest:()=>true,clock});
+ const handler=createNativeRegistryExistingIdentityHandler({enabled:true,identify,admitIngress:()=>true,allowedOrigin:()=> 'https://synthetic.example.test',admitRequest:()=>true,clock});
  return {...f,handler,token,authReads:()=>authReads};
 }
 {
@@ -214,5 +214,17 @@ for(const at of [4,5]){
  const f=existingIdentityFixture({changeDbAt:at}),reply=await invoke(f.handler,{headers:{authorization:'Bearer '+f.token}});
  check(()=>assert.equal(reply.status,401,'pool replacement cannot borrow prior authority'));
  check(()=>assert.equal(reply.body.registryConfirmed,false));check(()=>assert.equal(f.opens(),at===4?0:1));
+}
+for(const gate of [undefined,async()=>false,async()=>({allowed:true}),async()=>{throw Error('SYNTHETIC_INGRESS_UNAVAILABLE');}]){
+ let authorityCalls=0,dbCalls=0;
+ const handler=createNativeRegistryAuthenticatedHandler({enabled:true,admitIngress:gate,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:()=>{authorityCalls++;throw Error('SYNTHETIC_AUTH_MUST_NOT_RUN');},isIdentityCurrent:()=>true,admitRequest:()=>true,poolProvider:()=>{dbCalls++;throw Error('SYNTHETIC_DB_MUST_NOT_RUN');}});
+ const reply=await invoke(handler);check(()=>assert(reply.status>=400));check(()=>assert.equal(authorityCalls,0,'ingress rejection precedes credential/identity work'));check(()=>assert.equal(dbCalls,0));
+}
+{
+ const events=[];const f=hostFixture({admitIngress:async()=>{events.push('ingress');return true;},identityProvider:()=>{events.push('identity');return {...identity,authenticated:true,role:'owner'};},admitRequest:()=>{events.push('owner');return true;}});
+ const reply=await invoke(f.handler);check(()=>assert.equal(reply.status,200));check(()=>assert.deepEqual(events,['ingress','identity','owner']));
+ let authorityCalls=0;
+ const h=createNativeRegistryExistingIdentityHandler({enabled:true,admitIngress:()=>false,admitRequest:()=>true,allowedOrigin:()=> 'https://synthetic.example.test',identify:()=>{authorityCalls++;throw Error('SYNTHETIC_NO_AUTH_WORK');}});
+ const denied=await invoke(h);check(()=>assert.equal(denied.status,429));check(()=>assert.equal(denied.body.code,'NATIVE_INGRESS_LIMITED'));check(()=>assert.equal(authorityCalls,0));
 }
 console.log('PASS '+count+' native protocol wire/CAS/ACK/existing-owner/authenticated-host/platform-transaction/revoke/OFF synthetic checks');

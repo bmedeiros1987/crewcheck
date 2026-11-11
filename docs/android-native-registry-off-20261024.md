@@ -1,5 +1,17 @@
 # Native Android registry primitives — unmounted, OFF
 
+## Pre-authentication ingress admission — required, not configured
+
+Both unmounted factories now require an explicit `admitIngress` adapter before
+calling any identity verifier/profile helper or acquiring a registry connection.
+It is separate from the authenticated-owner `admitRequest` decision. Missing
+admission fails closed; false/non-boolean approval is not a grant. OFF requests
+still touch neither adapter. No rate number, counter namespace, financial quota,
+schema, persistence writer or production policy is introduced by this contract.
+A future mount must reuse reviewed trusted ingress/rate authority, not a caller's
+owner hint or unverified forwarding header. The factory is not itself a rate
+limiter and does not claim a configured production budget.
+
 ## Existing-account authority mapping — still OFF
 
 `createNativeRegistryExistingIdentityHandler` composes the unmounted boundary

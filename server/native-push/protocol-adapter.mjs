@@ -75,25 +75,28 @@ async function nativeHostBody(req){
   for await(const chunk of req){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>16384)throw hostError('NATIVE_INPUT_TOO_LARGE',413);chunks.push(bytes);}
   try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));}catch{throw hostError('NATIVE_INVALID_JSON',400);}
 }
-const publicErrors=new Set(['NATIVE_PROTOCOL_INVALID','NATIVE_IDENTITY_REQUIRED','NATIVE_INVALID_INSTALLATION','NATIVE_INVALID_MUTATION','NATIVE_INVALID_TOKEN','NATIVE_OWNER_HINT_MISMATCH','NATIVE_REGISTRY_STATE_INVALID','NATIVE_TOKEN_CLAIM_INVALID','NATIVE_TOKEN_CLAIM_CHANGED','NATIVE_MUTATION_REUSED','NATIVE_REVISION_CHANGED','NATIVE_STALE_GENERATION','NATIVE_GENERATION_REVOKED','NATIVE_TOKEN_VERSION_REUSED','NATIVE_ROTATION_STALE','NATIVE_EXPLICIT_CONSENT_REQUIRED','NATIVE_TOKEN_ALREADY_BOUND','NATIVE_SESSION_REVOKED','NATIVE_PROTECTION_INVALID','NATIVE_PROTECTION_FAILED','NATIVE_INPUT_TOO_LARGE','NATIVE_INVALID_JSON','NATIVE_AUTH_REQUIRED','NATIVE_ORIGIN_REQUIRED','NATIVE_JSON_REQUIRED','NATIVE_INVALID_QUERY','NATIVE_REGISTRY_LIMITED','NATIVE_IDENTITY_CHANGED','NATIVE_HOST_UNCONFIGURED']);
+const publicErrors=new Set(['NATIVE_PROTOCOL_INVALID','NATIVE_IDENTITY_REQUIRED','NATIVE_INVALID_INSTALLATION','NATIVE_INVALID_MUTATION','NATIVE_INVALID_TOKEN','NATIVE_OWNER_HINT_MISMATCH','NATIVE_REGISTRY_STATE_INVALID','NATIVE_TOKEN_CLAIM_INVALID','NATIVE_TOKEN_CLAIM_CHANGED','NATIVE_MUTATION_REUSED','NATIVE_REVISION_CHANGED','NATIVE_STALE_GENERATION','NATIVE_GENERATION_REVOKED','NATIVE_TOKEN_VERSION_REUSED','NATIVE_ROTATION_STALE','NATIVE_EXPLICIT_CONSENT_REQUIRED','NATIVE_TOKEN_ALREADY_BOUND','NATIVE_SESSION_REVOKED','NATIVE_PROTECTION_INVALID','NATIVE_PROTECTION_FAILED','NATIVE_INPUT_TOO_LARGE','NATIVE_INVALID_JSON','NATIVE_AUTH_REQUIRED','NATIVE_ORIGIN_REQUIRED','NATIVE_JSON_REQUIRED','NATIVE_INVALID_QUERY','NATIVE_REGISTRY_LIMITED','NATIVE_INGRESS_LIMITED','NATIVE_IDENTITY_CHANGED','NATIVE_HOST_UNCONFIGURED']);
 /** Unmounted composition only. Default OFF precedes authority/body/DB I/O.
  * Identity, admission and protection must come from independently trusted server
  * adapters. This factory never verifies an owner hint, obtains a key or creates
  * a pool; no environment flag or current router invokes it.
  */
-export function createNativeRegistryAuthenticatedHandler({enabled=false,identityProvider,isIdentityCurrent,admitRequest,poolProvider,protectionProvider,allowedOrigin}={}){
+export function createNativeRegistryAuthenticatedHandler({enabled=false,admitIngress,identityProvider,isIdentityCurrent,admitRequest,poolProvider,protectionProvider,allowedOrigin}={}){
   if(typeof enabled!=='boolean')throw hostError('NATIVE_HOST_UNCONFIGURED',503);
   return async(req,res,url)=>{
     if(url.pathname!==NATIVE_REGISTRY_PATH)return false;
     if(!enabled){sendHost(res,503,{ok:false,code:'NATIVE_REGISTRY_OFF',state:'disabled',registryConfirmed:false,received:null});return true;}
     if(!['GET','POST'].includes(req.method)){res.setHeader('Allow','GET, POST');sendHost(res,405,{ok:false,code:'METHOD_NOT_ALLOWED',registryConfirmed:false,received:null});return true;}
     try{
-      if([identityProvider,isIdentityCurrent,admitRequest,poolProvider,allowedOrigin].some(fn=>typeof fn!=='function'))throw hostError('NATIVE_HOST_UNCONFIGURED',503);
+      if([admitIngress,identityProvider,isIdentityCurrent,admitRequest,poolProvider,allowedOrigin].some(fn=>typeof fn!=='function'))throw hostError('NATIVE_HOST_UNCONFIGURED',503);
       // No cookie-only or development email/header fallback for enrollment.
       if(!/^Bearer\s+\S+$/i.test(req.headers.authorization||''))throw hostError('NATIVE_AUTH_REQUIRED',401);
       const origin=await allowedOrigin();let trusted=false;
       try{const u=new URL(origin);trusted=u.protocol==='https:'&&u.origin===origin&&!u.username&&!u.password;}catch{}
       if(!trusted||(req.headers.origin&&req.headers.origin!==origin)||(req.method==='POST'&&req.headers.origin!==origin))throw hostError('NATIVE_ORIGIN_REQUIRED',403);
+      // Separate trusted ingress budget from authenticated-owner admission.
+      // No verifier/key/profile work starts without an explicit ingress grant.
+      if(await admitIngress(req)!==true)throw hostError('NATIVE_INGRESS_LIMITED',429);
       const authority=await identityProvider(req);
       if(authority?.authenticated!==true||authority.role!=='owner'||!identifier(authority.ownerId)||typeof authority.email!=='string'||authority.email.length>254||!authority.email.includes('@'))throw hostError('NATIVE_AUTH_REQUIRED',401);
       const captured=Object.freeze({...authority}),identity=Object.freeze({ownerId:captured.ownerId,email:captured.email});
@@ -134,7 +137,7 @@ export function createNativeRegistryAuthenticatedHandler({enabled=false,identity
  * ensureProfile or a caller's email/owner hint. The existing auth helper alone
  * verifies the bearer and supplies its current canonical profile and pool.
  */
-export function createNativeRegistryExistingIdentityHandler({enabled=false,identify=requireExistingIdentity,admitRequest,protectionProvider,allowedOrigin,clock=()=>Date.now()}={}){
+export function createNativeRegistryExistingIdentityHandler({enabled=false,identify=requireExistingIdentity,admitIngress,admitRequest,protectionProvider,allowedOrigin,clock=()=>Date.now()}={}){
   return async(req,res,url)=>{
     let currentDb;
     const readAuthority=async()=>{
@@ -155,7 +158,7 @@ export function createNativeRegistryExistingIdentityHandler({enabled=false,ident
       return Object.freeze({authenticated:true,role:'owner',ownerId:payload.sub,email,
         sessionFingerprint:createHash('sha256').update(req.headers.authorization).digest('hex')});
     };
-    return createNativeRegistryAuthenticatedHandler({enabled,allowedOrigin,admitRequest,protectionProvider,
+    return createNativeRegistryAuthenticatedHandler({enabled,allowedOrigin,admitIngress,admitRequest,protectionProvider,
       identityProvider:readAuthority,
       isIdentityCurrent:async(_request,captured)=>{
         const fresh=await readAuthority();return ['ownerId','email','sessionFingerprint'].every(key=>fresh[key]===captured[key]);

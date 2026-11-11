@@ -155,7 +155,7 @@ try {
  await assert.rejects(applyNativeProtocolMutation(uncertainPlatform.registryDb,platformOwner,platformRotate,{protection}),/SYNTHETIC_PLATFORM_ACK_LOST/);checks++;
  const reconciled=await applyNativeProtocolMutation(platformBridge.registryDb,platformOwner,platformRotate,{protection});
  assertCheck(reconciled.duplicate&&reconciled.revision===2,'platform commit uncertainty reconciles fixed ID without new mutation');
- const hostOptions={enabled:true,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:()=>({...platformOwner,authenticated:true,role:'owner'}),isIdentityCurrent:()=>true,admitRequest:()=>true,poolProvider:()=>mysqlAdapter(platformPool),protectionProvider:()=>protection};
+ const hostOptions={enabled:true,admitIngress:()=>true,allowedOrigin:()=> 'https://synthetic.example.test',identityProvider:()=>({...platformOwner,authenticated:true,role:'owner'}),isIdentityCurrent:()=>true,admitRequest:()=>true,poolProvider:()=>mysqlAdapter(platformPool),protectionProvider:()=>protection};
  async function invokeHost(handler,{method='GET',body,query='?installationId='+platformWire.installationId}={}){
    const req=Readable.from([Buffer.from(body?JSON.stringify(body):'')]);req.method=method;req.headers={authorization:'Bearer SYNTHETIC_HOST_AUTH_NOT_REAL',origin:'https://synthetic.example.test','content-type':'application/json'};
    const res={status:0,value:null,writeHead(status){this.status=status;},end(value){this.value=JSON.parse(value);},setHeader(){}};
@@ -163,6 +163,11 @@ try {
  }
  const host=createNativeRegistryAuthenticatedHandler(hostOptions),hostRead=await invokeHost(host);
  assertCheck(hostRead.status===200&&hostRead.value.registryConfirmed&&hostRead.value.revision===2,'unmounted authenticated host composes actual platform SQL read');
+ const ingressOpensBefore=platformOpens;let ingressAuthCalls=0;
+ const blockedIngress=createNativeRegistryAuthenticatedHandler({...hostOptions,admitIngress:()=>false,identityProvider:()=>{ingressAuthCalls++;throw Error('SYNTHETIC_AUTH_MUST_NOT_RUN');}});
+ const blockedIngressReply=await invokeHost(blockedIngress);
+ assertCheck(blockedIngressReply.status===429&&blockedIngressReply.value.code==='NATIVE_INGRESS_LIMITED','ingress refuses before protected authority work');
+ assertCheck(ingressAuthCalls===0&&platformOpens===ingressOpensBefore,'ingress refusal performs no identity or registry SQL work');
  let fenceCalls=0;
  const lateHost=createNativeRegistryAuthenticatedHandler({...hostOptions,isIdentityCurrent:()=>++fenceCalls<4});
  const hostRotate={...platformRotate,expectedRevision:2,mutationId:'synthetic-host-rotate',tokenRevision:'3',token:token+'HOST_ROTATED'};
@@ -175,7 +180,7 @@ try {
  const deniedHost=createNativeRegistryAuthenticatedHandler({...hostOptions,identityProvider:()=>({...platformOwner,ownerId:'synthetic-unmatched-owner',authenticated:true,role:'owner'})});
  const deniedReply=await invokeHost(deniedHost);assertCheck(deniedReply.status===401&&deniedReply.value.code==='NATIVE_SESSION_REVOKED','canonical profile mismatch blocks host state read');
  let existingReads=0;
- const existingHost=createNativeRegistryExistingIdentityHandler({enabled:true,allowedOrigin:hostOptions.allowedOrigin,admitRequest:()=>true,protectionProvider:()=>protection,
+ const existingHost=createNativeRegistryExistingIdentityHandler({enabled:true,allowedOrigin:hostOptions.allowedOrigin,admitIngress:hostOptions.admitIngress,admitRequest:()=>true,protectionProvider:()=>protection,
    identify:async(_req,sink)=>{
      existingReads++;const [rows]=await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1',[platformOwner.email]);
      if(!rows.length){sink.writeHead(401);sink.end('{}');return null;}
@@ -199,6 +204,6 @@ try {
  await assert.rejects(readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId),e=>e.code==='NATIVE_SESSION_REVOKED');checks++;
  const erasedReply=await invokeHost(existingHost);assertCheck(erasedReply.status===401&&!erasedReply.value.registryConfirmed,'deleted existing identity is not recreated');
  assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[platformOwner.email]))[0].length===0,'authority read creates no replacement profile');
- const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,existingIdentityComposition:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
+ const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,existingIdentityComposition:true,ingressBeforeAuthority:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
  fs.mkdirSync('artifacts/native-registry-off',{recursive:true});fs.writeFileSync('artifacts/native-registry-off/sql-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 } finally {fixtureKey.fill(0);await db.end();}
