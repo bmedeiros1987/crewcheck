@@ -65,6 +65,20 @@ export function extractPositionedPayroll(pages:readonly PayrollPage[]):PrivatePa
    if(/^BASE(?:S)? DE CALCULOS?\b|^PARCELAS NAO DESCONTADAS\b/.test(text)){footer=true;bounds=null;}
    if(footer){recognized=true;const labels=row.cells.map(c=>header(c.text));if(columns.every(name=>labels.includes(name))||labels.includes('COMPETENCIA')||labels.includes('LIQUIDO'))fail(ref('layout'),'Novo cabeçalho financeiro após rodapé; conteúdo não descartado como completo.');continue;}
    const headingCells=headingCellsFor(row);
+   if(!tableSeen&&!bounds&&['EMPRESA','CNPJ','CARGO'].every(label=>headingCells.some(h=>h.text===label))){
+    recognized=true;const valuesRow=rows[i+1],schema=['EMPRESA','CNPJ','CARGO'];
+    const frame=headingCells.length===3&&headingCells.every((h,j)=>h.text===schema[j]&&h.width!==null&&Number.isFinite(h.width)&&h.width>=0&&(j===0||h.x>=headingCells[j-1].x+headingCells[j-1].width!));
+    const company=frame&&valuesRow?group(valuesRow,headingCells.map(h=>h.x)):null;
+    const unexpected=/R\$|\d+[.,]\d+|\b(?:PROVENTOS?|DESCONTOS?|INSS|IRRF|TOTAIS|SALARIO|LIQUIDO)\b/;
+    // A corporate identifier is metadata only when the exact three-column
+    // heading binds the next physical row. This does not validate legal identity
+    // or authorize ignoring any other preamble/page/financial content.
+    if(!company?.valid||!company.values.every(Boolean)||!/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/.test(company.values[1])||[company.values[0],company.values[2]].some(value=>unexpected.test(norm(value)))){
+     fail(valuesRow?source(valuesRow,'companyMetadata'):ref('companyMetadata'),'Cabeçalho empresarial sem vínculo geométrico completo ou com conteúdo financeiro inesperado; revisão obrigatória.');
+    }
+    if(valuesRow)i++;continue;
+   }
+
    // A second text-only baseline at the same X completes a wrapped header.
    const next=rows[i+1];let headerRows=1;
    if(next&&next.cells.every(c=>!/[\d]/.test(c.text)&&headingCells.some(h=>Math.abs(h.x-c.x)<=0.5))){for(const c of next.cells){const h=headingCells.find(h=>Math.abs(h.x-c.x)<=0.5);if(!h){fail(ref('layout'),'Fragmento vertical sem cabeçalho correspondente; revisão obrigatória.');continue;}h.text=header(h.text+' '+c.text);}headerRows=2;}
