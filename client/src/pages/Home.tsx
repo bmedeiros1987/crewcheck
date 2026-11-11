@@ -1,3 +1,4 @@
+import { FlightCrewDetails } from '@/components/roster/FlightCrewDetails';
 import { formatWeatherNoticeDetails } from '../../../shared/weatherNoticeDetails.mjs';
 import { openStayProgramEditor as editOperationalStay } from '@/lib/stayEditorNavigation';
 import { readStayOperationalProjection, selectCurrentStayOperationalProjection } from '@/lib/stayOperationalProjection';
@@ -1995,7 +1996,7 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
     {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{gateInfo.gateSource === 'manual' ? 'Informado por você' : gateInfo.gateSource === 'radar' ? 'Fonte com evidência válida' : gateInfo.gateSource === 'reported' ? `Informado por ${gateInfo.reportedProvider} · a confirmar` : 'Sem confirmação operacional'}{gateInfo.gate ? ` · ${terminal}` : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong>{status}</strong>{isFlight && <small>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</small>}<small>{isFlight ? `Aeronave planejada: ${aircraft} · Matrícula: ${registration}${gateInfo.registrationSource === 'manual' ? ' · informada por você' : gateInfo.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
     {!compact && gateInfo.manualGateUnlinked && <p role="note">Portão manual anterior preservado; confirme o vínculo com este voo no editor.</p>}
     {!compact && Boolean(gateInfo.operationalConflicts?.length) && <p role="note">Há divergência nos dados operacionais. Valores manuais preservados; confirme a informação.</p>}
-    {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
+    {!compact && isFlight && <FlightCrewDetails leg={event.leg} fallback={event.crew}/>}
     {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
     {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
     {!compact && <div className="cz-roster-actions"><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button>{isFlight && <button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'radar' }))}><Radar/> Radar</button>}<button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'map' }))}><MapIcon/> Mapa do mês</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'routine' }))}><Dumbbell/> Rotina</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'wakeup' }))}><Bell/> Despertador</button></div>}
@@ -2353,7 +2354,7 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
     </div>}
     {!isJourneyRest && <RosterInlineWeatherBlock event={event}/>}
     {isJourneyRest && <p className="cz-mini-status">Este intervalo permanece visível na timeline, mas não alimenta programação atual/próxima, despertador, deslocamento, Radar, hotel, diárias ou salário.</p>}
-    {Boolean(event.crew?.length) && <p className="cz-mini-status"><strong>Tripulação:</strong> {event.crew?.slice(0, 8).join(' · ')}</p>}
+    {event.kind === 'flight' && <FlightCrewDetails leg={event.leg} fallback={event.crew}/>}
     {Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
     {!isJourneyRest && <div className="cz-tool-actions" style={{ marginTop: 14 }}>
       <button onClick={() => setView('presentation')}><Clock/> Gerenciador de apresentação</button>
@@ -3806,6 +3807,7 @@ function firstCrewListed(event: ZeroLeg): string {
   return normalizeCrewNameForFinance(crew[0] || '');
 }
 function userIsFirstCcm(event: ZeroLeg, roster: CrewRoster): boolean {
+  if (event.leg?.crewAssociation) return event.leg.ccmBonusStatus === 'confirmed'; // Preserve independent evidence; display names cannot mint it.
   const first = firstCrewListed(event);
   if (!first) return false;
   const tokens = currentUserNameTokens(roster);
