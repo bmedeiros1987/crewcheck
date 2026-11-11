@@ -1,3 +1,5 @@
+import {inferCrewRole,resolveCrewFunction} from './actRules';
+import type {CrewRoster} from './pdfParser';
 import {actPayrollCompetences,ACT_PAYROLL_CYCLE_SOURCE} from './financialPayrollPeriods';
 import {FINANCIAL_SOURCES} from './financialReferenceCatalog';
 
@@ -16,4 +18,11 @@ export function cabinSalaryRateReference(operationalMonth:string) {
   referenceEffectiveFrom:'2025-12-01',referenceEffectiveTo:'2026-11-30',
   adjustmentBasisPoints:209,sources:[FINANCIAL_SOURCES.cabin,FINANCIAL_SOURCES.inpc],
   description:`Referência ACT derivada · produção ${operationalMonth} · mês tarifário ${cycle.rateMonth} · intervalo desta referência derivada: 2025-12 a 2026-11 · reajuste2,09% (50% INPC4,18%) · sem arredondamento intermediário; conferir tabela corporativa`};
+}
+
+/** Only qualifies the new presentation reason; it does not change tariff resolution. */
+export function cabinSalaryRatePendingScope(roster:CrewRoster):boolean {
+ const legal=inferCrewRole(roster);
+ const rank=resolveCrewFunction(roster.rank);
+ return legal.role==='cabin' && legal.confidence==='alta' && rank.role!=='pilot';
 }
