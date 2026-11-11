@@ -173,13 +173,13 @@ const commonAst=createRequire(import.meta.url)('@babel/parser').parse(commonSour
 const commonFunctions=['secureCompare','safeEmail','verifyJwt','requestToken','requireExistingIdentity'].map(name=>{
  const n=commonAst.program.body.map(n=>n.type==='ExportNamedDeclaration'?n.declaration:n).find(n=>n?.type==='FunctionDeclaration'&&n.id.name===name);assert(n);return commonSource.slice(n.start,n.end);
 }).join('\n');
-function existingIdentityFixture({claims={},profilePatch={},clock=()=>Date.now(),failRead=false,changeAt=Infinity,keyUnavailable=false}={}){
- const f=platformFixture();let authReads=0;
+function existingIdentityFixture({claims={},profilePatch={},clock=()=>Date.now(),failRead=false,changeAt=Infinity,keyUnavailable=false,changeDbAt=Infinity}={}){
+ const f=platformFixture();let authReads=0,poolReads=0;
  const raw={...f.native,query:async(sql,params)=>{
   authReads++;if(failRead)throw Error('SYNTHETIC_AUTH_DB_FAILURE');assert.equal(sql,'SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1');assert.deepEqual(params,[identity.email]);
   return [[{email:identity.email,public_id:authReads>=changeAt?'synthetic-recreated-owner':identity.ownerId,must_change_password:0,name:'SYNTHETIC_PRIVATE_PROFILE',...profilePatch}]];
  }};
- const identify=Function('crypto','authSecret','dbPool','sendJson','isAdminEmail',commonFunctions+';return requireExistingIdentity;')(crypto,()=>{if(keyUnavailable)throw Object.assign(Error('SYNTHETIC_KEY_UNAVAILABLE'),{status:503});return fixtureSecret;},async()=>raw,(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));},()=>false);
+ const identify=Function('crypto','authSecret','dbPool','sendJson','isAdminEmail',commonFunctions+';return requireExistingIdentity;')(crypto,()=>{if(keyUnavailable)throw Object.assign(Error('SYNTHETIC_KEY_UNAVAILABLE'),{status:503});return fixtureSecret;},async()=>++poolReads>=changeDbAt?{...raw}:raw,(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));},()=>false);
  const token=jwt({iss:'crewcheck',aud:'crewcheck-web',sub:identity.ownerId,mustChangePassword:false,...claims});
  const handler=createNativeRegistryExistingIdentityHandler({enabled:true,identify,allowedOrigin:()=> 'https://synthetic.example.test',admitRequest:()=>true,clock});
  return {...f,handler,token,authReads:()=>authReads};
@@ -209,5 +209,10 @@ for(const options of [{failRead:true},{keyUnavailable:true}]){
  check(()=>assert.equal(reply.status,401));check(()=>assert.equal(reply.body.registryConfirmed,false));check(()=>assert.equal(f.opens(),1,'late recreation after SQL withholds receipt'));
  const expired=existingIdentityFixture({clock:()=>Date.now()+180000}),replyExpired=await invoke(expired.handler,{headers:{authorization:'Bearer '+expired.token}});
  check(()=>assert.equal(replyExpired.status,401));check(()=>assert.equal(expired.opens(),0));
+}
+for(const at of [4,5]){
+ const f=existingIdentityFixture({changeDbAt:at}),reply=await invoke(f.handler,{headers:{authorization:'Bearer '+f.token}});
+ check(()=>assert.equal(reply.status,401,'pool replacement cannot borrow prior authority'));
+ check(()=>assert.equal(reply.body.registryConfirmed,false));check(()=>assert.equal(f.opens(),at===4?0:1));
 }
 console.log('PASS '+count+' native protocol wire/CAS/ACK/existing-owner/authenticated-host/platform-transaction/revoke/OFF synthetic checks');

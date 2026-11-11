@@ -10,6 +10,9 @@ unexpired numeric expiry, explicit password-change clearance, and matching JWT
 subject/email and canonical profile. A fresh profile requiring a password change
 blocks an older cleared JWT. The captured bearer fingerprint is in memory only;
 fresh existing-account checks fence replacement/recreation/expiry around awaits.
+The existing pool object is pinned within the request; a changed pool cannot lend
+authority to a transaction or receipt from its predecessor. This is not global
+JWT revocation or a new session/credential store.
 
 Disabled requests do not call that helper or touch credentials/DB. The factory
 still requires independent admission, allowed origin and protection composition;

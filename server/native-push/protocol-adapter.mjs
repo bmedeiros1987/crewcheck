@@ -146,6 +146,7 @@ export function createNativeRegistryExistingIdentityHandler({enabled=false,ident
       if(!context)throw hostError(rejectedStatus===401?'NATIVE_AUTH_REQUIRED':'NATIVE_HOST_UNCONFIGURED',rejectedStatus===401?401:503);
       const {payload,profile,db}=context,now=clock(),email=safeEmail(context.email);
       if(!Number.isFinite(now)||typeof db?.getConnection!=='function'||typeof db.query!=='function')throw hostError('NATIVE_HOST_UNCONFIGURED',503);
+      if(currentDb&&currentDb!==db)throw hostError('NATIVE_IDENTITY_CHANGED',401);
       if(!email||payload?.iss!=='crewcheck'||payload.aud!=='crewcheck-web'||payload.role==='visitor'
         ||payload.mustChangePassword!==false||![false,0].includes(profile?.must_change_password)
         ||typeof payload.exp!=='number'||!Number.isFinite(payload.exp)||payload.exp*1000<=now
