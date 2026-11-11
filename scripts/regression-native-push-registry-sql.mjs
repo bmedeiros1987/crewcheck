@@ -5,7 +5,7 @@ import {Readable} from 'node:stream';
 import mysql from 'mysql2/promise';
 import {mutateNativeInstallation,readNativeInstallation,deleteNativeAccountWithRegistry,nativeBindingKey,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter} from '../server/native-push/registry.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
-import {applyNativeProtocolMutation,readNativeProtocolInstallation,createNativeRegistryAuthenticatedHandler,NATIVE_REGISTRY_PATH} from '../server/native-push/protocol-adapter.mjs';
+import {applyNativeProtocolMutation,readNativeProtocolInstallation,createNativeRegistryAuthenticatedHandler,createNativeRegistryExistingIdentityHandler,NATIVE_REGISTRY_PATH} from '../server/native-push/protocol-adapter.mjs';
 
 const value=process.env.NATIVE_PUSH_TEST_MYSQL_URL;
 const url=new URL(value||'mysql://invalid/');
@@ -29,7 +29,7 @@ const mutate=(v,extra={})=>mutateNativeInstallation(db,v,{protection,now:1700000
 try {
  await db.query('DROP TABLE IF EXISTS crewcheck_telegram_state');
  await db.query('DROP TABLE IF EXISTS crewcheck_platform_profiles');
- await db.query('CREATE TABLE crewcheck_platform_profiles (email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(160) NOT NULL) ENGINE=InnoDB');
+ await db.query('CREATE TABLE crewcheck_platform_profiles (email VARCHAR(254) PRIMARY KEY,public_id VARCHAR(160) NOT NULL,must_change_password BOOLEAN NOT NULL DEFAULT FALSE) ENGINE=InnoDB');
  await db.query('CREATE TABLE crewcheck_telegram_state (state_key VARCHAR(190) PRIMARY KEY,payload LONGTEXT NOT NULL,updated_at DATETIME(3) NOT NULL) ENGINE=InnoDB');
  for(const owner of owners)await db.query('INSERT INTO crewcheck_platform_profiles(email,public_id) VALUES(?,?)',[owner.email,owner.ownerId]);
  const initial=input();const first=await mutate(initial);
@@ -174,6 +174,20 @@ try {
  assertCheck(!JSON.stringify(duplicateReply.value).includes(hostRotate.token),'host receipt redacts token');
  const deniedHost=createNativeRegistryAuthenticatedHandler({...hostOptions,identityProvider:()=>({...platformOwner,ownerId:'synthetic-unmatched-owner',authenticated:true,role:'owner'})});
  const deniedReply=await invokeHost(deniedHost);assertCheck(deniedReply.status===401&&deniedReply.value.code==='NATIVE_SESSION_REVOKED','canonical profile mismatch blocks host state read');
+ let existingReads=0;
+ const existingHost=createNativeRegistryExistingIdentityHandler({enabled:true,allowedOrigin:hostOptions.allowedOrigin,admitRequest:()=>true,protectionProvider:()=>protection,
+   identify:async(_req,sink)=>{
+     existingReads++;const [rows]=await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1',[platformOwner.email]);
+     if(!rows.length){sink.writeHead(401);sink.end('{}');return null;}
+     return {db,email:platformOwner.email,profile:rows[0],payload:{iss:'crewcheck',aud:'crewcheck-web',sub:platformOwner.ownerId,email:platformOwner.email,role:'free',mustChangePassword:false,exp:Math.floor(Date.now()/1000)+120}};
+   }});
+ const existingReply=await invokeHost(existingHost);assertCheck(existingReply.status===200&&existingReply.value.revision===3,'existing-owner context composes actual pool and registry');
+ assertCheck(existingReads===5,'existing-owner authority refreshed across all async boundaries');
+ await db.query('UPDATE crewcheck_platform_profiles SET must_change_password=TRUE WHERE email=?',[platformOwner.email]);
+ const passwordReply=await invokeHost(existingHost);assertCheck(passwordReply.status===401&&!passwordReply.value.registryConfirmed,'current password-change requirement overrides stale JWT flag');
+ await db.query('UPDATE crewcheck_platform_profiles SET must_change_password=FALSE,public_id=? WHERE email=?',['synthetic-recreated-profile',platformOwner.email]);
+ const recreatedReply=await invokeHost(existingHost);assertCheck(recreatedReply.status===401&&!recreatedReply.value.registryConfirmed,'recreated profile cannot inherit old native identity');
+ await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[platformOwner.ownerId,platformOwner.email]);
  const opensBeforeDelete=platformOpens;
  const platformDeleted=await deleteNativeAccountWithRegistry(platformBridge.registryDb,platformOwner,platformBridge.canonicalDeletion(async client=>{
    const result=await client.query('SELECT CONNECTION_ID() AS connectionId');
@@ -183,6 +197,8 @@ try {
  assertCheck(platformOpens===opensBeforeDelete+1,'canonical deletion acquires only one connection');
  assertCheck(platformDeleted.registryDeleted===1&&platformDeleted.registryConfirmed,'canonical and native deletion confirm together');
  await assert.rejects(readNativeProtocolInstallation(platformBridge.registryDb,platformOwner,platformWire.installationId),e=>e.code==='NATIVE_SESSION_REVOKED');checks++;
- const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
+ const erasedReply=await invokeHost(existingHost);assertCheck(erasedReply.status===401&&!erasedReply.value.registryConfirmed,'deleted existing identity is not recreated');
+ assertCheck((await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[platformOwner.email]))[0].length===0,'authority read creates no replacement profile');
+ const report={passed:true,checks,realMySQL:true,disposableOnly:true,platformAdapterIntegration:true,existingIdentityComposition:true,externalProviderCalls:0,realTokens:0,productionActivation:false};
  fs.mkdirSync('artifacts/native-registry-off',{recursive:true});fs.writeFileSync('artifacts/native-registry-off/sql-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 } finally {fixtureKey.fill(0);await db.end();}

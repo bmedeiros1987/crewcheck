@@ -1,4 +1,7 @@
 import {mutateNativeInstallation,readNativeInstallation,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter} from './registry.mjs';
+import {createHash} from 'node:crypto';
+import {requireExistingIdentity,safeEmail} from '../v139/common.mjs';
+import {mysqlAdapter} from '../mysql-platform-adapter.mjs';
 
 // Unmounted protocol only. This module neither obtains authority nor enables I/O.
 const fail=()=>{throw Object.assign(new Error('NATIVE_PROTOCOL_INVALID'),{code:'NATIVE_PROTOCOL_INVALID',status:400});};
@@ -124,5 +127,39 @@ export function createNativeRegistryAuthenticatedHandler({enabled=false,identity
       sendHost(res,status,{ok:false,code:known?error.code:'NATIVE_REGISTRY_UNAVAILABLE',state:'unconfirmed',registryConfirmed:false,received:null});
     }
     return true;
+  };
+}
+
+/** Existing-account authority composition, still OFF/unmounted. It never uses
+ * ensureProfile or a caller's email/owner hint. The existing auth helper alone
+ * verifies the bearer and supplies its current canonical profile and pool.
+ */
+export function createNativeRegistryExistingIdentityHandler({enabled=false,identify=requireExistingIdentity,admitRequest,protectionProvider,allowedOrigin,clock=()=>Date.now()}={}){
+  return async(req,res,url)=>{
+    let currentDb;
+    const readAuthority=async()=>{
+      let rejectedStatus=503;
+      // Do not let the auth helper write a second HTTP response or disclose its
+      // diagnostic message. The outer boundary emits only safe protocol codes.
+      const sink={setHeader(){},writeHead(status){rejectedStatus=status;},end(){}};
+      const context=await identify(req,sink);
+      if(!context)throw hostError(rejectedStatus===401?'NATIVE_AUTH_REQUIRED':'NATIVE_HOST_UNCONFIGURED',rejectedStatus===401?401:503);
+      const {payload,profile,db}=context,now=clock(),email=safeEmail(context.email);
+      if(!Number.isFinite(now)||typeof db?.getConnection!=='function'||typeof db.query!=='function')throw hostError('NATIVE_HOST_UNCONFIGURED',503);
+      if(!email||payload?.iss!=='crewcheck'||payload.aud!=='crewcheck-web'||payload.role==='visitor'
+        ||payload.mustChangePassword!==false||![false,0].includes(profile?.must_change_password)
+        ||typeof payload.exp!=='number'||!Number.isFinite(payload.exp)||payload.exp*1000<=now
+        ||!identifier(payload.sub)||profile?.public_id!==payload.sub||safeEmail(payload.email)!==email||safeEmail(profile?.email)!==email)throw hostError('NATIVE_AUTH_REQUIRED',401);
+      currentDb=db;
+      return Object.freeze({authenticated:true,role:'owner',ownerId:payload.sub,email,
+        sessionFingerprint:createHash('sha256').update(req.headers.authorization).digest('hex')});
+    };
+    return createNativeRegistryAuthenticatedHandler({enabled,allowedOrigin,admitRequest,protectionProvider,
+      identityProvider:readAuthority,
+      isIdentityCurrent:async(_request,captured)=>{
+        const fresh=await readAuthority();return ['ownerId','email','sessionFingerprint'].every(key=>fresh[key]===captured[key]);
+      },
+      poolProvider:()=>mysqlAdapter(currentDb),
+    })(req,res,url);
   };
 }

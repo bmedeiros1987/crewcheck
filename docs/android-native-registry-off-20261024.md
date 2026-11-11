@@ -1,5 +1,24 @@
 # Native Android registry primitives — unmounted, OFF
 
+## Existing-account authority mapping — still OFF
+
+`createNativeRegistryExistingIdentityHandler` composes the unmounted boundary
+with the existing `requireExistingIdentity` helper and its existing MySQL pool.
+It never calls `ensureProfile`, uses development email hints or creates a pool.
+The verified context must have issuer crewcheck, audience crewcheck-web, finite
+unexpired numeric expiry, explicit password-change clearance, and matching JWT
+subject/email and canonical profile. A fresh profile requiring a password change
+blocks an older cleared JWT. The captured bearer fingerprint is in memory only;
+fresh existing-account checks fence replacement/recreation/expiry around awaits.
+
+Disabled requests do not call that helper or touch credentials/DB. The factory
+still requires independent admission, allowed origin and protection composition;
+it is not mounted and does not enable enrollment or delivery. Unit tests execute
+the actual common-module JWT, token-reader and existing-identity functions selected
+by AST, with a synthetic RAM key and fake pool. SQL tests separately validate the
+mapped canonical profile/current-password/recreation/deletion behavior against
+disposable MySQL; their identity context is synthetic, not production JWT setup.
+
 ## Authenticated composition factory — not a mounted endpoint
 
 `createNativeRegistryAuthenticatedHandler` is default OFF and is not imported by

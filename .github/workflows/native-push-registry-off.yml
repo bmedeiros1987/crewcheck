@@ -5,6 +5,7 @@ on:
       - 'server/native-push/**'
       - 'server/mysql-platform-adapter.mjs'
       - 'server/platform.mjs'
+      - 'server/v139/common.mjs'
       - 'scripts/regression-native-push-registry*.mjs'
       - '.github/workflows/native-push-registry-off.yml'
 permissions:

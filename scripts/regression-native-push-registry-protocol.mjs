@@ -5,7 +5,7 @@ import {Readable} from 'node:stream';
 import {createRequire} from 'node:module';
 import {nativeMutationPlan,NATIVE_PROJECT,NATIVE_PACKAGE,createNativeRegistryPlatformAdapter,readNativeInstallation,deleteNativeAccountWithRegistry} from '../server/native-push/registry.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
-import {nativeProtocolMutation as parse,nativeProtocolAcknowledgement as ack,nativeProtocolHost,applyNativeProtocolMutation,createNativeRegistryAuthenticatedHandler,NATIVE_REGISTRY_PATH} from '../server/native-push/protocol-adapter.mjs';
+import {nativeProtocolMutation as parse,nativeProtocolAcknowledgement as ack,nativeProtocolHost,applyNativeProtocolMutation,createNativeRegistryAuthenticatedHandler,createNativeRegistryExistingIdentityHandler,NATIVE_REGISTRY_PATH} from '../server/native-push/protocol-adapter.mjs';
 const identity={ownerId:'synthetic-owner-a',email:'native-a@example.test'};
 const wire={action:'register',projectId:NATIVE_PROJECT,package:NATIVE_PACKAGE,installationId:'synthetic-device-a',mutationId:'synthetic-operation-1',expectedRevision:0,expectedConsentRevision:0,generation:'1',tokenRevision:'1',consent:true,token:'SYNTHETIC_PROTOCOL_TOKEN_NOT_REAL'};
 let count=0;function check(fn){fn();count++;}
@@ -52,7 +52,7 @@ function platformFixture({commitFailure=false,queryFailure=false,beginFailure=fa
       return [{affectedRows:0}];
     },release(){releases++;},destroy(){discards++;}
   };}};
-  return {db:mysqlAdapter(native),calls,opens:()=>opens,releases:()=>releases,discards:()=>discards};
+  return {db:mysqlAdapter(native),native,calls,opens:()=>opens,releases:()=>releases,discards:()=>discards};
 }
 for(const failure of [{queryFailure:true},{commitFailure:true},{beginFailure:true}]) {
  const f=platformFixture({...failure,rollbackFailure:true}),bridge=createNativeRegistryPlatformAdapter(f.db);
@@ -168,4 +168,46 @@ for(const overrides of [{admitRequest:()=>false},{isIdentityCurrent:undefined},{
  check(()=>assert.equal(reply.status,401));check(()=>assert.equal(reply.body.registryConfirmed,false,'late authority gets no receipt'));check(()=>assert.equal(late.opens(),1));
  const other=await invoke(hostFixture().handler,{pathname:'/synthetic-unrelated'});check(()=>assert.equal(other.handled,false));
 }
-console.log('PASS '+count+' native protocol wire/CAS/ACK/authenticated-host/platform-transaction/revoke/OFF synthetic checks');
+const commonSource=fs.readFileSync(new URL('../server/v139/common.mjs',import.meta.url),'utf8');
+const commonAst=createRequire(import.meta.url)('@babel/parser').parse(commonSource,{sourceType:'module'});
+const commonFunctions=['secureCompare','safeEmail','verifyJwt','requestToken','requireExistingIdentity'].map(name=>{
+ const n=commonAst.program.body.map(n=>n.type==='ExportNamedDeclaration'?n.declaration:n).find(n=>n?.type==='FunctionDeclaration'&&n.id.name===name);assert(n);return commonSource.slice(n.start,n.end);
+}).join('\n');
+function existingIdentityFixture({claims={},profilePatch={},clock=()=>Date.now(),failRead=false,changeAt=Infinity,keyUnavailable=false}={}){
+ const f=platformFixture();let authReads=0;
+ const raw={...f.native,query:async(sql,params)=>{
+  authReads++;if(failRead)throw Error('SYNTHETIC_AUTH_DB_FAILURE');assert.equal(sql,'SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1');assert.deepEqual(params,[identity.email]);
+  return [[{email:identity.email,public_id:authReads>=changeAt?'synthetic-recreated-owner':identity.ownerId,must_change_password:0,name:'SYNTHETIC_PRIVATE_PROFILE',...profilePatch}]];
+ }};
+ const identify=Function('crypto','authSecret','dbPool','sendJson','isAdminEmail',commonFunctions+';return requireExistingIdentity;')(crypto,()=>{if(keyUnavailable)throw Object.assign(Error('SYNTHETIC_KEY_UNAVAILABLE'),{status:503});return fixtureSecret;},async()=>raw,(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));},()=>false);
+ const token=jwt({iss:'crewcheck',aud:'crewcheck-web',sub:identity.ownerId,mustChangePassword:false,...claims});
+ const handler=createNativeRegistryExistingIdentityHandler({enabled:true,identify,allowedOrigin:()=> 'https://synthetic.example.test',admitRequest:()=>true,clock});
+ return {...f,handler,token,authReads:()=>authReads};
+}
+{
+ let calls=0;const handler=createNativeRegistryExistingIdentityHandler({identify(){calls++;throw Error('OFF authority I/O');}});
+ const result=await invoke(handler);check(()=>assert.equal(result.status,503));check(()=>assert.equal(calls,0,'existing-account composition OFF has no authority I/O'));
+ const f=existingIdentityFixture(),reply=await invoke(f.handler,{headers:{authorization:'Bearer '+f.token,'x-crewcheck-email':'other@example.test'}});
+ check(()=>assert.equal(reply.status,200));check(()=>assert.equal(reply.body.registryConfirmed,true));check(()=>assert.equal(f.opens(),1));
+ check(()=>assert.equal(f.authReads(),5,'existing identity rechecked across awaits'));
+ check(()=>assert(!JSON.stringify(reply.body).includes(f.token)&&!JSON.stringify(reply.body).includes('SYNTHETIC_PRIVATE_PROFILE')));
+}
+for(const options of [
+ {claims:{iss:'other'}},{claims:{aud:'crewcheck-visitor',role:'visitor'}},{claims:{aud:'other'}},{claims:{exp:undefined}},
+ {claims:{exp:String(Math.floor(Date.now()/1000)+120)}},{claims:{mustChangePassword:undefined}},{claims:{mustChangePassword:true}},
+ {profilePatch:{public_id:'synthetic-recreated-owner'}},{profilePatch:{must_change_password:1}},{profilePatch:{must_change_password:'1'}},{profilePatch:{must_change_password:undefined}},
+ ]){
+ const f=existingIdentityFixture(options),reply=await invoke(f.handler,{headers:{authorization:'Bearer '+f.token}});
+ check(()=>assert.equal(reply.status,401));check(()=>assert.equal(f.opens(),0,'invalid canonical authority cannot start registry transaction'));
+}
+for(const options of [{failRead:true},{keyUnavailable:true}]){
+ const f=existingIdentityFixture(options),reply=await invoke(f.handler,{headers:{authorization:'Bearer '+f.token}});
+ check(()=>assert.equal(reply.status,503,'authority outage is not presented as absent/invalid account'));check(()=>assert.equal(reply.body.registryConfirmed,false));
+}
+{
+ const f=existingIdentityFixture({changeAt:5}),reply=await invoke(f.handler,{headers:{authorization:'Bearer '+f.token}});
+ check(()=>assert.equal(reply.status,401));check(()=>assert.equal(reply.body.registryConfirmed,false));check(()=>assert.equal(f.opens(),1,'late recreation after SQL withholds receipt'));
+ const expired=existingIdentityFixture({clock:()=>Date.now()+180000}),replyExpired=await invoke(expired.handler,{headers:{authorization:'Bearer '+expired.token}});
+ check(()=>assert.equal(replyExpired.status,401));check(()=>assert.equal(expired.opens(),0));
+}
+console.log('PASS '+count+' native protocol wire/CAS/ACK/existing-owner/authenticated-host/platform-transaction/revoke/OFF synthetic checks');
