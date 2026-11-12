@@ -1,3 +1,4 @@
+import './regression-dependency-minimatch-security.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
