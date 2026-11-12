@@ -137,6 +137,10 @@ jobs:
           node scripts/regression-notification-center-browser.mjs
           node scripts/regression-wakeup-selection-react.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
+          node scripts/regression-routine-passive-browser.mjs
+          node scripts/regression-routine-preferences-browser.mjs
+          node scripts/regression-wellhub-search-timeout.mjs
+          node scripts/regression-gym-search-intent.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-escala-contact-dom.mjs
@@ -165,6 +169,11 @@ jobs:
           node scripts/regression-notification-center-browser.mjs
           node scripts/regression-wakeup-selection-react.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
+          node scripts/regression-routine-passive-browser.mjs
+          node scripts/regression-routine-preferences-browser.mjs --shipping-css
+          node scripts/regression-gym-search-app-browser.mjs
+          node scripts/regression-wellhub-search-timeout.mjs
+          node scripts/regression-gym-search-intent.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-escala-contact-dom.mjs
