@@ -12,10 +12,10 @@ function locations(sources: PayrollSource[]) {
 export default function PrivatePayrollPreview({ extraction }: { extraction: PrivatePayrollExtraction }) {
   const privacy = useFinancialPrivacy();
   const money = (value: number) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value));
-  function field<T extends string | number>(value: PayrollField<T>, monetary = false) {
+  function field<T extends string | number>(value: PayrollField<T>, monetary = false, privateNumber = false) {
     return <div><strong>{stateLabels[value.state]}</strong>
       {value.candidates.map((candidate, index) => <div key={index}>
-        <span>{monetary ? money(Number(candidate.value)) : String(candidate.value)}</span>
+        <span>{monetary ? money(Number(candidate.value)) : privateNumber ? privacy.amount(String(candidate.value)) : String(candidate.value)}</span>
         <small> · {locations(candidate.sources)}</small>
       </div>)}
       {value.unresolvedSources.length > 0 && <small>Origem pendente: {locations(value.unresolvedSources)}</small>}
@@ -33,7 +33,7 @@ export default function PrivatePayrollPreview({ extraction }: { extraction: Priv
     <div className="finance-learning-table-wrap"><table><caption>Rubricas extraídas — todas exigem revisão</caption>
       <thead><tr><th>Rubrica</th><th>Tipo</th><th>Competência</th><th>Valor e origem</th></tr></thead>
       <tbody>{extraction.items.map((item, index) => <tr key={index}>
-        <td>{privacy.text(item.label)}</td>
+        <td>{item.code&&<small>Rubrica {privacy.text(item.code)} · </small>}{privacy.text(item.label)}{item.quantity&&<div>Quantidade: {field(item.quantity,false,true)}</div>}{item.printedRate&&<div>Razão impressa: {field(item.printedRate,false,true)}<small>Não é tarifa oficial ou recorrente confirmada.</small></div>}</td>
         <td>{directions[item.direction]}{item.nature ? ` · ${natures[item.nature]}` : ''}</td>
         <td>{item.competence || 'Não informada'}</td><td>{field(item.amount, true)}</td>
       </tr>)}</tbody>
@@ -44,6 +44,7 @@ export default function PrivatePayrollPreview({ extraction }: { extraction: Priv
       <dt>Total de descontos impresso</dt><dd>{field(extraction.totals.deductions, true)}</dd>
       <dt>Líquido impresso</dt><dd>{field(extraction.totals.net, true)}</dd>
     </dl>
+    {extraction.itemReconciliation&&<p>Rubricas {extraction.itemReconciliation==='balanced'?'conciliadas com os totais impressos':extraction.itemReconciliation==='mismatch'?'divergentes dos totais impressos':'sem conciliação disponível'}; revisão permanece obrigatória.</p>}
     <p role="status">{extraction.reconciliation === 'balanced' ? 'Totais impressos conciliados aritmeticamente; rubricas e competência ainda exigem revisão.' : extraction.reconciliation === 'mismatch' ? 'Totais impressos divergentes — aplicação bloqueada.' : 'Conciliação indisponível — não presumir totais ou campos ausentes.'}</p>
     {extraction.incomplete && <p>Extração incompleta. Confira as páginas e os campos pendentes no PDF.</p>}
     {extraction.unresolvedSources.length > 0 && <p>Campos ou linhas pendentes: {locations(extraction.unresolvedSources)}</p>}

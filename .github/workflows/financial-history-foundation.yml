@@ -102,6 +102,9 @@ on:
       - 'scripts/fixtures/salary-clock-missing-counterproofs.json'
       - 'scripts/regression-salary-prerequisites-browser.cjs'
       - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/positionedPayrollExtraction.ts'
+      - 'scripts/fixtures/synthetic-tabular-payroll.mjs'
+      - 'scripts/regression-payroll-tabular-pdf-browser.mjs'
       - '.github/workflows/financial-history-foundation.yml'
   workflow_dispatch:
 permissions:
@@ -279,7 +282,9 @@ jobs:
         timeout-minutes: 3
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-payroll-dsr-importer-browser.mjs
+        run: |
+          node scripts/regression-financial-payroll-dsr-importer-browser.mjs
+          node scripts/regression-payroll-tabular-pdf-browser.mjs
       - name: Verify physical PDF and compiled free-day alerts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
