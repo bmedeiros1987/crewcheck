@@ -339,9 +339,42 @@ public final class WatchContextSnapshot {
         return "reported".equals(gateSource);
     }
 
-    public String gateLabel() {
+    /** The producer fills a gate only on the selected exact schedule occurrence.
+     * During a hotel context it is a next-flight gate, not the hotel's/current flight's gate.
+     * Never parse nextDetail prose, choose between multiple gates or extend snapshot validity.
+     */
+    private ScheduleItem nextGateItem() {
+        if (!currentFlight.isBlank() || nextFlight.isBlank()
+                || !("OVERNIGHT".equals(state) || "LEAVE_SOON".equals(state))
+                || gateSource.isBlank()) return null;
+        ScheduleItem selected = null;
+        int matchingOccurrences = 0;
+        for (ScheduleItem item : schedule) {
+            if ("flight".equals(item.kind) && nextFlight.equals(item.title) && ++matchingOccurrences > 1) return null;
+            if (item.gate.isBlank()) continue;
+            if (selected != null || !"flight".equals(item.kind) || item.id.isBlank()
+                    || !nextFlight.equals(item.title)) return null;
+            selected = item;
+        }
+        return selected;
+    }
+
+    public String displayedGate() {
         if (remoteStand) return "REMOTA";
-        if (!gate.isBlank()) return "PORTÃO " + gate;
+        if (!gate.isBlank()) return gate;
+        ScheduleItem item = nextGateItem();
+        return item == null ? "" : item.gate;
+    }
+
+    public boolean displayedRemoteStand() { return "REMOTA".equalsIgnoreCase(displayedGate()); }
+
+    public String displayedGateFlight() {
+        return !currentFlight.isBlank() ? currentFlight : nextGateItem() == null ? "" : nextFlight;
+    }
+
+    public String gateLabel() {
+        if (displayedRemoteStand()) return "REMOTA";
+        if (!displayedGate().isBlank()) return "PORTÃO " + displayedGate();
         return "";
     }
 
