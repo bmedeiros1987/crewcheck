@@ -238,7 +238,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   const [places, setPlaces] = useState<LifePlace[]>([]);
   const [busyLocation, setBusyLocation] = useState(false);
   const [busyPlaces, setBusyPlaces] = useState(false);
-  const [connectionsOpen, setConnectionsOpen] = useState(true);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const plan = useMemo(() => buildDailyPlan(events, settings), [events, settings]);
@@ -372,7 +372,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   return <section className="cc-life-day-shell">
     <header className="cc-life-day-hero">
       <div><Compass/><Sparkles/></div>
-      <span><small>GUIA DO DIA · ESCALA + LOCALIZAÇÃO + CREWCHECK LIFE</small><h2>Abra o app e veja o que faz mais sentido hoje</h2><p>O plano combina jornada, próxima apresentação, descanso desejado, dados do Life e locais reais perto de você.</p></span>
+      <span><small>ROTINA DO DIA</small><h2>Seu dia</h2><p>Descanso e atividades conforme sua programação.</p></span>
       <button onClick={() => void locate(true)} disabled={busyLocation}>{busyLocation ? <LoaderCircle className="spin"/> : <LocateFixed/>}{location ? 'Atualizar localização' : 'Usar minha localização'}</button>
     </header>
 
@@ -393,7 +393,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
     </article>
 
     <section className="cc-life-day-connections">
-      <button className="cc-life-day-section-head" onClick={() => setConnectionsOpen((value) => !value)}><span><Send/><span><small>CONEXÕES EM UM TOQUE</small><strong>Vincule sem procurar configurações escondidas</strong></span></span>{connectionsOpen ? <ChevronUp/> : <ChevronDown/>}</button>
+      <button className="cc-life-day-section-head" aria-expanded={connectionsOpen} onClick={() => setConnectionsOpen((value) => !value)}><span><Send/><span><small>OPCIONAL</small><strong>Conexões</strong></span></span>{connectionsOpen ? <ChevronUp/> : <ChevronDown/>}</button>
       {connectionsOpen && <div className="cc-life-day-connection-grid">
         <button onClick={connectHealth}><HeartPulse/><span><strong>Health Connect</strong><small>Samsung Health e Galaxy Watch</small></span><Check/></button>
         <button onClick={() => void connectTelegram()}><Send/><span><strong>Telegram</strong><small>concierge, check-ins e lembretes</small></span><Navigation/></button>
@@ -416,7 +416,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
     </section>
 
     <section className="cc-life-day-settings">
-      <button className="cc-life-day-section-head" onClick={() => setSettingsOpen((value) => !value)}><span><Clock3/><span><small>AJUSTES DA AVIAÇÃO</small><strong>Café, preparação e flexibilidade</strong></span></span>{settingsOpen ? <ChevronUp/> : <ChevronDown/>}</button>
+      <button className="cc-life-day-section-head" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><span><Clock3/><span><small>AJUSTES DA AVIAÇÃO</small><strong>Café, preparação e flexibilidade</strong></span></span>{settingsOpen ? <ChevronUp/> : <ChevronDown/>}</button>
       {settingsOpen && <div className="cc-life-day-settings-body">
         <label><span>Horário padrão do café</span><input type="time" value={settings.breakfastTime} onChange={(event) => setSettings({ ...settings, breakfastTime: event.target.value })}/></label>
         <label><span>Margem antes da apresentação</span><input type="number" min="60" max="240" step="15" value={settings.preparationMinutes} onChange={(event) => setSettings({ ...settings, preparationMinutes: Number(event.target.value) })}/><small>Inclui preparação e margem conservadora; a Saída Inteligente continua calculando o deslocamento real.</small></label>
