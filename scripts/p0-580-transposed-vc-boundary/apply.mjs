@@ -73,6 +73,11 @@ if (!source.includes(legendSectionMarker)) {
     `parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month)`,
     `parseGenericTripulationRecords(publishedText, header.crewName, header.year, header.month)`,
   );
+  // Preserve the same terminal legend boundary for the optional visual crew reader.
+  source = source.replace(
+    `parseGenericTripulationRecords(fullText, header.crewName, header.year, header.month, rows)`,
+    `parseGenericTripulationRecords(publishedText, header.crewName, header.year, header.month, publishedRows)`,
+  );
   console.log(`[crewcheck:prepare] applied ${legendSectionMarker}`);
 } else {
   console.log(`[crewcheck:prepare] ${legendSectionMarker} already applied; validating structure`);
@@ -92,6 +97,12 @@ requireFragments(source, legendSectionMarker, [
   'rescueFlightsFromFullText(mergedDays, publishedText',
   'parseGenericTripulationRecords(publishedText',
 ]);
+
+if (source.includes('fallbackMonth: number, visualRows?: VisualRow[]')) {
+  requireFragments(source, legendSectionMarker, [
+    'parseGenericTripulationRecords(publishedText, header.crewName, header.year, header.month, publishedRows)',
+  ]);
+}
 
 if (!source.includes(transposedDateMarker)) {
   const dateFilterAnchor = `.filter(item => item.str && item.x > 45 && item.y > 35 && !/^(LEGEND|<==)$/i.test(item.str));`;

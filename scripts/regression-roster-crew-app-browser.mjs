@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import http from 'node:http';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');const {chooseRosterFormat}=require('./lib/roster-format-controls.cjs');
-const dist=path.resolve('dist'),out=path.resolve('artifacts/SYNTHETIC-roster-crew-app');fs.mkdirSync(out,{recursive:true});
-const pdf=path.resolve('artifacts/SYNTHETIC-roster-crew/SYNTHETIC-crew-three-pages.pdf');assert(fs.existsSync(pdf),'run physical PDF fixture first');
+const dist=path.resolve('dist'),out=path.resolve(process.env.CREW_APP_EVIDENCE_DIR||'artifacts/SYNTHETIC-roster-crew-app');fs.mkdirSync(out,{recursive:true});
+const pdf=path.resolve(process.env.CREW_PDF_PATH||'artifacts/SYNTHETIC-roster-crew/SYNTHETIC-crew-three-pages.pdf');assert(fs.existsSync(pdf),'run physical PDF fixture first');
 const server=http.createServer((req,res)=>{const url=new URL(req.url,'http://localhost');const relative=url.pathname.startsWith('/assets/')?url.pathname:'/index.html';const file=path.resolve(dist,'.'+relative);if(!file.startsWith(dist+path.sep)||!fs.existsSync(file))return res.writeHead(404).end();res.setHeader('Content-Type',/\.m?js$/.test(file)?'application/javascript':file.endsWith('.css')?'text/css':file.endsWith('.woff2')?'font/woff2':'text/html');res.end(fs.readFileSync(file));});await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;let browser;
 try{
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});const context=await browser.newContext({viewport:{width:390,height:900},serviceWorkers:'block'});let external=0;
