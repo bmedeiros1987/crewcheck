@@ -145,7 +145,8 @@ test('privacy and store copy disclose the actual optional, non-medical architect
 test('Samsung fields in the disclosure exist in the source adapter', () => {
   for (const field of ['steps', 'activeMinutes', 'distanceMeters', 'caloriesBurned',
     'sleepMinutes', 'sleepStart', 'sleepEnd', 'sleepScore', 'energyScore']) {
-    assert.ok(samsung.includes(`json.put("${field}"`), `Undocumented source change: ${field}`);
+    assert.ok(samsung.includes(`json.put("${field}"`) || samsung.includes(`putNumber(json, "${field}"`),
+      `Undocumented source change: ${field}`);
   }
 });
 

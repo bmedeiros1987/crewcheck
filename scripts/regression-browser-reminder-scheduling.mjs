@@ -21,13 +21,13 @@ const runtime = ['bridge', 'notify', 'scheduleNotification'].map(name => sourceF
 const feedback = sourceFunction('client/src/components/v14313/LifeConciergePanel.tsx', 'scheduleReminders');
 let cases = 0;
 function check(name, run) { run(); cases++; console.log(`PASS ${name}`); }
-function setup({ permission = 'granted', supported = true, throws = false, native } = {}) {
+function setup({ permission = 'granted', supported = true, throws = false, native, currentSession = true } = {}) {
   const timers = [], notifications = [], messages = [];
   function Notification(title, options) { notifications.push({ title, ...options }); }
   Notification.permission = permission;
   const window = { setTimeout(callback, delay) { if (throws) throw new Error('timer unavailable'); timers.push({ callback, delay }); return timers.length; }, ...(native ? { CrewCheckNative: native } : {}) };
   if (supported) window.Notification = Notification;
-  const context = vm.createContext({ window, ...(supported ? { Notification } : {}), Date: { now: () => 1000 }, preferences: { remindersEnabled: true }, scheduleLifeRemindersForToday: () => 1, toast: { info: message => messages.push({ kind: 'info', message }), success: message => messages.push({ kind: 'success', message }) } });
+  const context = vm.createContext({ healthSession: { token: 'synthetic-session-only', isCurrent: () => currentSession }, window, ...(supported ? { Notification } : {}), Date: { now: () => 1000 }, preferences: { remindersEnabled: true }, scheduleLifeRemindersForToday: () => 1, toast: { info: message => messages.push({ kind: 'info', message }), success: message => messages.push({ kind: 'success', message }) } });
   vm.runInContext(runtime + '\n' + feedback, context);
   return { context, timers, notifications, messages, schedule: epoch => context.scheduleNotification('Reminder', 'Body', epoch) };
 }
@@ -58,4 +58,5 @@ check('zero scheduled is not reported as unnecessary', () => { const s = setup()
 check('missing permission feedback explains browser settings', () => { const s = setup({ permission: 'default' }); s.context.scheduleLifeRemindersForToday = () => 0; s.context.scheduleReminders(); assert.match(s.messages[0].message, /permitidas nas configurações do navegador/); });
 check('disabled reminder feedback', () => { const s = setup(); s.context.preferences.remindersEnabled = false; s.context.scheduleLifeRemindersForToday = () => 0; s.context.scheduleReminders(); assert.match(s.messages[0].message, /Ative os lembretes/); });
 check('native feedback retained', () => { const s = setup({ native: { scheduleNotification() { return true; } } }); s.context.scheduleReminders(); assert.equal(s.messages[0].kind, 'success'); assert.doesNotMatch(s.messages[0].message, /nesta aba/); });
+check('expired health session refuses scheduler and feedback', () => { const s = setup({ currentSession: false }); s.context.scheduleLifeRemindersForToday = () => { throw new Error('stale owner scheduled'); }; s.context.scheduleReminders(); assert.equal(s.messages.length, 0); assert.equal(s.timers.length, 0); });
 console.log(JSON.stringify({ status: 'PASS', cases, scope: 'actual-source runtime and feedback; no real APIs or notifications' }));
