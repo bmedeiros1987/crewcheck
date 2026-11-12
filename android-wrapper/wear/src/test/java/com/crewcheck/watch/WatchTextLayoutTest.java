@@ -258,6 +258,16 @@ public class WatchTextLayoutTest {
         }
     }
 
+    @Test public void confirmedHotelVanActionDoesNotClaimTrafficRefresh() throws Exception {
+        JSONObject raw = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson()
+                .put("state", "LEAVE_SOON").put("headline", "VAN DO HOTEL");
+        java.lang.reflect.Method method = MainActivity.class.getDeclaredMethod("actionLabel", WatchContextSnapshot.class);
+        method.setAccessible(true);
+        assertEquals("Sincronizar", method.invoke(null, WatchContextSnapshot.fromJson(raw)));
+        raw.put("headline", "HORA DE SAIR");
+        assertEquals("Atualizar trânsito", method.invoke(null, WatchContextSnapshot.fromJson(raw)));
+    }
+
     @Test public void compactAmbientDistinguishesApzFromLeaveTime() throws Exception {
         for (float scale : new float[]{1f, 1.5f, 2f}) {
             RuntimeEnvironment.setFontScale(scale);

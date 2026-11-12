@@ -43,9 +43,9 @@ final class ComplicationText {
                     "Dado de portão desatualizado. Abra o CrewCheck no celular.");
         }
         if (snapshot.displayedRemoteStand()) {
-            String longText = snapshot.boardingTime.isBlank()
+            String longText = snapshot.displayedGateBoardingTime().isBlank()
                     ? "REMOTA"
-                    : "REMOTA · Embarque " + snapshot.boardingTime;
+                    : "REMOTA · Embarque " + snapshot.displayedGateBoardingTime();
             return gateRendering("REMOTA", longText, "Embarque em posição remota.");
         }
         if (snapshot.displayedGate().isBlank()) {
@@ -55,7 +55,7 @@ final class ComplicationText {
 
         StringBuilder longText = new StringBuilder(snapshot.gateLabel());
         if (!snapshot.displayedGateFlight().isBlank()) longText.append(" · ").append(snapshot.displayedGateFlight());
-        if (!snapshot.boardingTime.isBlank()) longText.append(" · ").append(snapshot.boardingTime);
+        if (!snapshot.displayedGateBoardingTime().isBlank()) longText.append(" · ").append(snapshot.displayedGateBoardingTime());
 
         return gateRendering(
                 "P" + snapshot.displayedGate().replaceAll("\\s+", ""),

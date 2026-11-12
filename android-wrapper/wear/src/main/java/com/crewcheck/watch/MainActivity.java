@@ -820,7 +820,7 @@ public final class MainActivity extends FragmentActivity
         tabular(value);
         content.addView(value);
 
-        String flight = join(" · ", snapshot.displayedGateFlight(), snapshot.currentRoute);
+        String flight = join(" · ", snapshot.displayedGateFlight(), snapshot.displayedGateRoute());
         if (!flight.isBlank()) content.addView(text(flight, 10, MUTED, false, Gravity.CENTER));
 
         String status;
@@ -1417,7 +1417,7 @@ public final class MainActivity extends FragmentActivity
 
     private static String actionLabel(WatchContextSnapshot s) {
         return switch (s.state) {
-            case "LEAVE_SOON" -> "Atualizar trânsito";
+            case "LEAVE_SOON" -> "VAN DO HOTEL".equals(s.headline) ? "Sincronizar" : "Atualizar trânsito";
             case "BOARDING" -> "Ver embarque";
             case "CONNECTION" -> "Ver conexão";
             case "OVERNIGHT" -> "Ver pernoite";

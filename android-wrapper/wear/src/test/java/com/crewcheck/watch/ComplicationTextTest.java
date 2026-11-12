@@ -84,6 +84,7 @@ public final class ComplicationTextTest {
             ComplicationRendering rendering = ComplicationText.gate(value, NOW);
             assertEquals("PB26", rendering.shortText);
             assertTrue(rendering.longText.contains("QA123"));
+            assertTrue(!rendering.longText.contains(value.boardingTime)); // Current-flight time cannot migrate to next flight.
             assertTrue(rendering.description.contains("a confirmar"));
             assertEquals("--", ComplicationText.gate(value, value.validUntilEpochMs + 1).shortText);
         }
@@ -101,6 +102,25 @@ public final class ComplicationTextTest {
         raw.put("gate", "P5").put("currentFlight", "QA321").put("gateSource", "manual");
         assertEquals("P5", WatchContextSnapshot.fromJson(raw).displayedGate());
         raw.put("gate", "");
+        assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
+    }
+
+    @Test
+    public void unboundTopGateOrRemoteNeverBorrowsTheNextFlightIdentity() throws Exception {
+        JSONObject raw = hotelGate("OVERNIGHT", "QA123", "B26", "reported").toJson();
+        raw.put("gate", "9").put("currentRoute", "OTHER ROUTE");
+        WatchContextSnapshot conflict = WatchContextSnapshot.fromJson(raw);
+        assertEquals("9", conflict.displayedGate()); // Preserve legacy unbound display, not an occurrence claim.
+        assertEquals("", conflict.displayedGateFlight());
+        assertEquals("", conflict.displayedGateRoute());
+        assertEquals("", conflict.displayedGateBoardingTime());
+        assertTrue(!ComplicationText.gate(conflict, NOW).longText.contains("QA123"));
+        raw.put("gate", "").put("remoteStand", true);
+        WatchContextSnapshot remote = WatchContextSnapshot.fromJson(raw);
+        assertEquals("REMOTA", remote.displayedGate());
+        assertEquals("", remote.displayedGateFlight());
+        assertTrue(!ComplicationText.gate(remote, NOW).longText.contains(remote.boardingTime));
+        raw.put("remoteStand", false).put("gateSource", "unknown-source");
         assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
     }
 

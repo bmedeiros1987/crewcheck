@@ -344,7 +344,7 @@ public final class WatchContextSnapshot {
      * Never parse nextDetail prose, choose between multiple gates or extend snapshot validity.
      */
     private ScheduleItem nextGateItem() {
-        if (!currentFlight.isBlank() || nextFlight.isBlank()
+        if (!currentFlight.isBlank() || !gate.isBlank() || remoteStand || nextFlight.isBlank()
                 || !("OVERNIGHT".equals(state) || "LEAVE_SOON".equals(state))
                 || gateSource.isBlank()) return null;
         ScheduleItem selected = null;
@@ -370,6 +370,17 @@ public final class WatchContextSnapshot {
 
     public String displayedGateFlight() {
         return !currentFlight.isBlank() ? currentFlight : nextGateItem() == null ? "" : nextFlight;
+    }
+
+    public String displayedGateBoardingTime() {
+        // The top-level boarding clock belongs to the current flight only.
+        return currentFlight.isBlank() ? "" : boardingTime;
+    }
+
+    public String displayedGateRoute() {
+        if (!currentFlight.isBlank()) return currentRoute;
+        ScheduleItem item = nextGateItem();
+        return item == null ? "" : item.route;
     }
 
     public String gateLabel() {
