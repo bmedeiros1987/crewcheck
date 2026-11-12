@@ -42,25 +42,25 @@ final class ComplicationText {
             return gateRendering("--", "Portão desatualizado",
                     "Dado de portão desatualizado. Abra o CrewCheck no celular.");
         }
-        if (snapshot.remoteStand) {
-            String longText = snapshot.boardingTime.isBlank()
+        if (snapshot.displayedRemoteStand()) {
+            String longText = snapshot.displayedGateBoardingTime().isBlank()
                     ? "REMOTA"
-                    : "REMOTA · Embarque " + snapshot.boardingTime;
+                    : "REMOTA · Embarque " + snapshot.displayedGateBoardingTime();
             return gateRendering("REMOTA", longText, "Embarque em posição remota.");
         }
-        if (snapshot.gate.isBlank()) {
+        if (snapshot.displayedGate().isBlank()) {
             return gateRendering("--", "Portão não publicado",
                     "Portão ainda não publicado para este voo.");
         }
 
         StringBuilder longText = new StringBuilder(snapshot.gateLabel());
-        if (!snapshot.currentFlight.isBlank()) longText.append(" · ").append(snapshot.currentFlight);
-        if (!snapshot.boardingTime.isBlank()) longText.append(" · ").append(snapshot.boardingTime);
+        if (!snapshot.displayedGateFlight().isBlank()) longText.append(" · ").append(snapshot.displayedGateFlight());
+        if (!snapshot.displayedGateBoardingTime().isBlank()) longText.append(" · ").append(snapshot.displayedGateBoardingTime());
 
         return gateRendering(
-                "P" + snapshot.gate.replaceAll("\\s+", ""),
+                "P" + snapshot.displayedGate().replaceAll("\\s+", ""),
                 longText.toString(),
-                "Portão " + snapshot.gate + "."
+                "Portão " + snapshot.displayedGate() + (snapshot.gateReported() ? ". Informado pela fonte, a confirmar." : ".")
         );
     }
 

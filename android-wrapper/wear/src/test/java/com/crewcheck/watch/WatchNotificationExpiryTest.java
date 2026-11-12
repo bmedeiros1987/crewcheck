@@ -89,6 +89,40 @@ public class WatchNotificationExpiryTest {
         }
     }
 
+    @Test public void confirmedHotelVanUsesExistingGuardsAndDoesNotAlertForReportedGateChanges() throws Exception {
+        JSONObject raw = snapshot("LEAVE_SOON", "reported", "", NOW + 60_000L).toJson()
+                .put("headline", "VAN DO HOTEL").put("currentFlight", "").put("nextFlight", "QA123")
+                .put("leaveTime", "07:30").put("presentationTime", "").put("presentationPlace", "")
+                .put("trafficDetail", "APZ hotel 19/10 07:30 America/Recife")
+                .put("hotelPickup", "APZ hotel 19/10 07:30 America/Recife")
+                .put("schedule", new org.json.JSONArray().put(new JSONObject().put("id", "synthetic-next")
+                        .put("kind", "flight").put("title", "QA123").put("gate", "B26")));
+        WatchContextSnapshot van = WatchContextSnapshot.fromJson(raw);
+        WatchNotificationCenter.setEnabled(context, false);
+        WatchNotificationCenter.postForSnapshot(context, van, NOW);
+        assertEquals("disabled stays disabled", 0, count());
+        WatchNotificationCenter.setEnabled(context, true);
+        Shadows.shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(android.Manifest.permission.POST_NOTIFICATIONS);
+        WatchNotificationCenter.postForSnapshot(context, van, NOW);
+        assertEquals("permission is still required", 0, count());
+        Shadows.shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS);
+        WatchNotificationCenter.postForSnapshot(context, van, NOW + 60_001L);
+        assertEquals("late hotel notice stays expired", 0, count());
+        WatchNotificationCenter.postForSnapshot(context, van, NOW);
+        assertEquals(1, count());
+        Notification notice = Shadows.shadowOf(manager).getAllNotifications().get(0);
+        String body = notice.extras.getCharSequence(Notification.EXTRA_TEXT).toString();
+        assertTrue(body.contains("07:30"));
+        assertTrue(body.contains("APZ hotel"));
+        assertFalse(body.contains("PORTÃO"));
+        assertFalse(body.contains("B26"));
+        assertFalse(body.contains("apresentação"));
+        manager.cancelAll();
+        raw.getJSONArray("schedule").getJSONObject(0).put("gate", "B27");
+        WatchNotificationCenter.postForSnapshot(context, WatchContextSnapshot.fromJson(raw), NOW);
+        assertEquals("reported next gate alone cannot create a new hotel notice", 0, count());
+    }
+
     @Test public void rejectedExpiredNoticeDoesNotConsumeFreshNoticeFingerprint() throws Exception {
         WatchNotificationCenter.postForSnapshot(context, snapshot("BOARDING", "manual", "14", NOW - 1L), NOW);
         assertEquals(0, count());

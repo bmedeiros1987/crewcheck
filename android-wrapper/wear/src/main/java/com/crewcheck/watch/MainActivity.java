@@ -806,7 +806,7 @@ public final class MainActivity extends FragmentActivity
         eyebrow.setPadding(0, dp(4), 0, dp(4));
         content.addView(eyebrow);
 
-        String gate = snapshot == null ? "" : snapshot.remoteStand ? "REMOTA" : snapshot.gate;
+        String gate = snapshot == null ? "" : snapshot.displayedGate();
         if (snapshot == null || snapshot.isStale(now) || gate.isBlank()) {
             TextView empty = text(snapshot != null && snapshot.isStale(now)
                     ? "Dado de portão desatualizado. Confira no celular."
@@ -820,7 +820,7 @@ public final class MainActivity extends FragmentActivity
         tabular(value);
         content.addView(value);
 
-        String flight = join(" · ", firstNonBlank(snapshot.currentFlight, snapshot.nextFlight), snapshot.currentRoute);
+        String flight = join(" · ", snapshot.displayedGateFlight(), snapshot.displayedGateRoute());
         if (!flight.isBlank()) content.addView(text(flight, 10, MUTED, false, Gravity.CENTER));
 
         String status;
@@ -939,7 +939,7 @@ public final class MainActivity extends FragmentActivity
     private Primary primaryFor(WatchContextSnapshot s) {
         return switch (s.state) {
             case "LEAVE_SOON" -> new Primary(
-                    "HORA DE SAIR",
+                    "VAN DO HOTEL".equals(s.headline) ? "VAN DO HOTEL" : "HORA DE SAIR",
                     s.leaveTime.isBlank()
                             ? (s.headline.startsWith("SAIR EM") ? s.headline.replace("SAIR EM ", "") : firstNonBlank(s.primaryTime, s.headline))
                             : s.leaveTime,
@@ -1018,7 +1018,7 @@ public final class MainActivity extends FragmentActivity
         }
 
         if (!s.gateLabel().isBlank()) {
-            facts.add(new Fact("PORTÃO", s.remoteStand ? "REMOTA" : s.gate, "", WARNING, MODE_GATE));
+            facts.add(new Fact("PORTÃO", s.displayedGate(), s.displayedGateFlight(), WARNING, MODE_GATE));
         }
 
         if (!s.eta.isBlank() && "IN_FLIGHT".equals(s.state)) {
@@ -1417,7 +1417,7 @@ public final class MainActivity extends FragmentActivity
 
     private static String actionLabel(WatchContextSnapshot s) {
         return switch (s.state) {
-            case "LEAVE_SOON" -> "Atualizar trânsito";
+            case "LEAVE_SOON" -> "VAN DO HOTEL".equals(s.headline) ? "Sincronizar" : "Atualizar trânsito";
             case "BOARDING" -> "Ver embarque";
             case "CONNECTION" -> "Ver conexão";
             case "OVERNIGHT" -> "Ver pernoite";

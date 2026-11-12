@@ -74,6 +74,65 @@ public final class ComplicationTextTest {
         assertEquals("PORTÃO", rendering.title);
     }
 
+    @Test
+    public void hotelContextShowsOnlyTheUnambiguousProjectedNextGate() throws Exception {
+        for (String state : new String[]{"OVERNIGHT", "LEAVE_SOON"}) {
+            WatchContextSnapshot value = hotelGate(state, "QA123", "B26", "reported");
+            assertEquals("", value.gate); // Never changes the current-flight payload.
+            assertEquals("B26", value.displayedGate());
+            assertEquals("QA123", value.displayedGateFlight());
+            ComplicationRendering rendering = ComplicationText.gate(value, NOW);
+            assertEquals("PB26", rendering.shortText);
+            assertTrue(rendering.longText.contains("QA123"));
+            assertTrue(!rendering.longText.contains(value.boardingTime)); // Current-flight time cannot migrate to next flight.
+            assertTrue(rendering.description.contains("a confirmar"));
+            assertEquals("--", ComplicationText.gate(value, value.validUntilEpochMs + 1).shortText);
+        }
+        assertEquals("", hotelGate("OVERNIGHT", "OTHER", "B26", "reported").displayedGate());
+        assertEquals("", hotelGate("OFF_DUTY", "QA123", "B26", "reported").displayedGate());
+        assertEquals("", hotelGate("OVERNIGHT", "QA123", "B26", "").displayedGate());
+        assertEquals("REMOTA", ComplicationText.gate(hotelGate("OVERNIGHT", "QA123", "REMOTA", "reported"), NOW).shortText);
+    }
+
+    @Test
+    public void hotelGateCannotChooseBetweenOccurrencesOrReplaceCurrentGate() throws Exception {
+        JSONObject raw = hotelGate("OVERNIGHT", "QA123", "B26", "reported").toJson();
+        raw.getJSONArray("schedule").put(new JSONObject().put("id", "second-occurrence").put("kind", "flight").put("title", "QA123").put("gate", ""));
+        assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
+        raw.put("gate", "P5").put("currentFlight", "QA321").put("gateSource", "manual");
+        assertEquals("P5", WatchContextSnapshot.fromJson(raw).displayedGate());
+        raw.put("gate", "");
+        assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
+    }
+
+    @Test
+    public void unboundTopGateOrRemoteNeverBorrowsTheNextFlightIdentity() throws Exception {
+        JSONObject raw = hotelGate("OVERNIGHT", "QA123", "B26", "reported").toJson();
+        raw.put("gate", "9").put("currentRoute", "OTHER ROUTE");
+        WatchContextSnapshot conflict = WatchContextSnapshot.fromJson(raw);
+        assertEquals("9", conflict.displayedGate()); // Preserve legacy unbound display, not an occurrence claim.
+        assertEquals("", conflict.displayedGateFlight());
+        assertEquals("", conflict.displayedGateRoute());
+        assertEquals("", conflict.displayedGateBoardingTime());
+        assertTrue(!ComplicationText.gate(conflict, NOW).longText.contains("QA123"));
+        raw.put("gate", "").put("remoteStand", true);
+        WatchContextSnapshot remote = WatchContextSnapshot.fromJson(raw);
+        assertEquals("REMOTA", remote.displayedGate());
+        assertEquals("", remote.displayedGateFlight());
+        assertTrue(!ComplicationText.gate(remote, NOW).longText.contains(remote.boardingTime));
+        raw.put("remoteStand", false).put("gateSource", "unknown-source");
+        assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
+    }
+
+    private static WatchContextSnapshot hotelGate(String state, String next, String gate, String source) throws Exception {
+        JSONObject raw = WatchContextSnapshot.demo(NOW).toJson()
+                .put("state", state).put("currentFlight", "").put("gate", "").put("remoteStand", false)
+                .put("nextFlight", next).put("gateSource", source)
+                .put("schedule", new org.json.JSONArray().put(new JSONObject().put("id", "synthetic-occurrence")
+                        .put("kind", "flight").put("title", "QA123").put("gate", gate)));
+        return WatchContextSnapshot.fromJson(raw);
+    }
+
     // --- CrewLife ------------------------------------------------------------------------
 
     @Test
