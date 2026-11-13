@@ -25,7 +25,7 @@ function dayLabel(iso: string, options: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat('pt-BR', { ...options, timeZone: 'UTC' }).format(new Date(`${iso}T12:00:00Z`));
 }
 /** Read-only projection of the same events used by RosterLaunchView. */
-export function HomeRosterPreview({ events, onNavigate }: { events: HomeRosterEvent[]; onNavigate: (view: 'roster' | 'import') => void }) {
+export function HomeRosterPreview({ events, operationalEvents = events, conflictDates = [], onNavigate }: { events: HomeRosterEvent[]; operationalEvents?: HomeRosterEvent[]; conflictDates?: string[]; onNavigate: (view: 'roster' | 'import') => void }) {
   const [now, setNow] = useState(() => Date.now());
   const today = rosterInstantIso(new Date(now), ROSTER_DISPLAY_TIME_ZONE)!;
   const [selected, setSelected] = useState(today);
@@ -80,5 +80,6 @@ export function HomeRosterPreview({ events, onNavigate }: { events: HomeRosterEv
     <footer>Horários publicados. Consulte sempre a escala e as comunicações oficiais da companhia.</footer>
   </section>
   {/* A Escala rápida não mostra portão; o próximo voo fica logo abaixo dela. */}
-  <NextFlightGateCard events={events}/></>;
+  {conflictDates.some(date => date >= today) && <p className="cc-home-roster-unknown" role="status">Há datas com escalas diferentes. O próximo voo segue a escala ativa nessas datas.</p>}
+  <NextFlightGateCard events={operationalEvents}/></>;
 }
