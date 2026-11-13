@@ -220,7 +220,8 @@ type ZeroLeg = {
 type BundleState = { roster: CrewRoster; compliance: ComplianceResult | null; source: string };
 type QuickActions = {
   upload: () => void;
-  pdf: () => void;
+  pdf: () => void | Promise<void>;
+  pdfFridge: () => void | Promise<void>;
   ics: () => void;
   whatsapp: () => void;
   telegram: () => void;
@@ -4604,7 +4605,13 @@ function CalendarToolsView({ actions, bundle, gym }: { actions: QuickActions; bu
   return <><Brand back/><section className="cz-panel-head"><h1>Calendário</h1><p>Escolha o calendário de destino, sincronize a escala e mantenha ICS como fallback.</p></section><section className="cz-toolbox"><h2>Calendário de destino</h2><p>{settings.selectedCalendarName || settings.selectedCalendarId || 'Calendário principal'}</p><div className="cz-tool-actions"><button onClick={loadCalendars} disabled={busy}><CalendarDays/> Carregar calendários</button><button onClick={syncSelected} disabled={busy}><CalendarDays/> Sincronizar selecionado</button><button onClick={actions.ics}>Baixar ICS</button></div>{calendars.length > 0 && <select className="cz-calendar-select" value={settings.selectedCalendarId} onChange={(event) => selectCalendar(event.target.value)}>{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' · principal' : ''}</option>)}</select>}</section>{isAdmin() && <section className="cz-diagnostics">{googleCalendarIntegrationDiagnostics().map((d: any) => <p key={d.label}><strong>{d.label}</strong><span>{d.value}</span></p>)}</section>}</>;
 }
 function ExportToolsView({ actions }: { actions: QuickActions }) {
-  return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, compartilhamento nativo, e-mail interno com anexo, WhatsApp, Telegram e calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button onClick={actions.pdf}>Baixar PDF</button><button onClick={actions.sharePdf}>Compartilhar PDF</button><button onClick={actions.email}>E-mail com PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const requestPdf = async (run: QuickActions['pdf']) => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try { await run(); } finally { setPdfBusy(false); }
+  };
+  return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, compartilhamento nativo, e-mail interno com anexo, WhatsApp, Telegram e calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button disabled={pdfBusy} onClick={() => requestPdf(actions.pdf)}>PDF regular</button><button disabled={pdfBusy} onClick={() => requestPdf(actions.pdfFridge)}>PDF geladeira</button><button onClick={actions.sharePdf}>Compartilhar PDF</button><button onClick={actions.email}>E-mail com PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
 }
 
 function wakeupLeadMinutes(): number {
@@ -5904,7 +5911,8 @@ export default function Home() {
 
   const actions: QuickActions = {
     upload: () => fileRef.current?.click(),
-    pdf: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym); pdf.download(); toast.success(`PDF gerado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF agora.'); } },
+    pdf: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym); pdf.download(); toast.message(`Download solicitado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF agora.'); } },
+    pdfFridge: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym, { mode: 'fridge' }); pdf.download(); toast.message(`Download solicitado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF geladeira agora.'); } },
     ics: () => { try { const ics = generateICalendar(bundle.roster, gym); downloadCalendarFile(ics, `crewcheck-${bundle.roster.year}-${String(bundle.roster.month).padStart(2,'0')}.ics`); toast.success('Arquivo ICS gerado.'); } catch { toast.error('Não consegui gerar o ICS.'); } },
     whatsapp: () => { try { copyCurrentSummarySilently(); shareToWhatsApp(bundle.roster, compliance); toast.success('Resumo enviado para o WhatsApp.'); } catch { toast.error('Não consegui abrir WhatsApp.'); } },
     telegram: () => { openTelegramBinding(); },

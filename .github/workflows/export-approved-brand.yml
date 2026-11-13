@@ -7,6 +7,7 @@ on:
       - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/lib/brand.ts'
       - 'client/src/lib/pdfExport.ts'
+      - 'client/src/lib/rosterFridgePdf.ts'
       - 'client/src/lib/blobDownload.ts'
       - 'client/src/lib/calendarExport.ts'
       - 'client/src/components/v139/api.ts'
@@ -17,6 +18,8 @@ on:
       - 'scripts/regression-blob-download.mjs'
       - 'scripts/regression-blob-download-browser.mjs'
       - 'scripts/verify-export-brand-pdfs.py'
+      - 'scripts/regression-roster-pdf-modes.mjs'
+      - 'scripts/verify-roster-pdf-modes.py'
       - '.github/workflows/export-approved-brand.yml'
   workflow_dispatch:
 jobs:
@@ -61,6 +64,8 @@ jobs:
           (cd "$RUNNER_TEMP/export-base" && EXPORT_BASELINE=1 node scripts/regression-export-approved-brand.mjs)
           node scripts/regression-export-approved-brand.mjs
           python scripts/verify-export-brand-pdfs.py artifacts/export-brand --baseline "$RUNNER_TEMP/export-base/artifacts/export-brand"
+          node scripts/regression-roster-pdf-modes.mjs
+          python scripts/verify-roster-pdf-modes.py artifacts/pdf-modes
       - name: Prepare production sources and repeat artifact validation
         env:
           EXPORT_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/export-browser/package.json
@@ -74,6 +79,8 @@ jobs:
           (cd "$RUNNER_TEMP/export-base" && node scripts/v139/apply.mjs && EXPORT_BASELINE=1 node scripts/regression-export-approved-brand.mjs)
           node scripts/regression-export-approved-brand.mjs
           python scripts/verify-export-brand-pdfs.py artifacts/export-brand --baseline "$RUNNER_TEMP/export-base/artifacts/export-brand"
+          node scripts/regression-roster-pdf-modes.mjs
+          python scripts/verify-roster-pdf-modes.py artifacts/pdf-modes
           node scripts/regression-approved-brand-assets.mjs
       - uses: actions/upload-artifact@v4
         if: always()
@@ -83,3 +90,4 @@ jobs:
             artifacts/export-brand/*.pdf
             artifacts/export-brand/*.png
             artifacts/export-brand/pdf-validation.json
+            artifacts/pdf-modes/

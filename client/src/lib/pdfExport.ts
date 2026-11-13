@@ -1,4 +1,5 @@
 import { requestBlobDownload } from './blobDownload';
+import { buildRosterFridgePdf } from './rosterFridgePdf';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { CrewRoster } from './pdfParser';
@@ -242,7 +243,13 @@ export async function exportReport(
   roster: CrewRoster,
   compliance: ComplianceResult,
   gymRecommendations: GymRecommendation[],
+  options: { mode?: 'regular' | 'fridge' } = {},
 ): Promise<CrewCheckPdfExportResult> {
+  if (options.mode && !['regular', 'fridge'].includes(options.mode)) throw new Error('Formato de PDF inválido.');
+  if (options.mode === 'fridge') {
+    const doc = buildRosterFridgePdf(roster, await crewCheckLogoDataUrl());
+    return pdfExportResult(doc, `CrewCheck_${roster.year}-${String(roster.month).padStart(2, '0')}_geladeira.pdf`);
+  }
   const logo = await crewCheckLogoDataUrl();
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -427,6 +434,10 @@ export async function exportReport(
 
   const safeName = String(roster.crewName || 'Tripulante').split(' ')[0].replace(/[^A-Za-z0-9_-]/g, '') || 'Tripulante';
   const fileName = `CrewCheck_${MONTHS[roster.month - 1]}_${roster.year}_${safeName}.pdf`;
+  return pdfExportResult(doc, fileName);
+}
+
+function pdfExportResult(doc: jsPDF, fileName: string): CrewCheckPdfExportResult {
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
   rememberLastPdfExport(fileName, blob);
