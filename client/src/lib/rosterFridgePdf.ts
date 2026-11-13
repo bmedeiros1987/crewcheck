@@ -22,8 +22,9 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   const details: string[][] = [];
   const describe = (day: RosterDay): string[] => [
     String(day.pairingCode || day.type || 'Atividade não informada'),
-    ...day.legs.map(leg => `${leg.flightNumber || 'Voo'} ${leg.origin || '?'}-${leg.destination || '?'} ${leg.departureTime || '--:--'} / ${leg.arrivalTime || '--:--'}${leg.isNextDay ? ' (+1)' : ''}`),
+    ...day.legs.map(leg => `${leg.flightNumber || 'Voo'} · ${String(leg.workType || '').trim() || 'Função não informada'} · ${leg.origin || '?'}-${leg.destination || '?'} ${leg.departureTime || '--:--'} / ${leg.arrivalTime || '--:--'}${leg.isNextDay ? ' (+1)' : ''}`),
     ...(day.dutyReport && day.dutyReportSource === 'published' ? [`APZ ${day.dutyReport}`] : []),
+    ...(day.dutyDebrief && day.dutyDebriefSource === 'published' ? [`Fim ${day.dutyDebrief}`] : []),
   ];
   const lastDay = new Date(Date.UTC(roster.year, roster.month, 0)).getUTCDate();
   for (const day of roster.days) {

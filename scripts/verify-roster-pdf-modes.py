@@ -17,6 +17,8 @@ for mode in ['regular', 'fridge']:
         assert doc[0].rect.width > doc[0].rect.height
         assert '10/2032' in text and 'VC' in text and 'Sem registro' not in text
         assert 'Ver detalhes no anexo' in text
+        assert 'PS' in text and 'OP' in text and 'Função não informada' in text
+        assert 'APZ 05:00' in text and 'Fim 21:00' in text
         for n in range(12):
             assert f'QA{9900+n}' in text, f'flight lost: {n}'
         assert len(doc) >= 2, 'overflow must remain in a readable appendix'
