@@ -98,7 +98,7 @@ assert.ok(snippet.includes('Não tenho uma cidade/UF confirmada para pesquisar a
 assert.ok(snippet.includes('filterWellhubPartnersForLocation(candidatePartners'), 'Concierge precisa filtrar geograficamente antes de responder');
 assert.ok(snippet.includes('Não vou usar o aeroporto da escala como substituto'), 'GPS recente sem cidade deve falhar fechado');
 assert.ok(snippet.includes('“academia em Canoas”'), 'mensagem de recuperação deve anunciar um caminho implementado');
-assert.ok(snippet.includes('Não vou sugerir unidade de outra cidade/estado'), 'falha geográfica deve ser explícita e fail-closed');
+assert.ok(snippet.includes('Catálogo parcial: unidades não confirmadas'), 'catálogo incompleto não comprova ausência de unidades');
 assert.ok(snippet.includes('Plano Wellhub atualizado para'), 'mudança de plano deve ser confirmada ao usuário');
 assert.ok(snippet.includes('Modalidade Wellhub atualizada para'), 'mudança de modalidade deve ser confirmada ao usuário');
 assert.ok(snippet.includes('Plano mínimo: ${minimumPlanLabel} · compatível com ${userPlanLabel} pelo cadastro'), 'resultado deve separar plano do usuário do plano mínimo da unidade');
