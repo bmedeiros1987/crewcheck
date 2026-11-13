@@ -15,6 +15,7 @@ on:
       - 'scripts/regression-radar-paid-ledger-mysql.mjs'
       - 'docs/radar-cirium-flightaware-sequential.md'
       - 'shared/radar-field-evidence.mjs'
+      - 'shared/airport-timezones.mjs'
       - 'server/cirium-flight-adapter.mjs'
       - 'server/radar-occurrence-identity.mjs'
       - 'server/radar-field-provenance.mjs'
