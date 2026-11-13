@@ -1,3 +1,4 @@
+import './regression-wellhub-closing-soon.mjs';
 import assert from 'node:assert/strict';
 import { wellhubOpeningStatus as status, prioritizeWellhubOpening } from '../shared/wellhub-hours.mjs';
 import { searchVerifiedWellhub } from '../server/v14407/wellhub.mjs';
@@ -5,12 +6,12 @@ const unit = { verifiedAt:'2026-10-09',timeZone:'America/Fortaleza',openingHours
 const at = (iso,p=unit) => status(p,new Date(iso)).status;
 assert.equal(at('2026-10-10T10:59:59Z'),'closed');
 assert.equal(at('2026-10-10T11:00:00Z'),'open');
-assert.equal(at('2026-10-10T18:59:59Z'),'open');
+assert.equal(at('2026-10-10T18:59:59Z'),'closing-soon');
 assert.equal(at('2026-10-10T19:00:00Z'),'closed');
 assert.equal(at('2026-10-11T11:00:00Z'),'open');
 assert.equal(at('2026-10-11T15:00:00Z'),'closed');
 const overnight={...unit,openingHours:['sab 22:00-02:00','dom 08:00-12:00']};
-assert.equal(at('2026-10-11T04:59:59Z',overnight),'open');
+assert.equal(at('2026-10-11T04:59:59Z',overnight),'closing-soon');
 assert.equal(at('2026-10-11T05:00:00Z',overnight),'closed');
 const pauses={...unit,openingHours:['sab 08:00-12:00, 14:00-18:00']};
 assert.equal(at('2026-10-10T15:00:00Z',pauses),'closed');
@@ -26,7 +27,7 @@ for(const locationText of ['Fortaleza CE','Brasília DF']) {
  assert.ok(partners.length);
  assert.ok(partners.every(p=>p.state===(locationText==='Fortaleza CE'?'CE':'DF')));
  assert.ok(partners.every(p=>p.minimumPlan!=='gold'));
- assert.equal(partners[0].openingStatus.status,'open');
+ assert.equal(partners[0].openingStatus.status,locationText==='Fortaleza CE'?'open':'closing-soon');
 }
 console.log('Wellhub hours: unit IANA, current instant, weekends, 24h, midnight, pauses, boundaries, holiday/stale unknown, stable rank after filters: PASS');
 const { subscribeWellhubClock } = await import('../shared/wellhub-clock.mjs');

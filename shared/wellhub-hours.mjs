@@ -63,13 +63,35 @@ export function wellhubOpeningStatus(partner, now = new Date()) {
   previousDate.setUTCDate(previousDate.getUTCDate() - 1);
   if (nationalHoliday(previousDate.toISOString().slice(0,10)) && intervals.some(({days,start,end}) => end < start && days.has((weekday+6)%7) && current < end)) return unknown('intervalo herdado de feriado não confirmado');
   if (!partner.is24Hours && !intervals.some(({days,start,end}) => days.has(weekday) || end < start && days.has((weekday+6)%7) && current < end)) return unknown('dia sem horário cadastrado');
-  const open = partner.is24Hours === true || intervals.some(({days,start,end}) => end > start
-    ? days.has(weekday) && current >= start && current < end
-    : days.has(weekday) && current >= start || days.has((weekday+6)%7) && current < end);
-  return { status: open ? 'open' : 'closed', label: open ? '🟢 Aberta pelo horário cadastrado' : '🔴 Fechada pelo horário cadastrado', reason: 'não é confirmação em tempo real', timeZone: partner.timeZone };
+  // Join touching/overlapping weekly intervals before estimating closure.
+  // A split at midnight or an overlapping row is not a real closing time.
+  const windows = [];
+  for (let offset = -1; offset <= 7; offset++) {
+    for (const { days, start, end } of intervals) {
+      if (days.has((weekday + offset + 7) % 7)) {
+        windows.push([offset * 1440 + start, offset * 1440 + end + (end < start ? 1440 : 0)]);
+      }
+    }
+  }
+  windows.sort((a, b) => a[0] - b[0]);
+  const joined = [];
+  for (const window of windows) {
+    const last = joined.at(-1);
+    if (last && window[0] <= last[1]) last[1] = Math.max(last[1], window[1]);
+    else joined.push([...window]);
+  }
+  const currentWindow = joined.find(([start, end]) => current >= start && current < end);
+  const open = partner.is24Hours === true || Boolean(currentWindow);
+  const remaining = currentWindow ? currentWindow[1] - current : null;
+  const closingSoon = open && !partner.is24Hours && remaining > 0 && remaining <= 30;
+  return { status: closingSoon ? 'closing-soon' : open ? 'open' : 'closed',
+    label: closingSoon ? `🟡 Fecha em breve · em ${remaining} min pelo horário cadastrado`
+      : open ? '🟢 Aberta pelo horário cadastrado' : '🔴 Fechada pelo horário cadastrado',
+    reason: 'não é confirmação em tempo real', timeZone: partner.timeZone };
+
 }
 export function prioritizeWellhubOpening(partners, now = new Date()) {
-  const rank = { open: 0, unknown: 1, closed: 2 };
+  const rank = { open: 0, 'closing-soon': 0, unknown: 1, closed: 2 };
   return partners.map((partner, index) => ({ partner: { ...partner, openingStatus: wellhubOpeningStatus(partner, now) }, index }))
     .sort((a,b) => rank[a.partner.openingStatus.status]-rank[b.partner.openingStatus.status] || a.index-b.index).map(x => x.partner);
 }
