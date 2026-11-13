@@ -37,7 +37,9 @@ assert.match(home, /openRosterDisplayWindow\(primary\)/);
 
 const cockpitRender = nearby(home, "{view === 'cockpit' && <Cockpit", 900);
 const cockpitTag = cockpitRender.match(/<Cockpit[\s\S]*?\/>/)?.[0] || '';
-expectAll('HOME usa histórico cercado, compliance continua na competência ativa', cockpitTag, ['<Cockpit', 'events={rosterEvents}', 'compliance={reviewableCompliance(compliance, bundle.roster)}']);
+expectAll('HOME separa autoridade operacional e navegação histórica, compliance continua ativo', cockpitTag, ['<Cockpit', 'events={homeOperationalEvents}', 'displayEvents={rosterEvents}', 'conflictDates={homeOperationalProjection.conflictDates}', 'compliance={reviewableCompliance(compliance, bundle.roster)}']);
+assert.match(home, /homeOperationalRoster\(bundle\.roster, rosterWindowPrimaryRef\.current === bundle\.roster \? rosterWindow : bundle\.roster\)/, '[p0-multichannel] projeção operacional preserva identidade da publicação ativa e fence do histórico');
+assert.match(home, /<HomeRosterPreview events=\{displayEvents\} operationalEvents=\{events\}/, '[p0-multichannel] navegação histórica não alimenta diretamente o próximo voo');
 assert.ok(!cockpitTag.includes('events={events}'), '[p0-multichannel] HOME não pode perder os dias relevantes após ativar outro mês');
 assert.match(home, /const flightEvent = nextRealFlight\(events\);/);
 assert.match(home, /const flightSurfaceEvent = flightSurfaceContext\?\.programId \? contextualFlightEvent : flightEvent/);
