@@ -9,6 +9,10 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-canonical-'));
 const tempFile = path.join(tempDir, 'canonicalRoster.cjs');
 fs.writeFileSync(tempFile, compiled);
+// canonicalRoster imports ./rosterContinuity at runtime; emit it beside the module under test.
+fs.writeFileSync(path.join(tempDir, 'rosterContinuity.js'), ts.transpileModule(
+  fs.readFileSync('client/src/lib/rosterContinuity.ts', 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText);
 const require = createRequire(import.meta.url);
 const { buildCanonicalRosterEvents, selectNextRosterEvent } = require(tempFile);
 

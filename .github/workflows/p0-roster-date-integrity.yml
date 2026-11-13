@@ -11,6 +11,11 @@ on:
       - 'scripts/v139/apply.mjs'
       - 'client/src/pages/Home.tsx'
       - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'scripts/regression-canonical-roster.mjs'
+      - 'scripts/regression-canonical-no-past-fallback.mjs'
+      - 'scripts/regression-canonical-published-range.mjs'
+      - 'scripts/regression-canonical-roster-period.mjs'
       - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/pdfParser.ts'
       - 'server/rosterParser.mjs'
@@ -32,3 +37,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Prepare canonical source and run P0 date regression
         run: node scripts/v139/apply.mjs && node scripts/regression-p0-roster-date-integrity.mjs && node scripts/regression-v14-3-81-operational-date-anchor.mjs
+      - name: Canonical roster chronology, period and published range
+        run: |
+          node scripts/regression-canonical-roster.mjs
+          node scripts/regression-canonical-no-past-fallback.mjs
+          node scripts/regression-canonical-published-range.mjs
+          node scripts/regression-canonical-roster-period.mjs
