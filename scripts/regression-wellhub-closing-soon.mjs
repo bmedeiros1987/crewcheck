@@ -23,3 +23,10 @@ assert.equal(at('2033-01-04T02:59:00Z',{...unit,is24Hours:true,openingHours:['se
 const sorted=prioritizeWellhubOpening([{...unit,id:'closed',openingHours:['seg 06:00-20:00']},{...unit,id:'soon'},{...unit,id:'unknown',openingHours:[]}],new Date('2033-01-04T01:59:00Z'));
 assert.deepEqual(sorted.map(p=>p.id),['soon','unknown','closed']);
 console.log('PASS synthetic closing-soon: 30-minute/exact-close, local zone, overnight, contiguous/overlap, pause, missing/stale/holiday, 24h and stable ranking',process.env.TZ);
+
+const berlin={...unit,verifiedAt:'2033-03-26',timeZone:'Europe/Berlin',openingHours:['sab 22:00-03:10','dom 22:00-23:00']};
+assert.equal(at('2033-03-27T00:45:00Z',berlin).status,'unknown','spring gap cannot publish civil minutes as elapsed time');
+const fold={...berlin,verifiedAt:'2033-10-28',openingHours:['sab 22:00-02:10','dom 22:00-23:00']};
+assert.equal(at('2033-10-30T00:05:00Z',fold).status,'unknown','first repeated local hour is ambiguous');
+assert.equal(at('2033-10-30T01:05:00Z',fold).status,'unknown','second repeated local hour is ambiguous');
+console.log('PASS unit-zone DST gap/fold: no false elapsed-minute precision');

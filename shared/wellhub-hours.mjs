@@ -83,6 +83,17 @@ export function wellhubOpeningStatus(partner, now = new Date()) {
   const currentWindow = joined.find(([start, end]) => current >= start && current < end);
   const open = partner.is24Hours === true || Boolean(currentWindow);
   const remaining = currentWindow ? currentWindow[1] - current : null;
+  // Civil-minute subtraction is not elapsed time across a DST gap/fold.
+  // Fail closed near an offset transition rather than publish false precision.
+  if (open && !partner.is24Hours) {
+    const offset = instant => new Intl.DateTimeFormat('en', { timeZone: partner.timeZone, timeZoneName: 'longOffset' })
+      .formatToParts(instant).find(part => part.type === 'timeZoneName')?.value;
+    const observed = offset(now);
+    if (offset(new Date(now.getTime() - 120 * 60000)) !== observed
+      || offset(new Date(now.getTime() + Math.min(remaining + 120, 360) * 60000)) !== observed) {
+      return unknown('mudança de fuso próxima; fechamento por instante não confirmado');
+    }
+  }
   const closingSoon = open && !partner.is24Hours && remaining > 0 && remaining <= 30;
   return { status: closingSoon ? 'closing-soon' : open ? 'open' : 'closed',
     label: closingSoon ? `🟡 Fecha em breve · em ${remaining} min pelo horário cadastrado`
