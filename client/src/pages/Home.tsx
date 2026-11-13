@@ -1600,18 +1600,31 @@ function telegramConciergeIdentity() {
     conciergeKey,
   };
 }
-async function syncRosterWithTelegramConcierge(roster: CrewRoster, source = 'CrewCheck app') {
+let conciergeRosterSyncSerial = 0;
+async function syncRosterWithTelegramConcierge(roster: CrewRoster, source = 'CrewCheck app', isCurrent: () => boolean = () => true) {
   if (!Array.isArray(roster?.days) || !roster.days.length) throw new Error('Importe uma escala antes de sincronizar.');
-  const response = await fetch('/api/telegram/roster-sync', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    credentials: 'include',
-    cache: 'no-store',
-    body: JSON.stringify({ ...telegramConciergeIdentity(), roster, source }),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.ok) throw new Error(payload?.message || 'Não consegui sincronizar a escala com o Concierge.');
-  return payload;
+  const session = captureAuthSession(), serial = ++conciergeRosterSyncSerial;
+  const revision = JSON.stringify(roster), stored = sessionStorage.getItem('crewcheck_roster');
+  let publicationCurrent = true;
+  const invalidate = () => { publicationCurrent = false; };
+  window.addEventListener('crewcheck:roster-updated', invalidate);
+  const current = () => publicationCurrent && session.isCurrent() && serial === conciergeRosterSyncSerial
+    && isCurrent() && revision === JSON.stringify(roster) && stored === sessionStorage.getItem('crewcheck_roster');
+  try {
+    const response = await fetch('/api/telegram/roster-sync', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'include', cache: 'no-store',
+      body: JSON.stringify({ ...telegramConciergeIdentity(), roster, source }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!current()) return null;
+    if (!response.ok || payload?.ok !== true || payload.persistence !== 'confirmed') throw Error('CONCIERGE_ROSTER_SYNC_UNCONFIRMED');
+    return payload;
+  } catch {
+    if (!current()) return null;
+    throw new Error('Sincronização do Concierge não confirmada. A escala continua no app.');
+  } finally {
+    window.removeEventListener('crewcheck:roster-updated', invalidate);
+  }
 }
 async function fetchTelegramConciergeRoster() {
   const identity = telegramConciergeIdentity();
@@ -5175,6 +5188,9 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
   const [telegramDiagnostic, setTelegramDiagnostic] = useState<any>(null);
   const [question, setQuestion] = useState('/proximo');
   const [answer, setAnswer] = useState('');
+  const syncBundleRef = useRef(bundle), syncMounted = useRef(false), syncRequest = useRef(0);
+  syncBundleRef.current = bundle;
+  useEffect(() => { syncMounted.current = true; return () => { syncMounted.current = false; }; }, []);
   const [busy, setBusy] = useState('');
   const hasLocalRoster = Array.isArray(bundle.roster?.days) && bundle.roster.days.length > 0;
   const commands = [
@@ -5188,7 +5204,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
     ['/rotina', 'Rotina sugerida'],
   ];
 
-  async function refresh() {
+  async function refresh(canPresent: () => boolean = () => true) {
     try {
       const identity = telegramConciergeIdentity();
       const params = new URLSearchParams(identity);
@@ -5197,24 +5213,29 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
         fetchTelegramConciergeRoster(),
         admin ? fetch('/api/telegram/diagnostic', { cache: 'no-store' }).then((response) => response.json()).catch(() => null) : Promise.resolve(null),
       ]);
+      if (!canPresent()) return;
       setStatus({ ...(linkResponse || {}), roster: rosterPayload?.snapshot || null, hasRoster: Boolean(rosterPayload?.snapshot?.roster || linkResponse?.hasRoster), rosterMessage: rosterPayload?.message || '' });
       setTelegramDiagnostic(diagnosticPayload);
     } catch {
+      if (!canPresent()) return;
       setStatus({ ok: false, linked: false, message: 'Concierge aguardando conexão.' });
     }
   }
   useEffect(() => { refresh(); }, []);
 
   async function syncCurrent() {
+    const requestedBundle = bundle, session = captureAuthSession(), request = ++syncRequest.current;
+    const current = () => syncMounted.current && request === syncRequest.current && session.isCurrent() && syncBundleRef.current === requestedBundle;
     setBusy('sync');
     try {
-      const payload = await syncRosterWithTelegramConcierge(bundle.roster, bundle.source);
-      toast.success(payload.message || 'Escala sincronizada com o Concierge.');
-      await refresh();
+      const payload = await syncRosterWithTelegramConcierge(bundle.roster, bundle.source, current);
+      if (!payload || !current()) return;
+      toast.success(payload.message || 'Escala salva no Concierge.');
+      await refresh(current);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui sincronizar a escala.');
+      if (current()) toast.message(error instanceof Error ? error.message : 'Sincronização do Concierge não confirmada. A escala continua no app.');
     } finally {
-      setBusy('');
+      if (syncMounted.current && request === syncRequest.current) setBusy('');
     }
   }
   async function importFromTelegram() {
@@ -5292,7 +5313,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
         <button onClick={linkTelegram} disabled={Boolean(busy)}><Send/> {status?.linked ? 'Abrir ou refazer vínculo' : 'Vincular e abrir Telegram'}</button>
         <button onClick={syncCurrent} disabled={Boolean(busy) || !hasLocalRoster}><RotateCcw/> {busy === 'sync' ? 'Sincronizando...' : 'Sincronizar escala atual'}</button>
         <button onClick={importFromTelegram} disabled={Boolean(busy)}><Upload/> {busy === 'import' ? 'Importando...' : 'Importar escala recebida'}</button>
-        <button onClick={refresh} disabled={Boolean(busy)}><Radar/> Atualizar status</button>
+        <button onClick={() => refresh()} disabled={Boolean(busy)}><Radar/> Atualizar status</button>
       </div>
       {!hasLocalRoster && <p className="cz-mini-status">Você ainda pode enviar o PDF diretamente ao bot. Para sincronizar do app, importe uma escala primeiro.</p>}
     </section>
@@ -5305,7 +5326,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
         <span><b>Fila</b>{Number(telegramDiagnostic?.webhook?.pendingUpdates || 0)} atualização(ões)</span>
         <span><b>Último erro</b>{telegramDiagnostic?.webhook?.lastErrorMessage || 'Nenhum informado'}</span>
       </div>
-      <div className="cz-tool-actions"><button className="primary" onClick={repairWebhook} disabled={Boolean(busy)}><RotateCcw/> {busy === 'webhook' ? 'Revinculando…' : 'Revincular webhook e menu'}</button><button onClick={refresh} disabled={Boolean(busy)}><Radar/> Consultar novamente</button></div>
+      <div className="cz-tool-actions"><button className="primary" onClick={repairWebhook} disabled={Boolean(busy)}><RotateCcw/> {busy === 'webhook' ? 'Revinculando…' : 'Revincular webhook e menu'}</button><button onClick={() => refresh()} disabled={Boolean(busy)}><Radar/> Consultar novamente</button></div>
       {!telegramDiagnostic?.tokenConfigured && <p className="cz-mini-status">Gere um token novo no @BotFather e salve apenas em TELEGRAM_BOT_TOKEN no Render. Nunca cole o token no site, no GitHub ou em mensagens.</p>}
     </section>}
     <section className="cz-toolbox">
@@ -5885,7 +5906,12 @@ export default function Home() {
           action: { label: 'Revisar escala', view: 'roster' },
         });
       }
-      syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
+      const conciergeImportSession = captureAuthSession(), conciergeImportRevision = JSON.stringify(roster);
+      const conciergeImportCurrent = () => conciergeImportSession.isCurrent() && plannedImport.canCommit()
+        && sessionStorage.getItem('crewcheck_roster') === conciergeImportRevision;
+      syncRosterWithTelegramConcierge(roster, file.name).catch(() => {
+        if (conciergeImportCurrent()) toast.message('Sincronização do Concierge não confirmada. A escala continua no app.');
+      });
       syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));
       sessionStorage.setItem('crewcheck_force_view_once', opensComparison ? 'compare' : 'roster');
       setView(opensComparison ? 'compare' : 'roster');
