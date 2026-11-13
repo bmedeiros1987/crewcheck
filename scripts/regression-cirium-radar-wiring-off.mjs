@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as gatePolicy from '../shared/gate-query-day.mjs';
+import { airportTimeZone } from '../shared/airport-timezones.mjs';
 import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 import { prepareConciergeCanonicalBridge } from './p1-concierge-journey/bridge.mjs';
 import { spawnSync } from 'node:child_process';
@@ -164,10 +165,15 @@ for (const [expected, sourceFn] of [['no_data', async () => ({ state: 'available
 }
 // These are cost/authority guards, independent of the adapter's invalid_request
 // assertions above. Reuse the real resolver; never stub an allowed occurrence.
+// The "unknown origin" case needs an airport with no reviewed operational zone. JFK
+// served that role until it was reviewed on 2026-11-08; fail here, by name, if this
+// airport is ever reviewed too, instead of letting the allowed occurrence reach a stub.
+const UNREVIEWED_ORIGIN = 'ANC';
+assert.equal(airportTimeZone(UNREVIEWED_ORIGIN), '', `${UNREVIEWED_ORIGIN} gained a reviewed zone; pick another unreviewed airport for this fixture`);
 for (const [name, changes, overrides, expectedAuth, expectedDb, expectedReason] of [
   ['unpublished', { flight: 'AA124' }, {},6,1,'occurrence-unverified'],
-  ['unknown origin', { origin: 'JFK', originTimeZone: 'America/New_York' }, {
-    roster: { ...ciriumRoster, days: [{ ...ciriumRoster.days[0], legs: [{ ...ciriumRoster.days[0].legs[0], origin: 'JFK' }] }] },
+  ['unknown origin', { origin: UNREVIEWED_ORIGIN, originTimeZone: 'America/Anchorage' }, {
+    roster: { ...ciriumRoster, days: [{ ...ciriumRoster.days[0], legs: [{ ...ciriumRoster.days[0].legs[0], origin: UNREVIEWED_ORIGIN }] }] },
   },6,1,'occurrence-unverified'],
   ['previous origin day', {}, { now: Date.parse('2026-11-01T02:59:59Z') },4,0,'outside-published-flight-day'],
   ['missing canonical instant', { scheduledDepartureUtc: '' }, {},6,1,'occurrence-unverified'],
