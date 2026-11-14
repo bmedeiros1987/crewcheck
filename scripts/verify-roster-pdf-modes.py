@@ -46,6 +46,18 @@ assert 'Início 22:00' in standby and 'APZ 22:00' not in standby and 'Fim 02:00 
 estimated = '\n'.join(p.get_text() for p in fitz.open(root / 'estimated.pdf'))
 assert 'Início não confirmado' in estimated and 'Fim não confirmado' in estimated
 assert '22:00' not in estimated and '02:00' not in estimated
+long_name = fitz.open(root / 'long-name.pdf')
+import re
+assert ('NOMESINTETICO' * 15) in re.sub(r'\s+', '', long_name[0].get_text()), 'complete long name must survive wrapping'
+for file in ['dense.pdf', 'standby.pdf', 'estimated.pdf', 'long-name.pdf']:
+    for page in fitz.open(root / file):
+        for block in page.get_text('dict')['blocks']:
+            for line in block.get('lines', []):
+                for span in line['spans']:
+                    x0, y0, x1, y1 = span['bbox']
+                    assert 0 <= x0 < x1 <= page.rect.width + 1, file
+                    assert 0 <= y0 < y1 <= page.rect.height + 1, file
+long_name[0].get_pixmap().save(root / 'long-name-page-1.png')
 results.append({'denseCalendarFlights': 62, 'standbyLabels': True, 'estimatedClockWithheld': True, 'unsupportedUnicodeRejected': 'checked by browser'})
 (root / 'pdf-results.json').write_text(json.dumps(results, indent=2))
 print(json.dumps(results))

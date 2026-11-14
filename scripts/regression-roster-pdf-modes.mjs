@@ -28,7 +28,7 @@ const bundle={roster},compliance=analyzeCompliance(roster),gym=[];const notices=
 const toast={message:m=>{notices.push(m);window.__notices=notices;},success:m=>{notices.push(m);window.__notices=notices;},error:m=>{notices.push('ERROR '+m);window.__notices=notices;}};
 window.__make=async mode=>{const pdf=await exportReport(roster,compliance,[],{mode});return{fileName:pdf.fileName,data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};};
 window.__dense=async()=>{const dense={...roster,days:roster.days.map(day=>({...day,type:'VOO',pairingCode:'VOO',dutyReport:'05:00',dutyDebrief:'21:00',legs:[{flightNumber:'QA7001',origin:'AAA',destination:'BBB',departureTime:'06:00',arrivalTime:'07:00',workType:'OP',workTypeSource:'aims-extra-following-v1'},{flightNumber:'QA7002',origin:'BBB',destination:'AAA',departureTime:'18:00',arrivalTime:'19:00',workType:'PS',workTypeSource:'aims-extra-following-v1'}]}))};const pdf=await exportReport(dense,compliance,[],{mode:'fridge'});return Array.from(new Uint8Array(await pdf.blob.arrayBuffer()));};
-window.__edge=async(name)=>{const day={...roster.days[0],type:'HSB',pairingCode:'HSB',legs:[],dutyReport:'22:00',dutyDebrief:'02:00',dutyReportSource:name==='estimated'?'estimated':'published',dutyDebriefSource:name==='estimated'?'estimated':'published',isNextDay:true};const input={...roster,crewName:name==='unicode'?'ŁUKASZ 李':roster.crewName,days:[day]};try{const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return{data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};}catch(error){return{error:error.message};}};
+window.__edge=async(name)=>{const day={...roster.days[0],type:'HSB',pairingCode:'HSB',legs:[],dutyReport:'22:00',dutyDebrief:'02:00',dutyReportSource:name==='estimated'?'estimated':'published',dutyDebriefSource:name==='estimated'?'estimated':'published',isNextDay:true};const input={...roster,crewName:name==='unicode'?'ŁUKASZ 李':name==='long-name'?'NOME SINTETICO '.repeat(15):name==='too-long-name'?'NOME SINTETICO '.repeat(200):roster.crewName,days:[day]};try{const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return{data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};}catch(error){return{error:error.message};}};
 window.__badMonth=()=>roster.month=0;window.__notices=notices;
 const actions=new Proxy({pdf:${handlers.pdf},pdfFridge:${handlers.pdfFridge}},{get:(o,k)=>o[k]||(()=>{})});
 createRoot(document.getElementById('root')).render(<main className='cz-app'><ExportToolsView actions={actions}/></main>);`;
@@ -68,9 +68,10 @@ try {
     }
     if (width === 320 && theme === 'light') {
       fs.writeFileSync(out + '/dense.pdf', Buffer.from(await page.evaluate(() => window.__dense())));
-      for (const name of ['standby', 'estimated', 'unicode']) {
+      for (const name of ['standby', 'estimated', 'long-name', 'too-long-name', 'unicode']) {
         const edge = await page.evaluate(name => window.__edge(name), name);
         if (name === 'unicode') assert.match(edge.error || '', /não suporta todos os caracteres/);
+        else if (name === 'too-long-name') assert.match(edge.error || '', /nome completo não cabe/i);
         else { assert.ok(edge.data); fs.writeFileSync(out + '/' + name + '.pdf', Buffer.from(edge.data)); }
       }
     }

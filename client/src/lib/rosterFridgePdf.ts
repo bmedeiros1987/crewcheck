@@ -34,7 +34,9 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   doc.setFontSize(17);
   doc.text(title, 42, 15);
   doc.setFontSize(9);
-  doc.text(String(roster.crewName || 'Tripulante'), 42, 21);
+  const nameLines = doc.splitTextToSize(String(roster.crewName || 'Tripulante').trim(), width - 54) as string[];
+  if (nameLines.length > 2) throw new Error('O nome completo não cabe no cabeçalho do PDF geladeira. Use a fonte original para preservá-lo.');
+  doc.text(nameLines, 42, 21);
   doc.text('Geladeira · programação informada; confira a escala oficial.', 12, 29);
   const grouped = new Map<number, RosterDay[]>();
   const details: string[][] = [];
