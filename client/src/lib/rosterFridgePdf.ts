@@ -50,7 +50,7 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   // Standard PDF fonts cannot preserve arbitrary Unicode. Reject instead of
   // silently changing someone's name or a source field into different letters.
   for (const value of [roster.crewName || '', ...roster.days.flatMap(day => [day.date || '', ...describe(day)])]) {
-    if (/[^\x09\x0a\x0d\x20-\xff]/.test(value)) {
+    if (/[^\x09\x0a\x0d\x20-\x7e\xa0-\xff€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/.test(value)) {
       throw new Error('O PDF geladeira não suporta todos os caracteres desta escala. Use a fonte original para preservá-los.');
     }
   }
@@ -81,10 +81,24 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
     const lines = doc.splitTextToSize(text, innerWidth) as string[];
     let compact = text;
     if (lines.length > availableLines && entries) {
-      const overview = doc.splitTextToSize(entries.flatMap(day => describe(day, true)).join('\n'), innerWidth) as string[];
-      // Keep useful flight/route context in ordinary two-leg days. The appendix
-      // retains full leg clocks and all content that does not fit this overview.
-      compact = [...overview.slice(0, availableLines - 1), 'Ver detalhes no anexo'].join('\n');
+      const summary = entries.flatMap(day => describe(day, true));
+      const overview = doc.splitTextToSize(summary.join('\n'), innerWidth) as string[];
+      let visible = overview;
+      let omittedFlights = 0;
+      if (overview.length > availableLines - 1) {
+        // Fit whole leg summaries, never a partial flight with no omission count.
+        visible = [];
+        for (const day of entries) {
+          const heading = doc.splitTextToSize(String(day.pairingCode || day.type || 'Atividade não informada'), innerWidth) as string[];
+          if (visible.length + heading.length <= availableLines - 1) visible.push(...heading);
+          for (const leg of day.legs) {
+            const legLines = doc.splitTextToSize(`${leg.flightNumber || 'Voo'} ${leg.origin || '?'}-${leg.destination || '?'} ${role(leg, true)}`, innerWidth) as string[];
+            if (visible.length + legLines.length <= availableLines - 1) visible.push(...legLines);
+            else omittedFlights++;
+          }
+        }
+      }
+      compact = [...visible, omittedFlights ? `+${omittedFlights} voo(s) no anexo` : 'Ver detalhes no anexo'].join('\n');
       details.push([`${String(number).padStart(2, '0')}/${String(roster.month).padStart(2, '0')}/${roster.year}`, text]);
     }
     const index = start + number - 1;
@@ -110,7 +124,8 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   for (let page = 1; page <= doc.getNumberOfPages(); page++) {
     doc.setPage(page);
     doc.setFontSize(8);
-    doc.text(`CrewCheck · ${page}/${doc.getNumberOfPages()} · Função ? = origem não confirmada. Detalhes completos no anexo quando indicado.`, 12, 204);
+    doc.text(`CrewCheck · ${page}/${doc.getNumberOfPages()} · Função ? = origem não confirmada. Detalhes completos no anexo quando indicado.`, 12, 201);
+    doc.text('Horários conforme a fonte; não representam status ao vivo.', 12, 205);
   }
   return doc;
 }

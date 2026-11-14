@@ -28,6 +28,8 @@ const bundle={roster},compliance=analyzeCompliance(roster),gym=[];const notices=
 const toast={message:m=>{notices.push(m);window.__notices=notices;},success:m=>{notices.push(m);window.__notices=notices;},error:m=>{notices.push('ERROR '+m);window.__notices=notices;}};
 window.__make=async mode=>{const pdf=await exportReport(roster,compliance,[],{mode});return{fileName:pdf.fileName,data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};};
 window.__dense=async()=>{const dense={...roster,days:roster.days.map(day=>({...day,type:'VOO',pairingCode:'VOO',dutyReport:'05:00',dutyDebrief:'21:00',legs:[{flightNumber:'QA7001',origin:'AAA',destination:'BBB',departureTime:'06:00',arrivalTime:'07:00',workType:'OP',workTypeSource:'aims-extra-following-v1'},{flightNumber:'QA7002',origin:'BBB',destination:'AAA',departureTime:'18:00',arrivalTime:'19:00',workType:'PS',workTypeSource:'aims-extra-following-v1'}]}))};const pdf=await exportReport(dense,compliance,[],{mode:'fridge'});return Array.from(new Uint8Array(await pdf.blob.arrayBuffer()));};
+window.__sixWeeks=async(count)=>{const input={...roster,month:8,year:2026,crewName:'MARIA D’AVILA – TESTE',days:Array.from({length:31},(_,i)=>({...roster.days[1],date:String(i+1).padStart(2,'0')+'/08/2026',pairingCode:'SIM – A320',legs:Array.from({length:count},(_,n)=>({...roster.days[1].legs[0],flightNumber:'QA'+(7001+n)}))}))};const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return Array.from(new Uint8Array(await pdf.blob.arrayBuffer()));};
+window.__badName=()=>roster.crewName='ŁUKASZ 李';
 window.__edge=async(name)=>{const day={...roster.days[0],type:'HSB',pairingCode:'HSB',legs:[],dutyReport:'22:00',dutyDebrief:'02:00',dutyReportSource:name==='estimated'?'estimated':'published',dutyDebriefSource:name==='estimated'?'estimated':'published',isNextDay:true};const input={...roster,crewName:name==='unicode'?'ŁUKASZ 李':name==='long-name'?'NOME SINTETICO '.repeat(15):name==='too-long-name'?'NOME SINTETICO '.repeat(200):roster.crewName,days:[day]};try{const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return{data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};}catch(error){return{error:error.message};}};
 window.__badMonth=()=>roster.month=0;window.__notices=notices;
 const actions=new Proxy({pdf:${handlers.pdf},pdfFridge:${handlers.pdfFridge}},{get:(o,k)=>o[k]||(()=>{})});
@@ -38,7 +40,7 @@ const assets = path.join(root, 'dist/assets');
 if (fs.existsSync(assets)) css = fs.readdirSync(assets).filter(f => f.endsWith('.css')).map(f => fs.readFileSync(path.join(assets, f), 'utf8')).join('\n');
 const server = http.createServer((req, res) => {
   if (req.url === '/app.js') { res.setHeader('content-type', 'text/javascript'); res.end(fs.readFileSync(out + '/app.js')); }
-  else { res.setHeader('content-type', 'text/html'); res.end(`<meta name="viewport" content="width=device-width"><style>${css}</style><div id="root"></div><script src="/app.js"></script>`); }
+  else { res.setHeader('content-type', 'text/html'); res.end(`<meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>${css}</style><div id="root"></div><script src="/app.js"></script>`); }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
@@ -68,6 +70,7 @@ try {
     }
     if (width === 320 && theme === 'light') {
       fs.writeFileSync(out + '/dense.pdf', Buffer.from(await page.evaluate(() => window.__dense())));
+      for (const count of [4,6]) fs.writeFileSync(out + '/six-weeks-' + count + '.pdf', Buffer.from(await page.evaluate(count => window.__sixWeeks(count), count)));
       for (const name of ['standby', 'estimated', 'long-name', 'too-long-name', 'unicode']) {
         const edge = await page.evaluate(name => window.__edge(name), name);
         if (name === 'unicode') assert.match(edge.error || '', /não suporta todos os caracteres/);
@@ -80,11 +83,18 @@ try {
     assert.ok((await page.evaluate(() => window.__notices)).every(m => m.startsWith('Download solicitado:')));
     if (css) assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: `${out}/${theme}-${width}.png`, fullPage: true });
+    await page.evaluate(() => window.__badName());
+    let rejectedDownloads = 0; const onRejectedDownload = () => rejectedDownloads++;
+    page.on('download', onRejectedDownload);
+    await page.getByRole('button', { name: 'PDF geladeira', exact: true }).click();
+    await page.waitForFunction(() => window.__notices.some(m => m.includes('não suporta todos os caracteres')));
+    assert.equal(rejectedDownloads, 0, 'real Home handler must preserve specific error without download');
+    page.off('download', onRejectedDownload);
     await page.evaluate(() => window.__badMonth());
     let unexpectedDownload = 0; page.on('download', () => unexpectedDownload++);
     await page.getByRole('button', { name: 'PDF geladeira', exact: true }).click();
     await page.waitForFunction(() => window.__notices.some(m => m.startsWith('ERROR ')));
-    assert.equal(unexpectedDownload, 0); assert.deepEqual(errors, []); assert.equal(blocked, 0);
+    assert.equal(unexpectedDownload, 0); assert.ok((await page.evaluate(() => window.__notices)).some(m => m.includes('Competência da escala inválida'))); assert.deepEqual(errors, []); assert.equal(blocked, 0);
     results.push({ width, theme, downloads: 4, errorWithoutDownload: true, externalRequests: blocked, styled: Boolean(css) });
     await context.close();
   }

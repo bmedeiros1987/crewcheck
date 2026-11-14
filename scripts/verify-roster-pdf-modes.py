@@ -16,7 +16,7 @@ for mode in ['regular', 'fridge']:
     if mode == 'fridge':
         assert doc[0].rect.width > doc[0].rect.height
         assert '10/2032' in text and 'VC' in text and 'Sem registro' not in text
-        assert 'Ver detalhes no anexo' in text
+        assert 'voo(s) no anexo' in text
         assert 'QA9900 · OP ·' in text and 'QA9901 · PS ·' in text
         assert 'QA9902 · Função não informada ·' in text
         assert 'QA9903 · Função a confirmar (OP informado) ·' in text
@@ -61,3 +61,23 @@ long_name[0].get_pixmap().save(root / 'long-name-page-1.png')
 results.append({'denseCalendarFlights': 62, 'standbyLabels': True, 'estimatedClockWithheld': True, 'unsupportedUnicodeRejected': 'checked by browser'})
 (root / 'pdf-results.json').write_text(json.dumps(results, indent=2))
 print(json.dumps(results))
+
+for count in [4, 6]:
+    doc = fitz.open(root / f'six-weeks-{count}.pdf')
+    first = doc[0].get_text()
+    full = '\n'.join(p.get_text() for p in doc)
+    assert 'MARIA D’AVILA – TESTE' in first, 'WinAnsi typography must survive exactly'
+    assert 'SIM – A320' in first
+    import re
+    shown = sum(first.count(f'QA{7001+n}') for n in range(count))
+    omitted = sum(int(n) for n in re.findall(r'\+(\d+) voo\(s\) no anexo', first))
+    assert shown + omitted == 31 * count, (count, shown, omitted)
+    assert omitted > 0
+    assert 'não representam status ao vivo' in first
+    for n in range(count): assert full.count(f'QA{7001+n}') >= 31
+    for page in doc:
+        for word in page.get_text('words'):
+            assert 0 <= word[0] < word[2] <= page.rect.width + 1
+            assert 0 <= word[1] < word[3] <= page.rect.height + 1
+    doc[0].get_pixmap().save(root / f'six-weeks-{count}.png')
+print('PASS 6-week 4/6-leg omission accounting, complete appendix, exact WinAnsi typography and live-status disclaimer')

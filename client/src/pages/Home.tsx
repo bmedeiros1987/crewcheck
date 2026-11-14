@@ -5912,7 +5912,7 @@ export default function Home() {
   const actions: QuickActions = {
     upload: () => fileRef.current?.click(),
     pdf: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym); pdf.download(); toast.message(`Download solicitado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF agora.'); } },
-    pdfFridge: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym, { mode: 'fridge' }); pdf.download(); toast.message(`Download solicitado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF geladeira agora.'); } },
+    pdfFridge: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym, { mode: 'fridge' }); pdf.download(); toast.message(`Download solicitado: ${pdf.fileName}`); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui gerar o PDF geladeira agora.'); } },
     ics: () => { try { const ics = generateICalendar(bundle.roster, gym); downloadCalendarFile(ics, `crewcheck-${bundle.roster.year}-${String(bundle.roster.month).padStart(2,'0')}.ics`); toast.success('Arquivo ICS gerado.'); } catch { toast.error('Não consegui gerar o ICS.'); } },
     whatsapp: () => { try { copyCurrentSummarySilently(); shareToWhatsApp(bundle.roster, compliance); toast.success('Resumo enviado para o WhatsApp.'); } catch { toast.error('Não consegui abrir WhatsApp.'); } },
     telegram: () => { openTelegramBinding(); },
