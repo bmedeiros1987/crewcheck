@@ -109,7 +109,7 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
     body[Math.floor(index / 7)][index % 7] = `${number}\n${compact}`;
   }
   autoTable(doc, {
-    startY: 34, margin: { left: 12, right: 12, bottom: 14 },
+    startY: 34, margin: { left: 12, right: 12, bottom: 18 },
     head: [['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']], body,
     theme: 'grid', styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'top' },
     headStyles: { fillColor: [7, 29, 51] },
@@ -122,7 +122,7 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
     doc.setFontSize(14);
     doc.text('Detalhes da escala · registros preservados', 12, 15);
     autoTable(doc, { startY: 22, head: [['Data da fonte', 'Programação']], body: details, theme: 'grid',
-      margin: { left: 12, right: 12, bottom: 14 }, styles: { fontSize: 9, overflow: 'linebreak' },
+      margin: { left: 12, right: 12, bottom: 18 }, styles: { fontSize: 9, overflow: 'linebreak' },
       headStyles: { fillColor: [7, 29, 51] }, columnStyles: { 0: { cellWidth: 35 } } });
   }
   for (let page = 1; page <= doc.getNumberOfPages(); page++) {

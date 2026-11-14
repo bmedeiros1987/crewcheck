@@ -92,3 +92,13 @@ for page in doc:
     footer=[w for w in page.get_text('words') if w[1] > 550]
     assert all(w[3] <= page.rect.height-18 for w in footer), 'footer must leave printable bottom margin'
 print('PASS ordered overflow, NFC equivalence and safer footer geometry')
+
+for file in ['fridge.pdf','dense.pdf','six-weeks-4.pdf','six-weeks-6.pdf','long-leg-nfd.pdf']:
+    for page in fitz.open(root / file):
+        lines=[line for block in page.get_text('dict')['blocks'] for line in block.get('lines',[])]
+        footer=[line for line in lines if any(span['text'].startswith('CrewCheck · ') for span in line['spans'])]
+        assert len(footer)==1
+        footer_top=footer[0]['bbox'][1]
+        content=[line for line in lines if line['bbox'][1] < footer_top-0.1]
+        assert all(line['bbox'][3] <= footer_top-2 for line in content), (file,page.number,'content/footer collision')
+print('PASS calendar and multi-page appendix content/footer separation')
