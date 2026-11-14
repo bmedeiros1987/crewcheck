@@ -20,8 +20,10 @@ visit(ast);
 // Fail-first: the published baseline has no second export mode or action.
 assert.ok(view && handlers.pdf && handlers.pdfFridge, 'Both real Home PDF actions must exist');
 const entry = `import React,{useState}from'react';import{createRoot}from'react-dom/client';
-import{exportReport}from${JSON.stringify(root + '/client/src/lib/pdfExport.ts')};
+import{exportReport as actualExportReport}from${JSON.stringify(root + '/client/src/lib/pdfExport.ts')};
 import{analyzeCompliance}from${JSON.stringify(root + '/client/src/lib/complianceEngine.ts')};
+import{RosterFridgeValidationError}from${JSON.stringify(root + '/client/src/lib/rosterFridgePdf.ts')};
+const exportReport=(...args)=>{if(window.__internal)throw new TypeError('INTERNAL TECHNICAL DETAIL');return actualExportReport(...args);};
 const Brand=()=>null;${view}
 const roster={crewName:'PESSOA SINTETICA',crewId:'SYNTHETIC',rank:'COMISSARIO',base:'AAA',month:10,year:2032,rawText:'PRIVATE RAW MUST NOT EXPORT',days:Array.from({length:31},(_,i)=>({date:String(i+1).padStart(2,'0')+'/10/2032',type:'DO',pairingCode:i===0?'VC':'DO',dutyReport:i===1?'05:00':null,dutyDebrief:i===1?'21:00':null,dutyReportSource:'published',dutyDebriefSource:'published',legs:i===1?Array.from({length:12},(_,n)=>({flightNumber:'QA'+(9900+n),origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:n===1?'PS':n===2?'':'OP',workTypeSource:n===2||n===3?undefined:'aims-extra-following-v1'})):[],rawText:'THIRD PARTY NAME MUST NOT EXPORT'}))};
 const bundle={roster},compliance=analyzeCompliance(roster),gym=[];const notices=[];
@@ -29,6 +31,7 @@ const toast={message:m=>{notices.push(m);window.__notices=notices;},success:m=>{
 window.__make=async mode=>{const pdf=await exportReport(roster,compliance,[],{mode});return{fileName:pdf.fileName,data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};};
 window.__dense=async()=>{const dense={...roster,days:roster.days.map(day=>({...day,type:'VOO',pairingCode:'VOO',dutyReport:'05:00',dutyDebrief:'21:00',legs:[{flightNumber:'QA7001',origin:'AAA',destination:'BBB',departureTime:'06:00',arrivalTime:'07:00',workType:'OP',workTypeSource:'aims-extra-following-v1'},{flightNumber:'QA7002',origin:'BBB',destination:'AAA',departureTime:'18:00',arrivalTime:'19:00',workType:'PS',workTypeSource:'aims-extra-following-v1'}]}))};const pdf=await exportReport(dense,compliance,[],{mode:'fridge'});return Array.from(new Uint8Array(await pdf.blob.arrayBuffer()));};
 window.__sixWeeks=async(count)=>{const input={...roster,month:8,year:2026,crewName:'MARIA D’AVILA – TESTE',days:Array.from({length:31},(_,i)=>({...roster.days[1],date:String(i+1).padStart(2,'0')+'/08/2026',pairingCode:'SIM – A320',legs:Array.from({length:count},(_,n)=>({...roster.days[1].legs[0],flightNumber:'QA'+(7001+n)}))}))};const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return Array.from(new Uint8Array(await pdf.blob.arrayBuffer()));};
+window.__longLeg=async()=>{const input={...roster,month:8,year:2026,crewName:'JOA\u0303O SINTETICO',days:[{...roster.days[1],date:'01/08/2026',pairingCode:'VOO',legs:[1,2,3,4].map(n=>({...roster.days[1].legs[0],flightNumber:n===3?'QA12345678901234567890':'QA'+n}))}]};const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return Array.from(new Uint8Array(await pdf.blob.arrayBuffer()));};
 window.__badName=()=>roster.crewName='ŁUKASZ 李';
 window.__edge=async(name)=>{const day={...roster.days[0],type:'HSB',pairingCode:'HSB',legs:[],dutyReport:'22:00',dutyDebrief:'02:00',dutyReportSource:name==='estimated'?'estimated':'published',dutyDebriefSource:name==='estimated'?'estimated':'published',isNextDay:true};const input={...roster,crewName:name==='unicode'?'ŁUKASZ 李':name==='long-name'?'NOME SINTETICO '.repeat(15):name==='too-long-name'?'NOME SINTETICO '.repeat(200):roster.crewName,days:[day]};try{const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return{data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};}catch(error){return{error:error.message};}};
 window.__badMonth=()=>roster.month=0;window.__notices=notices;
@@ -70,6 +73,7 @@ try {
     }
     if (width === 320 && theme === 'light') {
       fs.writeFileSync(out + '/dense.pdf', Buffer.from(await page.evaluate(() => window.__dense())));
+      fs.writeFileSync(out + '/long-leg-nfd.pdf', Buffer.from(await page.evaluate(() => window.__longLeg())));
       for (const count of [4,6]) fs.writeFileSync(out + '/six-weeks-' + count + '.pdf', Buffer.from(await page.evaluate(count => window.__sixWeeks(count), count)));
       for (const name of ['standby', 'estimated', 'long-name', 'too-long-name', 'unicode']) {
         const edge = await page.evaluate(name => window.__edge(name), name);
@@ -83,6 +87,11 @@ try {
     assert.ok((await page.evaluate(() => window.__notices)).every(m => m.startsWith('Download solicitado:')));
     if (css) assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: `${out}/${theme}-${width}.png`, fullPage: true });
+    await page.evaluate(() => window.__internal=true);
+    await page.getByRole('button', { name: 'PDF geladeira', exact: true }).click();
+    await page.waitForFunction(() => window.__notices.some(m => m === 'ERROR Não consegui gerar o PDF geladeira agora.'));
+    assert.ok(!(await page.evaluate(() => window.__notices)).some(m => m.includes('INTERNAL TECHNICAL DETAIL')));
+    await page.evaluate(() => {window.__internal=false;window.__notices.length=0;});
     await page.evaluate(() => window.__badName());
     let rejectedDownloads = 0; const onRejectedDownload = () => rejectedDownloads++;
     page.on('download', onRejectedDownload);

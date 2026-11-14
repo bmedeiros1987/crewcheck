@@ -81,3 +81,14 @@ for count in [4, 6]:
             assert 0 <= word[1] < word[3] <= page.rect.height + 1
     doc[0].get_pixmap().save(root / f'six-weeks-{count}.png')
 print('PASS 6-week 4/6-leg omission accounting, complete appendix, exact WinAnsi typography and live-status disclaimer')
+
+doc = fitz.open(root / 'long-leg-nfd.pdf')
+first = doc[0].get_text()
+assert 'JOÃO SINTETICO' in first, 'NFD input must produce canonically equivalent composed glyphs'
+assert 'QA1' in first and 'QA2' in first and 'QA4' not in first
+assert '+2 voo(s) no anexo' in first, 'after truncation keep a prefix, not a later leg out of order'
+assert 'QA4' in '\n'.join(p.get_text() for p in doc[1:])
+for page in doc:
+    footer=[w for w in page.get_text('words') if w[1] > 550]
+    assert all(w[3] <= page.rect.height-18 for w in footer), 'footer must leave printable bottom margin'
+print('PASS ordered overflow, NFC equivalence and safer footer geometry')

@@ -4,6 +4,9 @@ import type { CrewRoster, RosterDay } from './pdfParser';
 import { addCrewCheckPdfLogo } from './brand';
 import { AIMS_FLIGHT_ROLE_SOURCE, TICKET_FLIGHT_ROLE_SOURCE } from './flightRoleEvidence';
 
+export class RosterFridgeValidationError extends Error {}
+const pdfText = (value: string): string => value.normalize('NFC');
+
 const verifiedRoles = new Set([AIMS_FLIGHT_ROLE_SOURCE, TICKET_FLIGHT_ROLE_SOURCE]);
 function role(leg: RosterDay['legs'][number], compact = false): string {
   const value = String(leg.workType || '').trim();
@@ -25,7 +28,7 @@ function publishedClocks(day: RosterDay, compact = false): string[] {
 export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   if (!Number.isInteger(roster.month) || roster.month < 1 || roster.month > 12
     || !Number.isInteger(roster.year) || roster.year < 1900 || roster.year > 9999) {
-    throw new Error('Competência da escala inválida para gerar o PDF.');
+    throw new RosterFridgeValidationError('Competência da escala inválida para gerar o PDF.');
   }
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape', compress: true });
   const width = doc.internal.pageSize.getWidth();
@@ -34,8 +37,8 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   doc.setFontSize(17);
   doc.text(title, 42, 15);
   doc.setFontSize(9);
-  const nameLines = doc.splitTextToSize(String(roster.crewName || 'Tripulante').trim(), width - 54) as string[];
-  if (nameLines.length > 2) throw new Error('O nome completo não cabe no cabeçalho do PDF geladeira. Use a fonte original para preservá-lo.');
+  const nameLines = doc.splitTextToSize(pdfText(String(roster.crewName || 'Tripulante').trim()), width - 54) as string[];
+  if (nameLines.length > 2) throw new RosterFridgeValidationError('O nome completo não cabe no cabeçalho do PDF geladeira. Use a fonte original para preservá-lo.');
   doc.text(nameLines, 42, 21);
   doc.text('Geladeira · programação informada; confira a escala oficial.', 12, 29);
   const grouped = new Map<number, RosterDay[]>();
@@ -46,12 +49,12 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
       ? `${leg.flightNumber || 'Voo'} ${leg.origin || '?'}-${leg.destination || '?'} ${role(leg, true)}`
       : `${leg.flightNumber || 'Voo'} · ${role(leg)} · ${leg.origin || '?'}-${leg.destination || '?'} ${leg.departureTime || '--:--'} / ${leg.arrivalTime || '--:--'}${leg.isNextDay ? ' (+1)' : ''}`),
     ...publishedClocks(day, compact),
-  ];
+  ].map(pdfText);
   // Standard PDF fonts cannot preserve arbitrary Unicode. Reject instead of
   // silently changing someone's name or a source field into different letters.
   for (const value of [roster.crewName || '', ...roster.days.flatMap(day => [day.date || '', ...describe(day)])]) {
-    if (/[^\x09\x0a\x0d\x20-\x7e\xa0-\xff€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/.test(value)) {
-      throw new Error('O PDF geladeira não suporta todos os caracteres desta escala. Use a fonte original para preservá-los.');
+    if (/[^\x09\x0a\x0d\x20-\x7e\xa0-\xff€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/.test(pdfText(value))) {
+      throw new RosterFridgeValidationError('O PDF geladeira não suporta todos os caracteres desta escala. Use a fonte original para preservá-los.');
     }
   }
   const lastDay = new Date(Date.UTC(roster.year, roster.month, 0)).getUTCDate();
@@ -88,13 +91,14 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
       if (overview.length > availableLines - 1) {
         // Fit whole leg summaries, never a partial flight with no omission count.
         visible = [];
+        let truncated = false;
         for (const day of entries) {
-          const heading = doc.splitTextToSize(String(day.pairingCode || day.type || 'Atividade não informada'), innerWidth) as string[];
+          const heading = doc.splitTextToSize(pdfText(String(day.pairingCode || day.type || 'Atividade não informada')), innerWidth) as string[];
           if (visible.length + heading.length <= availableLines - 1) visible.push(...heading);
           for (const leg of day.legs) {
-            const legLines = doc.splitTextToSize(`${leg.flightNumber || 'Voo'} ${leg.origin || '?'}-${leg.destination || '?'} ${role(leg, true)}`, innerWidth) as string[];
-            if (visible.length + legLines.length <= availableLines - 1) visible.push(...legLines);
-            else omittedFlights++;
+            const legLines = doc.splitTextToSize(pdfText(`${leg.flightNumber || 'Voo'} ${leg.origin || '?'}-${leg.destination || '?'} ${role(leg, true)}`), innerWidth) as string[];
+            if (!truncated && visible.length + legLines.length <= availableLines - 1) visible.push(...legLines);
+            else { omittedFlights++; truncated = true; }
           }
         }
       }
@@ -124,8 +128,8 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   for (let page = 1; page <= doc.getNumberOfPages(); page++) {
     doc.setPage(page);
     doc.setFontSize(8);
-    doc.text(`CrewCheck · ${page}/${doc.getNumberOfPages()} · Função ? = origem não confirmada. Detalhes completos no anexo quando indicado.`, 12, 201);
-    doc.text('Horários conforme a fonte; não representam status ao vivo.', 12, 205);
+    doc.text(`CrewCheck · ${page}/${doc.getNumberOfPages()} · Função ? = origem não confirmada. Detalhes completos no anexo quando indicado.`, 12, 197);
+    doc.text('Horários conforme a fonte; não representam status ao vivo.', 12, 201);
   }
   return doc;
 }
