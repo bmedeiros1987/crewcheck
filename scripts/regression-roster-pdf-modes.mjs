@@ -23,10 +23,12 @@ const entry = `import React,{useState}from'react';import{createRoot}from'react-d
 import{exportReport}from${JSON.stringify(root + '/client/src/lib/pdfExport.ts')};
 import{analyzeCompliance}from${JSON.stringify(root + '/client/src/lib/complianceEngine.ts')};
 const Brand=()=>null;${view}
-const roster={crewName:'PESSOA SINTETICA',crewId:'SYNTHETIC',rank:'COMISSARIO',base:'AAA',month:10,year:2032,rawText:'PRIVATE RAW MUST NOT EXPORT',days:Array.from({length:31},(_,i)=>({date:String(i+1).padStart(2,'0')+'/10/2032',type:'DO',pairingCode:i===0?'VC':'DO',dutyReport:i===1?'05:00':null,dutyDebrief:i===1?'21:00':null,dutyReportSource:'published',dutyDebriefSource:'published',legs:i===1?Array.from({length:12},(_,n)=>({flightNumber:'QA'+(9900+n),origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:n===1?'PS':n===2?'':'OP'})):[],rawText:'THIRD PARTY NAME MUST NOT EXPORT'}))};
+const roster={crewName:'PESSOA SINTETICA',crewId:'SYNTHETIC',rank:'COMISSARIO',base:'AAA',month:10,year:2032,rawText:'PRIVATE RAW MUST NOT EXPORT',days:Array.from({length:31},(_,i)=>({date:String(i+1).padStart(2,'0')+'/10/2032',type:'DO',pairingCode:i===0?'VC':'DO',dutyReport:i===1?'05:00':null,dutyDebrief:i===1?'21:00':null,dutyReportSource:'published',dutyDebriefSource:'published',legs:i===1?Array.from({length:12},(_,n)=>({flightNumber:'QA'+(9900+n),origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:n===1?'PS':n===2?'':'OP',workTypeSource:n===2||n===3?undefined:'aims-extra-following-v1'})):[],rawText:'THIRD PARTY NAME MUST NOT EXPORT'}))};
 const bundle={roster},compliance=analyzeCompliance(roster),gym=[];const notices=[];
 const toast={message:m=>{notices.push(m);window.__notices=notices;},success:m=>{notices.push(m);window.__notices=notices;},error:m=>{notices.push('ERROR '+m);window.__notices=notices;}};
 window.__make=async mode=>{const pdf=await exportReport(roster,compliance,[],{mode});return{fileName:pdf.fileName,data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};};
+window.__dense=async()=>{const dense={...roster,days:roster.days.map(day=>({...day,type:'VOO',pairingCode:'VOO',dutyReport:'05:00',dutyDebrief:'21:00',legs:[{flightNumber:'QA7001',origin:'AAA',destination:'BBB',departureTime:'06:00',arrivalTime:'07:00',workType:'OP',workTypeSource:'aims-extra-following-v1'},{flightNumber:'QA7002',origin:'BBB',destination:'AAA',departureTime:'18:00',arrivalTime:'19:00',workType:'PS',workTypeSource:'aims-extra-following-v1'}]}))};const pdf=await exportReport(dense,compliance,[],{mode:'fridge'});return Array.from(new Uint8Array(await pdf.blob.arrayBuffer()));};
+window.__edge=async(name)=>{const day={...roster.days[0],type:'HSB',pairingCode:'HSB',legs:[],dutyReport:'22:00',dutyDebrief:'02:00',dutyReportSource:name==='estimated'?'estimated':'published',dutyDebriefSource:name==='estimated'?'estimated':'published',isNextDay:true};const input={...roster,crewName:name==='unicode'?'ŁUKASZ 李':roster.crewName,days:[day]};try{const pdf=await exportReport(input,compliance,[],{mode:'fridge'});return{data:Array.from(new Uint8Array(await pdf.blob.arrayBuffer()))};}catch(error){return{error:error.message};}};
 window.__badMonth=()=>roster.month=0;window.__notices=notices;
 const actions=new Proxy({pdf:${handlers.pdf},pdfFridge:${handlers.pdfFridge}},{get:(o,k)=>o[k]||(()=>{})});
 createRoot(document.getElementById('root')).render(<main className='cz-app'><ExportToolsView actions={actions}/></main>);`;
@@ -62,6 +64,14 @@ try {
         assert.equal(await download.failure(), null); assert.ok(fs.statSync(target).size > 1000);
         assert.ok(fs.readFileSync(target).subarray(0, 5).equals(Buffer.from('%PDF-')));
         await button.waitFor({ state: 'visible' }); await page.waitForFunction(() => ![...document.querySelectorAll('button')].some(b => b.disabled));
+      }
+    }
+    if (width === 320 && theme === 'light') {
+      fs.writeFileSync(out + '/dense.pdf', Buffer.from(await page.evaluate(() => window.__dense())));
+      for (const name of ['standby', 'estimated', 'unicode']) {
+        const edge = await page.evaluate(name => window.__edge(name), name);
+        if (name === 'unicode') assert.match(edge.error || '', /não suporta todos os caracteres/);
+        else { assert.ok(edge.data); fs.writeFileSync(out + '/' + name + '.pdf', Buffer.from(edge.data)); }
       }
     }
     await page.getByRole('button', { name: 'PDF regular', exact: true }).focus(); await page.keyboard.press('Tab');

@@ -8,6 +8,7 @@ on:
       - 'client/src/lib/brand.ts'
       - 'client/src/lib/pdfExport.ts'
       - 'client/src/lib/rosterFridgePdf.ts'
+      - 'client/src/lib/flightRoleEvidence.ts'
       - 'client/src/lib/blobDownload.ts'
       - 'client/src/lib/calendarExport.ts'
       - 'client/src/components/v139/api.ts'
