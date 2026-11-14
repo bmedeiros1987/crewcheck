@@ -212,3 +212,7 @@ export async function handleTelegramBriefingConsent(req, res, url, { enabled = T
   catch { reply(res, 409, { ok: false, code: 'BRIEFING_CONTEXT_CHANGED' }); }
   return true;
 }
+
+// Internal server-only reuse by other operational topics. No HTTP input may supply
+// these authorities; account/binding/state locks remain identical to briefing.
+export const telegramOperationalAuthority = Object.freeze({ transaction, currentContext, principal, readState, writeState, hash, parse, deny });
