@@ -1,5 +1,6 @@
 // Server-owned cancellation reconciliation; no provider I/O, token storage or schema writes.
-import {withPlatformEntitlements} from './platform-entitlement.mjs';
+import {withPlatformEntitlements,readLockedPlatformEntitlement} from './platform-entitlement.mjs';
+import {assertTransactionClient} from './profile-locks.mjs';
 const fail=(code,status=409)=>Object.assign(new Error('Não foi possível conciliar esta assinatura. Confira o status antes de tentar novamente.'),{code,status});
 const paidStatuses=new Set(['active','trialing','grace_period']);
 function endUtc(value){
@@ -29,19 +30,26 @@ async function requireTransactionalSchema(db){
  const tables=(await db.query("SELECT TABLE_NAME AS name,ENGINE AS engine FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('crewcheck_platform_profiles','crewcheck_platform_subscriptions')")).rows;
  if(!['crewcheck_platform_profiles','crewcheck_platform_subscriptions'].every(name=>tables.some(row=>row.name===name&&row.engine==='InnoDB')))throw fail('BILLING_CANCELLATION_SCHEMA_UNAVAILABLE',503);
 }
-export async function readBillingCancellation(db,owner,{now=Date.now()}={}){
- await requireTransactionalSchema(db);
- return withPlatformEntitlements(db,[owner],async(client,snapshots)=>ownedSnapshot(client,snapshots.get(owner.email),owner.email,now));
+// Internal helpers require the same live transaction client, never a pool/escaped client.
+export async function readOwnedBillingCancellation(client,owner,{now=Date.now()}={}){
+ assertTransactionClient(client);
+ const snapshot=await readLockedPlatformEntitlement(client,owner);
+ return ownedSnapshot(client,snapshot,owner.email,now);
 }
-export async function commitAcknowledgedAsaasCancellation(db,input,{now=Date.now()}={}){
+export async function applyAcknowledgedAsaasCancellation(client,input,{now=Date.now()}={}){
+ assertTransactionClient(client);
+ const snapshot=await readLockedPlatformEntitlement(client,input),current=await ownedSnapshot(client,snapshot,input.email,now);
+ if(current.provider!=='asaas'||current.providerRef!==input.providerRef)throw fail('BILLING_CANCELLATION_RECONCILIATION_REQUIRED');
+ const status=paidStatuses.has(snapshot.subscription.status)&&!current.keepsPaidAccess?'expired':snapshot.subscription.status;
+ await client.query("UPDATE crewcheck_platform_subscriptions SET status=$3,cancel_at_period_end=TRUE,updated_at=NOW(3) WHERE email=$1 AND provider='asaas' AND provider_ref=$2",[input.email,input.providerRef,status]);
+ if(!current.keepsPaidAccess&&snapshot.profile.plan!=='premium_unlimited')await client.query("UPDATE crewcheck_platform_profiles SET plan='free',updated_at=NOW(3) WHERE email=$1",[input.email]);
+ return {canceled:true,currentPeriodEnd:current.currentPeriodEnd,keepsPaidAccess:current.keepsPaidAccess};
+}
+export async function readBillingCancellation(db,owner,options={}){
  await requireTransactionalSchema(db);
- return withPlatformEntitlements(db,[input],async(client,snapshots)=>{
-  const snapshot=snapshots.get(input.email),current=await ownedSnapshot(client,snapshot,input.email,now);
-  if(current.provider!=='asaas'||current.providerRef!==input.providerRef)throw fail('BILLING_CANCELLATION_RECONCILIATION_REQUIRED');
-  // Preserve payment/refund state; only a UTC-proven elapsed paid period becomes expired.
-  const status=paidStatuses.has(snapshot.subscription.status)&&!current.keepsPaidAccess?'expired':snapshot.subscription.status;
-  await client.query("UPDATE crewcheck_platform_subscriptions SET status=$3,cancel_at_period_end=TRUE,updated_at=NOW(3) WHERE email=$1 AND provider='asaas' AND provider_ref=$2",[input.email,input.providerRef,status]);
-  if(!current.keepsPaidAccess&&snapshot.profile.plan!=='premium_unlimited')await client.query("UPDATE crewcheck_platform_profiles SET plan='free',updated_at=NOW(3) WHERE email=$1",[input.email]);
-  return {canceled:true,currentPeriodEnd:current.currentPeriodEnd,keepsPaidAccess:current.keepsPaidAccess};
- });
+ return withPlatformEntitlements(db,[owner],client=>readOwnedBillingCancellation(client,owner,options));
+}
+export async function commitAcknowledgedAsaasCancellation(db,input,options={}){
+ await requireTransactionalSchema(db);
+ return withPlatformEntitlements(db,[input],client=>applyAcknowledgedAsaasCancellation(client,input,options));
 }
