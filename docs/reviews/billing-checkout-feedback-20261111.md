@@ -96,3 +96,18 @@ WhatsApp remains a separate held stack #1262→#1263→#1268. Offline link/admis
 checks do not prove production policy, callback receipt, budget or delivery. No
 provider, sender, credential, route, gate, notification, Android or Watch change is
 included here. Store listing assets are not recreated or submitted by this patch.
+
+
+## Google receipt follow-up on current main
+
+The existing billing branch was merged with main284c53e3 without runtime-source conflicts. No second billing implementation or Android writer was introduced.
+
+An isolated counterproof on the previous actual raw listener showed that an empty resolved receipt `{}` emitted “Compra Google Play confirmada.” The Google client now requires an authenticated, current-session receipt with explicit ok, acknowledgement flag, matching product/provider, coherent active status/entitlement, a future expiry for active access and valid usage counters. Empty, malformed, mismatched or inconsistent receipts fail closed. The backend verifier and store authority are unchanged.
+
+Purchase and restore actions retain their canonical auth generation in memory. Unsolicited native purchase events have no admitted intent; revoked-session events and late results cannot acknowledge, toast, reload or clear another context's busy state. Duplicate simultaneous callbacks for the same token are ignored while verification is in flight. This is not durable exactly-once proof or native request-ID correlation. The bridge does not currently echo a purchase generation; real device lifecycle and events arriving after a newly admitted intent still depend on backend account/token ownership checks. No native bridge, account grant or credential is changed.
+
+Only a validated active receipt produces the fixed subscription-confirmed notice and optional existing acknowledgement. Valid pending/inactive receipts remain explicit non-active notices. Native pending notices and the restore timeout also preserve session boundaries. An acknowledgement call is not certified acknowledgement completion.
+
+Added tests execute the actual client reader, listener and restore timer, with synthetic capability injection, plus the real SubscriptionCenter/client/auth modules against intercepted HTTP and a synthetic Android bridge. All test tokens/owners are fictional; no provider, store purchase, new subscription or real account is accessed. The browser fixture's initial missing catalog disclosures caused a harness render failure and was corrected to the actual catalog contract, without changing application behavior.
+
+This is a client false-confirmation correction, not a claim that live Google products, backend credentials, server persistence, native billing recovery, payment reconciliation or Play publishing are operational. Those release gates remain separate. Footer personalization remains planned behind the billing priority.

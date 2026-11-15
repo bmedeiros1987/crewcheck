@@ -71,6 +71,7 @@ jobs:
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
           node scripts/regression-billing-checkout-confirmation.mjs
+          node scripts/regression-google-play-confirmation.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs
@@ -94,6 +95,7 @@ jobs:
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
           node scripts/regression-billing-checkout-confirmation.mjs
+          node scripts/regression-google-play-confirmation.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs
@@ -134,6 +136,7 @@ jobs:
         run: |
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-billing-checkout-browser.mjs
+          node scripts/regression-google-play-confirmation-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -167,6 +170,7 @@ jobs:
         run: |
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-billing-checkout-browser.mjs
+          node scripts/regression-google-play-confirmation-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs

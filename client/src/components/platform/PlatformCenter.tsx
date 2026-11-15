@@ -118,6 +118,8 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   const [playProducts, setPlayProducts] = useState<Record<string, { productId?: string; formattedPrice?: string; billingPeriod?: string }>>({});
 
   const playCatalogRequest=useRef<string|null>(null);
+  const playPurchaseSession=useRef<{session:ReturnType<typeof captureAuthSession>;productId?:string}|null>(null);
+  const playVerifications=useRef(new Set<string>());
   function queryCatalog(plans: PlatformPlan[]) {
     setPlayProducts({});playCatalogRequest.current=null;
     playCatalogRequest.current=queryGooglePlayProducts(plans.map(plan=>plan.googlePlayProductId||'').filter(Boolean));
@@ -163,14 +165,30 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    const listener = (event: Event) => {
+    const listener = async (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (!detail.productId || !detail.purchaseToken) return;
-      setBusy('restore');
-      verifyGooglePlayPurchase(detail.productId, detail.purchaseToken)
-        .then((result) => { if (result.needsAcknowledgement) acknowledgeGooglePlayPurchase(detail.purchaseToken); toast.success(result.message || 'Compra Google Play confirmada.'); return load(); })
-        .catch((err) => toast.error(err instanceof Error ? err.message : 'Não consegui confirmar a compra.'))
-        .finally(() => setBusy(''));
+      const intent = playPurchaseSession.current;
+      const session = intent?.session;
+      const current = () => { try { return Boolean(session?.token) && session!.isCurrent(); } catch { return false; } };
+      if (!current() || typeof detail.productId !== 'string' || typeof detail.purchaseToken !== 'string'
+          || !detail.productId.trim() || !detail.purchaseToken.trim()
+          || (intent?.productId && intent.productId !== detail.productId) || playVerifications.current.has(detail.purchaseToken)) return;
+      playVerifications.current.add(detail.purchaseToken);
+      setBusy(value => current() ? 'restore' : value);
+      try {
+        const result = await verifyGooglePlayPurchase(detail.productId, detail.purchaseToken, session!);
+        if (!current()) return;
+        if (result.billing.premiumAccess) {
+          if (result.needsAcknowledgement) acknowledgeGooglePlayPurchase(detail.purchaseToken);
+          toast.success('Assinatura Google Play confirmada.');
+        } else toast.message(result.billing.status === 'pending' ? 'Compra pendente na Google Play. O acesso ainda não está ativo.' : 'Compra localizada, mas ainda sem acesso ativo.');
+        await loadForSession(session!);
+      } catch (err) {
+        if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui confirmar a compra.');
+      } finally {
+        playVerifications.current.delete(detail.purchaseToken);
+        setBusy(value => current() && value === 'restore' ? '' : value);
+      }
     };
     window.addEventListener('crewcheck:billing-purchase', listener as EventListener);
     return () => window.removeEventListener('crewcheck:billing-purchase', listener as EventListener);
@@ -190,7 +208,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
       if (detail?.catalogInvalidated !== false) { playCatalogRequest.current=null;setPlayProducts({}); }
       toast.error(detail?.message || 'Google Play indisponível.');
     };
-    const pending = () => toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.');
+    const pending = () => { const session=playPurchaseSession.current?.session; if(session?.token && session.isCurrent()) toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.'); };
     window.addEventListener('crewcheck:billing-products', products as EventListener);
     window.addEventListener('crewcheck:billing-ready', ready);
     window.addEventListener('crewcheck:billing-error', errorListener as EventListener);
@@ -213,6 +231,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
     try {
       if (hasGooglePlayBillingBridge()) {
         if (!plan.googlePlayProductId || !playPlanReady(plan, playProducts[plan.googlePlayProductId])) throw new Error('Plano ainda não confirmado pela Google Play. Consulte novamente antes de assinar.');
+        playPurchaseSession.current={session,productId:plan.googlePlayProductId};
         startGooglePlayPurchase(plan.googlePlayProductId, profile?.publicId || '');
         toast.message('Conclua a compra na janela segura da Google Play.');
       } else {
@@ -235,14 +254,19 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   }
 
   function restore() {
+    let session: ReturnType<typeof captureAuthSession>;
+    try { session = captureAuthSession(); } catch { toast.error('Sessão indisponível. Abra os planos novamente.'); return; }
+    const current = () => { try { return Boolean(session.token) && session.isCurrent(); } catch { return false; } };
+    if (!current()) return;
     try {
-      setBusy('restore');
+      playPurchaseSession.current={session};
+      setBusy(value => current() ? 'restore' : value);
       restoreGooglePlayPurchases();
       toast.message('Consultando compras vinculadas à sua conta Google Play...');
-      window.setTimeout(() => setBusy(''), 5000);
+      window.setTimeout(() => setBusy(value => current() && value === 'restore' ? '' : value), 5000);
     } catch (err) {
-      setBusy('');
-      toast.error(err instanceof Error ? err.message : 'Restauração indisponível.');
+      setBusy(value => current() ? '' : value);
+      if (current()) toast.error(err instanceof Error ? err.message : 'Restauração indisponível.');
     }
   }
 

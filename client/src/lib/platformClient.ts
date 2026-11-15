@@ -303,11 +303,28 @@ export function acknowledgeGooglePlayPurchase(purchaseToken: string): void {
   window.AndroidCrewCheckBilling?.acknowledge?.(purchaseToken);
 }
 
-export async function verifyGooglePlayPurchase(productId: string, purchaseToken: string) {
-  return authFetch<any>('/api/platform/billing/google-play/verify', {
-    method: 'POST',
-    body: JSON.stringify({ productId, purchaseToken }),
+export async function verifyGooglePlayPurchase(productId: string, purchaseToken: string, session = captureAuthSession()): Promise<{ok:true;billing:PlatformBilling;needsAcknowledgement:boolean}> {
+  const current = () => { try { return Boolean(session.token) && session.isCurrent(); } catch { return false; } };
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const result = await authFetch<any>('/api/platform/billing/google-play/verify', {
+    method: 'POST', body: JSON.stringify({ productId, purchaseToken }),
   });
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const billing = result?.billing, usage = billing?.usage;
+  const active = billing?.premiumAccess === true;
+  const activeStatus = ['active','trialing','grace_period'].includes(billing?.status);
+  const expiry = Date.parse(billing?.currentPeriodEnd || '');
+  if (result?.ok !== true || typeof result.needsAcknowledgement !== 'boolean'
+      || billing?.provider !== 'google_play' || billing.productId !== productId
+      || !['free','premium_monthly','premium_annual'].includes(billing.plan)
+      || !['active','trialing','grace_period','pending','past_due','paused','expired','canceled','cancelled'].includes(billing.status)
+      || typeof billing.premiumAccess !== 'boolean' || active !== activeStatus
+      || (active && (billing.plan === 'free' || !Number.isFinite(expiry) || expiry <= Date.now()))
+      || usage?.kind !== 'wakeup_call' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(usage.monthKey || '')
+      || ![usage.used,usage.limit,usage.remaining].every(value => Number.isSafeInteger(value) && value >= 0)) {
+    throw new Error('Não foi possível confirmar o comprovante Google Play. Consulte ou restaure a assinatura antes de tentar novamente.');
+  }
+  return result;
 }
 
 export async function syncPlatformRoster(roster: unknown, compliance: unknown, sourceName: string) {
