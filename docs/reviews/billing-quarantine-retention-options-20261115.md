@@ -1,6 +1,6 @@
 # Billing quarantine and retention — decision proposal, HOLD
 
-Status: no policy selected, token vault, cleanup job, credentials, provider activation or production migration. Dates below are engineering proposals for Bruno/privacy review, not legal deadlines. Existing journal hashes are pseudonymous, not anonymous. This proposal does not silently change their retention.
+Status: option C is a temporary operational HOLD only; no final retention policy selected, token vault, cleanup job, credentials, provider activation or production migration. See billing-assisted-restore-feasibility-20261115.md for the follow-up investigation. Dates below are engineering proposals for Bruno/privacy review, not legal deadlines. Existing journal hashes are pseudonymous, not anonymous. This proposal does not silently change their retention.
 
 ## Verified constraints
 
