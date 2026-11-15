@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS crewcheck_billing_contracting_intents (
   PRIMARY KEY (operation_id),
   UNIQUE KEY billing_intent_open_owner_uq (account_key, active_slot),
   UNIQUE KEY billing_intent_provider_ref_uq (provider, provider_ref),
-  CONSTRAINT billing_intent_state_ck CHECK (state IN ('reserved','dispatching','uncertain','created')),
+  CONSTRAINT billing_intent_state_ck CHECK (state IN ('reserved','dispatching','uncertain','created','reconciliation_required')),
   CONSTRAINT billing_intent_slot_ck CHECK (active_slot = 1),
   CONSTRAINT billing_intent_redaction_ck CHECK ((owner_redacted=0 AND owner_email IS NOT NULL AND owner_public_id IS NOT NULL) OR (owner_redacted=1 AND owner_email IS NULL AND owner_public_id IS NULL))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS crewcheck_billing_contracting_intents (
 CREATE TABLE IF NOT EXISTS crewcheck_billing_intent_evidence (
   receipt_id CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   operation_id CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider VARCHAR(20) NOT NULL,
   kind VARCHAR(24) NOT NULL,
   provider_ref VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NULL,
   evidence_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,

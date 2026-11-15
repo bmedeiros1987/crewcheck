@@ -78,6 +78,7 @@ jobs:
           node scripts/regression-platform-entitlement.mjs
           node scripts/regression-profile-locks.mjs
           node scripts/regression-platform-entitlement-mysql.mjs
+          BILLING_INTENT_RUN_LEGACY_SQL=0 BILLING_INTENT_EVIDENCE_DIR=artifacts/billing-intent-raw bash scripts/regression-billing-contracting-intent-mysql-local.sh
           node scripts/v139/apply.mjs
           node scripts/android-play/test_release_approval_isolated.mjs || exit $?
           node scripts/android-play/test_release_workflow_off.mjs
@@ -103,9 +104,19 @@ jobs:
           node scripts/regression-platform-entitlement.mjs
           node scripts/regression-profile-locks.mjs
           node scripts/regression-platform-entitlement-mysql.mjs
+          BILLING_INTENT_RUN_LEGACY_SQL=0 BILLING_INTENT_EVIDENCE_DIR=artifacts/billing-intent-prepared bash scripts/regression-billing-contracting-intent-mysql-local.sh
       - name: Remove disposable database
         if: always()
         run: docker stop crewcheck-notification-qa || true
+      - name: Preserve synthetic billing intent evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: billing-intent-mysql-synthetic
+          path: |
+            artifacts/billing-intent-raw/
+            artifacts/billing-intent-prepared/
+          if-no-files-found: ignore
   emergency-browser:
     name: SOS authenticated recovery browser fixtures
     runs-on: ubuntu-24.04

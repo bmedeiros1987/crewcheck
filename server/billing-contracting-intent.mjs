@@ -5,7 +5,7 @@ import { withPlatformEntitlements } from './platform-entitlement.mjs';
 const INTENTS='crewcheck_billing_contracting_intents', EVIDENCE='crewcheck_billing_intent_evidence';
 const columns={
  [INTENTS]:['operation_id','account_key','owner_digest','owner_email','owner_public_id','owner_redacted','provider','plan','state','active_slot','provider_ref','created_at','updated_at'],
- [EVIDENCE]:['receipt_id','operation_id','kind','provider_ref','evidence_hash','recorded_at'],
+ [EVIDENCE]:['receipt_id','operation_id','provider','kind','provider_ref','evidence_hash','recorded_at'],
 };
 const error=(code,status=409)=>Object.assign(new Error(code),{code,status});
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -24,7 +24,7 @@ export async function inspectBillingIntentSchema(db){
  for(const [table,names] of Object.entries(columns))for(const name of names)if(!available.has(`${table}.${name}`))missing.push(`${table}.${name}`);
  const expected={
   [INTENTS]:{operation_id:['char',64,false],account_key:['char',64,false],owner_digest:['char',64,false],owner_email:['varchar',254,true],owner_public_id:['varchar',24,true],owner_redacted:['tinyint',null,false],provider:['varchar',20,false],plan:['varchar',40,false],state:['varchar',24,false],active_slot:['tinyint',null,false],provider_ref:['varchar',255,true],created_at:['datetime',null,false],updated_at:['datetime',null,false]},
-  [EVIDENCE]:{receipt_id:['char',64,false],operation_id:['char',64,false],kind:['varchar',24,false],provider_ref:['varchar',255,true],evidence_hash:['char',64,false],recorded_at:['datetime',null,false]},
+  [EVIDENCE]:{receipt_id:['char',64,false],operation_id:['char',64,false],provider:['varchar',20,false],kind:['varchar',24,false],provider_ref:['varchar',255,true],evidence_hash:['char',64,false],recorded_at:['datetime',null,false]},
  };
  for(const [table,fields] of Object.entries(expected))for(const [name,[type,length,nullable]] of Object.entries(fields)){
   const row=found.rows.find(value=>value.table_name===table&&value.column_name===name);
@@ -61,8 +61,8 @@ function owned(row,input,allowRedacted=false){
  if(!row||row.account_key!==accountKey(input)||row.owner_digest!==ownerDigest(input))throw error('BILLING_INTENT_OWNER_MISMATCH');
  const redacted=Number(row.owner_redacted)===1;
  if(redacted?(!allowRedacted||row.owner_email!==null||row.owner_public_id!==null):(Number(row.owner_redacted)!==0||row.owner_email!==input.email||row.owner_public_id!==input.expectedPublicId))throw error('BILLING_INTENT_OWNER_MISMATCH');
- if(!digest(row.operation_id)||Number(row.active_slot)!==1||!['reserved','dispatching','uncertain','created'].includes(row.state)||!['asaas','google_play'].includes(row.provider)||!['premium_monthly','premium_annual'].includes(row.plan))throw error('BILLING_INTENT_RECORD_INVALID',503);
- if(row.state==='created'?!reference(row.provider,row.provider_ref):row.provider_ref!=null)throw error('BILLING_INTENT_RECORD_INVALID',503);
+ if(!digest(row.operation_id)||Number(row.active_slot)!==1||!['reserved','dispatching','uncertain','created','reconciliation_required'].includes(row.state)||!['asaas','google_play'].includes(row.provider)||!['premium_monthly','premium_annual'].includes(row.plan))throw error('BILLING_INTENT_RECORD_INVALID',503);
+ if(row.state==='created'?!reference(row.provider,row.provider_ref):row.state==='reconciliation_required'?(row.provider_ref!==null&&!reference(row.provider,row.provider_ref)):row.provider_ref!=null)throw error('BILLING_INTENT_RECORD_INVALID',503);
  return row;
 }
 function view(row,reused=true){return {operationId:row.operation_id,provider:row.provider,plan:row.plan,state:row.state,reused};}
@@ -91,16 +91,26 @@ export async function claimBillingIntent(db,input){
 }
 export async function recordBillingIntentOutcome(db,input){
  const created=input?.kind==='created';
- if(!['created','uncertain'].includes(input?.kind)||!digest(input.receiptId)||!digest(input.evidenceHash)||(!created&&input.providerRef!=null))throw error('BILLING_INTENT_EVIDENCE_INVALID',400);
+ if(!['created','uncertain'].includes(input?.kind)||!digest(input.receiptId)||!digest(input.evidenceHash)||(!created&&input.providerRef!=null)||(input.provider!==undefined&&!['asaas','google_play'].includes(input.provider)))throw error('BILLING_INTENT_EVIDENCE_INVALID',400);
  return evidenceBoundary(db,input,async(client)=>{
   const row=owned((await client.query(`SELECT * FROM ${INTENTS} WHERE operation_id=$1 FOR UPDATE`,[input.operationId])).rows[0],input,true);
-  if(created&&!reference(row.provider,input.providerRef))throw error('BILLING_INTENT_REFERENCE_INVALID',400);
+  const provider=input.provider||row.provider;
+  if(created&&!reference(provider,input.providerRef))throw error('BILLING_INTENT_REFERENCE_INVALID',400);
+  if(row.state==='reserved')throw error('BILLING_INTENT_TRANSITION_INVALID');
   const old=(await client.query(`SELECT * FROM ${EVIDENCE} WHERE receipt_id=$1 FOR UPDATE`,[input.receiptId])).rows[0];
-  if(old){if(old.operation_id!==input.operationId||old.kind!==input.kind||old.evidence_hash!==input.evidenceHash||(old.provider_ref||null)!==(input.providerRef||null))throw error('BILLING_INTENT_RECEIPT_CONFLICT');return view(row);}
-  if(!['dispatching','uncertain'].includes(row.state))throw error('BILLING_INTENT_TRANSITION_INVALID');
-  await client.query(`INSERT INTO ${EVIDENCE}(receipt_id,operation_id,kind,provider_ref,evidence_hash) VALUES($1,$2,$3,$4,$5)`,[input.receiptId,input.operationId,input.kind,input.providerRef||null,input.evidenceHash]);
-  await client.query(`UPDATE ${INTENTS} SET state=$2,provider_ref=$3 WHERE operation_id=$1`,[input.operationId,created?'created':'uncertain',input.providerRef||null]);
-  return view({...row,state:created?'created':'uncertain'});
+  if(old){if(old.operation_id!==input.operationId||old.provider!==provider||old.kind!==input.kind||old.evidence_hash!==input.evidenceHash||(old.provider_ref||null)!==(input.providerRef||null))throw error('BILLING_INTENT_RECEIPT_CONFLICT');return view(row);}
+  let conflict=provider!==row.provider||row.state==='reconciliation_required'||(created&&row.provider_ref!==null&&row.provider_ref!==input.providerRef);
+  if(created&&!conflict){
+   const claimed=await client.query(`SELECT operation_id FROM ${INTENTS} WHERE provider=$1 AND provider_ref=$2 FOR UPDATE`,[provider,input.providerRef]);
+   if(claimed.rows.some(value=>value.operation_id!==input.operationId))conflict=true;
+  }
+  // Preserve every admitted, owner-bound outcome before changing the operation.
+  // A conflict is evidence for reconciliation, never permission to switch provider.
+  await client.query(`INSERT INTO ${EVIDENCE}(receipt_id,operation_id,provider,kind,provider_ref,evidence_hash) VALUES($1,$2,$3,$4,$5,$6)`,[input.receiptId,input.operationId,provider,input.kind,input.providerRef||null,input.evidenceHash]);
+  const next=conflict?'reconciliation_required':created?'created':row.state==='created'?'created':'uncertain';
+  const ref=conflict||!created?row.provider_ref:input.providerRef;
+  await client.query(`UPDATE ${INTENTS} SET state=$2,provider_ref=$3 WHERE operation_id=$1`,[input.operationId,next,ref]);
+  return view({...row,state:next,provider_ref:ref});
  });
 }
 
