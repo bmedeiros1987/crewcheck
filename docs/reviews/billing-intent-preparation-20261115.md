@@ -45,3 +45,9 @@ The cached MySQL8.4 runner uses an owned temporary datadir/socket, no network or
 - Independent read-only reviews closed the rollback/late-owner issues in the bounded preparation and found no new blocker in the conflict delta. Reviewers did not execute tests. Exact-head CI is still required.
 
 CI adds raw/prepared intent runs to the existing validation job. Mode0 skips only duplicate legacy replay because that job already executes those fixtures; it does not skip the new SQL tests. The earlier stock-image daemon startup failure, harness failures and unsafe rollback counterproof remain preserved privately. None is relabelled as a successful run.
+
+## Test-only orchestration follow-up
+
+A synthetic driver composes the actual reservation, admission and outcome primitives against the disposable MySQL database. Six scenarios pass: eight competing drivers produce one simulated effect; timeout after an effect blocks another call; interruption before transport stays blocked; a late receipt recovers a known operation; deletion during transport retains redacted evidence without profile resurrection; and lost receipt-COMMIT acknowledgement does not repeat the simulated effect. The runner then restarts MySQL and checks the complete combined evidence snapshot.
+
+The driver instruments its caller transaction scope to assert simulated transport occurs outside a transaction. This is a test recipe, not a production dispatcher or proof of actual route/provider composition. No provider adapter, authenticated ingestion, migration rollout or entitlement grant is introduced. Operational HOLD and all privacy/reconciliation gates above remain. Remote HEAD and the blocked PR description are unchanged while this follow-up is local.
