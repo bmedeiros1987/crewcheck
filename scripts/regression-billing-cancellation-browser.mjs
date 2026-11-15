@@ -10,9 +10,18 @@ try{for(const width of [390,1440])for(const mode of ['canceled','already-recorde
  });
  const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);const manage=page.getByRole('button',{name:'Gerenciar ou cancelar',exact:true});await manage.waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent.includes('Gerenciar ou cancelar')&&!b.disabled));const baselineReads=statusReads;
  const switchAccount=()=>page.evaluate(()=>{for(const id of ['synthetic-B','synthetic-A']){dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_token',id);localStorage.setItem('crewcheck_auth_user',JSON.stringify({id,email:'synthetic@example.invalid',role:'crew'}));dispatchEvent(new Event('crewcheck:auth-changed'));}});
- if(mode==='before-revoked')await switchAccount();await manage.click();if(mode.startsWith('late-')){await started;await switchAccount();release();}await page.waitForTimeout(200);
- if(mode==='canceled')await page.locator('[data-sonner-toast][data-type=success]').waitFor();else assert.equal(await page.locator('[data-sonner-toast][data-type=success]').count(),0);
- if(['empty','provider-error'].includes(mode))await page.locator('[data-sonner-toast][data-type=error]').waitFor();else assert.equal(await page.locator('[data-sonner-toast][data-type=error]').count(),0);
+ if(mode==='before-revoked')await switchAccount();
+ if(mode.startsWith('late-')){
+  // Await the real mounted button callback's Promise, not an arbitrary sleep.
+  // This observes completion; it does not claim pointer/hardware validation.
+  const completed=page.evaluate(async()=>{const button=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Gerenciar ou cancelar'));const key=Object.keys(button).find(k=>k.startsWith('__reactProps$'));const handler=button[key].onClick;if(typeof handler!=='function')throw Error('Actual mounted handler missing');await handler();window.cancelHandlerFinished=true;});
+  await Promise.race([started,completed.then(()=>{throw Error('Late handler completed before cancellation request');})]);await switchAccount();release();await completed;assert.equal(await page.evaluate(()=>window.cancelHandlerFinished),true);
+ }else await manage.click();
+ if(['canceled','already-recorded','management'].includes(mode))await page.getByText(mode==='management'?'SYNTHETIC_MANAGEMENT':'SYNTHETIC_CANCELLATION',{exact:true}).waitFor();
+ if(mode==='canceled')await page.locator('[data-sonner-toast][data-type=success]').waitFor();
+ if(['empty','provider-error'].includes(mode))await page.locator('[data-sonner-toast][data-type=error]').waitFor();
+ assert.equal(await page.locator('[data-sonner-toast][data-type=success]').count(),mode==='canceled'?1:0);
+ assert.equal(await page.locator('[data-sonner-toast][data-type=error]').count(),['empty','provider-error'].includes(mode)?1:0);
  const opens=await page.evaluate(()=>window.cancelOpens);assert.equal(opens.length,['management','google-direct'].includes(mode)?1:0);assert.equal(posts,['before-revoked','prompt-switch','declined','google-direct'].includes(mode)?0:1);
  if(['late-ready','late-error','before-revoked','prompt-switch'].includes(mode)){assert.equal(statusReads,baselineReads,'revoked account cannot refresh another account');assert.equal(await page.getByText('SYNTHETIC_CANCELLATION',{exact:true}).count(),0);}
  assert.deepEqual(errors,[]);await page.screenshot({path:path.join(out,`cancel-${width}-${mode}.png`)});results.push({width,mode,posts,opens:opens.length,syntheticOnly:true});await context.close();
