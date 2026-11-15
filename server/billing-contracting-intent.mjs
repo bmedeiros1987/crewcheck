@@ -82,7 +82,10 @@ export async function reserveBillingIntent(db,input){
 }
 // Internal read-only lookup: an unknown operation must never be reserved/adopted.
 export async function readOwnedBillingIntent(db,input){
- return boundary(db,input,async client=>view(owned((await client.query(`SELECT * FROM ${INTENTS} WHERE operation_id=$1 FOR UPDATE`,[input.operationId])).rows[0],input)));
+ return boundary(db,input,async client=>{
+  const row=owned((await client.query(`SELECT * FROM ${INTENTS} WHERE operation_id=$1 FOR UPDATE`,[input.operationId])).rows[0],input);
+  return {...view(row),referenceHash:row.provider==='google_play'?row.provider_ref:null};
+ });
 }
 export async function claimBillingIntent(db,input){
  return boundary(db,input,async(client,snapshot)=>{
