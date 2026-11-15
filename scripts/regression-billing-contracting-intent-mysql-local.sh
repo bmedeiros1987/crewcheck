@@ -52,6 +52,8 @@ docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.so
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-google-event-transaction-mysql.mjs > "$output_dir/google-event-transaction.log" 2>&1
 docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_google_observation_qa;'
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-google-event-observation-mysql.mjs > "$output_dir/google-event-observation.log" 2>&1
+docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_reference_qa;'
+CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-reference-payment-binding-mysql.mjs > "$output_dir/reference-binding.log" 2>&1
 for qa_cancel_timezone in UTC America/Sao_Paulo Pacific/Auckland; do
  CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" TZ="$qa_cancel_timezone" node scripts/regression-billing-cancellation-mysql.mjs >> "$output_dir/cancellation.log" 2>&1
 done
