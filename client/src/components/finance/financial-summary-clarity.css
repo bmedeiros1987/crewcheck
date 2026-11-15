@@ -1,0 +1,16 @@
+.cc-home-estimate-heading,.cc-statement-summary>header,.cc-persisted-finance>.cc-persisted-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.cc-home-estimate-heading p,.cc-statement-summary h3,.cc-persisted-finance>.cc-persisted-heading h3{margin:0;font-size:15px;line-height:1.4}
+.cc-home-brl-estimate>small{display:block;margin-top:6px;line-height:1.5;overflow-wrap:anywhere}
+.cc-home-brl-estimate>details>summary,.cc-persisted-heading summary,.cc-persisted-finance>button{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer}
+.cc-home-brl-estimate>details>summary{margin-top:8px}
+.cc-statement-summary{padding:16px;border:1px solid var(--cc-review-border,var(--border));border-radius:16px;background:var(--cc-review-surface,var(--background));color:var(--cc-review-text,var(--foreground));margin:0 0 12px;min-width:0}
+.cc-statement-summary .cc-payment-value strong{font-size:clamp(24px,7vw,34px);line-height:1.25;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cc-statement-summary>small{display:block;font-size:12px;line-height:1.5;margin-top:8px;color:var(--cc-review-muted,var(--muted-foreground))}
+.cc-statement-summary .cc-forecast-currency-code,.cc-statement-summary .cc-payment-timing{font-size:12px;margin:6px 0}
+.cc-persisted-finance>.cc-persisted-heading{position:relative;margin-bottom:8px}
+.cc-persisted-heading>.cc-financial-help{margin:0}
+.cc-persisted-heading>.cc-financial-help>summary{justify-content:center;min-width:44px;list-style:none}
+.cc-persisted-heading>.cc-financial-help>summary::-webkit-details-marker{display:none}
+.cc-persisted-heading>.cc-financial-help>p{position:absolute;right:0;z-index:3;max-width:min(280px,calc(100vw - 64px));padding:12px;border:1px solid var(--cc-review-border,var(--border));border-radius:12px;background:var(--cc-review-surface,var(--background));color:var(--cc-review-text,var(--foreground));box-shadow:0 8px 24px #0003}
+.cc-financial-action-label{display:inline-flex;align-items:center;gap:8px}
+.cc-home-brl-estimate :is(button,summary):focus-visible,.cc-statement-summary :is(button,summary):focus-visible{outline:3px solid var(--cc-accent,#0084ac);outline-offset:3px}

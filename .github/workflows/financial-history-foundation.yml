@@ -2,6 +2,12 @@ name: Financial history foundation
 on:
   pull_request:
     paths:
+      - 'client/src/components/finance/HomeFinancialEstimate.tsx'
+      - 'client/src/components/finance/NextPaymentCard.tsx'
+      - 'client/src/components/finance/ForecastCurrencyCarousel.tsx'
+      - 'client/src/components/finance/FinancialHistoryExplorer.tsx'
+      - 'client/src/components/finance/PersistentFinancialHistory.tsx'
+      - 'client/src/components/finance/financial-summary-clarity.css'
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
@@ -325,6 +331,10 @@ jobs:
         run: |
           node scripts/regression-financial-changes-browser.mjs
           node scripts/regression-financial-changes-home-compiled.mjs
+      - name: Verify concise financial summary and currency pending states
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-summary-clarity.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
         timeout-minutes: 10
         env:

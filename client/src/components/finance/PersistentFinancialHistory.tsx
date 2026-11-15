@@ -1,5 +1,8 @@
 import {financialHistoryComparison} from '@shared/financialHistoryComparison.mjs';
 import {formatFinancialMinor,currencyMinorDigits} from '@shared/financialMoney.mjs';
+import {Info,Calculator} from 'lucide-react';
+import {useFinancialScreen} from './FinancialScreen';
+import './financial-summary-clarity.css';
 import { useEffect, useState } from 'react';
 import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/authClient';
 import { validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
@@ -27,6 +30,7 @@ function decode(raw:any,expectedOwner:string,level:Level,range:FinancialRange):H
 }
 export default function PersistentFinancialHistory({range,mode,view,comparison='month',entryScope}:{range:FinancialRange;mode:'allowance'|'salary';view:'statement'|'charts';comparison?:'month'|'week';entryScope?:string}) {
   const privacy=useFinancialPrivacy(),identity=owner(),token=getToken();
+  const {screen,navigate}=useFinancialScreen();
   const scope=entryScope||financialEntryScope(identity+':'+token),preferenceKey=JSON.stringify([mode,range.start,range.end,view]);
   const initial=()=>({scope,key:preferenceKey,...readFinancialListPreference(scope,preferenceKey,mode==='salary'?'month':'item')});
   const [preferences,setPreferences]=useState(initial);
@@ -57,12 +61,13 @@ export default function PersistentFinancialHistory({range,mode,view,comparison='
   const date=(iso:string)=>iso.split('-').reverse().join('/');
   const {groups:totals,excluded,comparableCurrencies}=financialHistoryComparison(rows,{grouping:comparison,incomplete:data?.state==='incomplete'});
   const width=(item:{currency:string;amountMinor:number|null})=>{const max=Math.max(0,...totals.filter(row=>row.currency===item.currency).flatMap(row=>row.amountMinor===null?[]:[Math.abs(row.amountMinor)]));return max&&item.amountMinor!==null?Math.abs(item.amountMinor)/max*100:0;};
-  const message=current?.loading?'Consultando registros…':current?.error==='LEDGER_OFF'?'Histórico salvo indisponível.':!data?'Não foi possível carregar o histórico.':data.state==='incomplete'?'Histórico parcial · conferir registros.':!rows.length?'Sem registros neste período.':'Moeda original · previsto e confirmado separados.';
+  const message=current?.loading?'Consultando registros…':current?.error==='LEDGER_OFF'?'Consulta salva não ativada.':!data?'Não foi possível carregar o histórico.':data.state==='incomplete'?'Histórico parcial · conferir registros.':!rows.length?'Sem registros neste período.':'Moeda original · previsto e confirmado separados.';
   return <section className="cc-persisted-finance" aria-label="Histórico financeiro salvo" data-financial-content-ready={current&&!current.loading?'true':'false'}>
-    <h3>Histórico salvo</h3>
-    <details className="cc-financial-help"><summary aria-label="Entender histórico salvo">?</summary><p>Somente registros persistidos da conta. Períodos sem registros não são zero. Liquidação conforme registro informado, sem consulta bancária; datas não confirmam pagamento. {current?.error==='LEDGER_OFF'?'Consulta persistida desativada; estimativas da escala permanecem separadas.':''}</p></details>
+    <header className="cc-persisted-heading"><h3>Registrado</h3>
+    <details className="cc-financial-help"><summary aria-label="Entender histórico salvo"><Info size={20} aria-hidden="true"/></summary><p>Somente registros persistidos da conta. Períodos sem registros não são zero. Liquidação conforme registro informado, sem consulta bancária; datas não confirmam pagamento. {current?.error==='LEDGER_OFF'?'Consulta persistida desativada; estimativas da escala permanecem separadas.':''}</p></details></header>
     {view==='statement'&&<label>Registros por<select aria-label="Agrupamento dos registros salvos" value={level} onChange={event=>setLevel(event.target.value as Level)}>{(mode==='salary'?['month']:['item','day','week']).map(value=><option key={value} value={value}>{{item:'Lançamento',day:'Dia',week:'Semana',month:'Mês'}[value]}</option>)}</select></label>}
     <p role="status" data-financial-load-state={current?.loading?'loading':current?.error||data?.state||'unavailable'}>{message}</p>
+    {!current?.loading&&!data&&current?.error==='LEDGER_OFF'&&screen==='statement'&&<button type="button" onClick={()=>navigate('overview')}><Calculator size={18} aria-hidden="true"/>Ver previsão</button>}
     {!current?.loading&&!data&&current?.error!=='LEDGER_OFF'&&<button type="button" onClick={()=>refresh(n=>n+1)}>Tentar novamente</button>}
 
     {data&&rows.length>0&&<>

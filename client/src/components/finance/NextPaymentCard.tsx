@@ -7,6 +7,7 @@ import type { NextPayment } from '@/lib/nextFinancialPayment';
 import type { FinancialRange } from '@/lib/financialHistoryPeriods';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy';
 import './payment-preview.css';
+import './financial-summary-clarity.css';
 import { useFinancialScreen } from './FinancialScreen';
 
 export default function NextPaymentCard({ payment, requestRange, sourceRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void;sourceRange?:FinancialRange; extraDetails?:ReactNode;salaryDisplay?:{title?:string;control:ReactNode;amount:ReactNode;caption:string} }) {
@@ -29,13 +30,17 @@ export default function NextPaymentCard({ payment, requestRange, sourceRange, ex
     target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});focus.focus({preventScroll:true});
   }
   return <div ref={root} className="cc-payment-overview" data-financial-screen={screen} data-financial-item-count={payment.lines.length}>
-    {screen!=='changes'&&payment.kind==='payroll'&&salaryDisplay?.control}
-    {screen==='statement'&&payment.kind==='payroll'&&salaryDisplay?.amount}
     {screen!=='overview'&&<header className="cc-financial-screen-head"><button type="button" onClick={()=>back?back():navigate('overview')}>← Voltar</button><h2 tabIndex={-1} data-financial-screen-heading>{screen==='statement'?'Extrato':screen==='charts'?'Gráficos':screen==='changes'?'Alterações':'Detalhes do pagamento'}</h2></header>}
+    {screen==='statement'&&<section className="cc-statement-summary" aria-label="Previsão da escala">
+      <header><h3>Previsto</h3><FinancialPrivacyToggle iconOnly/></header>
+      {payment.kind==='payroll'&&salaryDisplay?salaryDisplay.amount:<ForecastCurrencyCarousel payment={payment}/>}
+      <small>Estimativa · recebimento não confirmado</small>
+    </section>}
+    {screen!=='changes'&&payment.kind==='payroll'&&salaryDisplay?.control}
     {(screen==='statement'||screen==='charts'||screen==='changes')&&controls}
     {screen==='changes'&&<>{changesDetails}<FinancialChangesScreen range={range}/></>}
     {(screen==='statement'||screen==='charts')&&history}
-    {screen==='statement'&&<p className="cc-financial-history-availability">Previsões recalculadas da escala · separadas dos registros salvos.</p>}
+    {screen==='statement'&&<p className="cc-financial-history-availability">Previsto pela escala · separado do registrado.</p>}
     {(screen==='overview'||screen==='payment')&&<>
     <section className="cc-payment-hero" aria-label="Próximo pagamento previsto">
       <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> {payment.estimationBasis==='operational_month'?'CÁLCULO DA ESCALA':'PRÓXIMO CICLO'}</span><FinancialPrivacyToggle/><details className="cc-payment-help"><summary aria-label="Entender esta previsão"><span aria-hidden="true">?</span></summary><div><p>{privacy.text(payment.source)}</p>{Object.entries(payment.currencyTiming||{}).map(([currency,timing])=><p key={currency}>{currency} · {privacy.text(timing)}</p>)}{payment.issues.length>0&&<ul>{payment.issues.map(issue=><li key={issue}>{privacy.text(issue)}</li>)}</ul>}</div></details>{payment.kind==='allowance'&&<button type="button" className="cc-financial-calculator-shortcut" aria-label="Abrir calculadora de moedas" onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'currency'}))}><Calculator size={20} aria-hidden="true"/></button>}</div>
@@ -57,7 +62,7 @@ export default function NextPaymentCard({ payment, requestRange, sourceRange, ex
       {screen==='statement'||screen==='charts'||screen==='changes'?<button type="button" onClick={()=>navigate('payment')}>Detalhes do pagamento <ChevronRight size={16} aria-hidden="true"/></button>:<button type="button" onClick={()=>navigate(screen==='overview'?'payment':'statement')}>{screen==='overview'?'Detalhes do pagamento':'Extrato'} <ChevronRight size={16} aria-hidden="true"/></button>}
       {screen!=='statement'&&screen!=='payment'&&<button type="button" onClick={()=>navigate('statement')}>Extrato <ChevronRight size={16} aria-hidden="true"/></button>}
       {screen!=='charts'&&<button type="button" onClick={()=>navigate('charts')}>Gráficos <ChevronRight size={16} aria-hidden="true"/></button>}
-      {screen!=='changes'&&<button type="button" onClick={()=>navigate('changes')}><GitCompareArrows size={18} aria-hidden="true"/>Alterações</button>}
+      {screen!=='changes'&&<button type="button" onClick={()=>navigate('changes')}><span className="cc-financial-action-label"><GitCompareArrows size={18} aria-hidden="true"/>Alterações</span><ChevronRight size={16} aria-hidden="true"/></button>}
       {(screen==='charts'||screen==='statement'||screen==='changes')&&<FinancialPrivacyToggle/>}
     </nav>
     {screen==='payment'&&<section className="cc-next-payment-lines" aria-label="Composição do pagamento">

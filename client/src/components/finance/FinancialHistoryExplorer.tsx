@@ -131,14 +131,14 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const max=numeric.length>=2?Math.max(...numeric.map(item=>item.values[displayedCurrency])):null;
   const controls=<>
     <section className="cc-roster-period-v1399 cc-financial-period" aria-label="Período financeiro">
-      <label><CalendarDays aria-hidden="true"/><span>Competência de referência</span><select aria-label="Competência de referência" value={month} onChange={event=>{setMonth(event.target.value);setDay(event.target.value+'-01');}}>{months.map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>
-      <label><span>Filtro</span><select aria-label="Filtro financeiro" value={kind} onChange={event=>setKind(event.target.value as FinancialRange['kind'])}><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option><option value="custom">Período personalizado</option></select></label>
+      <label><CalendarDays aria-hidden="true"/><span>Referência</span><select aria-label="Competência de referência" value={month} onChange={event=>{setMonth(event.target.value);setDay(event.target.value+'-01');}}>{months.map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>
+      <label><span>Período</span><select aria-label="Filtro financeiro" value={kind} onChange={event=>setKind(event.target.value as FinancialRange['kind'])}><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option><option value="custom">Período personalizado</option></select></label>
       {screen==='charts'&&<label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>}
     </section>
     <section className="cc-roster-zoom cc-financial-range" aria-label="Datas financeiras" data-financial-content-ready={busy?'false':'true'}>
       {kind==='week'&&<label>Dia da semana de trabalho<input type="date" aria-label="Dia da semana de trabalho" value={day} onChange={event=>setDay(event.target.value)}/></label>}
       {kind==='custom'&&<><label>Início<input type="date" aria-label="Início financeiro" value={from} onChange={event=>setFrom(event.target.value)}/></label><label>Fim<input type="date" aria-label="Fim financeiro" value={to} onChange={event=>setTo(event.target.value)}/></label></>}
-      <p role="status">{range.valid?`Trabalho: ${range.start} até ${range.end}. `:'Informe um intervalo válido.'}{busy?' Consultando histórico…':''}</p>
+      <p role="status">{range.valid?`Período: ${range.start.split('-').reverse().join('/')} a ${range.end.split('-').reverse().join('/')}. `:'Informe um intervalo válido.'}{busy?' Consultando histórico…':''}</p>
       {missing.length>0&&<p>Sem escala para {missing.join(', ')}. Total do intervalo indisponível.</p>}
       {(recovery.source||recovery.inventory)&&<button type="button" className="cc-financial-retry" disabled={busy} onClick={retryHistory}>Tentar leitura novamente</button>}
       {(notice||conflicts.length>0)&&<p>{notice} {conflicts.length>0?'Revisões ambíguas em '+conflicts.join(', ')+': não somadas.':''}</p>}
