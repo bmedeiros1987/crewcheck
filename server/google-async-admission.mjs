@@ -40,7 +40,9 @@ export function createGoogleAsyncAdmission({db,resolvePrincipal,verifyPurchase,v
    }catch{throw fail('GOOGLE_ASYNC_LAUNCH_ORIGIN_UNCONFIRMED');}
    if(!billingAuthorityCurrent(principal))throw fail('BILLING_ADMISSION_AUTHORITY_REQUIRED');
    // This is durable correlation evidence, never a cached current payment status.
-   if(observed.state==='created'&&observed.referenceHash===tokenHash)return {...publicResult(observed),duplicate:true};
+   const boundOperation=await readOwnedBillingIntent(db,input);check(boundOperation);
+   if(!billingAuthorityCurrent(principal))throw fail('BILLING_ADMISSION_AUTHORITY_REQUIRED');
+   if(boundOperation.state==='created'&&boundOperation.referenceHash===tokenHash)return {...publicResult(boundOperation),duplicate:true};
    const key=digest(JSON.stringify([principal.email,principal.publicId,operationId,tokenHash]));
    await runVerification(key,async()=>{
     // A waiter may have observed dispatching before an earlier flight committed.
