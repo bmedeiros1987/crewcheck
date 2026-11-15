@@ -1445,7 +1445,7 @@ async function handleBillingCancel(req, res) {
   if (subscription.provider === 'google_play') {
     const product = encodeURIComponent(subscription.productId);
     const manageUrl = `https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`;
-    return sendJson(res, 200, { ok: true, actionRequired: true, manageUrl, message: 'Conclua o cancelamento na Google Play. O acesso permanece até o fim do período pago.' });
+    return sendJson(res, 200, { ok: true, actionRequired: true, manageUrl, message: 'Conclua o cancelamento na Google Play. O acesso permanece até o fim do período vigente.' });
   }
   if (subscription.cancelAtPeriodEnd) return sendJson(res, 200, { ok: true, canceled: true, alreadyRecorded: true, currentPeriodEnd: subscription.currentPeriodEnd, message: 'O cancelamento da renovação já está registrado.' });
   let saved;
@@ -1456,7 +1456,7 @@ async function handleBillingCancel(req, res) {
     // A timeout or changed owner/provider cannot certify failure or a safe retry.
     return sendJson(res, 503, { ok: false, code: 'BILLING_CANCELLATION_OUTCOME_UNCERTAIN', message: 'Não foi possível confirmar o cancelamento. Confira o status antes de tentar novamente.' });
   }
-  return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: saved.currentPeriodEnd, message: saved.keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período já pago.' : 'Renovação web cancelada. Isso não confirma pagamento ou quitação de cobranças.' });
+  return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: saved.currentPeriodEnd, message: saved.keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período vigente.' : 'Renovação web cancelada. Isso não confirma pagamento ou quitação de cobranças.' });
 }
 
 async function handleAsaasWebhook(req, res) {
