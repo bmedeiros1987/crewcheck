@@ -169,7 +169,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
     try { mountedSession = captureAuthSession(); } catch { /* No storage access: no purchase admission. */ }
     const listener = async (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      const intent = playPurchaseSession.current || (detail.restored === true ? {session:mountedSession} : null);
+      const intent = playPurchaseSession.current || (detail.restored === true ? {session:mountedSession,productId:undefined} : null);
       const session = intent?.session;
       const current = () => { try { return Boolean(session?.token) && session!.isCurrent(); } catch { return false; } };
       if (!current() || typeof detail.productId !== 'string' || typeof detail.purchaseToken !== 'string'

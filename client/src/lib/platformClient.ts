@@ -313,7 +313,10 @@ export async function verifyGooglePlayPurchase(productId: string, purchaseToken:
   const billing = result?.billing, usage = billing?.usage;
   const active = billing?.premiumAccess === true;
   const activeStatus = ['active','trialing','grace_period'].includes(billing?.status);
-  const expiry = Date.parse(billing?.currentPeriodEnd || '');
+  // saveGoogleSubscription stores Google's ISO expiry as UTC DATETIME; mysql dateStrings returns that exact form.
+  const end = typeof billing?.currentPeriodEnd === 'string' ? billing.currentPeriodEnd : '';
+  const utcEnd = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(end) ? end.replace(' ','T')+'Z' : end;
+  const expiry = /(?:Z|[+-]\d{2}:\d{2})$/.test(utcEnd) ? Date.parse(utcEnd) : NaN;
   if (result?.ok !== true || typeof result.needsAcknowledgement !== 'boolean'
       || billing?.provider !== 'google_play' || billing.productId !== productId
       || !['free','premium_monthly','premium_annual'].includes(billing.plan)

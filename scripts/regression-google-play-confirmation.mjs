@@ -4,8 +4,11 @@ import ts from 'typescript';
 function actual(file,name,variable=false){const source=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,file.endsWith('tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS),matches=[];function visit(n){if(variable?ts.isVariableDeclaration(n)&&n.name.getText(ast)===name&&n.initializer?.getText(ast).includes('verifyGooglePlayPurchase'):ts.isFunctionDeclaration(n)&&n.name?.text===name)matches.push(variable?n.initializer.getText(ast):n.getText(ast).replace(/^export\s+/,''));ts.forEachChild(n,visit);}visit(ast);assert.equal(matches.length,1);return ts.transpileModule(variable?'const listener='+matches[0]+';':matches[0],{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;}
 const helper=actual('client/src/lib/platformClient.ts','verifyGooglePlayPurchase'),handler=actual('client/src/components/platform/PlatformCenter.tsx','listener',true),restore=actual('client/src/components/platform/PlatformCenter.tsx','restore');
 const product='crewcheck_premium_monthly',receipt=()=>({ok:true,needsAcknowledgement:true,billing:{plan:'premium_monthly',status:'active',provider:'google_play',productId:product,currentPeriodEnd:new Date(Date.now()+86400000).toISOString(),premiumAccess:true,usage:{kind:'wakeup_call',monthKey:'2032-02',used:0,limit:20,remaining:20}}});
-const modes=['active','automatic-restored','acknowledged','pending','expired','empty','missing-ok','missing-billing','bad-usage','wrong-provider','wrong-product','inconsistent-status','expired-active','free-active','missing-ack','before-revoked','late-ready','late-error','unknown-intent','wrong-intent','duplicate'];
+const modes=['active','sql-expiry','expired-sql','timezone-less-iso','automatic-restored','acknowledged','pending','expired','empty','missing-ok','missing-billing','bad-usage','wrong-provider','wrong-product','inconsistent-status','expired-active','free-active','missing-ack','before-revoked','late-ready','late-error','unknown-intent','wrong-intent','duplicate'];
 for(const mode of modes){let current=mode!=='before-revoked',calls=0,busy='old',loads=0,acks=0;const notices=[];let release;const gate=new Promise(r=>release=r);const session={token:'SYNTHETIC',isCurrent:()=>current};const result=receipt();
+ if(mode==='sql-expiry')result.billing.currentPeriodEnd=result.billing.currentPeriodEnd.replace('T',' ').replace('Z','');
+ if(mode==='expired-sql')result.billing.currentPeriodEnd=new Date(Date.now()-3600000).toISOString().replace('T',' ').replace('Z','');
+ if(mode==='timezone-less-iso')result.billing.currentPeriodEnd=result.billing.currentPeriodEnd.replace('Z','');
  if(mode==='acknowledged')result.needsAcknowledgement=false;
  if(['pending','expired'].includes(mode))Object.assign(result.billing,{premiumAccess:false,plan:'free',status:mode});
  if(mode==='missing-ok')delete result.ok;if(mode==='missing-billing')delete result.billing;
@@ -18,10 +21,10 @@ for(const mode of modes){let current=mode!=='before-revoked',calls=0,busy='old',
  const running=listener(event);if(mode==='duplicate'){const second=listener(event);release();await second;}else if(mode.startsWith('late-')){current=false;busy='OTHER_ACCOUNT';release();}await running;
  if(['before-revoked','unknown-intent','wrong-intent'].includes(mode)){assert.equal(calls,0);assert.equal(notices.length,0);}
  else if(mode.startsWith('late-')){assert.equal(notices.length,0);assert.equal(loads,0);assert.equal(acks,0);assert.equal(busy,'OTHER_ACCOUNT');}
- else if(['active','automatic-restored','acknowledged','duplicate'].includes(mode)){assert.equal(calls,1);assert.equal(notices[0][0],'success');assert.equal(acks,mode==='acknowledged'?0:1);assert.equal(loads,1);}
+ else if(['active','sql-expiry','automatic-restored','acknowledged','duplicate'].includes(mode)){assert.equal(calls,1);assert.equal(notices[0][0],'success');assert.equal(acks,mode==='acknowledged'?0:1);assert.equal(loads,1);}
  else if(['pending','expired'].includes(mode)){assert.equal(notices[0][0],'pending');assert.equal(acks,0);assert.equal(loads,1);}
  else {assert.equal(notices[0][0],'error');assert.equal(acks,0);assert.equal(loads,0);}
 }
 // Real restore timer must not clear another account's current operation.
 let current=true,busy='',timer;const session={token:'SYNTHETIC',isCurrent:()=>current},scope={captureAuthSession:()=>session,toast:{message(){},error(){assert.fail('unexpected restore error');}},playPurchaseSession:{current:null},setBusy:fn=>busy=typeof fn==='function'?fn(busy):fn,restoreGooglePlayPurchases(){},window:{setTimeout:fn=>timer=fn}};new Function(...Object.keys(scope),restore+';return restore;')(...Object.values(scope))();current=false;busy='OTHER_ACCOUNT';timer();assert.equal(busy,'OTHER_ACCOUNT');
-console.log('PASS actual Google purchase reader/listener:21 synthetic receipt, pending/active, explicit intent, duplicate and revoked-session cases; restore timer fenced; no store/provider/network');
+console.log('PASS actual Google purchase reader/listener:24 synthetic receipt, pending/active, explicit intent, duplicate and revoked-session cases; restore timer fenced; no store/provider/network');
