@@ -1370,10 +1370,15 @@ async function handleGooglePurchase(req, res) {
   }
   const saved = await saveGoogleSubscription(context.db, context.identity.email, purchaseToken, verified, context.profile.public_id);
   const profile = { ...context.profile, plan: saved.active ? plan : 'free' };
+  const billing = await subscriptionStatus(context.db, profile);
+  // A completed write is not permission to confirm a conflicting current receipt.
+  if (saved.active && (billing?.premiumAccess !== true || billing.provider !== 'google_play' || billing.productId !== productId || billing.plan !== plan || !['active', 'grace_period'].includes(billing.status))) {
+    return sendJson(res, 409, { ok: false, code: 'GOOGLE_CONFIRMATION_RECONCILIATION_REQUIRED', message: 'A compra requer conciliação antes de confirmar o acesso.' });
+  }
   return sendJson(res, 200, {
     ok: true,
-    billing: await subscriptionStatus(context.db, profile),
-    needsAcknowledgement: verified.payload.acknowledgementState !== 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED',
+    billing,
+    needsAcknowledgement: saved.active === true && verified.payload.acknowledgementState !== 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED',
     message: saved.active ? 'Assinatura Google Play confirmada e restaurada.' : 'Compra localizada, mas ainda sem acesso ativo.',
   });
 }
