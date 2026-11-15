@@ -7,7 +7,7 @@ const PAID = new Set(['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED']);
 const STATUS = new Map([
   ['PAYMENT_CONFIRMED', 'active'], ['PAYMENT_RECEIVED', 'active'],
   ['PAYMENT_OVERDUE', 'past_due'], ['PAYMENT_REFUNDED', 'refunded'],
-  ['PAYMENT_REFUND_IN_PROGRESS', 'refunded'], ['PAYMENT_DELETED', 'canceled'],
+  ['PAYMENT_DELETED', 'canceled'],
   ['SUBSCRIPTION_DELETED', 'canceled'], ['SUBSCRIPTION_INACTIVATED', 'canceled'],
 ]);
 const INFORMATIONAL = new Set([
@@ -63,7 +63,8 @@ async function applyReceipt(client, event, { legacyReceipt = false, now = Date.n
   if (legacyReceipt) return end('quarantined', 'legacy_receipt_unverified');
   if (INFORMATIONAL.has(event.eventName)) return end('ignored', 'informational_event');
   const status = STATUS.get(event.eventName);
-  if (!status) return end('quarantined', event.eventName === 'SUBSCRIPTION_REACTIVATED' ? 'payment_evidence_required' : 'unsupported_event');
+  const refundInProgress = event.eventName === 'PAYMENT_REFUND_IN_PROGRESS';
+  if (!status && !refundInProgress) return end('quarantined', event.eventName === 'SUBSCRIPTION_REACTIVATED' ? 'payment_evidence_required' : 'unsupported_event');
   if (event.conflictingRefs) return end('quarantined', 'conflicting_subscription_references');
   if (!event.subscriptionRef) return end('quarantined', 'missing_subscription_reference');
   if (!event.eventTime) return end('quarantined', 'invalid_event_time');
@@ -84,6 +85,9 @@ async function applyReceipt(client, event, { legacyReceipt = false, now = Date.n
   if (event.eventName.startsWith('PAYMENT_') && !event.paymentId) return end('quarantined', 'missing_payment_reference');
   if (!PAID.has(event.eventName) && event.paymentId && metadata.lastAsaasPaymentId
     && metadata.lastAsaasPaymentId !== event.paymentId) return end('quarantined', 'different_payment_requires_review');
+  // A pending refund is not a completed refund. Keep the receipt for explicit
+  // reconciliation; do not grant, extend, revoke or relabel the current subscription.
+  if (refundInProgress) return end('quarantined', 'refund_in_progress_requires_reconciliation');
   let periodEnd = subscription.current_period_end;
   if (PAID.has(event.eventName)) {
     const processingTime = new Date(now());
