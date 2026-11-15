@@ -1,62 +1,47 @@
-# Isolated contracting-intent preparation — HOLD
+# Contracting-intent preparation — HOLD
 
-This local follow-up belongs to the existing Work billing branch. It is not wired to platform routes, native billing, webhooks, RTDN, a queue, timer or provider. PR #1342's published candidate324c1b3f remains a confirmation/feedback fix; its CI does not cover this later local checkpoint.
+This follow-up belongs to Work's existing billing branch. It is not wired to platform routes, native billing, webhooks, RTDN, a queue, timer or provider. It performs no provider transport and grants no entitlement. No production migration, charge, cancellation, refund or release is included.
 
-## Schema compatibility
+## Schema and privacy boundary
 
-The current canonical migration has one subscription row per email. It does not contain a durable contracting intent or separate outcome evidence. Reusing its metadata would couple an in-progress operation to a row that can be overwritten by another provider. The additive proposal20261115_022 introduces two separate InnoDB tables without changing existing profile, subscription or entitlement rows. It is never installed by application startup or the new module. No production migration is executed or authorized by this preparation.
+The current schema has one subscription row per email, but no durable contracting intent or separate outcome evidence. The additive proposal20261115_022 introduces two InnoDB tables without changing existing profile/subscription rows. Application startup never installs it.
 
-The read-only schema check verifies required columns/types/nullability/binary receipt-reference collation, transactional engines and unique indexes. Missing old schema, missing account uniqueness or a nullable active slot fails closed. There is one occupied slot per account; no lease expiration, release, cancellation or automatic retry is implemented. Future lifecycle/privacy/deletion handling is a separate integration gate.
+The read-only compatibility check verifies columns, types/nullability, binary identifier collation, InnoDB and unique indexes. Missing schema or account uniqueness fails closed. There is one occupied slot per account; no lease expiry or automatic release/retry is implemented.
 
-## Boundary
+An account key and owner-incarnation digest prevent a recreated account from adopting or contracting around an old operation. The redaction helper requires the active canonical transaction client and the current profile lock; it clears raw email/public-ID links in the same transaction as deletion. Rollback restores both. Known-original-owner outcomes can subsequently be appended under the immutable operation lock without recreating a profile or granting access.
 
-- Reservation/claim reuse the existing ordered profile/entitlement transaction boundary and verify the account public-ID incarnation. Competing requests reuse one original operation. Existing provider evidence blocks new contracting instead of being overwritten, including terminal-looking rows that still need reconciliation.
-- A committed claim changes reserved to dispatching exactly once. Provider transport must occur only after that successful return and outside the helper's retryable transaction. This module performs no transport and does not claim provider exactly-once semantics.
-- An uncertain provider or commit outcome stays blocked. No elapsed-time rule reopens it. Created means an entity reference was recorded, not payment, entitlement, acknowledgement or activation.
-- Outcomes store operation/receipt identifiers and hashes, not a raw Google purchase token or provider payload. Google references are hashes. Uncertain evidence is retained when a later created reference is recorded; duplicate receipts cannot downgrade it. Conflicting receipts/references fail closed and do not retry contracting.
-- No function changes the subscription, grants access, changes a profile plan, deletes prior evidence, cancels/refunds a provider, or releases the occupied slot.
+Hashes and provider references are pseudonymous financial evidence, not anonymous data. Retention, access, erasure policy and composition with the actual account-deletion route remain required before real use. This internal API is not an authentication boundary: future callers must use verified server identity/provider evidence, never client assertions.
 
-The API is internal preparation, not an authentication boundary. A future caller must obtain identity and evidence from existing authenticated/provider-verification paths, never client claims. In particular, handling a provider result after owner deletion/recreation and durably quarantining rejected/conflicting evidence is not completed here. These are blockers before wiring a charging path; the prototype is not a two-provider rollout.
+## Transactions and admission
 
-## Evidence
+The single shared transaction implementation now:
 
-Using cached MySQL8.4 in a disposable local container with network none, no published ports, a unique owned temporary datadir/socket and bounded resources:
+- sorts profile locks as before;
+- retries an action deadlock only after confirmed rollback;
+- never retries an uncertain COMMIT;
+- physically discards connections after failed rollback, commit uncertainty or fatal connection errors;
+- never returns an uncertain connection to a pool, even when discard is missing or fails;
+- restricts atomic cleanup to the active transaction client, excluding pools and escaped completed clients.
 
-- Current schema without the proposal is unavailable, with zero admission.
-- Applying the proposal twice preserves existing profiles and verifies compatibility.
-- Twelve concurrent reservations converge on one operation; twelve claims produce one admission.
-- Unknown outcome, lost commit acknowledgement, deadlock rollback/retry, duplicate/conflicting receipts and provider-reference uniqueness are covered.
-- Existing subscriptions, account reincarnation, hashed-only Google references, malformed stored records and schema drift are covered.
-- No paid entitlement or extra subscription is created.
+Reservation/claim reuse the existing profile/entitlement boundary. Competing requests converge on one operation; a committed claim admits one external effect. Transport must occur only after successful admission and outside the retryable transaction. An unknown provider/commit outcome stays blocked. This is not a claim of provider exactly-once behavior.
 
-The initial stock-image entrypoint failed while daemonizing its temporary startup server; its error log is preserved privately. The existing repository's direct-foreground mysqld pattern then started successfully with the same cached image and no network. This was a technical startup correction, not a permission workaround.
+## Evidence and reconciliation
 
-The SQL regression refuses DATABASE_URL/TCP configuration: it requires the dedicated QA flag, owned temporary root, socket, exact disposable database name and datadir. This is a new local test path; existing production/disposable notification databases are not reused or modified.
+Created means a provider entity reference was recorded, not payment or activation. Outcomes retain operation/receipt IDs and hashes, not raw Google tokens or provider payloads. Google references are hashes. Duplicate receipts are idempotent; uncertainty does not overwrite a known reference or resolve a conflict.
 
-Seventeen real SQL cases passed raw and canonically prepared. All three new executable/migration files retained identical SHA-256 after preparation. A real server stop/start preserved created and uncertain-dispatch states and prevented another admission. No real account or provider was used.
+Conflicting provider/reference evidence is retained with its provider and reconciliation_required state. It never replaces the original provider/reference, releases the slot or grants access. Both provider orders, including a conflict before the original result, preserve both outcomes. No cancellation, refund or entitlement policy is inferred from a hash.
 
-Independent read-only review accepted retaining this isolated checkpoint, but identified a further operational blocker inherited from withProfileLocks: a failed ROLLBACK is ignored, the uncertain connection is released, and a deadlock can be retried without confirmed cleanup. A private protocol counterproof on the actual helper reproduced one failed rollback, one uncertain release, zero discards and a second attempt. This is not a real socket-fault test. The shared helper was not modified in this billing slice; ownership and a verified discard/rollback contract must be reconciled before wiring any charging path.
+Still held: authenticated ingestion for unknown/legacy operations, rejected-receipt quarantine, verified legacy backfill, provider-state freshness/order, conflict adjudication, cancellation coordination, privacy policy and schema rollout. The existing charging routes remain unchanged by this preparation. Do not describe it as live Asaas–Google synchronization.
 
-Remaining release gates: uncertain-connection cleanup, CI coverage of the exact composition, explicit migration review, durable conflicting/late-owner evidence intake, provider-specific reconciliation/cancellation and account deletion/privacy integration. HOLD remains even if the earlier #1342 CI is green.
+## Validation and limits
 
+The cached MySQL8.4 runner uses an owned temporary datadir/socket, no network or published ports, bounded resources and no production DSN. It refuses another owner's QA socket and cleans only labelled/owned resources. No image pull, provider call or production DDL occurs.
 
-## Local safety/lifecycle follow-up
+-26 real SQL cases pass raw and canonically prepared, including twelve concurrent reserves/claims, uncertainty, lost commit acknowledgement, rollback/discard, deletion/redaction, late evidence, account reincarnation, schema drift and both-provider conflicts.
+- Real server restart preserves every intent/evidence row and prevents another admission.
+- Existing canonical entitlement and Asaas inbox SQL fixtures pass unchanged in a separate disposable database.
+- Cleanup fault tests, transaction-client capability tests,1200 differential entitlement cases, Web/Google confirmation and Asaas receipt/HTTP regressions pass raw/prepared.
+- Canonical build and TypeScript pass; preparation preserves all new runtime/migration/test source hashes.
+- Independent read-only reviews closed the rollback/late-owner issues in the bounded preparation and found no new blocker in the conflict delta. Reviewers did not execute tests. Exact-head CI is still required.
 
-The shared transaction implementation now discards rather than releases a connection after uncertain COMMIT, fatal connection error or failed rollback. It retries an action deadlock only after confirmed rollback; it never retries an uncertain commit. Missing/failed discard stays closed. Profile-bound callers retain the same ordering through the single canonical transaction implementation. A transaction-client capability prevents the new redaction helper from accepting a pool or an escaped completed client.
-
-The new tables retain an account key and immutable owner-incarnation digest. Account-deletion preparation clears raw email/public-ID links in the same canonical transaction; rollback restores both deletion and redaction. Known-original-owner evidence is appended under the immutable operation lock even after deletion, without looking up or recreating the account. A recreated account cannot adopt or contract around the tombstone. These hashes/references remain pseudonymous financial evidence, not anonymous data; retention, access and erasure policy still require review before real use.
-
-Twenty-three real isolated MySQL cases passed, plus existing canonical entitlement SQL regressions and a server restart. The new cases cover real socket discard rolling back an uncommitted admission, same-transaction deletion/redaction, late created/uncertain evidence and account reincarnation. Protocol fault tests cover rollback/commit/discard failures and absence of a discard hook. No production database or provider was contacted.
-
-The local foreground-server runner uses only a cached image, bounded resources and network none, refuses to reuse another owner's legacy QA socket, and cleans only its labelled container/owned directories. It runs the existing entitlement fixture unchanged through an owned test socket and a separate disposable notification database. No provider, credential or source preparation is activated by the runner.
-
-This supersedes the earlier cleanup and known-late-owner gaps as implemented local candidates, not as release approvals. Independent review and exact composition gates remain required. Unknown-owner/conflicting-provider quarantine, provider-specific reconciliation/cancellation and production privacy/schema rollout are still held.
-
-
-## Provider-conflict evidence follow-up
-
-Each outcome now records its provider explicitly. A valid conflicting reference/provider is retained as evidence and sets reconciliation_required; it does not replace the original provider/reference, discard the other proof, release the occupied slot or change current access. Subsequent uncertainty cannot resolve a conflict, and duplicate receipts remain idempotent across the transition. A conflict arriving before the original provider result preserves both outcomes without selecting a winner. No automatic migration, cancellation, refund or granting policy is inferred from a receipt hash.
-
-Twenty-six real SQL cases now include both provider orders, provider-reference conflict preservation, late evidence after redaction, old/new owner isolation and restart comparison of all intent/evidence rows. The legacy entitlement fixture and Asaas inbox scenarios are replayed unchanged in a separate owned disposable database. CI calls the SQL runner on raw and prepared source inside the existing validation job; it skips only the duplicate legacy replay because that job already runs those fixtures, and refuses provider/network/production configuration. The runner never pulls an image or takes another owner's QA socket.
-
-Still not wired: ingestion/authentication for unknown or legacy operations, conflict adjudication, verified legacy backfill, production retention/access/erasure policy, account-deletion route composition, provider state freshness/order, cancellation coordination and rollout of the proposed schema. The module records evidence but cannot by itself certify payment or synchronized live subscriptions. Existing active/pending legacy subscriptions continue to block new contracting in this preparation. HOLD remains.
+CI adds raw/prepared intent runs to the existing validation job. Mode0 skips only duplicate legacy replay because that job already executes those fixtures; it does not skip the new SQL tests. The earlier stock-image daemon startup failure, harness failures and unsafe rollback counterproof remain preserved privately. None is relabelled as a successful run.
