@@ -1,3 +1,4 @@
+import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
 import {resolveOwnedGatePublication} from './radar-publication-authority.mjs';
 import { PLATFORM_PLAN_IDS as PLAN_IDS, readPlatformEntitlement } from './platform-entitlement.mjs';
 import { asaasEnvelope, receiveAsaasEvent, asaasInboxSummary } from './asaas-webhook-inbox.mjs';
@@ -819,33 +820,19 @@ function normalizedGoogleStatus(payload, expiry) {
   return { status: 'expired', active: false, cancelAtPeriodEnd: false };
 }
 
-async function saveGoogleSubscription(db, email, purchaseToken, verified) {
+async function saveGoogleSubscription(db, email, purchaseToken, verified, expectedPublicId, existingOnly = false) {
   const productId = normalizeText(verified.item?.productId, 100);
   const plan = GOOGLE_PLAY_PRODUCTS.get(productId);
   if (!plan) throw Object.assign(new Error('Produto Google Play não reconhecido.'), { status: 400 });
-  const tokenHash = sha256(purchaseToken);
-  const owner = await db.query('SELECT email FROM crewcheck_platform_subscriptions WHERE purchase_token_hash=$1 LIMIT 1', [tokenHash]);
-  if (owner.rows[0] && owner.rows[0].email !== email) {
-    throw Object.assign(new Error('Esta compra já está vinculada a outra conta CrewCheck.'), { status: 409, code: 'PURCHASE_ALREADY_LINKED' });
-  }
   const normalized = normalizedGoogleStatus(verified.payload, verified.expiry);
-  await db.query(`
-    INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,purchase_token_hash,current_period_end,cancel_at_period_end,metadata)
-    VALUES($1,$2,$3,'google_play',$4,$5,$6,$7,$8,$9)
-    ON DUPLICATE KEY UPDATE
-      plan=VALUES(plan),status=VALUES(status),provider='google_play',product_id=VALUES(product_id),
-      provider_ref=VALUES(provider_ref),purchase_token_hash=VALUES(purchase_token_hash),
-      current_period_end=VALUES(current_period_end),cancel_at_period_end=VALUES(cancel_at_period_end),
-      metadata=VALUES(metadata),updated_at=CURRENT_TIMESTAMP(3)`, [
-    email, plan, normalized.status, productId, normalizeText(verified.payload.latestOrderId, 180), tokenHash,
-    verified.expiry?.toISOString().slice(0, 23).replace('T', ' ') || null, normalized.cancelAtPeriodEnd,
-    JSON.stringify({ subscriptionState: verified.payload.subscriptionState, acknowledgementState: verified.payload.acknowledgementState }),
-  ]);
-  const current = await db.query('SELECT plan FROM crewcheck_platform_profiles WHERE email=$1', [email]);
-  if (current.rows[0]?.plan !== 'premium_unlimited') {
-    await db.query('UPDATE crewcheck_platform_profiles SET plan=$2,updated_at=NOW() WHERE email=$1', [email, normalized.active ? plan : 'free']);
-  }
-  return { plan, ...normalized };
+  return writeVerifiedGoogleSubscription(db, {
+    email, expectedPublicId, existingOnly,
+    verifiedPublicId: normalizeText(verified.payload?.externalAccountIdentifiers?.obfuscatedExternalAccountId, 64).toUpperCase(),
+    tokenHash: sha256(purchaseToken), plan, productId, ...normalized,
+    providerRef: normalizeText(verified.payload.latestOrderId, 180),
+    periodEnd: verified.expiry?.toISOString().slice(0, 23).replace('T', ' ') || null,
+    metadata: { subscriptionState: verified.payload.subscriptionState, acknowledgementState: verified.payload.acknowledgementState },
+  });
 }
 
 async function verifyGooglePubSubIdentity(req) {
@@ -1381,7 +1368,7 @@ async function handleGooglePurchase(req, res) {
   if (obfuscatedAccountId && obfuscatedAccountId !== String(context.profile.public_id || '').toUpperCase()) {
     return sendJson(res, 409, { ok: false, code: 'GOOGLE_ACCOUNT_MISMATCH', message: 'Esta compra foi iniciada para outra conta CrewCheck.' });
   }
-  const saved = await saveGoogleSubscription(context.db, context.identity.email, purchaseToken, verified);
+  const saved = await saveGoogleSubscription(context.db, context.identity.email, purchaseToken, verified, context.profile.public_id);
   const profile = { ...context.profile, plan: saved.active ? plan : 'free' };
   return sendJson(res, 200, {
     ok: true,
@@ -1427,9 +1414,10 @@ async function handleAsaasCheckout(req, res) {
   const paymentPage = await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.id)}/payments?limit=1`).catch(() => { paymentLookupAvailable = false; return null; });
   const firstPayment = paymentPage?.data?.[0] || null;
   try {
+    // Never replace an existing provider, including a concurrent Google write.
+    // A duplicate after provider creation remains uncertain; do not create again.
     await context.db.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
-      VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)
-      ON DUPLICATE KEY UPDATE plan=VALUES(plan),status='pending',provider='asaas',product_id=VALUES(product_id),provider_ref=VALUES(provider_ref),metadata=VALUES(metadata),updated_at=NOW()`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
+      VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
   } catch {
     // The provider may already have accepted creation, and a lost DB ACK does
     // not prove rollback. Never create again or claim an unrecorded success.
@@ -1509,13 +1497,11 @@ async function handleGoogleRtdn(req, res) {
   const duplicate = await db.query("SELECT 1 FROM crewcheck_platform_webhook_events WHERE provider='google_play' AND event_id=$1", [eventId]);
   if (duplicate.rows[0]) return sendJson(res, 200, { ok: true, duplicate: true });
   const verified = await verifyGooglePlaySubscription(purchaseToken, '', true);
-  let owner = await db.query('SELECT email FROM crewcheck_platform_subscriptions WHERE purchase_token_hash=$1 LIMIT 1', [sha256(purchaseToken)]);
-  if (!owner.rows[0]) {
-    const publicIdValue = normalizeText(verified.payload?.externalAccountIdentifiers?.obfuscatedExternalAccountId, 40).toUpperCase();
-    if (publicIdValue) owner = await db.query('SELECT email FROM crewcheck_platform_profiles WHERE public_id=$1 LIMIT 1', [publicIdValue]);
-  }
-  if (!owner.rows[0]) return sendJson(res, 200, { ok: true, ignored: true, message: 'Compra sem conta CrewCheck conciliável.' });
-  await saveGoogleSubscription(db, owner.rows[0].email, purchaseToken, verified);
+  const owner = await db.query('SELECT email FROM crewcheck_platform_subscriptions WHERE purchase_token_hash=$1 LIMIT 2', [sha256(purchaseToken)]);
+  if (owner.rows.length !== 1) return sendJson(res, 200, { ok: true, ignored: true, message: 'Compra sem conta CrewCheck conciliável.' });
+  const profiles = await db.query('SELECT email,public_id FROM crewcheck_platform_profiles WHERE email=$1', [owner.rows[0].email]);
+  if (profiles.rows.length !== 1) return sendJson(res, 409, { ok: false, code: 'GOOGLE_OWNER_EVIDENCE_REQUIRED' });
+  await saveGoogleSubscription(db, owner.rows[0].email, purchaseToken, verified, profiles.rows[0].public_id, true);
   await db.query("INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash) VALUES('google_play',$1,$2)", [eventId, sha256(JSON.stringify(notification))]);
   return sendJson(res, 200, { ok: true });
 }

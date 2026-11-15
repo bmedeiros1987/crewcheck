@@ -71,6 +71,7 @@ jobs:
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
           node scripts/regression-asaas-inbox-transaction.mjs
+          node scripts/regression-google-subscription-route.mjs
           node scripts/regression-billing-checkout-confirmation.mjs
           node scripts/regression-google-play-confirmation.mjs
           node scripts/regression-asaas-transport.mjs
@@ -98,6 +99,7 @@ jobs:
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
           node scripts/regression-asaas-inbox-transaction.mjs
+          node scripts/regression-google-subscription-route.mjs
           node scripts/regression-billing-checkout-confirmation.mjs
           node scripts/regression-google-play-confirmation.mjs
           node scripts/regression-asaas-transport.mjs

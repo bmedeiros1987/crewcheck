@@ -42,6 +42,8 @@ start() {
 }
 start
 docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_billing_intent_qa;'
+docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_google_billing_qa;'
+CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-google-subscription-write-mysql.mjs > "$output_dir/google-write.log" 2>&1
 if test "$run_legacy" = 1; then
 docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_notification_qa;'
 CREWCHECK_NOTIFICATION_QA=isolated-mysql CREWCHECK_QA_MYSQL_SOCKET="$legacy_socket_root/mysqld.sock" node scripts/regression-platform-entitlement-mysql.mjs > "$output_dir/legacy-entitlement.log" 2>&1
