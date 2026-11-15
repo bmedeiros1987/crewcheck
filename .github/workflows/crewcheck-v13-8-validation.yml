@@ -160,6 +160,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-billing-checkout-browser.mjs
           node scripts/regression-google-play-confirmation-browser.mjs
+          node scripts/regression-billing-cancellation-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -194,6 +195,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-billing-checkout-browser.mjs
           node scripts/regression-google-play-confirmation-browser.mjs
+          node scripts/regression-billing-cancellation-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
