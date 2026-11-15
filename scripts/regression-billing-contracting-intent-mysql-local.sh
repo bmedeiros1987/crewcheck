@@ -52,6 +52,7 @@ fi
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" BILLING_INTENT_EVIDENCE_DIR="$output_dir" node scripts/regression-billing-contracting-intent-mysql.mjs
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" BILLING_INTENT_EVIDENCE_DIR="$output_dir" node scripts/regression-billing-contracting-driver-mysql.mjs
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-admission-mysql.mjs > "$output_dir/admission.log" 2>&1
+CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-google-async-admission-mysql.mjs > "$output_dir/google-async.log" 2>&1
 # Restart the same owned datadir; no new server or provider state is substituted.
 docker stop --timeout 20 "$container" >/dev/null
 docker rm "$container" >/dev/null
