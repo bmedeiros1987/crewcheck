@@ -60,6 +60,7 @@ on:
       - 'client/src/components/pulse/**'
       - 'scripts/pulse-alert-experience/**'
       - 'scripts/regression-pulse-mobile-navigation.mjs'
+      - 'scripts/regression-bottom-nav-current-page.mjs'
       - 'client/src/components/v1391/HomeLayoutShell.tsx'
       - 'client/src/components/v1391/home-layout.css'
       - 'client/src/components/v1391/MenuPersonalization.tsx'
@@ -180,6 +181,8 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-hotel-controls-browser.mjs
+      - name: Verify current-page semantics in the actual bottom navigation
+        run: node scripts/regression-bottom-nav-current-page.mjs
       - name: Render menu in desktop, tablet and rotating phone viewports
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json

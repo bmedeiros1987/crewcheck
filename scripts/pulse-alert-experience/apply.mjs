@@ -41,6 +41,12 @@ if (!bottomNav.includes('data-crewcheck-menu-trigger=')) {
  if (!bottomNav.includes(anchor) || !bottomNav.includes('const isMenu =')) throw new Error('Pulse experience: existing bottom Menu control missing');
  bottomNav = bottomNav.replace(anchor, '<button data-crewcheck-menu-trigger={isMenu ? "true" : undefined} key={v}');
 }
+// Keep the current destination exposed to assistive technology after legacy replay.
+if (!bottomNav.includes('aria-current={active ?')) {
+ const anchor = "className={active ? 'active' : ''} onClick=";
+ if (!bottomNav.includes(anchor)) throw new Error('Pulse experience: active navigation anchor missing');
+ bottomNav = bottomNav.replace(anchor, "className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick=");
+}
 if(bottomNav.includes('const currentSignature =')) {
  const seenStart=bottomNav.indexOf('  const currentSignature ='), itemsStart=bottomNav.indexOf('  const items:',seenStart);
  if(itemsStart<0)throw new Error('Pulse experience: navigation items anchor missing');

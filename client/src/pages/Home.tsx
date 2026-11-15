@@ -1653,7 +1653,7 @@ function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '
   return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
     const active = view===v || (isMenu && ['settings','notifications','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
-    return <button key={v} className={active ? 'active' : ''} onClick={() => { isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
+    return <button key={v} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={() => { isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
