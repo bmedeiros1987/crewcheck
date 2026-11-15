@@ -38,3 +38,16 @@ Seventeen real SQL cases passed raw and canonically prepared. All three new exec
 Independent read-only review accepted retaining this isolated checkpoint, but identified a further operational blocker inherited from withProfileLocks: a failed ROLLBACK is ignored, the uncertain connection is released, and a deadlock can be retried without confirmed cleanup. A private protocol counterproof on the actual helper reproduced one failed rollback, one uncertain release, zero discards and a second attempt. This is not a real socket-fault test. The shared helper was not modified in this billing slice; ownership and a verified discard/rollback contract must be reconciled before wiring any charging path.
 
 Remaining release gates: uncertain-connection cleanup, CI coverage of the exact composition, explicit migration review, durable conflicting/late-owner evidence intake, provider-specific reconciliation/cancellation and account deletion/privacy integration. HOLD remains even if the earlier #1342 CI is green.
+
+
+## Local safety/lifecycle follow-up
+
+The shared transaction implementation now discards rather than releases a connection after uncertain COMMIT, fatal connection error or failed rollback. It retries an action deadlock only after confirmed rollback; it never retries an uncertain commit. Missing/failed discard stays closed. Profile-bound callers retain the same ordering through the single canonical transaction implementation. A transaction-client capability prevents the new redaction helper from accepting a pool or an escaped completed client.
+
+The new tables retain an account key and immutable owner-incarnation digest. Account-deletion preparation clears raw email/public-ID links in the same canonical transaction; rollback restores both deletion and redaction. Known-original-owner evidence is appended under the immutable operation lock even after deletion, without looking up or recreating the account. A recreated account cannot adopt or contract around the tombstone. These hashes/references remain pseudonymous financial evidence, not anonymous data; retention, access and erasure policy still require review before real use.
+
+Twenty-three real isolated MySQL cases passed, plus existing canonical entitlement SQL regressions and a server restart. The new cases cover real socket discard rolling back an uncommitted admission, same-transaction deletion/redaction, late created/uncertain evidence and account reincarnation. Protocol fault tests cover rollback/commit/discard failures and absence of a discard hook. No production database or provider was contacted.
+
+The local foreground-server runner uses only a cached image, bounded resources and network none, refuses to reuse another owner's legacy QA socket, and cleans only its labelled container/owned directories. It runs the existing entitlement fixture unchanged through an owned test socket and a separate disposable notification database. No provider, credential or source preparation is activated by the runner.
+
+This supersedes the earlier cleanup and known-late-owner gaps as implemented local candidates, not as release approvals. Independent review and exact composition gates remain required. Unknown-owner/conflicting-provider quarantine, provider-specific reconciliation/cancellation and production privacy/schema rollout are still held.
