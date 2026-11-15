@@ -1507,11 +1507,13 @@ async function handleGoogleRtdn(req, res) {
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
   const duplicate = await db.query("SELECT 1 FROM crewcheck_platform_webhook_events WHERE provider='google_play' AND event_id=$1", [eventId]);
   if (duplicate.rows[0]) return sendJson(res, 200, { ok: true, duplicate: true });
-  const verified = await verifyGooglePlaySubscription(purchaseToken, '', true);
+  // Unknown-owner recovery is on HOLD: avoid a provider lookup that cannot be applied.
+  // This is not quarantine, purchase acknowledgment or permission to adopt a claimed ID.
   const owner = await db.query('SELECT email FROM crewcheck_platform_subscriptions WHERE purchase_token_hash=$1 LIMIT 2', [sha256(purchaseToken)]);
   if (owner.rows.length !== 1) return sendJson(res, 200, { ok: true, ignored: true, message: 'Compra sem conta CrewCheck conciliável.' });
   const profiles = await db.query('SELECT email,public_id FROM crewcheck_platform_profiles WHERE email=$1', [owner.rows[0].email]);
   if (profiles.rows.length !== 1) return sendJson(res, 409, { ok: false, code: 'GOOGLE_OWNER_EVIDENCE_REQUIRED' });
+  const verified = await verifyGooglePlaySubscription(purchaseToken, '', true);
   await saveGoogleSubscription(db, owner.rows[0].email, purchaseToken, verified, profiles.rows[0].public_id, true);
   await db.query("INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash) VALUES('google_play',$1,$2)", [eventId, sha256(JSON.stringify(notification))]);
   return sendJson(res, 200, { ok: true });
