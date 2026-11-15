@@ -41,6 +41,7 @@ export function createGoogleEventObserver({db,verifyCurrent,verificationConcurre
     const {email,expectedPublicId,verifiedPublicId,tokenHash,plan,productId,status,active,periodEnd,cancelAtPeriodEnd,providerRef,metadata}=record;
     const {subscriptionState,acknowledgementState}=metadata||{};
     if(catalog.get(productId)!==plan||email!==known.email||expectedPublicId!==known.expectedPublicId||verifiedPublicId!==known.expectedPublicId||tokenHash!==known.tokenHash)throw Error('unverified owner');
+    if(!['ACTIVE','IN_GRACE_PERIOD','CANCELED','PENDING','ON_HOLD','PAUSED','EXPIRED'].some(state=>subscriptionState==='SUBSCRIPTION_STATE_'+state))throw Error('unsupported authoritative state');
     const expiry=typeof periodEnd==='string'?new Date(periodEnd.replace(' ','T')+'Z'):null;
     const normalized=googleSubscriptionStatus(subscriptionState,expiry);
     if(normalized.status!==status||normalized.active!==active||normalized.cancelAtPeriodEnd!==cancelAtPeriodEnd)throw Error('incoherent authoritative state');
