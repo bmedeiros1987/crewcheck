@@ -29,7 +29,7 @@ export function createAsaasMemory() {
   }
   return {
     db:{ query, async connect(){ const previous=tail;let unlock;tail=new Promise(r=>unlock=r);await previous;let backup;
-      return { async query(sql,p){if(sql==='BEGIN'){backup=clone(data);return {rows:[]};}if(sql==='COMMIT'){backup=null;return {rows:[]};}if(sql==='ROLLBACK'){if(backup)data=backup;backup=null;return {rows:[]};}return query(sql,p);},release(){unlock();} }; } },
+      return { async query(sql,p){if(sql==='BEGIN'){backup=clone(data);return {rows:[]};}if(sql==='COMMIT'){backup=null;return {rows:[]};}if(sql==='ROLLBACK'){if(backup)data=backup;backup=null;return {rows:[]};}return query(sql,p);},release(){unlock();},discard(){unlock();} }; } },
     async reset(){data={receipts:{},subscriptions:[],profiles:{},legacy:{}};},
     async seed(row={}){const s={email:'fictional@example.test',plan:'premium_monthly',status:'pending',provider:'asaas',provider_ref:'sub_synthetic',metadata:{},current_period_end:null,...row};data.subscriptions.push(clone(s));if(!row.noProfile)data.profiles[s.email]=row.profilePlan||'free';},
     async legacy(id){data.legacy[id]=true;}, async state(){return clone(data);},

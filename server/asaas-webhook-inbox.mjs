@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { withTransaction as transaction } from './profile-locks.mjs';
 
 // Receipt acceptance is separate from entitlement reconciliation. No provider I/O,
 // owner inference, subscription creation, timer, automatic retry or runtime DDL.
@@ -130,19 +131,6 @@ async function applyReceipt(client, event, { legacyReceipt = false, now = Date.n
   if (profile.rows[0].plan !== 'premium_unlimited')
     await client.query('UPDATE crewcheck_platform_profiles SET plan=$2,updated_at=NOW(3) WHERE email=$1', [subscription.email, status === 'active' ? subscription.plan : 'free']);
   return settle(client, event.eventId, 'processed', 'matched_existing_subscription', PAID.has(event.eventName) ? periodEnd : null);
-}
-async function transaction(db, action) {
-  const client = await db.connect();
-  let began = false;
-  try {
-    await client.query('BEGIN'); began = true;
-    const result = await action(client);
-    await client.query('COMMIT'); began = false;
-    return result;
-  } catch (error) {
-    if (began) { try { await client.query('ROLLBACK'); } catch { client.discard?.(); } }
-    throw error;
-  } finally { client.release(); }
 }
 export async function receiveAsaasEvent(db, body, { now = Date.now } = {}) {
   const event = asaasEnvelope(body);
