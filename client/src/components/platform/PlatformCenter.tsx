@@ -117,6 +117,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   const [error, setError] = useState('');
   const [playProducts, setPlayProducts] = useState<Record<string, { productId?: string; formattedPrice?: string; billingPeriod?: string }>>({});
 
+  const billingSession=useRef<ReturnType<typeof captureAuthSession>|null>(null);
   const playCatalogRequest=useRef<string|null>(null);
   const playPurchaseSession=useRef<{session:ReturnType<typeof captureAuthSession>;productId?:string}|null>(null);
   const playVerifications=useRef(new Set<string>());
@@ -145,6 +146,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
     try {
       const [profileResult, billingResult] = await Promise.all([getPlatformProfile(), getFreshPlatformBilling(session)]);
       if (!current()) return;
+      billingSession.current = session;
       setProfile(value => current() ? profileResult.profile : value);
       setBilling(value => current() ? billingResult : value);
       setBusy(value => current() && value === 'loading' ? '' : value);
@@ -273,21 +275,27 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   }
 
   async function manageSubscription() {
-    if (!billing) return;
-    setBusy('manage');
+    const session = billingSession.current;
+    const current = () => { try { return Boolean(session?.token) && session!.isCurrent(); } catch { return false; } };
+    if (!billing || !current()) return;
+    setBusy(value => current() ? 'manage' : value);
     try {
       if (billing.provider === 'google_play') {
         const product = encodeURIComponent(billing.productId || '');
-        window.open(`https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`, '_blank', 'noopener,noreferrer');
+        if (current()) window.open(`https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`, '_blank', 'noopener,noreferrer');
         return;
       }
-      if (!confirm('Cancelar a renovação da assinatura web?')) return;
-      const result = await cancelSubscription();
-      if (result.manageUrl) window.open(result.manageUrl, '_blank', 'noopener,noreferrer');
-      toast.success(result.message || 'Assinatura atualizada.');
-      await load();
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui gerenciar a assinatura.'); }
-    finally { setBusy(''); }
+      if (!confirm('Cancelar a renovação da assinatura web?') || !current()) return;
+      const result = await cancelSubscription(session!);
+      if (!current()) return;
+      if (result.actionRequired === true) {
+        window.open(result.manageUrl, '_blank', 'noopener,noreferrer');
+        toast.message(result.message);
+      } else if (result.alreadyRecorded === true) toast.message(result.message);
+      else toast.success(result.message);
+      await loadForSession(session!);
+    } catch (err) { if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui gerenciar a assinatura.'); }
+    finally { setBusy(value => current() && value === 'manage' ? '' : value); }
   }
 
   const usage = billing?.usage;

@@ -1,3 +1,4 @@
+import {readBillingCancellation,commitAcknowledgedAsaasCancellation} from './billing-cancellation.mjs';
 import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
 import {resolveOwnedGatePublication} from './radar-publication-authority.mjs';
 import { PLATFORM_PLAN_IDS as PLAN_IDS, readPlatformEntitlement } from './platform-entitlement.mjs';
@@ -1439,21 +1440,23 @@ async function handleAsaasCheckout(req, res) {
 async function handleBillingCancel(req, res) {
   const context = await requireMain(req, res);
   if (!context) return;
-  const result = await context.db.query('SELECT * FROM crewcheck_platform_subscriptions WHERE email=$1 LIMIT 1', [context.identity.email]);
-  const subscription = result.rows[0];
-  if (!subscription) return sendJson(res, 404, { ok: false, message: 'Nenhuma assinatura recorrente foi localizada.' });
+  const owner = { email: context.identity.email, expectedPublicId: context.profile.public_id };
+  const subscription = await readBillingCancellation(context.db, owner);
   if (subscription.provider === 'google_play') {
-    const product = encodeURIComponent(subscription.product_id || '');
+    const product = encodeURIComponent(subscription.productId);
     const manageUrl = `https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`;
     return sendJson(res, 200, { ok: true, actionRequired: true, manageUrl, message: 'Conclua o cancelamento na Google Play. O acesso permanece até o fim do período pago.' });
   }
-  if (subscription.provider !== 'asaas' || !subscription.provider_ref) return sendJson(res, 409, { ok: false, message: 'Este plano não possui cobrança recorrente cancelável.' });
-  await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.provider_ref)}`, { method: 'DELETE' });
-  const keepsPaidAccess = ['active', 'trialing', 'grace_period'].includes(subscription.status)
-    && subscription.current_period_end && new Date(subscription.current_period_end).getTime() > Date.now();
-  await context.db.query("UPDATE crewcheck_platform_subscriptions SET status=$2,cancel_at_period_end=TRUE,updated_at=NOW() WHERE email=$1", [context.identity.email, keepsPaidAccess ? subscription.status : 'canceled']);
-  if (!keepsPaidAccess && context.profile.plan !== 'premium_unlimited') await context.db.query("UPDATE crewcheck_platform_profiles SET plan='free',updated_at=NOW() WHERE email=$1", [context.identity.email]);
-  return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: subscription.current_period_end || null, message: keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período já pago.' : 'Assinatura web cancelada. Não haverá nova renovação.' });
+  if (subscription.cancelAtPeriodEnd) return sendJson(res, 200, { ok: true, canceled: true, alreadyRecorded: true, currentPeriodEnd: subscription.currentPeriodEnd, message: 'O cancelamento da renovação já está registrado.' });
+  let saved;
+  try {
+    await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.providerRef)}`, { method: 'DELETE' });
+    saved = await commitAcknowledgedAsaasCancellation(context.db, { ...owner, providerRef: subscription.providerRef });
+  } catch {
+    // A timeout or changed owner/provider cannot certify failure or a safe retry.
+    return sendJson(res, 503, { ok: false, code: 'BILLING_CANCELLATION_OUTCOME_UNCERTAIN', message: 'Não foi possível confirmar o cancelamento. Confira o status antes de tentar novamente.' });
+  }
+  return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: saved.currentPeriodEnd, message: saved.keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período já pago.' : 'Renovação web cancelada. Isso não confirma pagamento ou quitação de cobranças.' });
 }
 
 async function handleAsaasWebhook(req, res) {

@@ -258,8 +258,20 @@ export async function createWebSubscription(plan: 'premium_monthly' | 'premium_a
   });
 }
 
-export async function cancelSubscription() {
-  return authFetch<any>('/api/platform/billing/cancel', { method: 'POST', body: '{}' });
+export async function cancelSubscription(session = captureAuthSession()) {
+  const current = () => { try { return Boolean(session.token) && session.isCurrent(); } catch { return false; } };
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const result = await authFetch<any>('/api/platform/billing/cancel', { method: 'POST', body: '{}' });
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const period = result?.currentPeriodEnd;
+  const validPeriod = period === null || (typeof period === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(period) && Number.isFinite(Date.parse(period)) && new Date(period).toISOString() === period);
+  const canceled = result?.canceled === true && (result.actionRequired === undefined || result.actionRequired === false) && validPeriod && (result.alreadyRecorded === undefined || typeof result.alreadyRecorded === 'boolean');
+  let management = false;
+  if (result?.actionRequired === true && result.canceled !== true && typeof result.manageUrl === 'string') {
+    try { const url = new URL(result.manageUrl); management = url.protocol === 'https:' && url.hostname === 'play.google.com' && url.pathname === '/store/account/subscriptions' && url.searchParams.get('package') === 'com.crewcheck.app' && !url.port && !url.username && !url.password; } catch { /* Invalid URL is not authority to navigate. */ }
+  }
+  if (result?.ok !== true || (!canceled && !management) || typeof result.message !== 'string' || !result.message.trim()) throw new Error('Não foi possível confirmar a resposta do cancelamento. Confira o status antes de tentar novamente.');
+  return result;
 }
 
 type AndroidBillingBridge = {
