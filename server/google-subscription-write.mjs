@@ -27,5 +27,9 @@ export async function writeVerifiedGoogleSubscription(db,input){
   else await client.query("INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,purchase_token_hash,current_period_end,cancel_at_period_end,metadata) VALUES($1,$2,$3,'google_play',$4,$5,$6,$7,$8,$9)",values);
   if(profile.plan!=='premium_unlimited')await client.query('UPDATE crewcheck_platform_profiles SET plan=$2,updated_at=NOW() WHERE email=$1',[email,active?plan:'free']);
   return {plan,status,active,cancelAtPeriodEnd};
- },{repeatableRead:true});}catch(error){if(error?.code==='ER_DUP_ENTRY')throw fail('PURCHASE_ALREADY_LINKED');throw error;}
+ },{repeatableRead:true});}catch(error){if(error?.code==='ER_DUP_ENTRY')throw fail('PURCHASE_ALREADY_LINKED');
+  // Shared transaction helper exhausted its single safe retry after confirmed rollback.
+  // Contention alone does not prove this purchase belongs to another account.
+  if(error?.code==='ER_LOCK_DEADLOCK')throw Object.assign(fail('GOOGLE_RECONCILIATION_BUSY',503),{message:'A conciliação está ocupada. O acesso ainda não foi confirmado; confira o status antes de tentar novamente.'});
+  throw error;}
 }
