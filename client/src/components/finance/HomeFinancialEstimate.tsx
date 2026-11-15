@@ -28,7 +28,7 @@ export default function HomeFinancialEstimate(){
  const lines=payment.lines.map((line:any)=>({...line,id:[line.eventId||'',line.iso,line.label,line.currency].join(':')}));
  const estimate=estimateAllowanceBrl({lines,quotes,today,incomplete:payment.issues.length>0});
  const foreign=estimate.items.filter((item:any)=>item.currency!=='BRL');
- const pendingCurrencies=[...new Set(foreign.filter((item:any)=>item.convertedMinor===null).map((item:any)=>item.currency))];
+ const pendingCurrencies=[...new Set(foreign.filter((item:any)=>item.originalMinor!==null&&item.convertedMinor===null&&item.state!=='invalid').map((item:any)=>item.currency))];
  const dateLabel=(value?:string)=>value&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value.split('-').reverse().join('/'):'a confirmar';
  const incomplete=estimate.state!=='available';
  return <div className="cc-home-brl-estimate" data-estimate-state={estimate.state}>
@@ -39,7 +39,7 @@ export default function HomeFinancialEstimate(){
    <details><summary><Calculator size={18} aria-hidden="true"/>Ver cálculo</summary>
      {foreign.length>0&&<FinancialFxSourceControl/>}
      {payment.issues.length>0&&<ul>{payment.issues.map(issue=><li key={issue}>{privacy.text(issue)}</li>)}</ul>}
-     <h3>Valores por moeda</h3>{estimate.items.map((item:any)=><p key={item.id}>{item.currency} · {item.originalMinor===null?'Não informado':privacy.amount(formatFinancialMinor(item.originalMinor,item.currency)||'Não calculável')} · {item.convertedMinor===null?'Conversão pendente':privacy.amount(formatFinancialMinor(item.convertedMinor,'BRL'))}{item.references.map((q:any)=><small key={q.asOf+q.source}>Referência de {q.asOf}{q.asOf<today?' · data anterior à consulta':''} · {q.source} · 1 {q.base||item.currency} = {privacy.amount(q.rate)} {q.quote||'BRL'}{q.retrievedAt?` · consulta ${q.retrievedAt}`:''}</small>)}</p>)}
+     <h3>Valores por moeda</h3>{estimate.items.map((item:any)=><p key={item.id}>{item.currency} · {item.originalMinor===null?'Não informado':privacy.amount(formatFinancialMinor(item.originalMinor,item.currency)||'Não calculável')} · {item.originalMinor===null?'Valor original pendente':item.convertedMinor===null?'Conversão pendente':privacy.amount(formatFinancialMinor(item.convertedMinor,'BRL'))}{item.references.map((q:any)=><small key={q.asOf+q.source}>Referência de {q.asOf}{q.asOf<today?' · data anterior à consulta':''} · {q.source} · 1 {q.base||item.currency} = {privacy.amount(q.rate)} {q.quote||'BRL'}{q.retrievedAt?` · consulta ${q.retrievedAt}`:''}</small>)}</p>)}
      {incomplete&&<p>Dados pendentes não foram tratados como zero.</p>}
      <p>Conversão de referência. Taxas, impostos e recebimento não confirmados.</p>
    </details>
