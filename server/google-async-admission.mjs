@@ -5,8 +5,8 @@ import {requireBillingPrincipal,billingAuthorityCurrent,prepareBillingAdmission}
 import {readOwnedBillingIntent,recordBillingIntentOutcome} from './billing-contracting-intent.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const fail=code=>Object.assign(new Error(code),{code,status:503});
-export function createGoogleAsyncAdmission({db,resolvePrincipal,verifyPurchase,products,verificationConcurrency}){
- if(!db||typeof resolvePrincipal!=='function'||typeof verifyPurchase!=='function'||!(products instanceof Map))throw fail('GOOGLE_ASYNC_CONFIGURATION_REQUIRED');
+export function createGoogleAsyncAdmission({db,resolvePrincipal,verifyPurchase,verifyLaunchBinding,products,verificationConcurrency}){
+ if(!db||typeof resolvePrincipal!=='function'||typeof verifyPurchase!=='function'||typeof verifyLaunchBinding!=='function'||!(products instanceof Map))throw fail('GOOGLE_ASYNC_CONFIGURATION_REQUIRED');
  const runVerification=createBillingVerificationFlight({maxConcurrent:verificationConcurrency});
  const catalog=new Map(products);
  if(!catalog.size||[...catalog].some(([product,plan])=>typeof product!=='string'||!product||!['premium_monthly','premium_annual'].includes(plan)))throw fail('GOOGLE_ASYNC_CONFIGURATION_REQUIRED');
@@ -29,6 +29,16 @@ export function createGoogleAsyncAdmission({db,resolvePrincipal,verifyPurchase,p
    };
    const tokenHash=digest(purchaseToken),observed=await readOwnedBillingIntent(db,input);check(observed);
    if(!billingAuthorityCurrent(principal))throw fail('BILLING_ADMISSION_AUTHORITY_REQUIRED');
+   // A client echo/account/profile match is not proof of the native launch's origin.
+   // This trusted adapter is deliberately not implemented/configured for real Google.
+   let bindingHash;
+   try{
+    const binding=await verifyLaunchBinding(Object.freeze({operationId,publicId:principal.publicId,tokenHash,plan:observed.plan}));
+    const {source,operationId:boundOperation,publicId:boundOwner,tokenHash:boundToken,evidenceHash}=binding||{};
+    if(source!=='verified_native_provider_binding'||boundOperation!==operationId||boundOwner!==principal.publicId||boundToken!==tokenHash||typeof evidenceHash!=='string'||!/^[a-f0-9]{64}$/.test(evidenceHash))throw Error('unbound');
+    bindingHash=evidenceHash;
+   }catch{throw fail('GOOGLE_ASYNC_LAUNCH_ORIGIN_UNCONFIRMED');}
+   if(!billingAuthorityCurrent(principal))throw fail('BILLING_ADMISSION_AUTHORITY_REQUIRED');
    // This is durable correlation evidence, never a cached current payment status.
    if(observed.state==='created'&&observed.referenceHash===tokenHash)return {...publicResult(observed),duplicate:true};
    const key=digest(JSON.stringify([principal.email,principal.publicId,operationId,tokenHash]));
@@ -42,7 +52,7 @@ export function createGoogleAsyncAdmission({db,resolvePrincipal,verifyPurchase,p
      const result=await verifyPurchase(Object.freeze({purchaseToken,plan:operation.plan}));
      const {productId,publicId,tokenHash:verifiedTokenHash,evidenceHash}=result||{};
      if(typeof productId!=='string'||catalog.get(productId)!==operation.plan||typeof publicId!=='string'||publicId!==principal.publicId||typeof verifiedTokenHash!=='string'||verifiedTokenHash!==tokenHash||typeof evidenceHash!=='string'||!/^[a-f0-9]{64}$/.test(evidenceHash))throw Error('invalid');
-     verified={tokenHash:verifiedTokenHash,evidenceHash};
+     verified={tokenHash:verifiedTokenHash,evidenceHash:digest(JSON.stringify([evidenceHash,bindingHash]))};
     }catch{throw fail('GOOGLE_ASYNC_VERIFICATION_UNCONFIRMED');}
     if(!billingAuthorityCurrent(principal))throw fail('BILLING_ADMISSION_AUTHORITY_REQUIRED');
     // Recheck the profile after provider verification; never adopt a recreated account.
