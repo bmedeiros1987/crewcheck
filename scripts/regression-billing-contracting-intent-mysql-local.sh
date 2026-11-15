@@ -48,6 +48,8 @@ docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.so
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-cancellation-intent-mysql.mjs > "$output_dir/cancellation-intent.log" 2>&1
 docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_cancel_auth_qa;'
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-cancellation-admission-mysql.mjs > "$output_dir/cancellation-auth.log" 2>&1
+docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_google_event_qa;'
+CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-google-event-transaction-mysql.mjs > "$output_dir/google-event-transaction.log" 2>&1
 for qa_cancel_timezone in UTC America/Sao_Paulo Pacific/Auckland; do
  CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" TZ="$qa_cancel_timezone" node scripts/regression-billing-cancellation-mysql.mjs >> "$output_dir/cancellation.log" 2>&1
 done
@@ -69,5 +71,6 @@ start
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-contracting-intent-mysql.mjs restart > "$output_dir/restart.log" 2>&1
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-cancellation-intent-mysql.mjs restart > "$output_dir/cancellation-intent-restart.log" 2>&1
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-cancellation-admission-mysql.mjs restart > "$output_dir/cancellation-auth-restart.log" 2>&1
+CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-google-event-transaction-mysql.mjs restart > "$output_dir/google-event-restart.log" 2>&1
 cp "$qa_billing_root/mysql.log" "$output_dir/server.log"
 printf '%s\n' 'PASS owned local MySQL suite and restart; no network/provider/production DB'
