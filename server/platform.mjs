@@ -1369,10 +1369,13 @@ async function handleGooglePurchase(req, res) {
     return sendJson(res, 409, { ok: false, code: 'GOOGLE_ACCOUNT_MISMATCH', message: 'Esta compra foi iniciada para outra conta CrewCheck.' });
   }
   const saved = await saveGoogleSubscription(context.db, context.identity.email, purchaseToken, verified, context.profile.public_id);
-  const profile = { ...context.profile, plan: saved.active ? plan : 'free' };
+  const profile = context.profile.plan === 'premium_unlimited' ? context.profile : { ...context.profile, plan: saved.active ? plan : 'free' };
   const billing = await subscriptionStatus(context.db, profile);
   // A completed write is not permission to confirm a conflicting current receipt.
-  if (saved.active && (billing?.premiumAccess !== true || billing.provider !== 'google_play' || billing.productId !== productId || billing.plan !== plan || !['active', 'grace_period'].includes(billing.status))) {
+  const samePurchase = billing?.provider === 'google_play' && billing.productId === productId;
+  const coherentActive = samePurchase && billing.premiumAccess === true && billing.plan === plan && ['active', 'grace_period'].includes(billing.status);
+  const coherentInactive = samePurchase && billing.premiumAccess === false && billing.plan === 'free' && ['pending', 'past_due', 'paused', 'expired'].includes(billing.status);
+  if (saved.active === true ? !coherentActive : saved.active === false ? !coherentInactive : true) {
     return sendJson(res, 409, { ok: false, code: 'GOOGLE_CONFIRMATION_RECONCILIATION_REQUIRED', message: 'A compra requer conciliação antes de confirmar o acesso.' });
   }
   return sendJson(res, 200, {
