@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import {createPaidCancellationPolicy} from '../server/billing-paid-cancellation-policy.mjs';
+const now=Date.parse('2032-10-15T12:00:00.000Z');
+const input={email:'synthetic@example.invalid',publicId:'synthetic-owner',provider:'asaas',providerRef:'sub_synthetic',paymentRef:'pay_synthetic',currentPeriodEnd:'2032-11-01T00:00:00.000Z'};
+const proof={...input,paid:true,start:'2032-10-01T00:00:00.000Z',end:input.currentPeriodEnd,observedAt:'2032-10-15T11:59:00.000Z',validUntil:'2032-10-15T12:01:00.000Z',source:'reviewed_payment_coverage',sourceVersionHash:'a'.repeat(64),refundState:'none',renewalStopped:true};
+let count=0;
+async function check(patch,reason,selection=input,time=now){const p={...proof,...patch};const run=createPaidCancellationPolicy({clock:()=>time,readVerifiedCoverage:async selected=>{assert(Object.isFrozen(selected));return p;}});const result=await run(selection,{now:time});assert.equal(result.accessMutation,'none');assert.equal(result.reason,reason);count++;return result;}
+const ok=await check({},undefined);assert.equal(ok.state,'preserve_paid_access');assert.equal(ok.paidThrough,input.currentPeriodEnd);assert.equal(ok.cancelAtPeriodEnd,true);
+await check({provider:'google_play'},'coverage_identity_mismatch');
+for(const key of ['email','publicId','providerRef','paymentRef'])await check({[key]:'other'},'coverage_identity_mismatch');
+await check({paid:false},'paid_coverage_unconfirmed');
+await check({source:'legacy_31_366_days'},'paid_coverage_unconfirmed');
+await check({sourceVersionHash:''},'paid_coverage_unconfirmed');
+for(const refundState of ['pending','completed','partial','unknown',undefined])await check({refundState},'refund_requires_separate_reconciliation');
+await check({renewalStopped:false},'renewal_stop_unconfirmed');
+await check({validUntil:'2032-10-15T12:00:00.000Z'},'coverage_time_unconfirmed');
+await check({observedAt:'2032-10-15T12:00:01.000Z'},'coverage_time_unconfirmed');
+await check({end:'2032-11-02T00:00:00.000Z'},'existing_period_differs_from_paid_coverage');
+await check({start:'2032-10-16T00:00:00.000Z'},'paid_period_not_started');
+await check({end:'2032-11-01T00:00:00Z'},'coverage_time_unconfirmed');
+const expired=await check({observedAt:input.currentPeriodEnd,validUntil:'2032-11-02T00:00:00.000Z'},undefined,input,Date.parse(input.currentPeriodEnd));assert.equal(expired.state,'paid_period_ended');
+const google={...input,provider:'google_play'};assert.equal((await check({provider:'google_play',source:'provider_verified_paid_period'},undefined,google)).state,'preserve_paid_access');
+const failed=createPaidCancellationPolicy({clock:()=>now,readVerifiedCoverage:async()=>{throw Error('synthetic unavailable');}});assert.equal((await failed(input,{now})).reason,'coverage_unavailable');count++;
+const mutable={...input};let finish;const held=createPaidCancellationPolicy({clock:()=>now,readVerifiedCoverage:()=>new Promise(r=>finish=r)});const waiting=held(mutable,{now});mutable.publicId='other-account';finish({...proof,publicId:'other-account'});assert.equal((await waiting).reason,'coverage_identity_mismatch');count++;
+let time=now;const slow=createPaidCancellationPolicy({clock:()=>time,readVerifiedCoverage:async()=>{time=Date.parse(proof.validUntil);return proof;}});assert.equal((await slow(input)).reason,'coverage_time_unconfirmed');count++;
+time=now;const ended=createPaidCancellationPolicy({clock:()=>time,readVerifiedCoverage:async()=>{time=Date.parse(input.currentPeriodEnd);return {...proof,observedAt:input.currentPeriodEnd,validUntil:'2032-11-02T00:00:00.000Z'};}});assert.equal((await ended(input)).state,'paid_period_ended');count++;
+assert.deepEqual(input,{email:'synthetic@example.invalid',publicId:'synthetic-owner',provider:'asaas',providerRef:'sub_synthetic',paymentRef:'pay_synthetic',currentPeriodEnd:'2032-11-01T00:00:00.000Z'});
+console.log(`PASS ${count} synthetic paid cancellation policy cases; no provider, persistence or access mutation`);

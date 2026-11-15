@@ -1,0 +1,40 @@
+// Isolated policy preparation. No route, provider transport, persistence or access writer.
+// readVerifiedCoverage is a trusted server adapter, never request/body evidence.
+// The caller must revalidate live account authority and coverage in its write
+// transaction; a detached decision is not a session capability or grant command.
+const instant=value=>{
+ if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value))return NaN;
+ const time=Date.parse(value);return Number.isFinite(time)&&new Date(time).toISOString()===value?time:NaN;
+};
+const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+const text=value=>typeof value==='string'&&value.length>0&&value.length<=300;
+const pending=reason=>Object.freeze({state:'reconciliation_required',reason,accessMutation:'none',renewalConfirmed:false});
+export function createPaidCancellationPolicy({readVerifiedCoverage,clock=Date.now}={}){
+ if(typeof readVerifiedCoverage!=='function'||typeof clock!=='function')throw new Error('PAID_COVERAGE_ADAPTER_REQUIRED');
+ return async function evaluate(input){
+  let now;try{now=clock();}catch{return pending('clock_unavailable');}
+  // Snapshot the selected account/contract before the asynchronous authoritative read.
+  const selected=Object.freeze({email:input?.email,publicId:input?.publicId,provider:input?.provider,providerRef:input?.providerRef,paymentRef:input?.paymentRef,currentPeriodEnd:input?.currentPeriodEnd});
+  if(!Number.isFinite(now)||!['asaas','google_play'].includes(selected.provider)||!['email','publicId','providerRef','paymentRef'].every(k=>text(selected[k])))return pending('identity_unconfirmed');
+  const currentEnd=instant(selected.currentPeriodEnd);
+  if(!Number.isFinite(currentEnd))return pending('existing_period_unconfirmed');
+  let proof;try{proof=await readVerifiedCoverage(selected);}catch{return pending('coverage_unavailable');}
+  if(!proof||typeof proof!=='object')return pending('coverage_unavailable');
+  const started=now;try{now=clock();}catch{return pending('clock_unavailable');}
+  if(!Number.isFinite(now)||now<started)return pending('clock_unavailable');
+  // A paid receipt, trial/grace status or locally derived 31/366-day expiry alone
+  // cannot satisfy this contract. The adapter must establish the actual paid bounds.
+  const {email,publicId,provider,providerRef,paymentRef,paid,start,end,observedAt,validUntil,source,sourceVersionHash,refundState,renewalStopped}=proof;
+  if(email!==selected.email||publicId!==selected.publicId||provider!==selected.provider||providerRef!==selected.providerRef||paymentRef!==selected.paymentRef)return pending('coverage_identity_mismatch');
+  if(!['provider_verified_paid_period','reviewed_payment_coverage'].includes(source)||!hash(sourceVersionHash)||paid!==true)return pending('paid_coverage_unconfirmed');
+  const from=instant(start),until=instant(end),observed=instant(observedAt),valid=instant(validUntil);
+  if(![from,until,observed,valid].every(Number.isFinite)||from>=until||observed>now||valid<=now||valid<observed)return pending('coverage_time_unconfirmed');
+  if(refundState!=='none')return pending('refund_requires_separate_reconciliation');
+  if(renewalStopped!==true)return pending('renewal_stop_unconfirmed');
+  // Do not silently extend/grant an existing entitlement or repair a conflicting
+  // period under the guise of cancellation. Such cases need separate reconciliation.
+  if(until!==currentEnd)return pending('existing_period_differs_from_paid_coverage');
+  if(from>now)return pending('paid_period_not_started');
+  return Object.freeze({state:until>now?'preserve_paid_access':'paid_period_ended',accessMutation:'none',renewalConfirmed:true,cancelAtPeriodEnd:true,paidThrough:end,coverageVersionHash:sourceVersionHash});
+ };
+}
