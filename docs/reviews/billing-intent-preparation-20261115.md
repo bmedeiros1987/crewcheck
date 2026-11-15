@@ -33,4 +33,8 @@ The initial stock-image entrypoint failed while daemonizing its temporary startu
 
 The SQL regression refuses DATABASE_URL/TCP configuration: it requires the dedicated QA flag, owned temporary root, socket, exact disposable database name and datadir. This is a new local test path; existing production/disposable notification databases are not reused or modified.
 
-Remaining release gates: independent review, canonical-prepared repeat and restart evidence, CI coverage of the exact composition, explicit migration review, durable conflicting/late-owner evidence intake, provider-specific reconciliation/cancellation and account deletion/privacy integration. HOLD remains even if the earlier #1342 CI is green.
+Seventeen real SQL cases passed raw and canonically prepared. All three new executable/migration files retained identical SHA-256 after preparation. A real server stop/start preserved created and uncertain-dispatch states and prevented another admission. No real account or provider was used.
+
+Independent read-only review accepted retaining this isolated checkpoint, but identified a further operational blocker inherited from withProfileLocks: a failed ROLLBACK is ignored, the uncertain connection is released, and a deadlock can be retried without confirmed cleanup. A private protocol counterproof on the actual helper reproduced one failed rollback, one uncertain release, zero discards and a second attempt. This is not a real socket-fault test. The shared helper was not modified in this billing slice; ownership and a verified discard/rollback contract must be reconciled before wiring any charging path.
+
+Remaining release gates: uncertain-connection cleanup, CI coverage of the exact composition, explicit migration review, durable conflicting/late-owner evidence intake, provider-specific reconciliation/cancellation and account deletion/privacy integration. HOLD remains even if the earlier #1342 CI is green.
