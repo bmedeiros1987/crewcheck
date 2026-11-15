@@ -135,6 +135,7 @@ text=' '.join(' '.join(p.get_text() for p in doc).split())
 assert 'APZ etapa 08:00' not in text, 'departure fallback must not become published leg presentation'
 assert '08:00 / 09:00' in text, 'published departure must remain visible'
 doc=fitz.open(root / 'audit-continuity-overflow.pdf')
+assert 'VOO (inferido)' not in doc[0].get_text(), 'published flight must not be marked as inferred'
 assert 'Continuidade inferida' in doc[0].get_text(), 'inference must remain visible on a saturated calendar cell'
 assert 'não é folga publicada' in ' '.join(' '.join(p.get_text() for p in doc[1:]).split())
 print('PASS equal presentation fallback withheld and saturated continuity marker retained on calendar and appendix')
