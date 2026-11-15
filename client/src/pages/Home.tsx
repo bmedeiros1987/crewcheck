@@ -4612,7 +4612,17 @@ function ExportToolsView({ actions }: { actions: QuickActions }) {
     setPdfBusy(true);
     try { await run(); } finally { setPdfBusy(false); }
   };
-  return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>PDF, compartilhamento nativo, e-mail interno com anexo, WhatsApp, Telegram e calendário.</p></section><section className="cz-toolbox"><div className="cz-tool-actions"><button disabled={pdfBusy} onClick={() => requestPdf(actions.pdf)}>PDF regular</button><button disabled={pdfBusy} onClick={() => requestPdf(actions.pdfFridge)}>PDF geladeira</button><button onClick={actions.sharePdf}>Compartilhar PDF</button><button onClick={actions.email}>E-mail com PDF</button><button onClick={actions.whatsapp}>WhatsApp</button><button onClick={actions.telegram}>Telegram</button><button onClick={actions.copy}>Copiar</button><button onClick={actions.ics}>ICS</button><button onClick={actions.google}>Google Calendar</button></div></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Exportar e compartilhar</h1><p>Escolha o formato ou como compartilhar.</p></section><section className="cz-toolbox"><div className="cz-tool-actions" aria-label="Exportar ou compartilhar escala">
+    <button disabled={pdfBusy} onClick={() => requestPdf(actions.pdf)}><FileText aria-hidden="true"/>PDF regular</button>
+    <button disabled={pdfBusy} onClick={() => requestPdf(actions.pdfFridge)}><CalendarDays aria-hidden="true"/>PDF geladeira</button>
+    <button onClick={actions.sharePdf} aria-label="Compartilhar PDF regular"><Share2 aria-hidden="true"/>Compartilhar PDF</button>
+    <button onClick={actions.email} aria-label="Enviar e-mail com PDF regular"><Mail aria-hidden="true"/>E-mail com PDF</button>
+    <button onClick={actions.whatsapp}><Phone aria-hidden="true"/>WhatsApp</button>
+    <button onClick={actions.telegram}><Send aria-hidden="true"/>Telegram</button>
+    <button onClick={actions.copy} aria-label="Copiar resumo da escala"><Copy aria-hidden="true"/>Copiar</button>
+    <button onClick={actions.ics}><CalendarDays aria-hidden="true"/>Calendário (.ics)</button>
+    <button onClick={actions.google}><Globe2 aria-hidden="true"/>Google Calendar</button>
+  </div></section></>;
 }
 
 function wakeupLeadMinutes(): number {

@@ -19,7 +19,7 @@ function visit(node) {
 visit(ast);
 // Fail-first: the published baseline has no second export mode or action.
 assert.ok(view && handlers.pdf && handlers.pdfFridge, 'Both real Home PDF actions must exist');
-const entry = `import React,{useState}from'react';import{createRoot}from'react-dom/client';
+const entry = `import React,{useState}from'react';import{FileText,CalendarDays,Share2,Mail,Phone,Send,Copy,Globe2}from'lucide-react';import{createRoot}from'react-dom/client';
 import{exportReport as actualExportReport}from${JSON.stringify(root + '/client/src/lib/pdfExport.ts')};
 import{analyzeCompliance}from${JSON.stringify(root + '/client/src/lib/complianceEngine.ts')};
 import{RosterFridgeValidationError}from${JSON.stringify(root + '/client/src/lib/rosterFridgePdf.ts')};
@@ -57,6 +57,17 @@ try {
     await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : (blocked++, route.abort()));
     const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
     await page.goto(origin); await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.dataset.crewTheme = theme; }, theme);
+    const actionButtons = page.locator('.cz-tool-actions button');
+    assert.equal(await actionButtons.count(), 9);
+    assert.equal(await page.getByRole('button', { name: 'Compartilhar PDF regular', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'Copiar resumo da escala', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'Calendário (.ics)', exact: true }).count(), 1);
+    for (const button of await actionButtons.all()) {
+      assert.equal(await button.locator('svg[aria-hidden="true"]').count(), 1);
+      await button.focus();
+      assert.ok(await button.evaluate(el => document.activeElement === el));
+      if (css) assert.ok(await button.evaluate(el => { const r=el.getBoundingClientRect(); return r.width>=44 && r.height>=44 && r.left>=0 && r.right<=innerWidth; }), 'visible touch targets must fit mobile viewport');
+    }
     for (const mode of ['regular', 'fridge']) {
       const generated = await page.evaluate(mode => window.__make(mode), mode);
       assert.ok(Buffer.from(generated.data).subarray(0, 5).equals(Buffer.from('%PDF-')));
