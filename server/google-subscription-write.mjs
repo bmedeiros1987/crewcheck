@@ -1,5 +1,6 @@
 // Internal server-verified evidence only. No provider I/O, token storage or migration.
 import {withProfileLocks,assertTransactionClient} from './profile-locks.mjs';
+import {randomBytes} from 'node:crypto';
 const fail=(code,status=409)=>Object.assign(new Error(code),{code,status});
 function prepare(input){
  const {email,expectedPublicId,verifiedPublicId,tokenHash,plan,productId,status,active,periodEnd,cancelAtPeriodEnd,providerRef,metadata,existingOnly=false}=input||{};
@@ -28,7 +29,11 @@ async function apply(client,record){
   const previous=current[0];
   if(previous&&(previous.provider!=='google_play'||previous.purchase_token_hash!==tokenHash))throw fail('BILLING_PROVIDER_RECONCILIATION_REQUIRED');
   if(!previous&&(existingOnly||profile.plan==='premium_unlimited'))throw fail('BILLING_PROVIDER_RECONCILIATION_REQUIRED');
-  const values=[email,plan,status,productId,providerRef,tokenHash,periodEnd,cancelAtPeriodEnd,metadataJson];
+  const parsed=JSON.parse(metadataJson);if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw fail('GOOGLE_VERIFIED_RECORD_INVALID',400);
+  // Every shared Google write changes this opaque concurrency marker, even for ABA.
+  // It is not a provider sequence, purchase token, key or timestamp.
+  const nextMetadata=JSON.stringify({...parsed,googleStateFence:randomBytes(32).toString('hex')});
+  const values=[email,plan,status,productId,providerRef,tokenHash,periodEnd,cancelAtPeriodEnd,nextMetadata];
   if(previous)await client.query("UPDATE crewcheck_platform_subscriptions SET plan=$2,status=$3,product_id=$4,provider_ref=$5,current_period_end=$7,cancel_at_period_end=$8,metadata=$9,updated_at=CURRENT_TIMESTAMP(3) WHERE email=$1 AND provider='google_play' AND purchase_token_hash=$6",values);
   else await client.query("INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,purchase_token_hash,current_period_end,cancel_at_period_end,metadata) VALUES($1,$2,$3,'google_play',$4,$5,$6,$7,$8,$9)",values);
   if(profile.plan!=='premium_unlimited')await client.query('UPDATE crewcheck_platform_profiles SET plan=$2,updated_at=NOW() WHERE email=$1',[email,active?plan:'free']);

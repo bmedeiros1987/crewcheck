@@ -1,7 +1,8 @@
+import {googleSubscriptionStatus} from '../server/google-subscription-status.mjs';
 import assert from 'node:assert/strict';import fs from 'node:fs';import {createHash} from 'node:crypto';
 globalThis.fetch=()=>{throw Error('Provider network forbidden');};const source=fs.readFileSync('server/platform.mjs','utf8'),norm=(x,n)=>String(x||'').trim().slice(0,n),hash=x=>createHash('sha256').update(x).digest('hex');
 const start=source.indexOf('function normalizedGoogleStatus('),end=source.indexOf('async function verifyGooglePubSubIdentity(',start);let captured;
-const save=new Function('normalizeText','sha256','GOOGLE_PLAY_PRODUCTS','writeVerifiedGoogleSubscription',source.slice(start,end)+';return saveGoogleSubscription;')(norm,hash,new Map([['synthetic.monthly','premium_monthly']]),async(db,input)=>{captured=input;return{active:true};});
+const save=new Function('normalizeText','sha256','GOOGLE_PLAY_PRODUCTS','writeVerifiedGoogleSubscription','googleSubscriptionStatus',source.slice(start,end)+';return saveGoogleSubscription;')(norm,hash,new Map([['synthetic.monthly','premium_monthly']]),async(db,input)=>{captured=input;return{active:true};},googleSubscriptionStatus);
 await save({},'synthetic@example.invalid','SYNTHETIC_RAW_TOKEN',{item:{productId:'synthetic.monthly'},expiry:new Date('2099-01-01T00:00:00Z'),payload:{subscriptionState:'SUBSCRIPTION_STATE_ACTIVE',externalAccountIdentifiers:{obfuscatedExternalAccountId:'GOOGLE_TEST'},latestOrderId:'SYNTHETIC_ORDER',acknowledgementState:'ACKNOWLEDGED'}},'GOOGLE_TEST',true);
 assert.equal(captured.tokenHash,hash('SYNTHETIC_RAW_TOKEN'));assert.equal(captured.expectedPublicId,'GOOGLE_TEST');assert.equal(captured.verifiedPublicId,'GOOGLE_TEST');assert.equal(captured.existingOnly,true);assert(!JSON.stringify(captured).includes('SYNTHETIC_RAW_TOKEN'));
 const a=source.indexOf('async function handleGoogleRtdn('),b=source.indexOf('\nfunction meaningfulComplianceAlerts(',a);

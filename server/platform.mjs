@@ -1,3 +1,4 @@
+import {googleSubscriptionStatus} from './google-subscription-status.mjs';
 import {readBillingCancellation,commitAcknowledgedAsaasCancellation} from './billing-cancellation.mjs';
 import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
 import {resolveOwnedGatePublication} from './radar-publication-authority.mjs';
@@ -810,15 +811,7 @@ async function verifyGooglePlaySubscription(purchaseToken, expectedProductId = '
 }
 
 function normalizedGoogleStatus(payload, expiry) {
-  const stateName = normalizeText(payload?.subscriptionState, 90);
-  const inFuture = expiry instanceof Date && expiry.getTime() > Date.now();
-  if (stateName === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' && inFuture) return { status: 'grace_period', active: true, cancelAtPeriodEnd: false };
-  if (stateName === 'SUBSCRIPTION_STATE_CANCELED' && inFuture) return { status: 'active', active: true, cancelAtPeriodEnd: true };
-  if (stateName === 'SUBSCRIPTION_STATE_ACTIVE' && inFuture) return { status: 'active', active: true, cancelAtPeriodEnd: false };
-  if (stateName === 'SUBSCRIPTION_STATE_PENDING') return { status: 'pending', active: false, cancelAtPeriodEnd: false };
-  if (stateName === 'SUBSCRIPTION_STATE_ON_HOLD') return { status: 'past_due', active: false, cancelAtPeriodEnd: false };
-  if (stateName === 'SUBSCRIPTION_STATE_PAUSED') return { status: 'paused', active: false, cancelAtPeriodEnd: false };
-  return { status: 'expired', active: false, cancelAtPeriodEnd: false };
+  return googleSubscriptionStatus(normalizeText(payload?.subscriptionState, 90), expiry);
 }
 
 async function saveGoogleSubscription(db, email, purchaseToken, verified, expectedPublicId, existingOnly = false) {
