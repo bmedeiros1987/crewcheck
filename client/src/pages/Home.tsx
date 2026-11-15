@@ -5013,6 +5013,8 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
         setAmilMessage('');
       }
       if (!found.length) toast.message(`A busca interna de ${categoryMeta.plural.toLocaleLowerCase()} não retornou opções agora.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'A busca não respondeu agora. Tente novamente quando quiser.');
     } finally {
       setLoading(false);
     }
@@ -5047,12 +5049,10 @@ function GymsView({ events }: { events: ZeroLeg[] }) {
     toast.success('Local removido da sua lista.');
   }
 
-  useEffect(() => { search(); }, [location, category, plan, amilPlan, amilCare, amilState]);
+  // Gym searches are explicit: changing a filter never starts another request.
+  useEffect(() => { if (category !== 'gym') void search(); }, [location, category, plan, amilPlan, amilCare, amilState]);
 
-  useEffect(() => {
-    if (locationMode !== 'current' || coordinates) return;
-    getCurrentGeoPosition().then((position) => setCoordinates({ lat: position.lat, lon: position.lng })).catch(() => undefined);
-  }, [locationMode, coordinates]);
+  // Current location is requested by the explicit location button, not mounting.
 
   useEffect(() => {
     if (!autoCheckIn || category !== 'gym' || !navigator.geolocation) return;
