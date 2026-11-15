@@ -41,6 +41,24 @@ public class WatchTextLayoutTest {
     private static final String LONG_TEXT =
             "Apresentação São José dos Campos — conexão internacional alterada";
 
+    @Test public void scrollIndicatorIsEnabledWithoutReservingContentWidth() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    ScrollView scroll = field(controller.get(), "scroll", ScrollView.class);
+                    measure(scroll, size);
+                    assertTrue("scroll affordance remains available", scroll.isVerticalScrollBarEnabled());
+                    assertEquals("indicator overlays rather than shrinking content",
+                            View.SCROLLBARS_INSIDE_OVERLAY, scroll.getScrollBarStyle());
+                    assertTrue("indicator fades when idle", scroll.isScrollbarFadingEnabled());
+                }
+            }
+        }
+    }
+
     @Test public void longOperationalTextAndButtonsFitSmallRoundScreens() throws Exception {
         for (float scale : new float[]{1f, 1.3f, 1.5f}) {
             RuntimeEnvironment.setFontScale(scale);
