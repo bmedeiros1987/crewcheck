@@ -316,7 +316,17 @@ export async function verifyGooglePlayPurchase(productId: string, purchaseToken:
   // saveGoogleSubscription stores Google's ISO expiry as UTC DATETIME; mysql dateStrings returns that exact form.
   const end = typeof billing?.currentPeriodEnd === 'string' ? billing.currentPeriodEnd : '';
   const utcEnd = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(end) ? end.replace(' ','T')+'Z' : end;
-  const expiry = /(?:Z|[+-]\d{2}:\d{2})$/.test(utcEnd) ? Date.parse(utcEnd) : NaN;
+  const parts = utcEnd.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/);
+  let expiry = NaN;
+  if (parts) {
+    const [year,month,day,hour,minute,second] = parts.slice(1,7).map(Number);
+    const millis = Number((parts[7] || '').padEnd(3,'0'));
+    const wall = new Date(0); wall.setUTCFullYear(year,month-1,day); wall.setUTCHours(hour,minute,second,millis);
+    const offsetHours = Number(parts[10] || 0), offsetMinutes = Number(parts[11] || 0);
+    if (wall.getUTCFullYear()===year && wall.getUTCMonth()===month-1 && wall.getUTCDate()===day
+        && wall.getUTCHours()===hour && wall.getUTCMinutes()===minute && wall.getUTCSeconds()===second
+        && offsetHours<=23 && offsetMinutes<=59) expiry = wall.getTime() - (parts[9]==='-'?-1:1)*(offsetHours*60+offsetMinutes)*60000;
+  }
   if (result?.ok !== true || typeof result.needsAcknowledgement !== 'boolean'
       || billing?.provider !== 'google_play' || billing.productId !== productId
       || !['free','premium_monthly','premium_annual'].includes(billing.plan)
