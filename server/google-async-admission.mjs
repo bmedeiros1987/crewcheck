@@ -53,7 +53,9 @@ export function createGoogleAsyncAdmission({db,resolvePrincipal,verifyPurchase,p
    });
    // Each caller retains its own authority, even if it shared another caller's flight.
    if(!billingAuthorityCurrent(principal))throw fail('BILLING_ADMISSION_AUTHORITY_REQUIRED');
-   return publicResult(await readOwnedBillingIntent(db,input));
+   const finalOperation=await readOwnedBillingIntent(db,input);
+   if(!billingAuthorityCurrent(principal))throw fail('BILLING_ADMISSION_AUTHORITY_REQUIRED');
+   return publicResult(finalOperation);
   },
  };
 }
