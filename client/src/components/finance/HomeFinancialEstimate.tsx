@@ -35,7 +35,7 @@ export default function HomeFinancialEstimate(){
    <div className="cc-home-estimate-heading"><p>{estimate.state==='available'?'Diárias estimadas':estimate.state==='no_data'?'Diárias a calcular':estimate.amountMinor===null?'Diárias pendentes':'Subtotal conhecido'}</p><FinancialPrivacyToggle iconOnly/></div>
    <strong>{estimate.amountMinor===null?'Não calculável':privacy.amount(formatFinancialMinor(estimate.amountMinor,'BRL'))}</strong>
    {estimate.state==='no_data'?<small role="status">Sem diárias calculadas no período.</small>:pendingCurrencies.length>0?<small role="status">{fx.mode==='automatic'&&fx.state==='loading'?'Consultando câmbio…':`Câmbio pendente: ${pendingCurrencies.join(', ')}.`}</small>:incomplete?<small role="status">Há dados pendentes.</small>:foreign.length>0&&fx.state==='stale'?<small role="status">Cotação em cache · confira a data.</small>:null}
-   <small>Diárias · {dateLabel(payment.range?.start)} a {dateLabel(payment.range?.end)} · estimativa</small>
+   <small>Diárias · {dateLabel(payment.range?.start)} a {dateLabel(payment.range?.end)} · estimativa · recebimento não confirmado</small>
    <details><summary><Calculator size={18} aria-hidden="true"/>Ver cálculo</summary>
      {foreign.length>0&&<FinancialFxSourceControl/>}
      {payment.issues.length>0&&<ul>{payment.issues.map(issue=><li key={issue}>{privacy.text(issue)}</li>)}</ul>}
