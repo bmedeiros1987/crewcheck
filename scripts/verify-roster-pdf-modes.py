@@ -129,3 +129,17 @@ for name in ['rest-conflict','rest-bad-token','rest-zone','continuity-published'
     elif name=='rest-zone': assert 'Início folga 01:46 (UTC-03:00)' in text
     else: assert 'Inferido por continuidade' in text and 'Início 19:45' in text and 'Fim 06:30' in text
 print('PASS mismatched literal/conflicting rest evidence withheld, explicit source offset, published continuity edges retained')
+
+doc=fitz.open(root / 'audit-leg-equal.pdf')
+text=' '.join(' '.join(p.get_text() for p in doc).split())
+assert 'APZ etapa 08:00' not in text, 'departure fallback must not become published leg presentation'
+assert '08:00 / 09:00' in text, 'published departure must remain visible'
+doc=fitz.open(root / 'audit-continuity-overflow.pdf')
+assert 'Continuidade inferida' in doc[0].get_text(), 'inference must remain visible on a saturated calendar cell'
+assert 'não é folga publicada' in ' '.join(' '.join(p.get_text() for p in doc[1:]).split())
+print('PASS equal presentation fallback withheld and saturated continuity marker retained on calendar and appendix')
+
+doc=fitz.open(root / 'audit-leg-equal-unpadded.pdf')
+text=' '.join(' '.join(p.get_text() for p in doc).split())
+assert 'APZ etapa 08:00' not in text and '8:00 / 09:00' in text
+print('PASS canonical-equivalent unpadded departure does not create APZ evidence')
