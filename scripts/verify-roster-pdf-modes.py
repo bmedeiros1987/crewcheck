@@ -102,3 +102,30 @@ for file in ['fridge.pdf','dense.pdf','six-weeks-4.pdf','six-weeks-6.pdf','long-
         content=[line for line in lines if line['bbox'][1] < footer_top-0.1]
         assert all(line['bbox'][3] <= footer_top-2 for line in content), (file,page.number,'content/footer collision')
 print('PASS calendar and multi-page appendix content/footer separation')
+
+for name in ['HSB','HSBE','ASB']:
+    text='\n'.join(p.get_text() for p in fitz.open(root / f'audit-{name}.pdf'))
+    text=' '.join(text.split())
+    assert 'APZ 02:07' not in text, 'availability start is not flight presentation'
+    assert 'Início 02:07' in text and 'APZ etapa 05:10' in text
+text='\n'.join(p.get_text() for p in fitz.open(root / 'audit-rest.pdf'))
+text=' '.join(text.split())
+assert 'Início folga 01:46' in text and 'fuso não informado' in text
+text='\n'.join(p.get_text() for p in fitz.open(root / 'audit-rest-mismatch.pdf'))
+assert '01:46' not in text, 'another occurrence cannot supply the rest boundary'
+text='\n'.join(p.get_text() for p in fitz.open(root / 'audit-continuity.pdf'))
+text=' '.join(text.split())
+assert 'Inferido por continuidade' in text and 'não é folga publicada' in text
+assert '00:00' not in text and '23:59' not in text
+text='\n'.join(p.get_text() for p in fitz.open(root / 'audit-legacy.pdf'))
+text=' '.join(text.split())
+assert 'Etapas não disponíveis' in text
+print('PASS availability vs leg APZ, literal rest evidence, inferred continuity and legacy missing legs; source unchanged')
+
+for name in ['rest-conflict','rest-bad-token','rest-zone','continuity-published']:
+    text=' '.join(' '.join(p.get_text() for p in fitz.open(root / f'audit-{name}.pdf')).split())
+    if name=='rest-conflict': assert 'fontes conflitantes' in text and '01:46' not in text and '03:00' not in text
+    elif name=='rest-bad-token': assert '01:46' not in text and '02:00' not in text
+    elif name=='rest-zone': assert 'Início folga 01:46 (UTC-03:00)' in text
+    else: assert 'Inferido por continuidade' in text and 'Início 19:45' in text and 'Fim 06:30' in text
+print('PASS mismatched literal/conflicting rest evidence withheld, explicit source offset, published continuity edges retained')

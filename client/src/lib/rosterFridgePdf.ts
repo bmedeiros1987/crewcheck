@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { CrewRoster, RosterDay } from './pdfParser';
 import { addCrewCheckPdfLogo } from './brand';
+import { capturePublishedFreeDayStart } from './freeDayStartEvidence';
 import { AIMS_FLIGHT_ROLE_SOURCE, TICKET_FLIGHT_ROLE_SOURCE } from './flightRoleEvidence';
 
 export class RosterFridgeValidationError extends Error {}
@@ -13,14 +14,30 @@ function role(leg: RosterDay['legs'][number], compact = false): string {
   if (value && verifiedRoles.has(String(leg.workTypeSource || ''))) return value;
   return compact ? '?' : value ? `Função a confirmar (${value} informado)` : 'Função não informada';
 }
+const legsOf = (day: RosterDay): RosterDay['legs'] => Array.isArray(day.legs) ? day.legs : [];
+const inferredContinuity = (day: RosterDay): boolean => (day as RosterDay & { continuityInferred?: boolean }).continuityInferred === true;
+function restClock(day: RosterDay): string[] {
+  const e = day.freeDayStartEvidence;
+  if (!e || e.date !== day.date || e.code !== String(day.pairingCode || day.type).toUpperCase() || e.origin !== 'AIMS published rest tokens' || e.clockSource !== 'published') return [];
+  const literal = capturePublishedFreeDayStart(String(e.tokenExcerpt || '').split(/\s+/), e.date);
+  if (!literal?.clock || literal.clock !== e.clock || literal.code !== e.code) return [];
+  if (day.dutyReportSource === 'published' && day.dutyReport && day.dutyReport !== e.clock) return ['Início folga não confirmado: fontes conflitantes'];
+  const offset = e.utcOffsetMinutes;
+  const zone = e.timeZoneSource === 'published' && Number.isInteger(offset) && Math.abs(offset!) <= 840
+    ? `UTC${offset! < 0 ? '-' : '+'}${String(Math.floor(Math.abs(offset!) / 60)).padStart(2, '0')}:${String(Math.abs(offset!) % 60).padStart(2, '0')}` : 'fuso não informado';
+  return [`Início folga ${e.clock} (${zone}${e.convertedDocument ? '; fonte convertida' : ''})`];
+}
 function publishedClocks(day: RosterDay, compact = false): string[] {
-  const startLabel = day.legs.length ? 'APZ' : 'Início';
+  const availability = /^(HSB|HSBE|ASB|RES)$/.test(String(day.type)) || /^(HSB|HSBE|ASB|RES)$/.test(String(day.pairingCode));
+  const startLabel = legsOf(day).length && !availability ? 'APZ' : 'Início';
+  const inferred = inferredContinuity(day);
   const start = day.dutyReportSource === 'published' && day.dutyReport ? `${startLabel} ${day.dutyReport}`
     : day.dutyReport ? `${startLabel} não confirmado` : '';
   const finish = day.dutyDebriefSource === 'published' && day.dutyDebrief
     ? `Fim ${day.dutyDebrief}${day.isNextDay && !/\(\+\d+\)/.test(day.dutyDebrief) ? ' (+1)' : ''}`
     : day.dutyDebrief ? 'Fim não confirmado' : '';
-  const clocks = [start, finish].filter(Boolean);
+  const rest = inferred ? [] : restClock(day);
+  const clocks = [...rest, ...(rest.length ? [] : [start]), finish].filter(Boolean);
   return compact && clocks.length ? [clocks.join(' / ')] : clocks;
 }
 
@@ -45,9 +62,11 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
   const details: string[][] = [];
   const describe = (day: RosterDay, compact = false): string[] => [
     String(day.pairingCode || day.type || 'Atividade não informada'),
-    ...day.legs.map(leg => compact
+    ...(inferredContinuity(day) ? ['Inferido por continuidade; não é folga publicada'] : []),
+    ...(!Array.isArray(day.legs) ? ['Etapas não disponíveis neste registro'] : []),
+    ...legsOf(day).map(leg => compact
       ? `${leg.flightNumber || 'Voo'} ${leg.origin || '?'}-${leg.destination || '?'} ${role(leg, true)}`
-      : `${leg.flightNumber || 'Voo'} · ${role(leg)} · ${leg.origin || '?'}-${leg.destination || '?'} ${leg.departureTime || '--:--'} / ${leg.arrivalTime || '--:--'}${leg.isNextDay ? ' (+1)' : ''}`),
+      : `${leg.flightNumber || 'Voo'} · ${role(leg)} · ${leg.origin || '?'}-${leg.destination || '?'} ${leg.departureTime || '--:--'} / ${leg.arrivalTime || '--:--'}${leg.isNextDay ? ' (+1)' : ''}${/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(leg.presentationTime || '') ? ` · APZ etapa ${leg.presentationTime}` : ''}`),
     ...publishedClocks(day, compact),
   ].map(pdfText);
   // Standard PDF fonts cannot preserve arbitrary Unicode. Reject instead of
@@ -93,9 +112,9 @@ export function buildRosterFridgePdf(roster: CrewRoster, logo: string): jsPDF {
         visible = [];
         let truncated = false;
         for (const day of entries) {
-          const heading = doc.splitTextToSize(pdfText(String(day.pairingCode || day.type || 'Atividade não informada')), innerWidth) as string[];
+          const heading = doc.splitTextToSize(pdfText(`${day.pairingCode || day.type || 'Atividade não informada'}${inferredContinuity(day) ? ' (inferido)' : ''}`), innerWidth) as string[];
           if (visible.length + heading.length <= availableLines - 1) visible.push(...heading);
-          for (const leg of day.legs) {
+          for (const leg of legsOf(day)) {
             const legLines = doc.splitTextToSize(pdfText(`${leg.flightNumber || 'Voo'} ${leg.origin || '?'}-${leg.destination || '?'} ${role(leg, true)}`), innerWidth) as string[];
             if (!truncated && visible.length + legLines.length <= availableLines - 1) visible.push(...legLines);
             else { omittedFlights++; truncated = true; }
