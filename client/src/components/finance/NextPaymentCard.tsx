@@ -63,7 +63,7 @@ export default function NextPaymentCard({ payment, requestRange, sourceRange, ex
       {screen!=='statement'&&screen!=='payment'&&<button type="button" onClick={()=>navigate('statement')}>Extrato <ChevronRight size={16} aria-hidden="true"/></button>}
       {screen!=='charts'&&<button type="button" onClick={()=>navigate('charts')}>Gráficos <ChevronRight size={16} aria-hidden="true"/></button>}
       {screen!=='changes'&&<button type="button" onClick={()=>navigate('changes')}><span className="cc-financial-action-label"><GitCompareArrows size={18} aria-hidden="true"/>Alterações</span><ChevronRight size={16} aria-hidden="true"/></button>}
-      {(screen==='charts'||screen==='statement'||screen==='changes')&&<FinancialPrivacyToggle/>}
+      {(screen==='charts'||screen==='changes')&&<FinancialPrivacyToggle/>}
     </nav>
     {screen==='payment'&&<section className="cc-next-payment-lines" aria-label="Composição do pagamento">
       <header><h3>{payment.estimationBasis==='operational_month'?'Composição estimada da competência':'Extrato previsto do próximo ciclo'}</h3><span>{lines.length} itens · recebimento não confirmado</span></header>
