@@ -111,3 +111,16 @@ Only a validated active receipt produces the fixed subscription-confirmed notice
 Added tests execute the actual client reader, listener and restore timer, with synthetic capability injection, plus the real SubscriptionCenter/client/auth modules against intercepted HTTP and a synthetic Android bridge. All test tokens/owners are fictional; no provider, store purchase, new subscription or real account is accessed. The browser fixture's initial missing catalog disclosures caused a harness render failure and was corrected to the actual catalog contract, without changing application behavior.
 
 This is a client false-confirmation correction, not a claim that live Google products, backend credentials, server persistence, native billing recovery, payment reconciliation or Play publishing are operational. Those release gates remain separate. Footer personalization remains planned behind the billing priority.
+
+
+Review follow-up: the Google listener's mount-session capture is protected when local storage throws SecurityError. The actual-component browser suite covers storage denied with no verification, acknowledgement or page error. Raw browser harness errors (missing catalog disclosures, then an unpassed evaluate parameter) were fixture failures and retained separately; corrected runs do not claim those attempts passed.
+
+## Two-provider operational blocker
+
+The code names Asaas explicitly, using existing ASAAS_API_KEY, ASAAS_API_BASE_URL and webhook token configuration; none was read, created or changed here. Synthetic actual transport tests distinguish missing configuration and provider401/403/429/503, malformed JSON and a ready link without real requests or retry. Live configuration validity and provider health remain unknown in this executor.
+
+The current web checkout rejects an already active account before creating Asaas billing. That alone is not complete cross-provider or concurrent-creation protection. The Google save path currently upserts the account's subscription row to google_play; a previously active Asaas provider is not reconciled by that statement. Existing Asaas webhooks and Google RTDN can arrive later. This is a source-level reconciliation risk, not a demonstrated duplicate charge on a real account. The present client correction must not be described as solving simultaneous providers, provider migration/cancellation, durable idempotency or webhook ordering.
+
+A separate reviewed server reconciliation contract is required before enabling or claiming synchronized two-provider contracting: preserve per-provider evidence, serialize account transitions, reject conflicting creation before charging where possible, and handle an already externally charged purchase without silently replacing or canceling another provider. No schema migration, production DDL, automatic cancellation/refund or new charge is included here.
+
+Play policy reference checked2026-11-15: https://support.google.com/googleplay/android-developer/answer/10281818 and https://support.google.com/googleplay/answer/11174377 . Existing Web Asaas and native Google paths remain distinct. Brazil's availability of alternative billing is conditional on the applicable program/election; no enrollment or permission to steer in-app users to external checkout is established by this patch. No alternative-billing program is activated.

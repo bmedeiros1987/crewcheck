@@ -72,6 +72,7 @@ jobs:
           node scripts/regression-asaas-webhook-http.mjs
           node scripts/regression-billing-checkout-confirmation.mjs
           node scripts/regression-google-play-confirmation.mjs
+          node scripts/regression-asaas-transport.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs
@@ -96,6 +97,7 @@ jobs:
           node scripts/regression-asaas-webhook-http.mjs
           node scripts/regression-billing-checkout-confirmation.mjs
           node scripts/regression-google-play-confirmation.mjs
+          node scripts/regression-asaas-transport.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs

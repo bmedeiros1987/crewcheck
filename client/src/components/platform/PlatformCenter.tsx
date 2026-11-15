@@ -165,7 +165,8 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    const mountedSession = captureAuthSession();
+    let mountedSession: ReturnType<typeof captureAuthSession> | null = null;
+    try { mountedSession = captureAuthSession(); } catch { /* No storage access: no purchase admission. */ }
     const listener = async (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       const intent = playPurchaseSession.current || (detail.restored === true ? {session:mountedSession} : null);
@@ -209,7 +210,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
       if (detail?.catalogInvalidated !== false) { playCatalogRequest.current=null;setPlayProducts({}); }
       toast.error(detail?.message || 'Google Play indisponível.');
     };
-    const pending = () => { const session=playPurchaseSession.current?.session; if(session?.token && session.isCurrent()) toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.'); };
+    const pending = () => { try { const session=playPurchaseSession.current?.session; if(session?.token && session.isCurrent()) toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.'); } catch { /* Revoked or inaccessible session: no notice. */ } };
     window.addEventListener('crewcheck:billing-products', products as EventListener);
     window.addEventListener('crewcheck:billing-ready', ready);
     window.addEventListener('crewcheck:billing-error', errorListener as EventListener);
