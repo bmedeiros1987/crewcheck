@@ -165,9 +165,10 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
+    const mountedSession = captureAuthSession();
     const listener = async (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      const intent = playPurchaseSession.current;
+      const intent = playPurchaseSession.current || (detail.restored === true ? {session:mountedSession} : null);
       const session = intent?.session;
       const current = () => { try { return Boolean(session?.token) && session!.isCurrent(); } catch { return false; } };
       if (!current() || typeof detail.productId !== 'string' || typeof detail.purchaseToken !== 'string'
