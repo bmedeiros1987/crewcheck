@@ -1,0 +1,29 @@
+// Explicit opt-in only: gradle -I ../scripts/android-qa/checkpoint.init.gradle :app:assembleCheckpointQa
+// Does not modify production sources or create signing credentials.
+gradle.beforeProject { p ->
+    if (p.path == ':app') p.plugins.withId('com.android.application') {
+        def qaRoot = new File(p.rootDir, '../scripts/android-qa/native').canonicalFile
+        p.android {
+            buildTypes {
+                checkpointQa {
+                    applicationIdSuffix '.qacheckpoint'
+                    debuggable true
+                    minifyEnabled false
+                    matchingFallbacks = ['debug']
+                    signingConfig signingConfigs.debug
+                }
+            }
+            sourceSets.checkpointQa {
+                manifest.srcFile new File(qaRoot, 'AndroidManifest.xml')
+                java.srcDir new File(qaRoot, 'java')
+                res.srcDir new File(qaRoot, 'res')
+            }
+        }
+        p.tasks.configureEach { t ->
+            if (t.name == 'validateSigningCheckpointQa') t.doFirst {
+                def signer = p.android.signingConfigs.debug.storeFile
+                if (signer == null || !signer.isFile()) throw new GradleException('Existing debug signer required; do not generate credentials')
+            }
+        }
+    }
+}

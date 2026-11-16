@@ -1,6 +1,6 @@
 # Android checkpoint isolation: proposed QA configuration
 
-Status: design and local contract tests only. No Gradle variant/native overlay is implemented by this document, no APK exists from it, and passing the contract does not establish runtime isolation. Production wrapper, signing configuration, installed apps and accounts remain unchanged. Current checkpoint runtime candidate: #1347 `69f933754609a0b957959af9a0ea990a4aaa38bb` (newer documentation/scripts must retain a recorded source SHA/tree).
+Status: design plus an unbuilt opt-in QA overlay and local source/contract tests. No APK exists from it, and passing these checks does not establish runtime isolation. Production wrapper, signing configuration, installed apps and accounts remain unchanged. Current checkpoint runtime candidate: #1347 `69f933754609a0b957959af9a0ea990a4aaa38bb` (newer documentation/scripts must retain a recorded source SHA/tree).
 
 ## Observed blockers
 
@@ -15,7 +15,7 @@ Status: design and local contract tests only. No Gradle variant/native overlay i
 | --- | --- |
 | Artifact | `CrewCheck-checkpoint-<sourceSHA>-isolated-debug.apk`; not generated |
 | Package | `com.crewcheck.app.qacheckpoint`; verify it is unused before installing |
-| Variant | dedicated `checkpointQa`, still to implement/review; avoid inheriting the MCC source-set manifest |
+| Variant | dedicated `checkpointQa`, implemented as opt-in source, still to compile/review; avoid inheriting the MCC source-set manifest |
 | UI | exact reviewed source with `VITE_CREWCHECK_QA_CHECKPOINT=1` and recorded build identity |
 | Destination | canonical `http://127.0.0.1:17347` via ADB reverse to a host server bound to loopback only |
 | Entry/recovery | same local origin; failure stays offline, no production fallback |
@@ -26,7 +26,7 @@ Status: design and local contract tests only. No Gradle variant/native overlay i
 | Network | deny external navigation/resources/redirects/popups and external intents; fixture server never redirects; do not bypass TLS errors |
 | HTTP exception | if needed, limited to QA loopback configuration; never enable global production cleartext or install trust roots |
 
-This is a scoped checkpoint test host, not validation of the excluded native features. The QA-only variant/source overlay must be reviewed before build: do not patch/rewrite the production wrapper in place. The exact Gradle source-set and native interception implementation remains work to perform on the existing SDK-capable builder. `matchingFallbacks` is dependency variant selection, not proof that the correct manifest or entrypoint was merged.
+This is a scoped checkpoint test host, not validation of the excluded native features. The QA-only variant/source overlay must be reviewed before build: do not patch/rewrite the production wrapper in place. The Gradle source-set and native interception implementation must still be compiled and validated on the existing SDK-capable builder. `matchingFallbacks` is dependency variant selection, not proof that the correct manifest or entrypoint was merged.
 
 The executable design contract is `scripts/android-qa/isolation-contract.mjs`. Its local regression checks canonical origin/port, rejected public/credential-bearing/noncanonical URLs, distinct package and a separate same-origin Blob-download capability. It does not implement Android networking, the local fixture server or a native file saver. No check authorizes installation by itself.
 
@@ -40,7 +40,7 @@ The executable design contract is `scripts/android-qa/isolation-contract.mjs`. I
 6. Test checkpoint download/cancel/repeat and Android file chooser reopening. Compare owner, selected months, source and semantic fixture contents in disposable memory. Other-account sentinels and credentials must be absent; original test storage must remain unchanged. If a file cannot be saved and reopened, stop before replacing any roster.
 7. Record emulator/device version and actual results. Do not label JVM/browser/static tests as Android file delivery, physical-device validation or a backup of the existing account. Keep release/Play, real Telegram and all production data untouched.
 
-No endpoint, fixture server, native overlay, build, signer or installation was created by this plan. No retention/consent policy or monetary cost was selected. Next dependency is an existing SDK-capable builder plus a reviewed QA-only native overlay and file transport; an existing AAB/debug-converted production APK is not a substitute.
+No endpoint, fixture server, build, signer or installation was created by this plan; the preparatory native overlay below is unbuilt. No retention/consent policy or monetary cost was selected. Next dependency is an existing SDK-capable builder plus a reviewed QA-only native overlay and file transport; an existing AAB/debug-converted production APK is not a substitute.
 
 ## Primary references
 
@@ -49,3 +49,11 @@ No endpoint, fixture server, native overlay, build, signer or installation was c
 - Android network security configuration: https://developer.android.com/privacy-and-security/security-config
 
 The references support the mechanisms, not the safety or availability of this unbuilt candidate.
+
+## Preparatory overlay (unbuilt)
+
+An opt-in init script now defines `checkpointQa` without editing production Gradle or Activity files: `scripts/android-qa/checkpoint.init.gradle`. Its separate Activity does not inherit the production shell or register native bridges. The QA manifest removes main launch, receivers, services, providers and inherited permissions except Internet, and limits cleartext to loopback. The existing debug signer is required; none is created by this work. These are source-level intentions pending Android compilation and merged-manifest review.
+
+The variant source exists but is not built or runtime validated. Still absent: synthetic fixture server/CSP and network auditing, native checkpoint save/reopen transport, artifact provenance verification, and emulator evidence. No install is safe based on static checks alone. XML parsing and `regression-android-qa-native-overlay.mjs` are source checks only. No SDK, Gradle, ADB or javac is available in this executor.
+
+Independent source review identified remaining network gates: WebView interception alone does not prove redirect, Service Worker or WebSocket containment. Block or independently validate those surfaces, with fixture-server CSP and network evidence, before using this host. The current overlay is not an isolated APK approved for installation.

@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+ <uses-permission tools:node="removeAll" />
+ <uses-permission-sdk-23 tools:node="removeAll" />
+ <uses-permission android:name="android.permission.INTERNET" />
+ <queries tools:node="removeAll" />
+ <application android:label="CrewCheck · QA checkpoint" android:allowBackup="false" android:testOnly="true" android:networkSecurityConfig="@xml/checkpoint_network" tools:replace="android:label">
+  <activity android:name=".MainActivity" tools:node="remove" />
+  <receiver tools:node="removeAll" />
+  <service tools:node="removeAll" />
+  <provider tools:node="removeAll" />
+  <activity android:name=".CheckpointQaActivity" android:exported="true">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity>
+ </application>
+</manifest>

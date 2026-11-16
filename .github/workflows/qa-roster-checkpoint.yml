@@ -8,6 +8,7 @@ on:
       - 'scripts/regression-qa-roster-checkpoint*'
       - 'scripts/android-qa/**'
       - 'scripts/regression-android-qa-isolation-contract.mjs'
+      - 'scripts/regression-android-qa-native-overlay.mjs'
       - '.github/workflows/qa-roster-checkpoint.yml'
 permissions:
   contents: read
@@ -25,9 +26,11 @@ jobs:
         run: |
           node scripts/regression-qa-roster-checkpoint.mjs
           node scripts/regression-android-qa-isolation-contract.mjs
+          node scripts/regression-android-qa-native-overlay.mjs
       - run: node scripts/v139/apply.mjs
       - name: Prepared account and competence isolation
         run: |
           node scripts/regression-qa-roster-checkpoint.mjs
           node scripts/regression-android-qa-isolation-contract.mjs
+          node scripts/regression-android-qa-native-overlay.mjs
       - run: npx tsc --noEmit
