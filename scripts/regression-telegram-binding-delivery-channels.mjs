@@ -6,7 +6,7 @@ const start=source.indexOf('async function deliverJob(job) {');
 const end=source.indexOf('\nfunction commuteRouteKey',start);
 assert(start>=0&&end>start);
 let reads=0,prepares=0,phones=0,texts=0,calls=0,binding=null;
-const context=vm.createContext({dbPool:async()=>{reads++;return{};},linkedTelegramRecord:async()=>binding,prepareScheduledWakeup:async()=>{prepares++;return{ok:true,text:'SYNTHETIC'};},sendInfobipPhone:async()=>{phones++;return{ok:true,configured:true};},sendTelegram:async()=>{texts++;return{ok:true,configured:true};},callTelegram:async()=>{calls++;return{ok:true,configured:true};}});
+const context=vm.createContext({dbPool:async()=>{reads++;return{};},linkedTelegramRecord:async()=>binding,readClaimedTelegramQueueJob:async(_db,job)=>{if(!binding)throw Error('synthetic unavailable queue proof');return {binding,job:{channel:job.channel,chatId:job.chat_id,username:job.telegram_username,message:job.message,at:job.scheduled_epoch}};},prepareScheduledWakeup:async()=>{prepares++;return{ok:true,text:'SYNTHETIC'};},sendInfobipPhone:async()=>{phones++;return{ok:true,configured:true};},sendTelegram:async()=>{texts++;return{ok:true,configured:true};},callTelegram:async()=>{calls++;return{ok:true,configured:true};}});
 vm.runInContext(source.slice(start,end)+'\nglobalThis.deliverJob=deliverJob;',context);
 for(const channel of ['phone-call','phone','infobip']){const r=await context.deliverJob({channel,email:'qa@example.invalid',phone:'SYNTHETIC'});assert.equal(r.ok,true);}
 assert.equal(reads,0,'phone-only must not depend on Telegram storage');assert.equal(phones,3);

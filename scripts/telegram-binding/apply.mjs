@@ -69,3 +69,5 @@ await import('./ui.mjs');
 }
 await import('./local-transports.mjs');
 await import('./reply-scope.mjs');
+await import('./authenticated-queue.mjs');
+await import('./visitor-private.mjs');

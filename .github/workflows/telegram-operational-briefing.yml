@@ -27,6 +27,8 @@ on:
       - 'scripts/regression-telegram-binding-reply-scope.mjs'
       - 'scripts/regression-telegram-binding-job-proof.mjs'
       - 'scripts/regression-telegram-binding-queue-adapter.mjs'
+      - 'scripts/regression-telegram-binding-authenticated-queue.mjs'
+      - 'scripts/regression-telegram-binding-visitor-private.mjs'
       - 'scripts/telegram-binding/**'
       - 'scripts/v139/apply.mjs'
       - '.github/workflows/telegram-operational-briefing.yml'
@@ -134,11 +136,13 @@ jobs:
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-erasure.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-job-proof.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-queue-adapter.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-authenticated-queue.mjs
           node scripts/regression-telegram-binding-integration.mjs
           node scripts/regression-telegram-binding-delivery-channels.mjs
           node scripts/regression-telegram-binding-source-spans.mjs
           node scripts/regression-telegram-binding-local-transports.mjs
           node scripts/regression-telegram-binding-reply-scope.mjs
+          node scripts/regression-telegram-binding-visitor-private.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-admission.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-local-transports.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-reply-scope.mjs
