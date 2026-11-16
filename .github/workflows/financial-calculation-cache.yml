@@ -40,4 +40,7 @@ jobs:
           node scripts/regression-financial-aims-source-coverage.mjs
           node scripts/regression-financial-history-periods.mjs
           node scripts/regression-financial-known-values-dates.mjs
-      - run: npm run check
+      # Sources were prepared explicitly above. Diagnostic artifacts change the
+      # preparation fingerprint; do not replay legacy patches over that tree.
+      - name: Typecheck the prepared candidate
+        run: npx tsc --noEmit
