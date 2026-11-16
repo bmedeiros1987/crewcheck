@@ -6,8 +6,11 @@ const manifest=fs.readFileSync(root+'native/AndroidManifest.xml','utf8');
 const activity=fs.readFileSync(root+'native/java/com/crewcheck/app/CheckpointQaActivity.java','utf8');
 const network=fs.readFileSync(root+'native/res/xml/checkpoint_network.xml','utf8');
 assert.match(gradle,/applicationIdSuffix '\.qacheckpoint'/);
-assert.match(gradle,/Existing debug signer required/);
-assert.doesNotMatch(gradle,/initWith|signingConfigs\.release/);
+assert.match(gradle,/Existing temporary QA signer required/);
+assert.doesNotMatch(gradle,/initWith|signingConfigs\.(?:release|debug)\b|CREWCHECK_STORE/);
+assert.match(gradle,/CREWCHECK_QA_EPHEMERAL_KEYSTORE/);
+assert.match(gradle,/java.io.tmpdir/);
+assert.match(gradle,/signingConfig signingConfigs.checkpointQaEphemeral/);
 for(const tag of ['receiver','service','provider','queries','activity','activity-alias']) assert.match(manifest,new RegExp('<'+tag+' tools:node="removeAll"'));
 assert.match(manifest,/android:testOnly="true"/);
 

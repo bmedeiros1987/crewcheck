@@ -3,14 +3,38 @@
 gradle.beforeProject { p ->
     if (p.path == ':app') p.plugins.withId('com.android.application') {
         def qaRoot = new File(p.rootDir, '../scripts/android-qa/native').canonicalFile
+        // Caller supplies a QA-only key in an OS temporary directory. Never create one implicitly.
+        def qaKeyPath = System.getenv('CREWCHECK_QA_EPHEMERAL_KEYSTORE')
+        if (!qaKeyPath) throw new GradleException('QA ephemeral signer path required')
+        def qaKey = new File(qaKeyPath).canonicalFile
+        def tempRoot = new File(System.getProperty('java.io.tmpdir')).canonicalFile.toPath()
+        if (!qaKey.isFile() || !qaKey.toPath().startsWith(tempRoot)
+            || qaKey.toPath().startsWith(p.rootDir.parentFile.canonicalFile.toPath())) {
+            throw new GradleException('QA signer must exist outside repository in OS temporary storage')
+        }
+        def qaStore = java.security.KeyStore.getInstance('JKS')
+        qaKey.withInputStream { input -> qaStore.load(input, 'android'.toCharArray()) }
+        if (qaStore.size() != 1 || !qaStore.isKeyEntry('androiddebugkey')
+            || !(qaStore.getKey('androiddebugkey', 'android'.toCharArray()) instanceof java.security.PrivateKey)) {
+            throw new GradleException('Dedicated QA debug signer required')
+        }
         p.android {
+            signingConfigs {
+                checkpointQaEphemeral {
+                    storeFile qaKey
+                    storePassword 'android'
+                    keyAlias 'androiddebugkey'
+                    keyPassword 'android'
+                    storeType 'JKS'
+                }
+            }
             buildTypes {
                 checkpointQa {
                     applicationIdSuffix '.qacheckpoint'
                     debuggable true
                     minifyEnabled false
                     matchingFallbacks = ['debug']
-                    signingConfig signingConfigs.debug
+                    signingConfig signingConfigs.checkpointQaEphemeral
                 }
             }
             sourceSets.checkpointQa {
@@ -21,8 +45,8 @@ gradle.beforeProject { p ->
         }
         p.tasks.configureEach { t ->
             if (t.name == 'validateSigningCheckpointQa') t.doFirst {
-                def signer = p.android.signingConfigs.debug.storeFile
-                if (signer == null || !signer.isFile()) throw new GradleException('Existing debug signer required; do not generate credentials')
+                def signer = p.android.signingConfigs.checkpointQaEphemeral.storeFile
+                if (signer == null || !signer.isFile()) throw new GradleException('Existing temporary QA signer required; do not generate credentials')
             }
         }
     }
