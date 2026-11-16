@@ -57,3 +57,13 @@ An opt-in init script now defines `checkpointQa` without editing production Grad
 The variant source exists but is not built or runtime validated. Still absent: synthetic fixture server/CSP and network auditing, native checkpoint save/reopen transport, artifact provenance verification, and emulator evidence. No install is safe based on static checks alone. XML parsing and `regression-android-qa-native-overlay.mjs` are source checks only. No SDK, Gradle, ADB or javac is available in this executor.
 
 Independent source review identified remaining network gates: WebView interception alone does not prove redirect, Service Worker or WebSocket containment. Block or independently validate those surfaces, with fixture-server CSP and network evidence, before using this host. The current overlay is not an isolated APK approved for installation.
+
+## Containment fixture validation
+
+`fixture-server.mjs` now supplies a loopback-only static host, synthetic GET API503, denied writes/foreign Host/symlink escapes, no proxy/redirect and rejected socket upgrades. Its CSP disallows workers, frames, forms and WebSocket connections; script/style resources stay local. The Activity additionally blocks Service Worker network loads and denies worker requests. This is still not Android runtime isolation proof.
+
+Local Chromium tested the actual fixture headers: WebSocket and Service Worker failed closed; a synthetic JSON Blob was downloaded and read back. HTTP regressions verified method, Host, symlink and redirect-target refusal. No production/provider endpoint was contacted. This browser fixture is not the real checkpoint UI or Android file chooser/save transport. CI runs HTTP checks; browser checks run only when the preinstalled Playwright package is explicitly supplied.
+
+SDK handoff remains: fresh disposable checkout of the final reviewed SHA, existing debug signer, approved JDK17/SDK36/Gradle8.13, opt-in init script from the wrapper directory, inspect merged manifest/package/signature before any install. Validate the same CSP/SW/socket/redirect cases with network observation on the specified emulator. Do not install until native file save/reopen is implemented and reviewed and all external paths are shown blocked. The current Activity still has no file transport; this is a concrete implementation blocker, not a request to use production.
+
+Review follow-up: worker fixture is actually served with HTTP200; browser assertions require `securitypolicyviolation` events for both `worker-src` and `connect-src`. Thus the CSP attribution no longer relies only on 404/socket refusal. Android remains unvalidated.

@@ -23,6 +23,14 @@ public final class CheckpointQaActivity extends Activity {
     }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // New QA package only: no service-worker requests may escape interception.
+        ServiceWorkerController workers = ServiceWorkerController.getInstance();
+        workers.getServiceWorkerWebSettings().setBlockNetworkLoads(true);
+        workers.getServiceWorkerWebSettings().setAllowContentAccess(false);
+        workers.getServiceWorkerWebSettings().setAllowFileAccess(false);
+        workers.setServiceWorkerClient(new ServiceWorkerClient() {
+            @Override public WebResourceResponse shouldInterceptRequest(WebResourceRequest request) { return denied(); }
+        });
         web = new WebView(this);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
