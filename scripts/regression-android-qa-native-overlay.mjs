@@ -8,9 +8,9 @@ const network=fs.readFileSync(root+'native/res/xml/checkpoint_network.xml','utf8
 assert.match(gradle,/applicationIdSuffix '\.qacheckpoint'/);
 assert.match(gradle,/Existing debug signer required/);
 assert.doesNotMatch(gradle,/initWith|signingConfigs\.release/);
-for(const tag of ['receiver','service','provider','queries']) assert.match(manifest,new RegExp('<'+tag+' tools:node="removeAll"'));
+for(const tag of ['receiver','service','provider','queries','activity','activity-alias']) assert.match(manifest,new RegExp('<'+tag+' tools:node="removeAll"'));
 assert.match(manifest,/android:testOnly="true"/);
-assert.match(manifest,/android:name="\.MainActivity" tools:node="remove"/);
+
 assert.match(network,/<base-config cleartextTrafficPermitted="false"/);
 assert.match(network,/<domain includeSubdomains="false">127\.0\.0\.1<\/domain>/);
 assert.doesNotMatch(activity,/addJavascriptInterface|extends MainActivity|startActivity\(|crewcheck\.online|proceed\(/);

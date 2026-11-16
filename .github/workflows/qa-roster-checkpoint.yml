@@ -10,6 +10,7 @@ on:
       - 'scripts/regression-android-qa-isolation-contract.mjs'
       - 'scripts/regression-android-qa-native-overlay.mjs'
       - 'scripts/regression-android-qa-fixture-server.mjs'
+      - 'scripts/regression-android-qa-merged-manifest.py'
       - '.github/workflows/qa-roster-checkpoint.yml'
 permissions:
   contents: read
@@ -29,6 +30,7 @@ jobs:
           node scripts/regression-android-qa-isolation-contract.mjs
           node scripts/regression-android-qa-native-overlay.mjs
           node scripts/regression-android-qa-fixture-server.mjs
+          python scripts/regression-android-qa-merged-manifest.py
       - run: node scripts/v139/apply.mjs
       - name: Prepared account and competence isolation
         run: |
@@ -36,4 +38,5 @@ jobs:
           node scripts/regression-android-qa-isolation-contract.mjs
           node scripts/regression-android-qa-native-overlay.mjs
           node scripts/regression-android-qa-fixture-server.mjs
+          python scripts/regression-android-qa-merged-manifest.py
       - run: npx tsc --noEmit

@@ -4,7 +4,8 @@
  <uses-permission android:name="android.permission.INTERNET" />
  <queries tools:node="removeAll" />
  <application android:label="CrewCheck · QA checkpoint" android:allowBackup="false" android:testOnly="true" android:networkSecurityConfig="@xml/checkpoint_network" tools:replace="android:label">
-  <activity android:name=".MainActivity" tools:node="remove" />
+  <activity tools:node="removeAll" />
+  <activity-alias tools:node="removeAll" />
   <receiver tools:node="removeAll" />
   <service tools:node="removeAll" />
   <provider tools:node="removeAll" />
