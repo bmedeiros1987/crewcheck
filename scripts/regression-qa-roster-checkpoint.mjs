@@ -15,4 +15,13 @@ for(const base of ['BSB','GRU','CGH']){
  await assert.rejects(capture({...input,displayed:{source:'SYNTHETIC',roster:{...november,token:'FORBIDDEN'}}}),/não permitido/);
  assert.equal(map.size,3,'capture/rehearsal cannot mutate or create application records');
 }
-assert(reads.length>0);console.log('PASS QA checkpoint: exact own-key reads only, Oct/Nov BSB/GRU/CGH roundtrip in memory, integrity/account/session/storage failures, no credential export or account/cloud writes; synthetic only');
+const credentialFields=['access_token','ACCESS-TOKEN','refresh_token','client_secret','api_key','apiKey','id_token','bearer_token','jwt'];
+const scoped={session:{owner,token:'SYNTHETIC_SESSION_ONLY',isCurrent:()=>true},storage:{getItem:k=>{assert.equal(k,key);return null;}},periods:['2026-11'],displayed:{source:'SYNTHETIC',roster:roster(11,'BSB')},build:'synthetic-checkpoint'};
+for(const field of credentialFields){
+ const unsafe={...roster(11,'BSB'),metadata:{[field]:'SYNTHETIC_CREDENTIAL_MUST_NOT_EXPORT'}};
+ await assert.rejects(capture({...scoped,displayed:{source:'SYNTHETIC',roster:unsafe}}),/não permitido/,field+' displayed');
+ await assert.rejects(capture({...scoped,storage:{getItem:k=>{assert.equal(k,key);return JSON.stringify([{roster:unsafe}]);}}}),/não permitido/,field+' history');
+ const forged=await capture(scoped);forged.body.entries[0].roster.metadata={[field]:'SYNTHETIC_CREDENTIAL_MUST_NOT_EXPORT'};forged.sha256=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(forged.body)))).toString('hex');
+ await assert.rejects(verify(JSON.stringify(forged),owner),/não permitido/,field+' reopened despite matching checksum');
+}
+assert(reads.length>0);console.log('PASS QA checkpoint: exact own-key reads only, Oct/Nov BSB/GRU/CGH roundtrip in memory, integrity/account/session/storage failures, 9 standard credential-key variants refused in displayed/history/reopened data, no credential export or account/cloud writes; synthetic only');

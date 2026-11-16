@@ -14,7 +14,7 @@ function cleanJson(value:unknown):void{
  if(value===null||typeof value==='string'||typeof value==='boolean')return;
  if(typeof value==='number'&&Number.isFinite(value))return;
  if(Array.isArray(value)){value.forEach(cleanJson);return;}
- if(value&&typeof value==='object'&&Object.getPrototypeOf(value)===Object.prototype){for(const [key,item]of Object.entries(value)){if(/^(?:__proto__|constructor|prototype|password|authorization|cookie|cookies|token|accessToken|refreshToken|secret)$/i.test(key))throw Error('A cópia contém um campo não permitido.');if(item!==undefined)cleanJson(item);}return;}
+ if(value&&typeof value==='object'&&Object.getPrototypeOf(value)===Object.prototype){for(const [key,item]of Object.entries(value)){if(/^(?:__proto__|constructor|prototype|password|authorization|cookie|cookies|token|(?:access|refresh|id|bearer)[_-]*token|api[_-]*key|client[_-]*secret|jwt|secret)$/i.test(key))throw Error('A cópia contém um campo não permitido.');if(item!==undefined)cleanJson(item);}return;}
  throw Error('A escala contém dados não serializáveis.');
 }
 function clone<T>(value:T):T{cleanJson(value);return JSON.parse(JSON.stringify(value));}
