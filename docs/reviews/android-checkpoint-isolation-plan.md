@@ -108,3 +108,41 @@ For the coordinator on the already-approved SDK PC, at a time that does not inte
 This executor has no operational access to the Windows SDK/emulator desktop, and no local Gradle/SDK/ADB. The handoff therefore requires the coordinator who owns that existing session. No new workflow/build cost, persistent credential or production change is introduced here. Local source checks pass; actual Gradle/JKS loading remains a native-build gate.
 
 Independent source review found no new blocker for draft/HOLD preparation. Private-key retrieval with the debug password is now checked before configuring signing. The main Gradle project still evaluates its existing signing logic: the no-release-read claim applies only to the QA init script; the isolated build process must not receive production credential variables. Actual signer/variant/APK verification remains pending.
+
+## Revised approved-PC prerequisites: isolated official downloads
+
+This section supersedes the earlier prohibition on downloading missing tools. Bruno has authorized downloads for emulator tests; this is a coordinated local prerequisite installation plan, not a workflow dispatch or APK installation. Reported PC inventory: existing JDK17/SDK/ADB, missing Platform36/BuildTools35.0.0/Gradle8.13, 101GB free. These are coordinator observations, not measurements from this executor.
+
+AGP8.11.x officially specifies Gradle8.13, BuildTools35.0.0 and JDK17. Install **only** `platforms;android-36` and `build-tools;35.0.0` into a fresh separate QA SDK root using the existing official sdkmanager with `--sdk_root`; do not run `--update` or install platform-tools/emulator/system-images/NDK/Studio/JDK again. Leave the existing emulator/ADB server, AVDs, Android Studio settings and shared SDK unchanged. No reboot, elevation, firewall/TLS changes, global PATH or permanent environment edits.
+
+PowerShell handoff template (coordinator resolves the two existing tool paths and chooses a new unused QA directory; not executed here):
+
+```powershell
+$qaRoot = '<new-unused-QA-directory-outside-checkout>'
+$qaSdkManager = '<existing-official-sdk>\cmdline-tools\<installed-version>\bin\sdkmanager.bat'
+$qaSdk = Join-Path $qaRoot 'sdk'
+$qaGradleHome = Join-Path $qaRoot 'gradle-cache'
+# Use a separate shell/process, existing JDK17 and directories that do not already exist.
+# Display/review required package licenses; do not pipe automatic yes or copy license hashes.
+& $qaSdkManager --sdk_root="$qaSdk" --channel=0 "platforms;android-36" "build-tools;35.0.0"
+if ($LASTEXITCODE -ne 0) { throw 'SDK prerequisites incomplete' }
+& $qaSdkManager --sdk_root="$qaSdk" --list_installed
+# The future Gradle process uses this root through a disposable checkout's local.properties
+# (sdk.dir with forward slashes) or process-local Android SDK variables, never global settings.
+```
+
+SDK package installation requires the applicable Android SDK license. The responsible authorized operator must review/accept it or confirm valid prior acceptance; generic download authorization is not represented here as license acceptance. Preserve license notices and package.xml/source.properties within this separate root. sdkmanager obtains packages using official Google repository metadata over HTTPS; do not substitute mirrors, manually invent checksums or bypass repository verification. If missing command-line tools are discovered, stop: they were not one of the three reported missing components.
+
+Download only the Gradle8.13 **binary** distribution from `https://services.gradle.org/distributions/gradle-8.13-bin.zip` into the QA tools directory; normal official HTTPS redirects are expected. Before extraction, require SHA256 `20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78`, independently listed in the official Gradle checksum reference. Use `Get-FileHash -Algorithm SHA256`; refuse mismatch. Extract into the fresh QA directory without changing the project wrapper or global PATH. Gradle Build Tool is Apache2.0; keep bundled license/NOTICE and third-party notices. No Develocity subscription, Build Scan, paid service, new account or CI minutes are required by this local plan. Local bandwidth/storage usage still exists; no statement of zero external network charge is implied.
+
+Run the extracted `bin\gradle.bat --version` with the existing JDK17 and process-local `GRADLE_USER_HOME` pointing at the new QA cache. For build commands use `--no-daemon --max-workers=1 --console=plain`, no build scans or publishing tasks, to bound interference with the active session. Do not change the project toolchain versions. Dependencies may still require normal official Google/Maven/plugin downloads according to the existing checked-in repository configuration; package installation alone does not prove the dependency cache is complete. Stop on unexpected license, repository, proxy/certificate requirement, disk shortfall or visible resource contention. No security setting is to be weakened.
+
+After prerequisites: fresh reviewed checkout → synthetic QA UI identity → temporary signer per prior section → process QA manifest → strict manifest checker → compile Activity/assemble. Preserve source/tree/hash and public signature evidence. No install, production connection, real account or real data is authorized until the isolation/runtime HOLD is cleared. SDK/native file transport tests remain pending; this executor still cannot operate the approved Windows desktop.
+
+Sources checked for this revised plan:
+- https://developer.android.com/tools/sdkmanager (`--sdk_root`, selected stable packages, license prompts)
+- https://developer.android.com/studio/terms (SDK license/authority and royalty-free grant)
+- https://developer.android.com/build/releases/agp-8-11-0-release-notes (tool version compatibility)
+- https://gradle.org/release-checksums/ (8.13 binary checksum)
+- https://services.gradle.org/distributions/ (official downloads)
+- https://docs.gradle.org/current/userguide/licenses.md (Build Tool Apache2.0; preserve included notices)
