@@ -13,4 +13,18 @@ const guarded=`    // telegram-visitor-invite-cas-v1: consume only the token act
 if(!source.includes('// telegram-visitor-invite-cas-v1')){
  if(!source.includes(old))throw Error('[telegram-binding] visitor invite update missing');source=source.replace(old,guarded);
 }
+const header="import {createTelegramVisitorReplyGuard} from './telegram-visitor-reply-guard.mjs';";
+if(!source.includes(header))source=header+'\n'+source;
+if(!source.includes('// telegram-visitor-private-reply-recheck-v1')){
+ const node=spans.createSourceFile(file,source).statements.find(n=>n.name?.text==='handlePlatformVisitorTelegram');let body=node.getText();
+ const anchor="  if (command === '/ajuda' || command === '/start' || !command.startsWith('/')) {";
+ if(!body.includes(anchor))throw Error('[telegram-binding] visitor command gate missing');
+ body=body.replace(anchor,"  // telegram-visitor-private-reply-recheck-v1\n  const visitorReply=createTelegramVisitorReplyGuard({db,visitor,chatId,ownerId:ownerProfile.rows[0]?.public_id,allowedPermissions,subscriptionStatus,send});\n"+anchor);
+ const hotel="      await send(chatId, lines.length ? lines.join('\\n') : 'Nenhum pernoite foi compartilhado agora.');";
+ const roster="      await send(chatId, days.length ? days.map(visitorDaySummary).join('\\n') : 'Nenhuma programação futura compartilhada.');";
+ if(!body.includes(hotel)||!body.includes(roster))throw Error('[telegram-binding] visitor private reply anchors missing');
+ body=body.replace(hotel,"      visitorReply.observe('SELECT * FROM crewcheck_platform_stays WHERE owner_email=$1 AND share_with_visitors=TRUE AND stay_date>=CURRENT_DATE ORDER BY stay_date LIMIT 3',[visitor.owner_email],stays.rows);\n"+hotel.replace('await send(chatId,','await visitorReply.send('));
+ body=body.replace(roster,"      visitorReply.observe('SELECT roster FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1',[visitor.owner_email],rosterResult.rows);\n"+roster.replace('await send(chatId,','await visitorReply.send('));
+ source=source.slice(0,node.getStart())+body+source.slice(node.end);
+}
 fs.writeFileSync(file,source);

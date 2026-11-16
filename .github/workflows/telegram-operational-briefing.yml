@@ -16,6 +16,7 @@ on:
       - 'scripts/regression-briefing-concierge-composition.mjs'
       - 'client/src/components/notifications/**'
       - 'server/telegram-binding-*.mjs'
+      - 'server/telegram-visitor-reply-guard.mjs'
       - 'scripts/fixtures/telegram-binding-*.mjs'
       - 'scripts/regression-telegram-binding-state.mjs'
       - 'scripts/regression-telegram-binding-integration.mjs'
