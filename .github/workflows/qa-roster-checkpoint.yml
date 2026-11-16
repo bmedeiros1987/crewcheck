@@ -6,6 +6,8 @@ on:
       - 'client/src/components/qa/QaRosterCheckpoint.tsx'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-qa-roster-checkpoint*'
+      - 'scripts/android-qa/**'
+      - 'scripts/regression-android-qa-isolation-contract.mjs'
       - '.github/workflows/qa-roster-checkpoint.yml'
 permissions:
   contents: read
@@ -20,8 +22,12 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Raw account and competence isolation
-        run: node scripts/regression-qa-roster-checkpoint.mjs
+        run: |
+          node scripts/regression-qa-roster-checkpoint.mjs
+          node scripts/regression-android-qa-isolation-contract.mjs
       - run: node scripts/v139/apply.mjs
       - name: Prepared account and competence isolation
-        run: node scripts/regression-qa-roster-checkpoint.mjs
+        run: |
+          node scripts/regression-qa-roster-checkpoint.mjs
+          node scripts/regression-android-qa-isolation-contract.mjs
       - run: npx tsc --noEmit
