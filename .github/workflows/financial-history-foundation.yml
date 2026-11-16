@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'client/src/components/finance/HomeFinancialEstimate.tsx'
+      - 'client/src/components/ErrorBoundary.tsx'
+      - 'client/src/lib/financialCalculationCache.ts'
+      - 'client/src/lib/financialCalculationDigest.ts'
       - 'client/src/components/finance/NextPaymentCard.tsx'
       - 'client/src/components/finance/ForecastCurrencyCarousel.tsx'
       - 'client/src/components/finance/FinancialHistoryExplorer.tsx'
@@ -218,7 +221,7 @@ jobs:
       - run: node scripts/regression-next-financial-payment.mjs
       - run: node scripts/regression-payroll-payment-coverage.mjs
       - run: npx tsc --noEmit
-      - run: npx vite build
+      - run: SOURCE_VERSION="$GITHUB_SHA" npx vite build
       - name: Verify planned reference owner and session isolation
         run: |
           node scripts/regression-planned-roster-owner.mjs
@@ -413,13 +416,17 @@ jobs:
       - name: Verify proposed payment hierarchy (synthetic)
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-payment-preview.cjs
+        run: |
+          node scripts/regression-financial-payment-preview.cjs
+          node scripts/regression-financial-calculation-pending.mjs
       - name: Save financial payment preview
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: financial-payment-preview-synthetic
-          path: artifacts/financial-payment-preview/
+          path: |
+            artifacts/financial-payment-preview/
+            artifacts/financial-calculation-pending/
           if-no-files-found: ignore
       - name: Save financial privacy evidence
         if: always()

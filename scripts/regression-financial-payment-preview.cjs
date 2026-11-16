@@ -50,6 +50,8 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  try{
  for(const width of [390,1440])for(const theme of ['light','dark'])for(const scenario of ['complete','partial','empty']){
   const context=await browser.newContext({viewport:{width,height:1000},serviceWorkers:'block'}),errors=[];
+  await context.addInitScript(()=>{const prefix='crewcheck_financial_calculation_cache_v1:',get=Storage.prototype.getItem,set=Storage.prototype.setItem;globalThis.__financialCacheIo={reads:0,writes:0};Storage.prototype.getItem=function(key){if(String(key).startsWith(prefix))globalThis.__financialCacheIo.reads++;return get.call(this,key);};Storage.prototype.setItem=function(key,value){if(String(key).startsWith(prefix))globalThis.__financialCacheIo.writes++;return set.call(this,key,value);};});
+
   await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
   const january={...roster('domestic',1),days:Array.from({length:31},(_,i)=>day(String(i+1).padStart(2,'0')+'/01/2032'))};
   const payload=scenario==='empty'?roster('empty'):roster('domestic');
@@ -60,6 +62,14 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
   const home=page.locator('.cc-home-finance');await home.waitFor();
   assert.equal(await home.count(),1,'one financial card in the active Home');
+  if(width===390&&theme==='light'&&scenario==='complete'){
+    const cold=await page.evaluate(()=>({io:globalThis.__financialCacheIo,commit:window.__CREWCHECK_BUILD__?.commit}));
+    if(cold.commit&&cold.commit!=='local'&&cold.commit!=='unknown'){
+      assert(cold.io.writes>0,'identified actual build must persist a serializable calculation');await page.reload();await home.waitFor();
+      const reopened=await page.evaluate(()=>globalThis.__financialCacheIo);assert(reopened.reads>0,'reopening reads the device-local forecast');assert.equal(reopened.writes,0,'same-source reopening reuses the saved calculation without rewriting it');
+    }else assert.equal(cold.io.writes,0,'unidentified development build must not persist reusable calculations');
+  }
+
   for(const mode of ['personalized','standard']){
     await page.evaluate(mode=>{localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa',JSON.stringify({version:1,mode,order:['summary','finance','next','limits','smart'],visible:['summary','finance','next','limits','smart']}));window.dispatchEvent(new Event('crewcheck:personalization'));},mode);
     await page.waitForFunction(()=>document.querySelectorAll('.cc-home-finance').length===1);
