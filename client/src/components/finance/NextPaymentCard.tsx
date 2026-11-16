@@ -10,9 +10,10 @@ import './payment-preview.css';
 import './financial-summary-clarity.css';
 import { useFinancialScreen } from './FinancialScreen';
 
-export default function NextPaymentCard({ payment, requestRange, sourceRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void;sourceRange?:FinancialRange; extraDetails?:ReactNode;salaryDisplay?:{title?:string;control:ReactNode;amount:ReactNode;caption:string} }) {
+export default function NextPaymentCard({ payment, statementPayment, requestRange, sourceRange, extraDetails, salaryDisplay }: { payment:NextPayment;statementPayment?:NextPayment; requestRange:(range:FinancialRange)=>void;sourceRange?:FinancialRange; extraDetails?:ReactNode;salaryDisplay?:{title?:string;control:ReactNode;amount:ReactNode;caption:string} }) {
   const privacy=useFinancialPrivacy(), root=useRef<HTMLDivElement>(null);
   const {screen,navigate,back,controls,history,range,changesDetails}=useFinancialScreen();
+  const statementForecast=payment.kind==='payroll'?payment:statementPayment?.kind==='allowance'&&range?.valid&&statementPayment.range?.valid&&statementPayment.range.start===range.start&&statementPayment.range.end===range.end?statementPayment:null;
   const overviewCaption=payment.kind==='payroll'?(payment.estimationBasis==='operational_month'&&payment.range?`Salário · ${payment.range.start.slice(0,7).split('-').reverse().join('/')} · bruto estimado`:payment.caption.replace(', antes dos descontos','').replace(' · antes dos descontos','')):'Diárias';
   const lines=[...payment.lines].sort((a,b)=>a.iso.localeCompare(b.iso));
   const currencies=[...new Set(lines.map(line=>line.currency))];
@@ -29,12 +30,12 @@ export default function NextPaymentCard({ payment, requestRange, sourceRange, ex
     if(!focus.hasAttribute('tabindex'))focus.setAttribute('tabindex','-1');
     target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});focus.focus({preventScroll:true});
   }
-  return <div ref={root} className="cc-payment-overview" data-financial-screen={screen} data-financial-item-count={payment.lines.length}>
+  return <div ref={root} className="cc-payment-overview" data-financial-screen={screen} data-financial-item-count={(screen==='statement'?statementForecast:payment)?.lines.length??0}>
     {screen!=='overview'&&<header className="cc-financial-screen-head"><button type="button" onClick={()=>back?back():navigate('overview')}>← Voltar</button><h2 tabIndex={-1} data-financial-screen-heading>{screen==='statement'?'Extrato':screen==='charts'?'Gráficos':screen==='changes'?'Alterações':'Detalhes do pagamento'}</h2></header>}
     {screen==='statement'&&<section className="cc-statement-summary" aria-label="Previsão da escala">
       <header><h3>Previsto</h3><FinancialPrivacyToggle iconOnly/></header>
-      {payment.kind==='payroll'&&salaryDisplay?salaryDisplay.amount:<ForecastCurrencyCarousel payment={payment}/>}
-      <small>Estimativa · recebimento não confirmado</small>
+      {payment.kind==='payroll'&&salaryDisplay?salaryDisplay.amount:statementForecast?<ForecastCurrencyCarousel payment={statementForecast}/>:<p role="status">Previsão do período indisponível.</p>}
+      <small>{payment.kind==='allowance'?'Período selecionado':'Estimativa'} · recebimento não confirmado</small>
     </section>}
     {screen!=='changes'&&payment.kind==='payroll'&&salaryDisplay?.control}
     {(screen==='statement'||screen==='charts'||screen==='changes')&&controls}
