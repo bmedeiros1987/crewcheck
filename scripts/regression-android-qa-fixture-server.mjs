@@ -27,7 +27,7 @@ try{
     const ws=await new Promise(resolve=>{const socket=new WebSocket(origin.replace('http:','ws:')+'/socket');socket.onerror=()=>resolve('blocked');socket.onopen=()=>{socket.close();resolve('opened');};setTimeout(()=>resolve('timeout'),1000);});
     let worker;try{await navigator.serviceWorker.register('/worker.js');worker='registered';}catch{worker='blocked';}
     await new Promise(resolve=>setTimeout(resolve,100));return {ws,worker,violations};
-   },origin);assert.equal(result.ws,'blocked');assert.equal(result.worker,'blocked');assert(result.violations.includes('connect-src'));assert(result.violations.includes('worker-src')); 
+   },origin);assert.equal(result.ws,'blocked');assert.equal(result.worker,'blocked');assert(result.violations.includes('connect-src'));assert(result.violations.includes('worker-src'));
    const downloadPromise=page.waitForEvent('download');await page.evaluate(()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({synthetic:true,months:['2026-10','2026-11']})],{type:'application/json'}));a.download='synthetic-checkpoint.json';a.click();});
    const download=await downloadPromise;const content=JSON.parse(await fs.readFile(await download.path(),'utf8'));assert.deepEqual(content,{synthetic:true,months:['2026-10','2026-11']});
    console.log('PASS Chromium fixture CSP blocks WebSocket and Service Worker; synthetic Blob downloaded/reopened. Not Android WebView/file chooser validation');
