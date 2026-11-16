@@ -31,11 +31,35 @@ async function transaction(pool,work){
  catch(error){if(beginAttempted&&!started&&!uncertain)uncertain=true;if(started&&!uncertain){try{await db.rollback();started=false;}catch{uncertain=true;}}if(uncertain){db.destroy?.();throw new TelegramBindingError('LINK_COMMIT_UNCERTAIN');}throw error instanceof TelegramBindingError?error:new TelegramBindingError('LINK_STORAGE_UNAVAILABLE');}
  finally{if(!uncertain)db.release();}
 }
-async function assertOwner(db,accountEmail,ownerId,{lock=false}={}){
- if(typeof ownerId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(ownerId))fail('INVALID_BINDING_OWNER');const[rows]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?'+(lock?' FOR UPDATE':''),[accountEmail]);if(rows.length!==1||String(rows[0].public_id)!==ownerId)fail('LINK_ACCOUNT_CHANGED');
+async function assertOwner(db,accountEmail,ownerId,{lock=false,allowClosing=false}={}){
+ if(typeof ownerId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(ownerId))fail('INVALID_BINDING_OWNER');const[rows]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?'+(lock?' FOR UPDATE':''),[accountEmail]);if(rows.length!==1||String(rows[0].public_id)!==ownerId)fail('LINK_ACCOUNT_CHANGED');if(!allowClosing)await assertBindingAccountOpen(db,accountEmail);
+}
+// Preparatory binding-only fence. Other account/visitor/billing writers do not
+// yet participate: never treat this as a complete account-deletion admission.
+const closureOperation=value=>{if(typeof value!=='string'||!(/^[a-f0-9]{64}$/).test(value))fail('INVALID_BINDING_CLOSURE_OPERATION');return value;};
+function closureRecord(record,target){
+ if(record.version!==1||record.email!==target||typeof record.ownerId!=='string'||!(/^[A-Za-z0-9_-]{1,128}$/).test(record.ownerId)||!['fenced','binding_cleanup_committed'].includes(record.status))fail('INVALID_BINDING_CLOSURE_RECORD');closureOperation(record.operationId);return record;
+}
+async function assertBindingAccountOpen(db,target){if(await get(db,'closing-email:'+target))fail('LINK_ACCOUNT_CLOSING');}
+const closureView=record=>({status:record.status,bindingOnly:true,accountDeletionNotAttested:true});
+export async function beginTelegramBindingClosure(pool,input){
+ const target=email(input.email),operationId=closureOperation(input.operationId),ownerId=input.ownerId;
+ return transaction(pool,async db=>{
+  const existing=await get(db,'closing-email:'+target);
+  if(existing){closureRecord(existing,target);if(existing.ownerId!==ownerId||existing.operationId!==operationId)fail('LINK_CLOSURE_CONFLICT');return closureView(existing);}
+  await assertOwner(db,target,ownerId,{lock:true,allowClosing:true});await assertNoAdmittedTelegramDeliveries(db,[{email:target}]);
+  const record={version:1,email:target,ownerId,operationId,status:'fenced'};await put(db,'closing-email:'+target,record);return closureView(record);
+ });
+}
+// Internal operation-scoped reconciliation; no route/auth bypass, profile
+// recreation, provider retry or inferred account deletion. Caller authorization
+// and post-deletion evidence retention remain separate release gates.
+export async function readTelegramBindingClosure(pool,input){
+ const target=email(input.email),operationId=closureOperation(input.operationId),ownerId=input.ownerId;
+ return transaction(pool,async db=>{const record=await get(db,'closing-email:'+target);if(!record)fail('LINK_CLOSURE_MISSING');closureRecord(record,target);if(record.ownerId!==ownerId||record.operationId!==operationId)fail('LINK_CLOSURE_CONFLICT');return closureView(record);});
 }
 async function verified(db,{email:requestedEmail,chatId:requestedChat,linkCode}){
- let record=requestedEmail?await get(db,'link-email:'+email(requestedEmail)):requestedChat?await get(db,'link-chat:'+chat(requestedChat)):linkCode?await get(db,'link-code:'+code(linkCode)):null;if(!record){if(requestedChat&&(await byField(db,'link-email:','chatId',chat(requestedChat))).length)fail('LINK_STATE_AMBIGUOUS');if(requestedEmail&&(await byField(db,'link-chat:','email',email(requestedEmail))).length)fail('LINK_STATE_AMBIGUOUS');return null;}validate(record);if(record.ownerId)await assertOwner(db,record.email,record.ownerId);if(requestedEmail&&record.email!==email(requestedEmail))fail('LINK_STATE_AMBIGUOUS');if(requestedChat&&record.chatId!==chat(requestedChat))fail('LINK_STATE_AMBIGUOUS');
+ let record=requestedEmail?await get(db,'link-email:'+email(requestedEmail)):requestedChat?await get(db,'link-chat:'+chat(requestedChat)):linkCode?await get(db,'link-code:'+code(linkCode)):null;if(!record){if(requestedChat&&(await byField(db,'link-email:','chatId',chat(requestedChat))).length)fail('LINK_STATE_AMBIGUOUS');if(requestedEmail&&(await byField(db,'link-chat:','email',email(requestedEmail))).length)fail('LINK_STATE_AMBIGUOUS');return null;}validate(record);await assertBindingAccountOpen(db,record.email);if(record.ownerId)await assertOwner(db,record.email,record.ownerId);if(requestedEmail&&record.email!==email(requestedEmail))fail('LINK_STATE_AMBIGUOUS');if(requestedChat&&record.chatId!==chat(requestedChat))fail('LINK_STATE_AMBIGUOUS');
  const forward=await get(db,'link-email:'+record.email),reverse=await get(db,'link-chat:'+record.chatId),alias=await get(db,'link-code:'+record.code);if(alias&&(!equal(record,alias)||metadata(record)!==metadata(alias)))fail('LINK_STATE_AMBIGUOUS');if(!equal(record,forward)||!equal(record,reverse)||metadata(record)!==metadata(forward)||metadata(record)!==metadata(reverse))fail('LINK_STATE_AMBIGUOUS');
  const forwards=await byField(db,'link-email:','chatId',record.chatId),reverses=await byField(db,'link-chat:','email',record.email);
  if(forwards.length!==1||reverses.length!==1||!equal(record,forwards[0].value)||!equal(record,reverses[0].value))fail('LINK_STATE_AMBIGUOUS');
@@ -45,14 +69,14 @@ export async function readVerifiedTelegramBinding(db,selector){db=telegramBindin
 async function transferState(db,targetEmail,targetChat){
  const own=await get(db,'link-email:'+targetEmail),reverse=await get(db,'link-chat:'+targetChat),atChat=await byField(db,'link-email:','chatId',targetChat),ownReverses=await byField(db,'link-chat:','email',targetEmail);const records=[];
  if(own&&own.email!==targetEmail)fail('INVALID_BINDING_RECORD');if(reverse&&reverse.chatId!==targetChat)fail('INVALID_BINDING_RECORD');
- for(const record of [own,reverse,...atChat.map(x=>x.value),...ownReverses.map(x=>x.value)].filter(Boolean)){validate(record);if(!records.some(x=>equal(x,record)))records.push(record);}
+ for(const record of [own,reverse,...atChat.map(x=>x.value),...ownReverses.map(x=>x.value)].filter(Boolean)){validate(record);await assertBindingAccountOpen(db,record.email);if(!records.some(x=>equal(x,record)))records.push(record);}
  // Strict keys avoid treating a malformed payload as authority over another row.
  for(const item of atChat)if(item.key!=='link-email:'+item.value.email)fail('INVALID_BINDING_RECORD');for(const item of ownReverses)if(item.key!=='link-chat:'+item.value.chatId)fail('INVALID_BINDING_RECORD');
  const aliases=await Promise.all(records.map(record=>get(db,'link-code:'+record.code)));return {own,reverse,records,fingerprint:JSON.stringify([own,reverse,...atChat.map(x=>x.value),...ownReverses.map(x=>x.value),...aliases].map(record=>record?[telegramBindingRevision(record),metadata(record)]:null).map(x=>JSON.stringify(x)).sort())};
 }
 export async function createTelegramBindingChallenge(pool,input,{now=Date.now()}={}){
  const target=email(input.email),challenge=code(input.code),name=String(input.name||'').slice(0,160),accessKeyHash=String(input.accessKeyHash||''),allowedChatId=input.allowedChatId?chat(input.allowedChatId):'',ownerId=input.ownerId;if(accessKeyHash&&!/^[a-f0-9]{64}$/.test(accessKeyHash))fail('INVALID_ACCESS_KEY_HASH');if(!Number.isSafeInteger(now))fail('INVALID_LINK_TIME');
- return transaction(pool,async db=>{if(ownerId!==undefined)await assertOwner(db,target,ownerId);for(const key of ['pending:'+challenge,'link-code:'+challenge]){const[collision]=await db.query(`SELECT state_key FROM ${TABLE} WHERE state_key=?`,[key]);if(collision.length)fail('LINK_CODE_COLLISION');}const current=await get(db,'link-email:'+target);if(current){validate(current);if(current.email!==target)fail('INVALID_BINDING_RECORD');}
+ return transaction(pool,async db=>{await assertBindingAccountOpen(db,target);if(ownerId!==undefined)await assertOwner(db,target,ownerId);for(const key of ['pending:'+challenge,'link-code:'+challenge]){const[collision]=await db.query(`SELECT state_key FROM ${TABLE} WHERE state_key=?`,[key]);if(collision.length)fail('LINK_CODE_COLLISION');}const current=await get(db,'link-email:'+target);if(current){validate(current);if(current.email!==target)fail('INVALID_BINDING_RECORD');}
   // Only this account's outstanding challenges; never erase other accounts.
   for(const row of await byField(db,'pending:','email',target))await remove(db,row.key);
   const pending={version:2,code:challenge,email:target,name,accessKeyHash,...(ownerId!==undefined?{ownerId}:{}),...(allowedChatId?{allowedChatId}:{}),createdAt:new Date(now).toISOString(),expiresAt:now+TTL,expectedEmailRevision:telegramBindingRevision(current)};
@@ -69,7 +93,7 @@ export async function consumeTelegramBindingChallenge(pool,input,{now=Date.now()
  const challenge=code(input.code),targetChat=chat(input.chatId),confirmed=input.confirmed===true,assertTransferSafe=input.assertTransferSafe,username=String(input.username||'').replace(/^@/,'');if(username&&!/^[A-Za-z0-9_]{5,32}$/.test(username))fail('INVALID_TELEGRAM_USERNAME');if(!Number.isSafeInteger(now))fail('INVALID_LINK_TIME');if(input.chatType!=='private'||String(input.senderId||'')!==targetChat)fail('PRIVATE_CHAT_REQUIRED');
  return transaction(pool,async db=>{
   const pending=await get(db,'pending:'+challenge);if(!pending||pending.version!==2||pending.code!==challenge||!Number.isSafeInteger(pending.expiresAt)||now>=pending.expiresAt||now<Date.parse(pending.createdAt))fail('LINK_CODE_EXPIRED');
-  if(pending.allowedChatId&&pending.allowedChatId!==targetChat)fail('LEGACY_CHAT_MISMATCH');const target=email(pending.email);if(pending.ownerId)await assertOwner(db,target,pending.ownerId);const state=await transferState(db,target,targetChat);if(telegramBindingRevision(state.own)!==pending.expectedEmailRevision)fail('LINK_CHALLENGE_STALE');
+  if(pending.allowedChatId&&pending.allowedChatId!==targetChat)fail('LEGACY_CHAT_MISMATCH');const target=email(pending.email);await assertBindingAccountOpen(db,target);if(pending.ownerId)await assertOwner(db,target,pending.ownerId);const state=await transferState(db,target,targetChat);if(telegramBindingRevision(state.own)!==pending.expectedEmailRevision)fail('LINK_CHALLENGE_STALE');
   let same=Boolean(state.records.length===1&&state.own&&state.reverse&&equal(state.own,state.reverse)&&state.own.email===target&&state.own.chatId===targetChat);if(same){try{same=Boolean(await verified(db,{email:target}));}catch(error){if(error instanceof TelegramBindingError&&error.code==='LINK_STATE_AMBIGUOUS')same=false;else throw error;}}
   const replacing=state.records.length>0&&!same;
   if(pending.confirmChatId&&pending.confirmChatId!==targetChat)fail('LINK_CONFIRMATION_CHAT_MISMATCH');
@@ -150,7 +174,10 @@ export async function assertNoAdmittedTelegramDeliveries(db,records){
 export async function eraseTelegramBindingAccountState(pool,input,eraseAccount){
  const target=email(input.email),ownerId=input.ownerId;if(typeof eraseAccount!=='function')fail('ACCOUNT_ERASURE_CALLBACK_REQUIRED');
  return transaction(pool,async db=>{
- await assertOwner(db,target,ownerId,{lock:true});
+ const closing=await get(db,'closing-email:'+target);
+ if(closing){closureRecord(closing,target);if(closing.ownerId!==ownerId||closing.operationId!==closureOperation(input.closureOperationId))fail('LINK_CLOSURE_CONFLICT');if(closing.status==='binding_cleanup_committed')return {bindingStateErased:true,accountDeletionNotAttested:true,alreadyRecorded:true};}
+ else if(input.closureOperationId!==undefined)fail('LINK_CLOSURE_MISSING');
+ await assertOwner(db,target,ownerId,{lock:true,allowClosing:Boolean(closing)});
  const deliveries=await byField(db,'delivery:','email',target);
  await assertNoAdmittedTelegramDeliveries(db,[{email:target}]);
  const rows=[];
@@ -162,7 +189,7 @@ export async function eraseTelegramBindingAccountState(pool,input,eraseAccount){
  }
  const forward=await get(db,'link-email:'+target);if(forward&&forward.email!==target)fail('INVALID_BINDING_RECORD');
  for(const row of [...rows,...deliveries])await remove(db,row.key);
- await eraseAccount(db);return {bindingStateErased:true,accountDeletionNotAttested:true};
+ await eraseAccount(db);if(closing)await put(db,'closing-email:'+target,{...closing,status:'binding_cleanup_committed'});return {bindingStateErased:true,accountDeletionNotAttested:true};
  });
 }
 
