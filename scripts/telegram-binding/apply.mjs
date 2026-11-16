@@ -7,7 +7,7 @@ const replacements=new Map(ast.statements.filter(n=>ts.isFunctionDeclaration(n)&
 const parsed=ts.createSourceFile(target,source,99,true,ts.ScriptKind.JS),edits=[];
 for(const[name,body]of replacements){const fn=parsed.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);if(!fn)throw Error('[telegram-binding] missing canonical function: '+name);edits.push({start:fn.getStart(parsed),end:fn.end,body});}
 for(const edit of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,edit.start)+edit.body+source.slice(edit.end);
-const imports=["import {requireExistingIdentity} from './server/v139/common.mjs';","import {createTelegramBindingRuntime} from './server/telegram-binding-runtime.mjs';","import {createTelegramBindingChallenge,TelegramBindingError} from './server/telegram-binding-state.mjs';"];
+const imports=["import {assertTelegramReplyScopeBinding} from './server/telegram-binding-reply-scope.mjs';","import {requireExistingIdentity} from './server/v139/common.mjs';","import {createTelegramBindingRuntime} from './server/telegram-binding-runtime.mjs';","import {createTelegramBindingChallenge,TelegramBindingError} from './server/telegram-binding-state.mjs';"];
 for(const line of imports)if(!source.includes(line))source=line+'\n'+source;
 const runtime="const telegramBindingRuntime=createTelegramBindingRuntime({pool:conciergeDbPool,readCache:telegramLinksRead,writeCache:telegramLinksWrite});";
 if(!source.includes(runtime))source=runtime+'\n'+source;
@@ -68,3 +68,4 @@ await import('./ui.mjs');
  const text=fs.readFileSync(new URL('./open-telegram.ts',import.meta.url),'utf8').trim(),header="import {authFetch as telegramBindingAuthFetch,captureAuthSession as captureTelegramBindingSession} from '@/lib/authClient';\n";let after=before.slice(0,fn.getStart(ast))+text+before.slice(fn.end);if(!after.includes(header.trim()))after=header+after;if(after!==before)fs.writeFileSync(file,after);
 }
 await import('./local-transports.mjs');
+await import('./reply-scope.mjs');

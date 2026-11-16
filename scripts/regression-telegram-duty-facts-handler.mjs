@@ -1,3 +1,4 @@
+import {submitScopedTelegramReply} from '../server/telegram-binding-reply-scope.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -17,7 +18,7 @@ const fn = name => {
 const runtime = source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?\n}\);/)[0];
 let profile = { ...baseProfile }, snapshot = makeSnapshot();
 const sent = [], answers = []; let messageId = 100, snapshotHook = null, profileHook = null;
-const context = vm.createContext({
+const context = vm.createContext({submitScopedTelegramReply,
   crypto, Buffer, createTelegramMenu, createTelegramMenuTransport, buildDutyFacts,
   telegramProfileForChatAsync: async () => { if (profileHook) profileHook(); return { ...profile }; },
   conciergeLoadSnapshot: async () => { const copy = structuredClone(snapshot); if (snapshotHook) { const hook = snapshotHook; snapshotHook = null; hook(); } return copy; },

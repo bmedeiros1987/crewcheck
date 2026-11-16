@@ -9,6 +9,7 @@ async function telegramProfileForChatAsync(message = {}) {
   const base=cached;
   if(!base.chatId)return base;
   const linked=await telegramBindingRuntime.resolveChat(base.chatId);
+  assertTelegramReplyScopeBinding(linked);
   return linked?{...base,...linked,channel:base.channel,chatType:base.chatType,linked:true}:base;
 }
 async function telegramLinkedRecordForEmail(email = '') {
