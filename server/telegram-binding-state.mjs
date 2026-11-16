@@ -58,6 +58,16 @@ export async function readTelegramBindingClosure(pool,input){
  const target=email(input.email),operationId=closureOperation(input.operationId),ownerId=input.ownerId;
  return transaction(pool,async db=>{const record=await get(db,'closing-email:'+target);if(!record)fail('LINK_CLOSURE_MISSING');closureRecord(record,target);if(record.ownerId!==ownerId||record.operationId!==operationId)fail('LINK_CLOSURE_CONFLICT');return closureView(record);});
 }
+// Internal callback under the binding-only closure lock order. Does not erase
+// bindings or authorize whole-account deletion/external I/O. No route uses it.
+export async function withTelegramBindingClosureTransaction(pool,input,work){
+ const target=email(input.email),operationId=closureOperation(input.operationId),ownerId=input.ownerId;if(typeof work!=='function')fail('LINK_CLOSURE_CALLBACK_REQUIRED');
+ return transaction(pool,async db=>{
+  const record=await get(db,'closing-email:'+target);if(!record)fail('LINK_CLOSURE_MISSING');closureRecord(record,target);
+  if(record.ownerId!==ownerId||record.operationId!==operationId)fail('LINK_CLOSURE_CONFLICT');if(record.status!=='fenced')fail('LINK_CLOSURE_NOT_FENCED');
+  await assertOwner(db,target,ownerId,{lock:true,allowClosing:true});return work(db);
+ });
+}
 async function verified(db,{email:requestedEmail,chatId:requestedChat,linkCode}){
  let record=requestedEmail?await get(db,'link-email:'+email(requestedEmail)):requestedChat?await get(db,'link-chat:'+chat(requestedChat)):linkCode?await get(db,'link-code:'+code(linkCode)):null;if(!record){if(requestedChat&&(await byField(db,'link-email:','chatId',chat(requestedChat))).length)fail('LINK_STATE_AMBIGUOUS');if(requestedEmail&&(await byField(db,'link-chat:','email',email(requestedEmail))).length)fail('LINK_STATE_AMBIGUOUS');return null;}validate(record);await assertBindingAccountOpen(db,record.email);if(record.ownerId)await assertOwner(db,record.email,record.ownerId);if(requestedEmail&&record.email!==email(requestedEmail))fail('LINK_STATE_AMBIGUOUS');if(requestedChat&&record.chatId!==chat(requestedChat))fail('LINK_STATE_AMBIGUOUS');
  const forward=await get(db,'link-email:'+record.email),reverse=await get(db,'link-chat:'+record.chatId),alias=await get(db,'link-code:'+record.code);if(alias&&(!equal(record,alias)||metadata(record)!==metadata(alias)))fail('LINK_STATE_AMBIGUOUS');if(!equal(record,forward)||!equal(record,reverse)||metadata(record)!==metadata(forward)||metadata(record)!==metadata(reverse))fail('LINK_STATE_AMBIGUOUS');

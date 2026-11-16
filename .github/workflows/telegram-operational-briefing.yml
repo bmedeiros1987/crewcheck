@@ -32,6 +32,7 @@ on:
       - 'scripts/regression-telegram-binding-source-spans.mjs'
       - 'scripts/regression-telegram-binding-erasure.mjs'
       - 'scripts/regression-telegram-binding-closure.mjs'
+      - 'scripts/regression-telegram-binding-document-erasure.mjs'
       - 'scripts/regression-telegram-binding-reply-scope.mjs'
       - 'scripts/regression-telegram-binding-job-proof.mjs'
       - 'scripts/regression-telegram-binding-queue-adapter.mjs'
@@ -147,6 +148,7 @@ jobs:
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-platform-owned-erasure.mjs
           node scripts/regression-account-deletion-client.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-account-document-erasure.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-document-erasure.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-job-proof.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-queue-adapter.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-authenticated-queue.mjs
