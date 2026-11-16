@@ -12,7 +12,7 @@ export default function ForecastCurrencyCarousel({payment}:{payment:NextPayment}
   const active=currencies.includes(selected)?selected:currencies[0],index=Math.max(0,currencies.indexOf(active));
   useEffect(()=>{if(internalSelection.current){internalSelection.current=false;return;}const el=viewport.current;if(el)el.scrollTo({left:index*el.clientWidth,behavior:'instant'});},[currencies.join('|'),active]);
   function go(next:number){const target=Math.max(0,Math.min(currencies.length-1,next));internalSelection.current=true;setSelected(currencies[target]);viewport.current?.scrollTo({left:target*(viewport.current?.clientWidth||0),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});}
-  const compact=context.screen==='overview';
+  const compact=context.screen==='overview'||context.screen==='statement';
   const dateLabel=(value:string)=>value.split('-').reverse().join('/');
   function timing(currency:string){
     const full=payment.currencyTiming?.[currency]||payment.timing;

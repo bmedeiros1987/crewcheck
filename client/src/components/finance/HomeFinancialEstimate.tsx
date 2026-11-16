@@ -6,6 +6,8 @@ import {getStoredUser,getToken} from '@/lib/authClient';
 import {readFinancialFxReferences} from '@/lib/financialFxReference';
 import {estimateAllowanceBrl} from '@shared/financialFx.mjs';
 import {formatFinancialMinor} from '@shared/financialMoney.mjs';
+import {Calculator} from 'lucide-react';
+import './financial-summary-clarity.css';
 import {FinancialPrivacyToggle,useFinancialPrivacy} from './FinancialPrivacy';
 const Context=createContext<NextPayment|null>(null);
 export const useHomeFinancialEstimate=()=>useContext(Context);
@@ -25,5 +27,21 @@ export default function HomeFinancialEstimate(){
  const today=new Date().toISOString().slice(0,10),quotes=fx.quotes;
  const lines=payment.lines.map((line:any)=>({...line,id:[line.eventId||'',line.iso,line.label,line.currency].join(':')}));
  const estimate=estimateAllowanceBrl({lines,quotes,today,incomplete:payment.issues.length>0});
- return <div className="cc-home-brl-estimate"><FinancialPrivacyToggle/><p>{estimate.state==='available'?'Total estimado em R$':estimate.state==='no_data'?'Estimativa de diárias indisponível':'Total parcial estimado em R$'}</p><strong>{estimate.amountMinor===null?'Não calculável':privacy.amount(formatFinancialMinor(estimate.amountMinor,'BRL'))}</strong>{fx.mode==='automatic'&&fx.state!=='available'&&<small role="status">{fx.state==='stale'?'Cotação em cache; atualização indisponível.':fx.state==='loading'?'Consultando câmbio…':'Cotação automática indisponível.'}</small>}<small>Diárias · {payment.range?.start} a {payment.range?.end} · não confirma recebimento</small><details><summary>Ver cálculo</summary><FinancialFxSourceControl/><h3>Valores originais e cotações</h3>{estimate.items.map((item:any)=><p key={item.id}>{item.currency} · {item.originalMinor===null?'Não informado':privacy.amount(formatFinancialMinor(item.originalMinor,item.currency)||'Não calculável')} · {item.convertedMinor===null?'Cotação ou data ausente/incompatível':privacy.amount(formatFinancialMinor(item.convertedMinor,'BRL'))}{item.references.map((q:any)=><small key={q.asOf+q.source}>Referência de {q.asOf}{q.asOf<today?' · data anterior à consulta':''} · {q.source} · 1 {q.base||item.currency} = {privacy.amount(q.rate)} {q.quote||'BRL'}{q.retrievedAt?` · consulta ${q.retrievedAt}`:''}</small>)}</p>)}{estimate.state!=='available'&&<p>Itens pendentes não foram tratados como zero. Cotações antigas sem data não entram no total.</p>}<p>Conversão de referência, sem taxas bancárias, impostos ou valor de crédito garantido.</p></details></div>;
+ const foreign=estimate.items.filter((item:any)=>item.currency!=='BRL');
+ const pendingCurrencies=[...new Set(foreign.filter((item:any)=>item.originalMinor!==null&&item.convertedMinor===null&&item.state!=='invalid').map((item:any)=>item.currency))];
+ const dateLabel=(value?:string)=>value&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value.split('-').reverse().join('/'):'a confirmar';
+ const incomplete=estimate.state!=='available';
+ return <div className="cc-home-brl-estimate" data-estimate-state={estimate.state}>
+   <div className="cc-home-estimate-heading"><p>{estimate.state==='available'?'Diárias estimadas':estimate.state==='no_data'?'Diárias a calcular':estimate.amountMinor===null?'Diárias pendentes':'Subtotal conhecido'}</p><FinancialPrivacyToggle iconOnly/></div>
+   <strong>{estimate.amountMinor===null?'Não calculável':privacy.amount(formatFinancialMinor(estimate.amountMinor,'BRL'))}</strong>
+   {estimate.state==='no_data'?<small role="status">Sem diárias calculadas no período.</small>:pendingCurrencies.length>0?<small role="status">{fx.mode==='automatic'&&fx.state==='loading'?'Consultando câmbio…':`Câmbio pendente: ${pendingCurrencies.join(', ')}.`}</small>:incomplete?<small role="status">Há dados pendentes.</small>:foreign.length>0&&fx.state==='stale'?<small role="status">Cotação em cache · confira a data.</small>:null}
+   <small>Diárias · {dateLabel(payment.range?.start)} a {dateLabel(payment.range?.end)} · estimativa · recebimento não confirmado</small>
+   <details><summary><Calculator size={18} aria-hidden="true"/>Ver cálculo</summary>
+     {foreign.length>0&&<FinancialFxSourceControl/>}
+     {payment.issues.length>0&&<ul>{payment.issues.map(issue=><li key={issue}>{privacy.text(issue)}</li>)}</ul>}
+     <h3>Valores por moeda</h3>{estimate.items.map((item:any)=><p key={item.id}>{item.currency} · {item.originalMinor===null?'Não informado':privacy.amount(formatFinancialMinor(item.originalMinor,item.currency)||'Não calculável')} · {item.originalMinor===null?'Valor original pendente':item.convertedMinor===null?'Conversão pendente':privacy.amount(formatFinancialMinor(item.convertedMinor,'BRL'))}{item.references.map((q:any)=><small key={q.asOf+q.source}>Referência de {q.asOf}{q.asOf<today?' · data anterior à consulta':''} · {q.source} · 1 {q.base||item.currency} = {privacy.amount(q.rate)} {q.quote||'BRL'}{q.retrievedAt?` · consulta ${q.retrievedAt}`:''}</small>)}</p>)}
+     {incomplete&&<p>Dados pendentes não foram tratados como zero.</p>}
+     <p>Conversão de referência. Taxas, impostos e recebimento não confirmados.</p>
+   </details>
+ </div>;
 }

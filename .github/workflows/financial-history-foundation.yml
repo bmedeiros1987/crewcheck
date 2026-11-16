@@ -2,6 +2,12 @@ name: Financial history foundation
 on:
   pull_request:
     paths:
+      - 'client/src/components/finance/HomeFinancialEstimate.tsx'
+      - 'client/src/components/finance/NextPaymentCard.tsx'
+      - 'client/src/components/finance/ForecastCurrencyCarousel.tsx'
+      - 'client/src/components/finance/FinancialHistoryExplorer.tsx'
+      - 'client/src/components/finance/PersistentFinancialHistory.tsx'
+      - 'client/src/components/finance/financial-summary-clarity.css'
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
@@ -102,6 +108,9 @@ on:
       - 'scripts/fixtures/salary-clock-missing-counterproofs.json'
       - 'scripts/regression-salary-prerequisites-browser.cjs'
       - 'client/src/lib/databaseClient.ts'
+      - 'client/src/lib/positionedPayrollExtraction.ts'
+      - 'scripts/fixtures/synthetic-tabular-payroll.mjs'
+      - 'scripts/regression-payroll-tabular-pdf-browser.mjs'
       - '.github/workflows/financial-history-foundation.yml'
   workflow_dispatch:
 permissions:
@@ -279,7 +288,9 @@ jobs:
         timeout-minutes: 3
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-payroll-dsr-importer-browser.mjs
+        run: |
+          node scripts/regression-financial-payroll-dsr-importer-browser.mjs
+          node scripts/regression-payroll-tabular-pdf-browser.mjs
       - name: Verify physical PDF and compiled free-day alerts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
@@ -325,6 +336,10 @@ jobs:
         run: |
           node scripts/regression-financial-changes-browser.mjs
           node scripts/regression-financial-changes-home-compiled.mjs
+      - name: Verify concise financial summary and currency pending states
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-summary-clarity.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
         timeout-minutes: 10
         env:

@@ -67,7 +67,14 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   }
 
   if(scenario==='empty')assert(!/R\$\s*\d/.test(await home.textContent()),'empty Home does not invent a cycle amount');
-  else if(/R\$\s*\d/.test(await home.textContent())){assert.match(await home.textContent(),/Total (?:parcial )?estimado em R\$/);assert.match(await home.textContent(),/não confirma recebimento/);}
+  else if(/R\$\s*\d/.test(await home.textContent())){
+    const estimate=home.locator('.cc-home-brl-estimate'),state=await estimate.getAttribute('data-estimate-state');
+    assert(['available','partial'].includes(state),'a numeric estimate must have a calculable complete or partial state');
+    const heading=estimate.locator('.cc-home-estimate-heading p');
+    assert.equal(await heading.innerText(),state==='available'?'Diárias estimadas':'Subtotal conhecido','partial data must never be presented as a complete total');
+    if(state==='partial')assert.match(await estimate.getByRole('status').innerText(),/dados pendentes|Câmbio pendente|Consultando câmbio/,'partial amount must explain missing inputs');
+    assert.match(await estimate.locator(':scope > small').last().innerText(),/estimativa · recebimento não confirmado/,'receipt uncertainty remains visible outside collapsed calculation details');
+  }
   await home.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-home.png`),fullPage:false});
   await home.getByRole('button',{name:/Diárias/}).click();
   await page.locator('.cc-payment-hero').waitFor();
