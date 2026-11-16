@@ -1,0 +1,27 @@
+name: QA roster checkpoint
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/qaRosterCheckpoint.ts'
+      - 'client/src/components/qa/QaRosterCheckpoint.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-qa-roster-checkpoint*'
+      - '.github/workflows/qa-roster-checkpoint.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-rehearsal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Raw account and competence isolation
+        run: node scripts/regression-qa-roster-checkpoint.mjs
+      - run: node scripts/v139/apply.mjs
+      - name: Prepared account and competence isolation
+        run: node scripts/regression-qa-roster-checkpoint.mjs
+      - run: npx tsc --noEmit
