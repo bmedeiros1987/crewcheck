@@ -5,10 +5,11 @@ function telegramProfileForChat(message = {}) {
   return {email:chatId?`telegram:${chatId}`:'',name:message?.from?.first_name||'Tripulante',chatId,linked:false};
 }
 async function telegramProfileForChatAsync(message = {}) {
-  const base={...telegramProfileForChat(message),channel:'telegram',chatType:String(message?.chat?.type||'')};
+  const cached = { ...telegramProfileForChat(message), channel: 'telegram', chatType: String(message?.chat?.type || '') };
+  const base=cached;
   if(!base.chatId)return base;
   const linked=await telegramBindingRuntime.resolveChat(base.chatId);
-  return linked?{...base,...linked,linked:true}:base;
+  return linked?{...base,...linked,channel:base.channel,chatType:base.chatType,linked:true}:base;
 }
 async function telegramLinkedRecordForEmail(email = '') {
   if(!String(email||'').trim())return null;

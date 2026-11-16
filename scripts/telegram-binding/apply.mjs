@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import ts from 'typescript';
+import ts from './source-spans.mjs';
 const target='server.mjs';let source=fs.readFileSync(target,'utf8');
 const snippets=fs.readFileSync(new URL('./server-functions.mjs',import.meta.url),'utf8');
 const ast=ts.createSourceFile('snippets.mjs',snippets,99,true,ts.ScriptKind.JS);

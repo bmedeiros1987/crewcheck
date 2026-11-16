@@ -1,4 +1,4 @@
-async function refresh() {
+  async function refresh() {
     const session=captureAuthSession(),revision=++readRevision.current;
     if(!session.token){if(alive.current){setStatus({});setStatusUnavailable(true);}return;}
     try {
@@ -12,7 +12,7 @@ async function refresh() {
     }
   }
 
-async function connect() {
+  async function connect() {
     const request=action();if(!request.session.token)return;
     setBusy(true); setError('');
     try {
@@ -28,7 +28,7 @@ async function connect() {
     } finally { if(current(request))setBusy(false); }
   }
 
-async function testConnection() {
+  async function testConnection() {
     const request=action();if(!request.session.token)return;
     setBusy(true); setError('');
     try {
@@ -37,7 +37,7 @@ async function testConnection() {
     finally { if(current(request))setBusy(false); }
   }
 
-async function authorizeCallMeBot() {
+  async function authorizeCallMeBot() {
     const request=action();if(!request.session.token)return;
     setBusy(true); setError('');
     try {
@@ -52,7 +52,7 @@ async function authorizeCallMeBot() {
     } finally { if(current(request))setBusy(false); }
   }
 
-async function verifyCallMeBot() {
+  async function verifyCallMeBot() {
     const request=action();if(!request.session.token)return;
     setBusy(true); setError('');
     try {

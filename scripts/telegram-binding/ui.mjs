@@ -1,4 +1,4 @@
-import fs from 'node:fs';import ts from 'typescript';
+import fs from 'node:fs';import ts from './source-spans.mjs';
 const file='client/src/pages/TelegramConnectPage.tsx',before=fs.readFileSync(file,'utf8');
 {
  const already=before.includes('const readRevision=useRef(0),actionRevision=useRef(0),alive=useRef(true);');

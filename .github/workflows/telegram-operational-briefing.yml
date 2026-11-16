@@ -22,6 +22,7 @@ on:
       - 'scripts/regression-telegram-binding-delivery-channels.mjs'
       - 'scripts/regression-telegram-binding-admission.mjs'
       - 'scripts/regression-telegram-binding-local-transports.mjs'
+      - 'scripts/regression-telegram-binding-source-spans.mjs'
       - 'scripts/telegram-binding/**'
       - 'scripts/v139/apply.mjs'
       - '.github/workflows/telegram-operational-briefing.yml'
@@ -126,6 +127,7 @@ jobs:
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-state.mjs
           node scripts/regression-telegram-binding-integration.mjs
           node scripts/regression-telegram-binding-delivery-channels.mjs
+          node scripts/regression-telegram-binding-source-spans.mjs
           node scripts/regression-telegram-binding-local-transports.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-admission.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-local-transports.mjs

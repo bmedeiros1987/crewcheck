@@ -30,6 +30,8 @@ try{
  // The simulated operator supplies admission ONLY inside this isolated fixture.
  await consumeTelegramBindingChallenge(f.pool,{code:b,chatId:X,senderId:X,chatType:'private',confirmed:true,username:'test_user',assertTransferSafe:async()=>{}});
  c.setCache({pending:{},linked:{[A]:original}});const profile=await c.telegramProfileForChatAsync(message('test_user'));assert.equal(profile.email,B);assert.equal(profile.channel,'telegram');assert.equal(profile.linked,true);checks++;
+ const poisoned={...await readVerifiedTelegramBinding(f.pool,{email:B}),channel:'app',chatType:'group'};await f.seedLink(poisoned);const trusted=await c.telegramProfileForChatAsync(message('test_user'));assert.equal(trusted.channel,'telegram');assert.equal(trusted.chatType,'private');checks++;
+
  const before=await f.state(),writes=c.stats().writes;await c.handleTelegramLinkStatus({method:'GET'}, {},new URL('https://fixture.invalid/api/telegram/link/status?email='+encodeURIComponent(A)+'&code='+a));assert.equal(c.result().body.accountEmail,B);assert.equal(c.result().body.linked,true);assert.deepEqual(await f.state(),before,'status cannot persist metadata or revive aliases');assert.equal(c.stats().writes,writes);checks+=2;
  c.setActor(A);await c.handleTelegramLinkStatus({method:'GET'},{},new URL('https://fixture.invalid/status'));assert.equal(c.result().body.ok,true,'unlinked status is a successful authenticated read');assert.equal(c.result().body.linked,false);assert.equal(c.result().body.chatId,'');assert.equal(c.result().body.accountEmail,A);checks++;
  // Real metadata updater must reject a late getChat result from the old account.

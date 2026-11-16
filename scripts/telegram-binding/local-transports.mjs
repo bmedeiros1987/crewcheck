@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import ts from 'typescript';
+import ts from './source-spans.mjs';
 const file='server.mjs';let source=fs.readFileSync(file,'utf8');
 const imported="import {submitVerifiedTelegramBinding} from './server/telegram-binding-delivery.mjs';";
 if(!source.includes(imported))source=imported+'\n'+source;
