@@ -154,14 +154,53 @@ export async function eraseTelegramBindingAccountState(pool,input,eraseAccount){
  const deliveries=await byField(db,'delivery:','email',target);
  await assertNoAdmittedTelegramDeliveries(db,[{email:target}]);
  const rows=[];
- for(const prefix of ['link-email:','link-chat:','link-code:','pending:']){
+ for(const prefix of ['link-email:','link-chat:','link-code:','pending:','job-proof:']){
   for(const row of await byField(db,prefix,'email',target)){
-   const value=row.value,expected=prefix==='link-email:'?prefix+target:prefix==='link-chat:'?prefix+value.chatId:prefix+value.code;
+   const value=row.value,expected=prefix==='link-email:'?prefix+target:prefix==='link-chat:'?prefix+value.chatId:prefix==='job-proof:'?prefix+value.keyDigest:prefix+value.code;
    if(row.key!==expected||value.email!==target)fail('INVALID_BINDING_RECORD');rows.push(row);
   }
  }
  const forward=await get(db,'link-email:'+target);if(forward&&forward.email!==target)fail('INVALID_BINDING_RECORD');
  for(const row of [...rows,...deliveries])await remove(db,row.key);
  await eraseAccount(db);return {bindingStateErased:true,accountDeletionNotAttested:true};
+ });
+}
+
+const digest=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+function boundJobInput(input){
+ let job;try{job=clone(input.job);}catch{fail('INVALID_BOUND_JOB');}
+ const accountEmail=email(input.email),ownerId=input.ownerId;
+ if(!job||typeof job.key!=='string'||!job.key||job.key!==job.key.trim()||job.key.length>220||!Number.isSafeInteger(job.at)||!['telegram','telegram-call','telegram+telegram-call'].includes(job.channel)||typeof job.message!=='string'||job.message.length>1000)fail('INVALID_BOUND_JOB');
+ const selected={key:job.key,at:job.at,channel:job.channel,chatId:String(job.chatId||''),username:String(job.username||'').replace(/^@/,''),message:job.message};
+ return {email:accountEmail,ownerId,job:selected,keyDigest:digest([accountEmail,selected.key]),jobDigest:digest(selected)};
+}
+function checkJobDestination(job,binding){
+ if(!binding)fail('LINK_JOB_BINDING_UNAVAILABLE');const channels=job.channel.split('+');
+ if((channels.includes('telegram')&&job.chatId!==binding.chatId)||(channels.includes('telegram-call')&&(!job.username||job.username!==binding.username)))fail('LINK_DESTINATION_CHANGED');
+}
+// Preparatory boundary only: adapter must write the actual queue row on this
+// connection and establish that the row is new (or already has this proof).
+// Verification never fills a missing legacy proof; row existence is not attested here.
+export async function prepareTelegramBoundJobProof(pool,input,writeQueue){
+ const selected=boundJobInput(input);if(typeof writeQueue!=='function')fail('JOB_QUEUE_CALLBACK_REQUIRED');
+ return transaction(pool,async db=>{
+  await assertOwner(db,selected.email,selected.ownerId,{lock:true});const binding=await verified(db,{email:selected.email});checkJobDestination(selected.job,binding);
+  const key='job-proof:'+selected.keyDigest,prior=await get(db,key),generation=digest(telegramBindingRevision(binding));
+  if(prior){if(prior.version!==1||prior.email!==selected.email||prior.ownerId!==selected.ownerId||prior.keyDigest!==selected.keyDigest||prior.jobDigest!==selected.jobDigest||prior.generation!==generation)fail('LINK_JOB_PROOF_CONFLICT');return {status:'unchanged',queueRowNotAttested:true};}
+  const proof={version:1,email:selected.email,ownerId:selected.ownerId,keyDigest:selected.keyDigest,jobDigest:selected.jobDigest,generation};
+  await put(db,key,proof);const queue=await writeQueue(db,clone(selected.job));
+  if(queue?.queueRowId!==undefined){if(!['string','number'].includes(typeof queue.queueRowId))fail('INVALID_QUEUE_ROW_PROOF');const rowId=String(queue.queueRowId);if((typeof queue.queueRowId==='number'&&!Number.isSafeInteger(queue.queueRowId))||!(/^[1-9]\d{0,19}$/).test(rowId))fail('INVALID_QUEUE_ROW_PROOF');await put(db,key,{...proof,queueRowId:rowId});}
+  return {status:'proof_prepared',queueRowNotAttested:true};
+ });
+}
+// Caller supplies a row freshly read from the owner-scoped queue. This helper
+// verifies the generation/content proof; it does not claim/read/dispatch a row.
+export async function verifyTelegramBoundJobProof(pool,input,inspectQueue){
+ const selected=boundJobInput(input);if(inspectQueue!==undefined&&typeof inspectQueue!=='function')fail('JOB_QUEUE_CALLBACK_REQUIRED');
+ return transaction(pool,async db=>{
+  await assertOwner(db,selected.email,selected.ownerId,{lock:true});const proof=await get(db,'job-proof:'+selected.keyDigest);
+  if(!proof)fail('LINK_JOB_PROOF_REQUIRED');
+  if(proof.version!==1||proof.email!==selected.email||proof.ownerId!==selected.ownerId||proof.keyDigest!==selected.keyDigest||proof.jobDigest!==selected.jobDigest)fail('LINK_JOB_PROOF_CHANGED');
+  const binding=await verified(db,{email:selected.email});if(!binding||proof.generation!==digest(telegramBindingRevision(binding)))fail('LINK_JOB_GENERATION_CHANGED');checkJobDestination(selected.job,binding);if(inspectQueue)await inspectQueue(db,clone(selected.job),{queueRowId:proof.queueRowId});return {binding:clone(binding),job:clone(selected.job),queueRowNotAttested:true};
  });
 }
