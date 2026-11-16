@@ -1,3 +1,8 @@
+import fs from 'node:fs';import vm from 'node:vm';
+import spans from './telegram-binding/source-spans.mjs';
+import {telegramBindingMemory} from './fixtures/telegram-binding-memory.mjs';
+import {createTelegramBindingChallenge,consumeTelegramBindingChallenge,readVerifiedTelegramBinding} from '../server/telegram-binding-state.mjs';
+import {submitVerifiedTelegramBinding} from '../server/telegram-binding-delivery.mjs';
 import assert from 'node:assert/strict';
 import { dueKind, notifyBidRows } from '../server/v139/bidsNotify.mjs';
 import { buildBidsCalendar } from '../server/v139/bidsCalendar.mjs';
@@ -46,9 +51,17 @@ assert.ok(!buildBidsCalendar([{ ...row, notify_open: 0, notify_last_day: 0 }], n
 assert.ok(buildBidsCalendar([{ ...row, title: 'Text\nURL:injected' }], now).includes('Text\\nURL:injected'));
 // Synthetic credentials in this disposable test process; fetch is always fake.
 process.env.TELEGRAM_BOT_TOKEN = 'fake-token-never-sent';
+const deliverySource=fs.readFileSync('server/v139/delivery.mjs','utf8');let send=sendTelegram,proof=null,recipient='fake-recipient',providerCalls=0;
+if(deliverySource.includes('submitVerifiedTelegramBinding')){
+ const f=telegramBindingMemory();recipient='9000012345';const code='cc_bids_http_test';await createTelegramBindingChallenge(f.pool,{email:row.owner_email,code});await consumeTelegramBindingChallenge(f.pool,{code,chatId:recipient,senderId:recipient,chatType:'private'});proof=await readVerifiedTelegramBinding(f.pool,{email:row.owner_email});
+ const fn=spans.createSourceFile('delivery.mjs',deliverySource).statements.find(n=>n.name?.text==='sendTelegram');assert(fn);
+ const context=vm.createContext({submitVerifiedTelegramBinding,dbPool:async()=>f.pool,telegramToken:()=> 'synthetic-provider',AbortSignal,fetch:(...args)=>{providerCalls++;return globalThis.fetch(...args);}});vm.runInContext(fn.getText().replace(/^export /,'')+'\nglobalThis.send=sendTelegram;',context);send=context.send;
+ assert.equal((await send(recipient,'fixture')).ok,false,'missing binding proof cannot send');assert.equal(providerCalls,0);
+}
 for (const payload of [{}, { ok: false }, { ok: true }]) {
   globalThis.fetch = async () => ({ ok: true, json: async () => payload });
-  assert.equal((await sendTelegram('fake-recipient', 'fixture')).ok, payload.ok === true);
+  assert.equal((await send(recipient, 'fixture',proof)).ok, payload.ok === true);
 }
+if(proof)assert.equal(providerCalls,3,'actual prepared transport must validate each provider acknowledgement');
 globalThis.fetch = () => { throw new Error('Real network forbidden in this test'); };
 console.log('BIDS delivery regression passed: failures/reconnection, expiry, preferences, owner, dedup, timezone and calendar.');

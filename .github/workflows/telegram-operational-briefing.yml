@@ -23,6 +23,7 @@ on:
       - 'scripts/regression-telegram-binding-admission.mjs'
       - 'scripts/regression-telegram-binding-local-transports.mjs'
       - 'scripts/regression-telegram-binding-source-spans.mjs'
+      - 'scripts/regression-telegram-binding-erasure.mjs'
       - 'scripts/telegram-binding/**'
       - 'scripts/v139/apply.mjs'
       - '.github/workflows/telegram-operational-briefing.yml'
@@ -46,6 +47,7 @@ jobs:
         run: |
           node scripts/regression-telegram-binding-state.mjs
           node scripts/regression-telegram-binding-admission.mjs
+          node scripts/regression-telegram-binding-erasure.mjs
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
@@ -125,6 +127,7 @@ jobs:
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-state.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-erasure.mjs
           node scripts/regression-telegram-binding-integration.mjs
           node scripts/regression-telegram-binding-delivery-channels.mjs
           node scripts/regression-telegram-binding-source-spans.mjs

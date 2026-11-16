@@ -31,8 +31,8 @@ async function transaction(pool,work){
  catch(error){if(beginAttempted&&!started&&!uncertain)uncertain=true;if(started&&!uncertain){try{await db.rollback();started=false;}catch{uncertain=true;}}if(uncertain){db.destroy?.();throw new TelegramBindingError('LINK_COMMIT_UNCERTAIN');}throw error instanceof TelegramBindingError?error:new TelegramBindingError('LINK_STORAGE_UNAVAILABLE');}
  finally{if(!uncertain)db.release();}
 }
-async function assertOwner(db,accountEmail,ownerId){
- if(typeof ownerId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(ownerId))fail('INVALID_BINDING_OWNER');const[rows]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[accountEmail]);if(rows.length!==1||String(rows[0].public_id)!==ownerId)fail('LINK_ACCOUNT_CHANGED');
+async function assertOwner(db,accountEmail,ownerId,{lock=false}={}){
+ if(typeof ownerId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(ownerId))fail('INVALID_BINDING_OWNER');const[rows]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?'+(lock?' FOR UPDATE':''),[accountEmail]);if(rows.length!==1||String(rows[0].public_id)!==ownerId)fail('LINK_ACCOUNT_CHANGED');
 }
 async function verified(db,{email:requestedEmail,chatId:requestedChat,linkCode}){
  let record=requestedEmail?await get(db,'link-email:'+email(requestedEmail)):requestedChat?await get(db,'link-chat:'+chat(requestedChat)):linkCode?await get(db,'link-code:'+code(linkCode)):null;if(!record){if(requestedChat&&(await byField(db,'link-email:','chatId',chat(requestedChat))).length)fail('LINK_STATE_AMBIGUOUS');if(requestedEmail&&(await byField(db,'link-chat:','email',email(requestedEmail))).length)fail('LINK_STATE_AMBIGUOUS');return null;}validate(record);if(record.ownerId)await assertOwner(db,record.email,record.ownerId);if(requestedEmail&&record.email!==email(requestedEmail))fail('LINK_STATE_AMBIGUOUS');if(requestedChat&&record.chatId!==chat(requestedChat))fail('LINK_STATE_AMBIGUOUS');
@@ -142,4 +142,26 @@ export async function assertNoAdmittedTelegramDeliveries(db,records){
   const item=entry.value;if(entry.key!=='delivery:'+item.id||item.version!==1||!['reserved','accepted','rejected','uncertain'].includes(item.status))fail('INVALID_DELIVERY_ADMISSION');
   if(item.status==='reserved'||item.status==='uncertain')fail('LINK_DELIVERY_IN_FLIGHT');
  }}
+}
+
+// Isolated account-erasure transaction boundary. The caller must delete profile
+// and queues in the supplied callback on this same connection, without external I/O.
+// No live route uses it until external cancellation and all lock orders are reconciled.
+export async function eraseTelegramBindingAccountState(pool,input,eraseAccount){
+ const target=email(input.email),ownerId=input.ownerId;if(typeof eraseAccount!=='function')fail('ACCOUNT_ERASURE_CALLBACK_REQUIRED');
+ return transaction(pool,async db=>{
+ await assertOwner(db,target,ownerId,{lock:true});
+ const deliveries=await byField(db,'delivery:','email',target);
+ await assertNoAdmittedTelegramDeliveries(db,[{email:target}]);
+ const rows=[];
+ for(const prefix of ['link-email:','link-chat:','link-code:','pending:']){
+  for(const row of await byField(db,prefix,'email',target)){
+   const value=row.value,expected=prefix==='link-email:'?prefix+target:prefix==='link-chat:'?prefix+value.chatId:prefix+value.code;
+   if(row.key!==expected||value.email!==target)fail('INVALID_BINDING_RECORD');rows.push(row);
+  }
+ }
+ const forward=await get(db,'link-email:'+target);if(forward&&forward.email!==target)fail('INVALID_BINDING_RECORD');
+ for(const row of [...rows,...deliveries])await remove(db,row.key);
+ await eraseAccount(db);return {bindingStateErased:true,accountDeletionNotAttested:true};
+ });
 }

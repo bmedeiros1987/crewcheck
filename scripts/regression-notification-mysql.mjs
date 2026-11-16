@@ -12,7 +12,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handleBidsCore } from '../server/v139/bidsCore.mjs';
 import { handleBidsAlertPreferences } from '../server/v139/bidsAlertPreferences.mjs';
-import { notifyBidRows, claimBid } from '../server/v139/bidsNotify.mjs';
+import { notifyBidRows, claimBid, bidTelegramLink } from '../server/v139/bidsNotify.mjs';
 import { confirmCycle, cycleJobPrefix, cycleStateKey, LEAVE_CYCLE } from '../server/v139/notificationCycles.mjs';
 import { FREE_DAY_SCOPE, mutateFreeDayHeld, readFreeDayHeldState } from '../server/free-day-held.mjs';
 import {sourceQueue} from '../server/free-day-source-queue.mjs';
@@ -177,10 +177,18 @@ try {
     await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[`profile:${email}`,JSON.stringify({email,chatId:'legacy-fictional'})]);
     await notifyBidRows(db,[row],options);assert.equal(sends,0,'legacy profile is not a canonical binding');
     assert.equal(await claimBid(db,row,options.now,{expectedLink:{chatId:'old'},findLink:async()=>({chatId:'new'})}),null);
-    await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[`link-email:${email}`,JSON.stringify({email,chatId:'canonical-fictional',linkedAt:'2026-10-01T00:00:00Z',code:'fictional'})]);
+    const canonical={email,chatId:'9000012345',linkedAt:'2026-10-01T00:00:00Z',code:'cc_bids_binding_fixture',bindingId:'synthetic-generation',ownerId:owner};
+    await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[`link-email:${email}`,JSON.stringify(canonical)]);
+    if(bidTelegramLink.toString().includes('readVerifiedTelegramBinding')){
+      assert.equal(await bidTelegramLink(db,email),null,'orphan forward is not a verified binding');
+      await notifyBidRows(db,[row],options);assert.equal(sends,0,'ambiguous legacy state must not abort or deliver');
+    }
+    for(const key of ['link-chat:'+canonical.chatId,'link-code:'+canonical.code])await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[key,JSON.stringify(canonical)]);
     await notifyBidRows(db,[row],options);assert.equal(sends,1);
     const response=await request({},'', 'GET');
     assert.equal(response.body.windows.find(window=>window.id===row.id).openDispatchStatus,'accepted');
+    // Remove only this case's binding fixture; later cases own their own links.
+    await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN (?,?,?)',['link-email:'+email,'link-chat:'+canonical.chatId,'link-code:'+canonical.code]);
   });
   await run('confirmation is persistent, idempotent and cancels every server channel only for owner/cycle',async()=>{
     const prefix=cycleJobPrefix(LEAVE_CYCLE), now=new Date();
