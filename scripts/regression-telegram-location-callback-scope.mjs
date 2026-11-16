@@ -1,3 +1,6 @@
+import {telegramBindingMemory} from './fixtures/telegram-binding-memory.mjs';
+import {createTelegramBindingRuntime} from '../server/telegram-binding-runtime.mjs';
+import {createTelegramBindingChallenge,readVerifiedTelegramBinding,TelegramBindingError} from '../server/telegram-binding-state.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const source=fs.readFileSync('server.mjs','utf8');
@@ -14,7 +17,17 @@ for(const silent of [false,true]){const value=await locationFixture(locationSour
 if(locationSource.includes('normalizeConciergeLocationV14335'))assert.equal((await locationFixture(locationSource,{valid:false})).saved.length,0);
 assert.doesNotMatch(locationSource,/data\.linked\[email\]/);
 const linkSource=extract('telegramTryBindFromWebhook');
-if(source.includes('callMeBotOnboardingVersion: 2')) {
+if(linkSource.includes('telegramBindingRuntime.consume')) {
+  for(const username of ['fixture_user','']) {
+    const sent=[],f=telegramBindingMemory(),email='fixture@example.invalid',chatId='9000012345',code='cc_SYNTHETIC_FIXTURE01';
+    await f.seedProfile(email,'synthetic-fixture-owner');await createTelegramBindingChallenge(f.pool,{email,ownerId:'synthetic-fixture-owner',code,name:'SYNTHETIC'});
+    const deps={TelegramBindingError,telegramBindingRuntime:createTelegramBindingRuntime({pool:async()=>f.pool}),normalizeTelegramUsername:value=>value,sendTelegramMessage:async(...args)=>sent.push(args),conciergeKeyboard:{},callMeBotAuthorizationKeyboard:()=>({fixture:true})};
+    const fn=new Function(...Object.keys(deps),`${linkSource};return telegramTryBindFromWebhook;`)(...Object.values(deps));
+    assert.equal(await fn({chat:{id:chatId,type:'private'},from:{id:chatId,username}},'/start '+code),true);
+    assert.equal((await readVerifiedTelegramBinding(f.pool,{chatId})).email,email);assert(sent.some(args=>String(args[1]).includes('Telegram vinculado')));
+    assert.equal(sent.filter(args=>String(args[1]).includes('CallMeBot')).length,username?1:0);
+  }
+} else if(source.includes('callMeBotOnboardingVersion: 2')) {
   assert.match(linkSource,/data\.linked\[email\]\.username/);
   for(const username of ['fixture_user','']) {
     const sent=[],data={pending:{cc_SYNTHETIC:{email:'fixture@example.invalid'}},linked:{}};

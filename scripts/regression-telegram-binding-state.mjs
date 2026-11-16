@@ -1,3 +1,4 @@
+import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
 import {createTelegramBindingRuntime} from '../server/telegram-binding-runtime.mjs';
 import assert from 'node:assert/strict';
 import {createTelegramBindingChallenge as start,consumeTelegramBindingChallenge as consume,readVerifiedTelegramBinding as read,updateTelegramBindingMetadata as update,inspectTelegramBindingPair as inspect} from '../server/telegram-binding-state.mjs';
@@ -74,6 +75,12 @@ for(const corruption of ['forward','reverse']){
 }
 {
  const f=await fixture(),old=binding(A);await f.seedLink(old);const before=(await f.state());await assert.rejects(update(f.pool,old,{callMeBotVerifiedAt:{invalid:true}}),{code:'INVALID_LINK_METADATA'});assert.deepEqual((await f.state()),before);checks++;
+}
+{
+ const f=await fixture(),wrapped=mysqlAdapter(f.pool),code=nextCode();await start(wrapped,{email:A,code},{now:NOW});await consume(wrapped,{code,chatId:X,senderId:X,chatType:'private'},options);assert.equal((await read(wrapped,{email:A})).email,A);checks++;
+}
+{
+ const f=await fixture(),code=nextCode();await f.seedProfile(A,'synthetic-owner-A');await start(f.pool,{email:A,code,ownerId:'synthetic-owner-A'},{now:NOW});await f.deleteProfile(A);await assert.rejects(claim(f,code),{code:'LINK_ACCOUNT_CHANGED'});await f.seedProfile(A,'synthetic-recreated');await assert.rejects(claim(f,code),{code:'LINK_ACCOUNT_CHANGED'});assert.equal(await read(f.pool,{chatId:X}),null);checks++;
 }
 console.log(`PASS transactional Telegram binding core (${sql?'real isolated MySQL':'SQL double'}): ${checks} synthetic cases, confirmation/reversal, ambiguous legacy/cache refusal, concurrent challenges, CAS, expiry, corruption/failure and uncertain commit; no live data/routes/providers; synthetic fixtures only`);
 

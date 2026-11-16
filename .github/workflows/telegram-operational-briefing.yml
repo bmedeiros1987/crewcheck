@@ -18,6 +18,12 @@ on:
       - 'server/telegram-binding-*.mjs'
       - 'scripts/fixtures/telegram-binding-*.mjs'
       - 'scripts/regression-telegram-binding-state.mjs'
+      - 'scripts/regression-telegram-binding-integration.mjs'
+      - 'scripts/regression-telegram-binding-delivery-channels.mjs'
+      - 'scripts/regression-telegram-binding-admission.mjs'
+      - 'scripts/regression-telegram-binding-local-transports.mjs'
+      - 'scripts/telegram-binding/**'
+      - 'scripts/v139/apply.mjs'
       - '.github/workflows/telegram-operational-briefing.yml'
 permissions:
   contents: read
@@ -36,7 +42,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Transactional binding and cache contract with synthetic I/O
-        run: node scripts/regression-telegram-binding-state.mjs
+        run: |
+          node scripts/regression-telegram-binding-state.mjs
+          node scripts/regression-telegram-binding-admission.mjs
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
@@ -116,6 +124,12 @@ jobs:
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-state.mjs
+          node scripts/regression-telegram-binding-integration.mjs
+          node scripts/regression-telegram-binding-delivery-channels.mjs
+          node scripts/regression-telegram-binding-local-transports.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-admission.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-local-transports.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-integration.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
