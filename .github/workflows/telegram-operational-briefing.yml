@@ -19,6 +19,8 @@ on:
       - 'server/telegram-visitor-reply-guard.mjs'
       - 'server/platform-owned-erasure.mjs'
       - 'server/account-document-erasure.mjs'
+      - 'server/v139/crewlock.mjs'
+      - 'scripts/regression-crewlock-existing-identity.mjs'
       - 'shared/accountDeletionLocal.mjs'
       - 'scripts/regression-account-deletion-client.mjs'
       - 'scripts/regression-account-document-erasure.mjs'
@@ -147,6 +149,7 @@ jobs:
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-closure.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-platform-owned-erasure.mjs
           node scripts/regression-account-deletion-client.mjs
+          node scripts/regression-crewlock-existing-identity.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-account-document-erasure.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-document-erasure.mjs
           TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-job-proof.mjs
