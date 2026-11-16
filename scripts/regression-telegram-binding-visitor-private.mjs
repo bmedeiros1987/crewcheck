@@ -7,7 +7,7 @@ const hash=x=>crypto.createHash('sha256').update(x).digest('hex');
 function reset(){visitor={id:'synthetic-visitor',owner_email:owner,email:'visitor@example.invalid',status:'active',telegram_chat_id:X,telegram_token_hash:hash(invite),permissions:{roster:true,hotels:true}};plan='premium_unlimited';reads=0;writes=0;rosterReads=0;hotelReads=0;decrypts=0;emergencies=0;sent.length=0;}
 const db={async query(sql,args){reads++;
  if(sql.includes('WHERE telegram_token_hash='))return{rows:visitor?.telegram_token_hash===args[0]&&['active','invited'].includes(visitor.status)?[structuredClone(visitor)]:[]};
- if(sql.startsWith('UPDATE crewcheck_platform_visitors')){assert.equal(args[0],visitor.id);visitor.telegram_chat_id=args[1];visitor.telegram_token_hash=args[2];writes++;return{rows:[],rowCount:1};}
+ if(sql.startsWith('UPDATE crewcheck_platform_visitors')){assert.equal(args[0],visitor.id);assert(sql.includes('AND telegram_token_hash=$4'));if(visitor.telegram_token_hash!==args[3]||!['active','invited'].includes(visitor.status))return{rows:[],rowCount:0};visitor.telegram_chat_id=args[1];visitor.telegram_token_hash=args[2];writes++;return{rows:[],rowCount:1};}
  if(sql.includes('WHERE telegram_chat_id='))return{rows:visitor&&String(visitor.telegram_chat_id)===args[0]&&['active','invited'].includes(visitor.status)?[structuredClone(visitor)]:[]};
  if(sql.startsWith('SELECT * FROM crewcheck_platform_profiles')){assert.equal(args[0],owner);return{rows:[{email:owner,public_id:'synthetic-owner',plan}]};}
  if(sql.startsWith('SELECT roster FROM crewcheck_platform_rosters')){assert.equal(args[0],owner);rosterReads++;return{rows:[{roster:{days:[{date:new Date(Date.now()+86400000).toISOString().slice(0,10),type:'SYNTHETIC DUTY',legs:[]}]}}]};}
