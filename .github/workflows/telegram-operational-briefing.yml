@@ -15,6 +15,9 @@ on:
       - 'scripts/regression-operational-briefing-browser.mjs'
       - 'scripts/regression-briefing-concierge-composition.mjs'
       - 'client/src/components/notifications/**'
+      - 'server/telegram-binding-*.mjs'
+      - 'scripts/fixtures/telegram-binding-*.mjs'
+      - 'scripts/regression-telegram-binding-state.mjs'
       - '.github/workflows/telegram-operational-briefing.yml'
 permissions:
   contents: read
@@ -32,6 +35,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Transactional binding and cache contract with synthetic I/O
+        run: node scripts/regression-telegram-binding-state.mjs
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
@@ -73,6 +78,12 @@ jobs:
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+      - name: Transactional binding in existing isolated MySQL fixture
+        run: node scripts/regression-telegram-binding-state.mjs
+        env:
+          TELEGRAM_BINDING_QA: isolated-mysql
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
       - name: Read-only pinned Concierge lifecycle source for composition
         uses: actions/checkout@v6
         with:
@@ -104,6 +115,7 @@ jobs:
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-state.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
