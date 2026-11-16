@@ -12,7 +12,7 @@ const server=await startFixtureServer({root:dir,port:0});const origin=`http://12
 try{
  assert.equal((await fetch(origin+'/worker.js')).status,200);
  const home=await fetch(origin+'/app');assert.equal(home.status,200);
- const csp=home.headers.get('content-security-policy');assert.match(csp,/worker-src 'none'/);assert.match(csp,/connect-src http:\/\/127\.0\.0\.1:\d+;/);assert(!csp.includes('ws:'));
+ const csp=home.headers.get('content-security-policy');assert.match(csp,/worker-src 'none'/);assert.match(csp,/connect-src http:\/\/127\.0\.0\.1:\d+ blob:;/);assert(!csp.includes('ws:'));
  assert.equal((await fetch(origin+'/api/payments')).status,503);
  assert.equal((await fetch(origin+'/api/payments',{method:'POST'})).status,405);
  assert.equal((await fetch(origin+'/escape.json')).status,403);
