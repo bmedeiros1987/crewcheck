@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
     public static final String ACTION_WATCH_SYNC_REQUEST = "com.crewcheck.app.WATCH_SYNC_REQUEST";
+    public static final String ACTION_LIFE_WATCH_PROOF_READY = "com.crewcheck.app.LIFE_WATCH_PROOF_READY";
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
@@ -136,6 +137,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CrewLifeV2Phone.reconcile(this);
+        CrewLifeWatchPublisher.retryPendingRevocation(this, null);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setStatusBarColor(Color.parseColor("#071D33"));
         getWindow().setNavigationBarColor(Color.parseColor("#071D33"));
@@ -759,7 +762,12 @@ public class MainActivity extends Activity {
         watchSyncRequestReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                if (intent == null || !ACTION_WATCH_SYNC_REQUEST.equals(intent.getAction())) return;
+                if (intent == null) return;
+                if (ACTION_LIFE_WATCH_PROOF_READY.equals(intent.getAction())) {
+                    syncLifeCompanionToCrewCheckAndWatch("watch-proof-continuation");
+                    return; // no provider refresh, operational request or delayed work from an ACK
+                }
+                if (!ACTION_WATCH_SYNC_REQUEST.equals(intent.getAction())) return;
                 syncLifeCompanionToCrewCheckAndWatch("watch-data-layer-request");
                 requestLifeCompanionRefresh();
                 requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request");
@@ -775,6 +783,7 @@ public class MainActivity extends Activity {
             }
         };
         IntentFilter filter = new IntentFilter(ACTION_WATCH_SYNC_REQUEST);
+        filter.addAction(ACTION_LIFE_WATCH_PROOF_READY);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(watchSyncRequestReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -783,6 +792,7 @@ public class MainActivity extends Activity {
     }
 
     private void unregisterWatchSyncRequestReceiver() {
+        companionSyncWork.close();
         if (watchSyncRequestReceiver == null) return;
         try { unregisterReceiver(watchSyncRequestReceiver); } catch (Exception ignored) {}
         watchSyncRequestReceiver = null;
@@ -887,6 +897,25 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    // This client hint only INVALIDATES local health consent/in-flight exports; it is not
+    // authentication or evidence of whose Samsung Health account is on this device.
+    private final Object companionFence = new Object();
+    private long companionGeneration = 0;
+    private final CrewLifeSyncWork companionSyncWork = new CrewLifeSyncWork();
+    private String companionAccountHint = "";
+
+    private void invalidateCompanionOnAccountChange(String hint) {
+        String next = hint == null ? "" : hint;
+        synchronized (companionFence) {
+            if (next.equals(companionAccountHint)) return;
+            companionAccountHint = next;
+            companionGeneration++;
+            companionSyncWork.invalidate();
+            CrewLifeWatchPublisher.revoke(this, null);
+            dispatchLifeCompanionSummaryRaw("");
+        }
+    }
+
     private String readLifeCompanionSummaryInternal() {
         android.database.Cursor cursor = null;
         try {
@@ -894,7 +923,10 @@ public class MainActivity extends Activity {
             cursor = getContentResolver().query(uri, new String[]{"json"}, null, null, null);
             if (cursor == null || !cursor.moveToFirst()) return "";
             int column = cursor.getColumnIndex("json");
-            return column >= 0 ? String.valueOf(cursor.getString(column)) : "";
+            if (column < 0) return "";
+            String raw = cursor.getString(column);
+            return raw == null || raw.isBlank() ? "" : com.crewcheck.health.CompanionFreshness
+                    .filter(new JSONObject(raw), System.currentTimeMillis()).toString();
         } catch (SecurityException denied) {
             return "";
         } catch (Exception error) {
@@ -914,74 +946,79 @@ public class MainActivity extends Activity {
 
     private void syncLifeCompanionToCrewCheckAndWatch(String reason) {
         final String threadName = "crewlife-companion-sync";
+        final long generation;
+        final long work;
+        final long attempt;
+        synchronized (companionFence) {
+            generation = companionGeneration;
+            work = ("watch-proof-continuation".equals(reason) || "watch-legacy-delete-continuation".equals(reason))
+                    ? companionSyncWork.claim() : companionSyncWork.start();
+            if (work == 0) return;
+            attempt = companionSyncWork.attempt();
+        }
         new Thread(() -> {
             try {
                 String raw = readLifeCompanionSummaryInternal();
-                dispatchLifeCompanionSummaryRaw(raw);
-                publishLifeCompanionSummaryToWatch(raw);
+                synchronized (companionFence) {
+                    if (generation != companionGeneration || companionAccountHint.isEmpty() || !companionSyncWork.isAttempt(work, attempt)) return;
+                    dispatchLifeCompanionSummaryRaw(raw);
+                    publishLifeCompanionSummaryToWatch(raw);
+                }
             } catch (Exception ignored) {}
         }, threadName).start();
     }
 
     private void publishLifeCompanionSummaryToWatch(String raw) {
+        final long work = companionSyncWork.current();
+        final long attempt = companionSyncWork.attempt();
         try {
-            if (raw == null || raw.isBlank()) return;
+            if (raw == null || raw.isBlank()) { companionSyncWork.complete(work, attempt); CrewLifeV2Phone.invalidate(this); return; }
             WatchHealthConsent consent = WatchHealthConsent.read(this);
-            if (!consent.allowsAnyHealth() || WatchHealthConsent.isRevocationPending(this)) return;
-
+            if (!consent.allowsAnyHealth() || WatchHealthConsent.isRevocationPending(this)) { companionSyncWork.complete(work, attempt); return; }
             JSONObject source = new JSONObject(raw);
-            if (!source.optBoolean("automatic", false)) return;
-
-            long generatedAt = source.optLong("generatedAtEpochMs", 0L);
-            if (generatedAt <= 0L) return;
-
-            JSONObject payload = new JSONObject();
-            payload.put("schemaVersion", 1);
-            payload.put("generatedAtEpochMs", generatedAt);
-            payload.put("validUntilEpochMs", generatedAt + 6L * 60L * 60L * 1000L);
-            payload.put("recoveryLabel", "DESCONHECIDA");
-
-            int energyScore = source.optInt("energyScore", 0);
-            if (energyScore > 0 && energyScore <= 100) {
-                payload.put("recoveryScore", energyScore);
-                payload.put("scoreKind", "ENERGY");
+            if (!source.optBoolean("automatic", false)
+                    || source.optLong("validUntilEpochMs", 0) <= System.currentTimeMillis()) {
+                companionSyncWork.complete(work, attempt); CrewLifeV2Phone.invalidate(this); return;
             }
-
-            int sleepMinutes = source.optInt("sleepMinutes", 0);
-            if (sleepMinutes > 0 && sleepMinutes <= 24 * 60) {
-                payload.put("sleepMinutes", sleepMinutes);
-                payload.put(
-                        "sleepLabel",
-                        (sleepMinutes / 60) + "h" + String.format(Locale.ROOT, "%02d", sleepMinutes % 60)
-                );
-            }
-
-            int steps = source.optInt("steps", 0);
-            if (steps >= 0 && steps <= 200_000) payload.put("steps", steps);
-
-            int activeMinutes = source.optInt("activeMinutes", 0);
-            if (activeMinutes >= 0 && activeMinutes <= 24 * 60) {
-                payload.put("activeMinutes", activeMinutes);
-            }
-
-            CrewLifeWatchPublisher.publishCrewLife(
-                    this,
-                    payload.toString(),
-                    this::dispatchCrewCheckWatchSyncResult
-            );
-        } catch (Exception ignored) {}
+            // Source filtering already occurred in readLifeCompanionSummaryInternal.
+            // Carry every per-metric deadline to v2; query time never renews a sample.
+            JSONObject payload = CrewLifeV2Protocol.project(source);
+            CrewLifeWatchPublisher.publishCrewLife(this, payload.toString(), (ok, code, message) -> {
+                if (!companionSyncWork.isAttempt(work, attempt)) return;
+                if (java.util.Set.of("peer_cleanup_pending", "cleanup_pending", "peer_unavailable",
+                        "capability_unconfirmed", "legacy_delete_pending", "data_layer_error").contains(code)) {
+                    companionSyncWork.defer(work, attempt);
+                    if ("legacy_delete_pending".equals(code) && companionSyncWork.canResume(work, attempt)) {
+                        // This stage already has peer proof. Retry the failed deletion independently
+                        // of handshake ACKs, under the same bounded operation and owner fence.
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                            synchronized (companionFence) {
+                                if (!companionSyncWork.canResume(work, attempt)) return;
+                                syncLifeCompanionToCrewCheckAndWatch("watch-legacy-delete-continuation");
+                            }
+                        }, 1000L);
+                    }
+                } else companionSyncWork.complete(work, attempt);
+                dispatchCrewCheckWatchSyncResult(ok, code, message);
+            });
+        } catch (Exception invalid) { companionSyncWork.complete(work, attempt); CrewLifeV2Phone.invalidate(this); }
     }
 
     private void dispatchLifeCompanionSummaryRaw(String raw) {
         try {
             if (webView == null) return;
             String safe = raw == null || raw.isBlank() ? "{}" : raw;
+            final long generation;
+            synchronized (companionFence) { generation = companionGeneration; }
             final String js = "(function(){try{var detail=" + safe + ";" +
                     "window.__crewcheckLifeCompanionSummary=detail;" +
                     "window.dispatchEvent(new CustomEvent('crewcheck:life-companion-summary',{detail:detail}));" +
                     "}catch(e){}})();";
             runOnUiThread(() -> {
-                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+                synchronized (companionFence) {
+                    if (generation != companionGeneration) return;
+                    try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+                }
             });
         } catch (Exception ignored) {}
     }
@@ -1174,12 +1211,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean publishWatchCrewLife(final String payloadJson) {
             if (payloadJson == null || payloadJson.trim().isEmpty()) return false;
-            CrewLifeWatchPublisher.publishCrewLife(
-                    MainActivity.this,
-                    payloadJson,
-                    (ok, code, message) -> dispatchCrewCheckWatchSyncResult(ok, code, message)
-            );
-            return true;
+            // A rendered projection is not a request for another source read. Life observes
+            // native summaries and echoes this legacy call; refreshing here would feed back.
+            // The consent-gated native host alone publishes its validated provider results.
+            return false;
         }
 
         @JavascriptInterface
@@ -1216,7 +1251,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean setNotificationCancellationScope(final String accountHint) {
             NotificationLedger ledger = new NotificationLedgerAndroid(MainActivity.this).ledger();
-            if (accountHint != null && accountHint.length() > 512) { ledger.scope(""); return false; }
+            if (accountHint != null && accountHint.length() > 512) {
+                invalidateCompanionOnAccountChange(""); ledger.scope(""); return false;
+            }
+            invalidateCompanionOnAccountChange(accountHint);
             return ledger.scope(accountHint);
         }
 

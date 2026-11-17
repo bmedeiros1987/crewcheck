@@ -10,6 +10,8 @@ function update(path, transform) {
 update('client/src/lib/lifeConcierge.ts', (source) => {
   let next = source;
 
+  // The scoped health cache owns parsing/expiry and must survive canonical preparation.
+  if (!next.includes('lifeHealthCache')) {
   const readPattern = /function readJson<T>\(key: string, fallback: T\): T \{[\s\S]*?\n\}/;
   if (!readPattern.test(next)) throw new Error('[v14313-hardening] readJson não encontrado.');
   next = next.replace(readPattern, `function readJson<T>(key: string, fallback: T): T {
@@ -39,6 +41,8 @@ update('client/src/lib/lifeConcierge.ts', (source) => {
   }
   return null;
 }`);
+
+  }
 
   if (!next.includes('function isLifeQuietTime(')) {
     const anchor = 'export function scheduleLifeRemindersForToday(): number {';

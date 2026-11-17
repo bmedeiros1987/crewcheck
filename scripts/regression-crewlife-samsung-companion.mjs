@@ -113,7 +113,10 @@ assert.doesNotMatch(mobile, /ACTION_LIFE_COMPANION_REFRESH/);
 assert.match(mobile, /getContentResolver\(\)\.call\(/);
 assert.match(mobile, /"refresh"/);
 assert.match(mobile, /CrewLifeWatchPublisher\.publishCrewLife/);
-assert.match(mobile, /scoreKind", "ENERGY"/);
+assert.match(mobile, /CrewLifeV2Protocol\.project\(source\)/);
+const v2Protocol = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewLifeV2Protocol.java');
+assert.match(v2Protocol, /key\.equals\("recoveryScore"\) \? "energyScore" : key/);
+assert.doesNotMatch(v2Protocol, /recommendation|sleepLabel|recoveryLabel/);
 
 assert.match(life, /CrewLife Companion Samsung/);
 assert.match(life, /Samsung Health · automático/);

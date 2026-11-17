@@ -1,0 +1,366 @@
+{
+  "status": "PROPOSAL_ONLY_NOT_PRODUCTION_WIRE",
+  "basedOn": {
+    "wear": "6143f8ae20403c1032c77e0c5454d9cb87dce6dd",
+    "phone1085": "379eb3db812157489147c05cd85727efb7f695b4"
+  },
+  "clock": {
+    "nowEpochMs": 1800000000000,
+    "synthetic": true
+  },
+  "pendingAgreement": [
+    "channel/path/schema names",
+    "capability name and discovery semantics",
+    "metric field mapping energyScore to recoveryScore",
+    "envelope and per-metric expiry handling",
+    "legacy cleanup acknowledgement and retry",
+    "rejection versus unavailable for malformed metric"
+  ],
+  "requirements": {
+    "noFreshnessFromReceiptOrRender": true,
+    "zeroIsAValue": true,
+    "missingIsNotZero": true,
+    "sourceValidityRequired": true,
+    "noIdentityOrRawSeries": true,
+    "noNewAndroidPermissions": true,
+    "healthSyncRemainsOff": true,
+    "oldPeerDefaultsToUnavailable": true
+  },
+  "mixedVersionMatrix": [
+    {
+      "phone": "old",
+      "wear": "old",
+      "expect": "existing_unsafe_behavior_not_fixed_by_this_change",
+      "releaseGate": "block_health_release"
+    },
+    {
+      "phone": "old",
+      "wear": "v2",
+      "expect": "no_proven_health_values_and_clear_legacy_cache"
+    },
+    {
+      "phone": "v2",
+      "wear": "old_or_unknown",
+      "expect": "do_not_publish_v2_health_values_and_clear_legacy_items"
+    },
+    {
+      "phone": "v2",
+      "wear": "v2_capability_confirmed",
+      "expect": "source_valid_metrics_only_after_legacy_cleanup"
+    }
+  ],
+  "cases": [
+    {
+      "id": "absent",
+      "input": {
+        "metric": "recoveryScore",
+        "value": null,
+        "validity": {
+          "state": "no_data",
+          "validUntilEpochMs": 0
+        }
+      },
+      "expected": {
+        "display": "unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "measured_zero",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 0,
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000060000
+        }
+      },
+      "expected": {
+        "display": "available_zero",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "positive",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 78,
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000060000
+        }
+      },
+      "expected": {
+        "display": "available_value",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "expired",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 78,
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1799999999999
+        }
+      },
+      "expected": {
+        "display": "unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "exact_expiry",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 78,
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000000000
+        }
+      },
+      "expected": {
+        "display": "unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "unknown_source_time",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 78,
+        "validity": {
+          "state": "sample_time_unknown",
+          "validUntilEpochMs": 0
+        }
+      },
+      "expected": {
+        "display": "unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "revoked",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 78,
+        "validity": {
+          "state": "revoked",
+          "validUntilEpochMs": 0
+        }
+      },
+      "expected": {
+        "display": "unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "invalid_state",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 78,
+        "validity": {
+          "state": "unexpected",
+          "validUntilEpochMs": 1800000060000
+        }
+      },
+      "expected": {
+        "display": "unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "negative",
+      "input": {
+        "metric": "recoveryScore",
+        "value": -1,
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000060000
+        }
+      },
+      "expected": {
+        "display": "reject_or_unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "fractional_integer_metric",
+      "input": {
+        "metric": "recoveryScore",
+        "value": 1.5,
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000060000
+        }
+      },
+      "expected": {
+        "display": "reject_or_unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "string_number",
+      "input": {
+        "metric": "recoveryScore",
+        "value": "0",
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000060000
+        }
+      },
+      "expected": {
+        "display": "reject_or_unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "missing_validity",
+      "input": {
+        "metric": "steps",
+        "value": 51
+      },
+      "expected": {
+        "display": "unavailable",
+        "reason": "validity_unproven"
+      }
+    },
+    {
+      "id": "missing_value_validity_present",
+      "input": {
+        "metric": "steps",
+        "validity": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000060000
+        }
+      },
+      "expected": {
+        "display": "unavailable"
+      }
+    },
+    {
+      "id": "per_metric_expiry",
+      "input": {
+        "metrics": {
+          "recoveryScore": {
+            "value": 0,
+            "state": "valid",
+            "validUntilEpochMs": 1799999999999
+          },
+          "steps": {
+            "value": 51,
+            "state": "valid",
+            "validUntilEpochMs": 1800000060000
+          }
+        }
+      },
+      "expected": {
+        "recoveryScore": "unavailable",
+        "steps": "51",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "roundtrip_absence",
+      "input": {
+        "metric": "sleepMinutes",
+        "value": null
+      },
+      "expected": {
+        "serializedValue": "omitted_or_explicit_null_as_agreed",
+        "mustNotSerializeZero": true
+      }
+    },
+    {
+      "id": "legacy_cache_migration",
+      "input": {
+        "localCacheVersion": 1,
+        "cachedValue": 78,
+        "cachedExpiry": 1800000060000
+      },
+      "expected": {
+        "clearCrewLifeOnly": true,
+        "preserveOperationalAndRoutine": true,
+        "mustNotReconstructValidity": true
+      }
+    },
+    {
+      "id": "legacy_replay_after_migration",
+      "input": {
+        "wireVersion": 1,
+        "value": 78,
+        "validUntilEpochMs": 1800000060000
+      },
+      "expected": {
+        "display": "unavailable",
+        "mustNotRestoreOldCache": true
+      }
+    },
+    {
+      "id": "valid_then_unavailable",
+      "input": {
+        "deliveries": [
+          "v2_valid_78",
+          "v2_unavailable"
+        ]
+      },
+      "expected": {
+        "display": "unavailable",
+        "mustNotKeepPreviousValue": true
+      }
+    },
+    {
+      "id": "valid_then_revocation",
+      "input": {
+        "deliveries": [
+          "v2_valid_78",
+          "delete_health_item"
+        ]
+      },
+      "expected": {
+        "clearCrewLifeOnly": true,
+        "display": "unavailable"
+      }
+    },
+    {
+      "id": "render_later",
+      "input": {
+        "sourceExpiry": 1800000060000,
+        "renderAt": 1800000120000
+      },
+      "expected": {
+        "display": "unavailable",
+        "renewExpiry": false
+      }
+    },
+    {
+      "id": "foreign_identity_or_raw_series",
+      "input": {
+        "prohibitedKeys": [
+          "ownerId",
+          "email",
+          "heartRateSamples",
+          "sleepStages",
+          "location"
+        ]
+      },
+      "expected": {
+        "reject": true,
+        "mustNotPublish": true
+      }
+    }
+  ],
+  "requiredProductionTests": [
+    "actual parser and serializer",
+    "actual encrypted cache migration and roundtrip",
+    "actual DataLayer replacement deletion and legacy replay",
+    "Activity complication ring accessibility including zero",
+    "expiry while Activity open and AOD",
+    "phone sanitizer to Wear parser integration using agreed fixtures",
+    "mixed version capability cleanup and retry",
+    "operational and routine stores remain unchanged",
+    "Wear unit tests lint and assembleDebug"
+  ],
+  "evidenceLimit": "These are acceptance vectors, not executed production tests; no real health data or APIs."
+}

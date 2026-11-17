@@ -36,6 +36,7 @@ android {
     }
 
     sourceSets {
+        main.java.srcDir "../shared-health/src/main/java"
         main.res.srcDir generatedCrewCheckRes
     }
 
@@ -60,6 +61,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    testOptions { unitTests.includeAndroidResources = true }
 
     lint {
         abortOnError false
@@ -93,6 +96,24 @@ dependencies {
     implementation 'com.google.android.gms:play-services-wearable:20.0.1'
     implementation 'com.google.android.play:app-update:2.1.0'
     implementation 'androidx.webkit:webkit:1.17.1'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'org.mockito:mockito-core:4.11.0'
 }
 
 apply from: rootProject.file('store-policy.gradle')
+
+// Test-only exact receiver inputs. No Wear sources are added to the app/runtime APK.
+def crewLifeReceiverRoot = project.findProperty('crewLifeReceiverRoot')
+if (crewLifeReceiverRoot) {
+    def generatedReceiverTests = layout.buildDirectory.dir('generated/crewlifeReceiverTests')
+    def stageReceiverTests = tasks.register('stageCrewLifeReceiverTests', Copy) {
+        from(new File(crewLifeReceiverRoot, 'android-wrapper/wear/src/main/java/com/crewcheck/watch')) {
+            include 'CrewLifeFence.java', 'CrewLifeSnapshot.java', 'WatchContract.java'
+        }
+        into generatedReceiverTests.map { it.dir('com/crewcheck/watch') }
+    }
+    android.sourceSets.test.java.srcDir generatedReceiverTests
+    android.sourceSets.test.java.srcDir "src/crewlifeLoopTest/java"
+    tasks.withType(JavaCompile).configureEach { if (name.contains('UnitTest')) dependsOn stageReceiverTests }
+}

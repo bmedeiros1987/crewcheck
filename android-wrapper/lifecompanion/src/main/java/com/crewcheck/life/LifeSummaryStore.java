@@ -25,22 +25,23 @@ final class LifeSummaryStore {
 
     private LifeSummaryStore() {}
 
-    static void save(Context context, JSONObject summary) {
-        if (summary == null) return;
+    static boolean save(Context context, JSONObject summary) {
+        if (summary == null) return false;
         try {
             SecretKey key = getOrCreateKey();
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.ENCRYPT_MODE, key);
             byte[] encrypted = cipher.doFinal(summary.toString().getBytes(StandardCharsets.UTF_8));
 
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                     .edit()
                     .putString(KEY_CIPHERTEXT, Base64.encodeToString(encrypted, Base64.NO_WRAP))
                     .putString(KEY_IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
                     .remove(LEGACY_JSON)
-                    .apply();
+                    .commit();
         } catch (Exception ignored) {
             // Fail closed: never persist sensitive summary in plaintext when encryption fails.
+            return false;
         }
     }
 
@@ -68,8 +69,7 @@ final class LifeSummaryStore {
                     .getString(LEGACY_JSON, "");
             if (legacy != null && !legacy.isBlank()) {
                 try {
-                    save(context, new JSONObject(legacy));
-                    return legacy;
+                    return save(context, new JSONObject(legacy)) ? legacy : "";
                 } catch (Exception ignored) {}
             }
         } catch (Exception ignored) {
