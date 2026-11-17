@@ -41,18 +41,24 @@ with patch.dict(os.environ, {'GITHUB_REF':'refs/heads/main','GITHUB_EVENT_NAME':
 
 # Allocation changes only phone version and shared package floor, never Wear/face.
 original=json.loads(Path(__file__).with_name('release-policy.json').read_text())
-with tempfile.TemporaryDirectory() as temp:
-    path=Path(temp)/'policy.json';path.write_text(json.dumps(original));calls=[]
-    def fake_api(session, method, url, **kwargs):
-        calls.append((method,url));return {'id':'test-edit'} if method=='POST' else {}
-    tracks=[track,{'track':'production','releases':[{'status':'completed','versionCodes':['144154']}]}]
-    with patch.object(m,'guard'),patch.object(m,'POLICY',path),patch.object(m,'play_session',return_value=object()),patch.object(m,'api',side_effect=fake_api),patch.object(m,'collect_live_codes',return_value=(tracks,[144150,144151,144154])):
-        m.allocate_offline_contract()
-    result=json.loads(path.read_text())
-    assert result['artifacts']['app']['versionCode']==144155
-    for key in ['wear','watchface']:assert result['artifacts'][key]==original['artifacts'][key]
-    assert calls[-1][0]=='DELETE'
-    assert not any(method=='PUT' or 'watch.app' in url for method,url in calls)
+# Explicit fictional floors keep this fake inventory independent of release bumps.
+# The first case is driven by the fake live inventory; the second by the known floor.
+for floor, expected_floor, expected_code in [(144101,144154,144155),(144159,144159,144160)]:
+    with tempfile.TemporaryDirectory() as temp:
+        fixture_policy=copy.deepcopy(original)
+        fixture_policy['knownMaxVersionCode'][m.PACKAGE]=floor
+        path=Path(temp)/'policy.json';path.write_text(json.dumps(fixture_policy));calls=[]
+        def fake_api(session, method, url, **kwargs):
+            calls.append((method,url));return {'id':'test-edit'} if method=='POST' else {}
+        tracks=[track,{'track':'production','releases':[{'status':'completed','versionCodes':['144154']}]}]
+        with patch.object(m,'guard'),patch.object(m,'POLICY',path),patch.object(m,'play_session',return_value=object()),patch.object(m,'api',side_effect=fake_api),patch.object(m,'collect_live_codes',return_value=(tracks,[144150,144151,144154])):
+            m.allocate_offline_contract()
+        result=json.loads(path.read_text())
+        assert result['knownMaxVersionCode'][m.PACKAGE]==expected_floor
+        assert result['artifacts']['app']['versionCode']==expected_code
+        for key in ['wear','watchface']:assert result['artifacts'][key]==original['artifacts'][key]
+        assert calls[-1][0]=='DELETE'
+        assert not any(method=='PUT' or 'watch.app' in url for method,url in calls)
 
 workflow=Path(__file__).parents[2]/'.github/workflows/mobile-only-internal.yml'
 source=workflow.read_text()

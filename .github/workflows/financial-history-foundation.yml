@@ -11,6 +11,7 @@ on:
       - 'client/src/components/finance/FinancialHistoryExplorer.tsx'
       - 'client/src/components/finance/PersistentFinancialHistory.tsx'
       - 'client/src/components/finance/financial-summary-clarity.css'
+      - 'scripts/regression-allowance-statement-context.mjs'
       - 'scripts/ci/prefer-ubuntu-archive.py'
       - 'scripts/ci/test-prefer-ubuntu-archive.py'
       - 'scripts/ci/test-browser-mirror-coverage.py'
@@ -342,7 +343,9 @@ jobs:
       - name: Verify concise financial summary and currency pending states
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-summary-clarity.mjs
+        run: |
+          node scripts/regression-financial-summary-clarity.mjs
+          node scripts/regression-allowance-statement-context.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
         timeout-minutes: 10
         env:

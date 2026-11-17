@@ -43,6 +43,14 @@ function seed({theme,kind,amount,history,salaryBase,homeMode,language}) {
   localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
 }
 async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+async function assertAllowanceStatementMonth(page,month){
+ const [year,number]=month.split('-').map(Number),last=new Date(Date.UTC(year,number,0)).getUTCDate();
+ const expected=`01/${String(number).padStart(2,'0')}/${year} a ${last}/${String(number).padStart(2,'0')}/${year}`;
+ const summary=page.getByRole('region',{name:'Previsão da escala',exact:true});await summary.waitFor();
+ await page.waitForFunction(expected=>document.querySelector('.cc-statement-summary')?.textContent.includes(expected),expected);
+ const text=await summary.innerText();assert(text.includes(expected),'statement work dates must match the selected civil month');
+ assert.doesNotMatch(text,/Crédito previsto|Dia do voo/,'a selected month must not imply the next-cycle credit date');
+}
 
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
@@ -50,7 +58,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  try{
  for(const width of [390,1440])for(const theme of ['light','dark'])for(const scenario of ['complete','partial','empty']){
   const context=await browser.newContext({viewport:{width,height:1000},serviceWorkers:'block'}),errors=[];
-  await context.addInitScript(()=>{const prefix='crewcheck_financial_calculation_cache_v1:',get=Storage.prototype.getItem,set=Storage.prototype.setItem;globalThis.__financialCacheIo={reads:0,writes:0};Storage.prototype.getItem=function(key){if(String(key).startsWith(prefix))globalThis.__financialCacheIo.reads++;return get.call(this,key);};Storage.prototype.setItem=function(key,value){if(String(key).startsWith(prefix))globalThis.__financialCacheIo.writes++;return set.call(this,key,value);};});
+  await context.addInitScript(()=>{const prefix='crewcheck_financial_calculation_cache_v1:',get=Storage.prototype.getItem,set=Storage.prototype.setItem;globalThis.__financialCacheIo={reads:0,writes:0,writeKeys:[]};Storage.prototype.getItem=function(key){if(String(key).startsWith(prefix))globalThis.__financialCacheIo.reads++;return get.call(this,key);};Storage.prototype.setItem=function(key,value){if(String(key).startsWith(prefix)){globalThis.__financialCacheIo.writes++;globalThis.__financialCacheIo.writeKeys.push(String(key));}return set.call(this,key,value);};});
 
   await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
   const january={...roster('domestic',1),days:Array.from({length:31},(_,i)=>day(String(i+1).padStart(2,'0')+'/01/2032'))};
@@ -126,6 +134,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   const statementEntry=page.getByRole('button',{name:'Extrato',exact:true});await statementEntry.focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelector('.cc-payment-overview').dataset.financialScreen==='statement');
   assert.equal(await page.locator('.cc-per-diem-items').isVisible(),true);assert.equal(await page.locator('.cc-payment-hero').count(),0,'statement is its own screen');
   const selectedMonth=await page.getByLabel('Competência de referência',{exact:true}).inputValue();
+  if(scenario==='complete')await assertAllowanceStatementMonth(page,selectedMonth);
   await showFinancial(page,'charts');assert.equal(await page.locator('.cc-bank-details').isVisible(),true);assert.equal(await page.locator('.cc-per-diem-items').isVisible(),false);
   assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),selectedMonth,'month survives screen navigation');
   await page.waitForFunction(()=>document.querySelector('[data-financial-screen-heading]')===document.activeElement);
@@ -135,7 +144,23 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();assert.equal(await page.locator('.cc-bank-chart-track').count(),0,'hidden chart bars never disclose relative amounts');assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').textContent()));assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').ariaSnapshot()));await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();
   await showFinancial(page,'overview');assert.equal(await page.locator('.cc-payment-value').textContent(),overviewAmount,'return preserves the independent cycle amount');
   await showFinancial(page,'statement');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),selectedMonth);
-  if(scenario==='complete'){await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-01');await showFinancial(page,'charts');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),'2032-01');await showFinancial(page,'overview');assert.equal(await page.locator('.cc-payment-value').textContent(),overviewAmount);await showFinancial(page,'statement');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),'2032-01','chosen non-default month survives back and forward screens');await page.getByLabel('Competência de referência',{exact:true}).selectOption(selectedMonth);}
+  if(scenario==='complete'){
+    await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-01');await assertAllowanceStatementMonth(page,'2032-01');
+    await showFinancial(page,'charts');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),'2032-01');
+    await showFinancial(page,'overview');assert.equal(await page.locator('.cc-payment-value').textContent(),overviewAmount);
+    await showFinancial(page,'statement');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),'2032-01','chosen non-default month survives back and forward screens');await assertAllowanceStatementMonth(page,'2032-01');
+    await page.getByLabel('Competência de referência',{exact:true}).selectOption(selectedMonth);await assertAllowanceStatementMonth(page,selectedMonth);
+    if(width===390&&theme==='light'){
+      await page.reload();await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await page.locator('.cc-home-finance').waitFor();
+      const reopened=await page.evaluate(()=>({io:globalThis.__financialCacheIo,commit:window.__CREWCHECK_BUILD__?.commit}));
+      if(reopened.commit&&!['local','unknown'].includes(reopened.commit)){assert(reopened.io.reads>0,'same-source reopening after selected-period navigation reads saved cache');assert.equal(reopened.io.writes,0,'same-source reopening after selected-period navigation does not recalculate');}
+      else assert.equal(reopened.io.writes,0,'an unidentified build must not persist reusable calculations');
+      await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-overview').waitFor();await showFinancial(page,'overview');await page.locator('.cc-payment-hero').waitFor();
+      await showFinancial(page,'statement');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-01');await assertAllowanceStatementMonth(page,'2032-01');
+      await showFinancial(page,'overview');assert.equal(await page.locator('.cc-payment-value').textContent(),overviewAmount,'reopening does not replace the next-cycle amount with the selected-month amount');
+      await showFinancial(page,'statement');await page.getByLabel('Competência de referência',{exact:true}).selectOption(selectedMonth);await assertAllowanceStatementMonth(page,selectedMonth);
+    }
+  }
   await showFinancial(page,'payment');assert.match(await page.locator('.cc-next-payment-lines').innerText(),/Extrato previsto/);
   const dates=await page.locator('.cc-bank-transaction').evaluateAll(nodes=>nodes.map(node=>node.dataset.financialTransactionDate));assert.deepEqual(dates,[...dates].sort((a,b)=>a.localeCompare(b)),'cycle statement is chronological');
   if(await page.locator('.cc-bank-transaction').count()){const item=page.locator('.cc-bank-transaction').first();await item.locator('summary').click();assert.equal(await item.getAttribute('open'),'');await item.locator('summary').click();}
@@ -190,9 +215,19 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     }
 
   }
+  if(width===390&&theme==='light'&&scenario==='complete'){
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-overview').waitFor();await showFinancial(page,'overview');await page.locator('.cc-payment-hero').waitFor();await showFinancial(page,'statement');
+    await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-02');await assertAllowanceStatementMonth(page,'2032-02');
+    const revealAmounts=page.getByRole('button',{name:'Mostrar valores financeiros',exact:true});if(await revealAmounts.count())await revealAmounts.click();
+    await page.waitForFunction(()=>[...document.querySelectorAll('.cc-statement-summary .cc-payment-value')].some(el=>el.getClientRects().length&&/[0-9]/.test(el.textContent)));
+    assert(await page.locator('.cc-statement-summary .cc-payment-value').evaluateAll(nodes=>nodes.some(el=>el.getClientRects().length&&/[0-9]/.test(el.textContent))),'account-switch counterproof starts with a visible numeric amount owned by account A');
+    await page.evaluate(()=>{globalThis.__financialCacheIo={reads:0,writes:0,writeKeys:[]};window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-other',name:'SYNTHETIC OTHER ACCOUNT',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-other-account');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+    await page.waitForFunction(()=>JSON.parse(localStorage.getItem('crewcheck_auth_user')||'null')?.id==='financial-ui-other'&&[...document.querySelectorAll('.cc-statement-summary .cc-payment-value')].filter(el=>el.getClientRects().length).every(el=>!/[0-9]/.test(el.textContent)));
+    assert(!(await page.evaluate(()=>globalThis.__financialCacheIo.writeKeys)).some(key=>key.startsWith('crewcheck_financial_calculation_cache_v1:financial-ui-qa:')),'another account cannot rewrite the original account cache');
+  }
   assert.deepEqual(errors,[]);await context.close();
  }
- fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({scope:'Compiled production app, synthetic local fixtures only, all external requests blocked, API responses 503',widths:[390,1440],themes:['light','dark'],scenarios:['complete','partial','empty'],checks:['Home card and both destinations','repeated Home/salary navigation','single 44px privacy control','hidden DOM and accessibility','cycle calculation and filter independence','payroll incomplete coverage','keyboard action focus','minimal overview and dedicated statement/chart/payment screens with back/month preservation','category chart per currency','missing versus explicit zero and consumed monthly deductions','monthly gains/deductions/net with week fail-closed','no page overflow or runtime errors']},null,2));
- console.log('PASS next payment actual UI: own eligible-cycle amount, partial/empty, filter independence, Eye/EyeOff DOM/accessibility, keyboard shortcuts, mobile/desktop.');
+ fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({scope:'Compiled production app, synthetic local fixtures only, all external requests blocked, API responses 503',widths:[390,1440],themes:['light','dark'],scenarios:['complete','partial','empty'],checks:['Home card and both destinations','repeated Home/salary navigation','single 44px privacy control','hidden DOM and accessibility','cycle calculation and filter independence','payroll incomplete coverage','keyboard action focus','minimal overview and dedicated statement/chart/payment screens with back/month preservation','category chart per currency','selected civil month versus next-cycle statement dates','same-source cache reopening after selected-period navigation','account-switch statement clearing and cache write owner','missing versus explicit zero and consumed monthly deductions','monthly gains/deductions/net with week fail-closed','no page overflow or runtime errors']},null,2));
+ console.log('PASS next payment actual UI: selected-month statement versus eligible cycle, same-source cache reopening, account switch, partial/empty, filter independence, Eye/EyeOff DOM/accessibility, keyboard shortcuts, mobile/desktop.');
  }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();});
