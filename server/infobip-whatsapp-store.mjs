@@ -4,7 +4,7 @@ import { sealSubscription as seal, openSubscription as open } from './web-push/i
 import { prepareInfobipReply, INFOBIP_REPLY_MAX_AGE_MS, INFOBIP_IDENTIFIER_RETENTION_MS, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
 import {assertInfobipAccountQuiescent,infobipEngineOwner} from './infobip-whatsapp-quiescence.mjs';
-import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
+import {completeCanonicalWhatsAppLink,lockCanonicalWhatsAppOwner} from './whatsapp-link-proof.mjs';
 import {createCipheriv, randomBytes} from 'node:crypto';
 
 // Reuse the existing pool interface and state table. No pool creation, DDL,
@@ -68,8 +68,9 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
       revision: revision(link), consentConcierge: true, revoked: false };
   }
   const transaction = createInfobipSqlBudget(db, sqlBudget);
-  const erase = async (c,email) => {
+  const erase = async (c,email,expectedPublicId) => {
     if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) error();
+    if (expectedPublicId !== undefined) await lockCanonicalWhatsAppOwner(c,email,expectedPublicId);
     await assertInfobipAccountQuiescent(c,email,{checkTable:false});
     await c.query('UPDATE crewcheck_whatsapp_links SET revoked_at=UTC_TIMESTAMP(3),consent_concierge=0,consent_alerts=0,updated_at=UTC_TIMESTAMP(3) WHERE email=?',[email]);
     const [owners] = await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);
@@ -226,8 +227,8 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
       return rows[0]?.state_key.slice(PREFIX.length) || null;
     }),
     async waitForLocalPreparations(email){while(localPreparations.has(email))await Promise.all([...localPreparations.get(email)]);},
-    eraseAccount: (email,{client} = {}) => {
-      if (!client) return transaction(c=>erase(c,email));
+    eraseAccount: (email,{client,expectedPublicId} = {}) => {
+      if (!client) return transaction(c=>erase(c,email,expectedPublicId));
       // Join the caller's account-deletion transaction; never commit/release it.
       // Timeout discards that connection so late work cannot race deletion.
       if(client.dialect !== 'mysql' || typeof client.discard !== 'function') error();
@@ -236,7 +237,7 @@ function buildStore({ db, sender, encryptionKey, linkHashKey, now = Date.now, sq
         async query(sql,params){let index=0;const result=await client.query(sql.replace(/\?/g,()=>`$${++index}`),params);
           return [/^\s*SELECT/i.test(sql)?result.rows:{affectedRows:result.rowCount}];},
       })},sqlBudget);
-      return joined(c=>erase(c,email));
+      return joined(c=>erase(c,email,expectedPublicId));
     },
     // No raw recipient or content is retained for DLR correlation. A callback
     // cannot create a job or schedule a send, nor downgrade a delivered state.

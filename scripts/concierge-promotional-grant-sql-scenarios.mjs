@@ -22,9 +22,9 @@ export async function runPromotionalGrantSqlScenarios({db,transaction,mode,epoch
   assert.equal((await fund()).status,'already-granted');assert.equal((await read(key('account',[p.programId,account]))).availableMicroUsd,12000);
   return ['grant receipt survives actual MySQL restart without resetting consumed balance'];
  }
- await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(160) PRIMARY KEY,public_id VARCHAR(80) NOT NULL,INDEX(public_id)) ENGINE=InnoDB');
- await db.query('CREATE TABLE crewcheck_whatsapp_links(phone_hash CHAR(64) PRIMARY KEY,email VARCHAR(160) NOT NULL,consent_concierge TINYINT NOT NULL,revoked_at DATETIME(3),linked_at DATETIME(3) NOT NULL,updated_at DATETIME(3) NOT NULL,phone_cipher TEXT,consent_alerts TINYINT NOT NULL DEFAULT 0) ENGINE=InnoDB');
- await db.query('CREATE TABLE crewcheck_whatsapp_link_codes(email VARCHAR(160) PRIMARY KEY,code_hash CHAR(64),expires_at DATETIME(3)) ENGINE=InnoDB');
+ await db.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(160) PRIMARY KEY,public_id VARCHAR(80) NOT NULL,UNIQUE(public_id)) ENGINE=InnoDB');
+ await db.query('CREATE TABLE crewcheck_whatsapp_links(phone_hash CHAR(64) PRIMARY KEY,email VARCHAR(160) NOT NULL UNIQUE,consent_concierge TINYINT NOT NULL,revoked_at DATETIME(3),linked_at DATETIME(3) NOT NULL,updated_at DATETIME(3) NOT NULL,phone_cipher TEXT,consent_alerts TINYINT NOT NULL DEFAULT 0) ENGINE=InnoDB');
+ await db.query('CREATE TABLE crewcheck_whatsapp_link_codes(email VARCHAR(160) PRIMARY KEY,code_hash CHAR(64) UNIQUE,expires_at DATETIME(3)) ENGINE=InnoDB');
  await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?)',['grant-owner@synthetic.invalid',owner]);
  await db.query("INSERT INTO crewcheck_whatsapp_links(phone_hash,email,consent_concierge,revoked_at,linked_at,updated_at) VALUES(?,?,1,NULL,'2032-10-24 12:00:00.000','2032-10-24 12:00:00.000')",[phoneHash,'grant-owner@synthetic.invalid']);
  assert.equal((await createPromotionalGrantWriter()()).status,'disabled');
