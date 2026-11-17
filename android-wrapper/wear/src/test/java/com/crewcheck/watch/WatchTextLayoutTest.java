@@ -103,6 +103,12 @@ public class WatchTextLayoutTest {
                         assertTrue("matrix includes the final schedule navigation target",
                                 lastNavigation instanceof TextView
                                         && ((TextView) lastNavigation).getText().toString().contains("Escala"));
+                        for (int i = content.getChildCount() - 4; i < content.getChildCount(); i++) {
+                            TextView navigation = (TextView) content.getChildAt(i);
+                            assertEquals("navigation label stays on one readable line", 1, navigation.getLineCount());
+                            assertEquals("navigation label is not replaced by ellipsis", 0,
+                                    navigation.getLayout().getEllipsisCount(0));
+                        }
                         int available = scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom();
                         if (content.getHeight() > available) {
                             observedOverflow = true;
@@ -117,6 +123,41 @@ public class WatchTextLayoutTest {
             }
         }
         assertTrue("matrix exercises actual overflow, not only fitting screens", observedOverflow);
+    }
+
+    @Test public void nonRoundAmbientClockFitsWithoutScrolling() throws Exception {
+        for (int[] viewport : new int[][]{{192, 192}, {227, 227}, {192, 240}}) {
+            int width = viewport[0], height = viewport[1];
+            RuntimeEnvironment.setQualifiers("w" + width + "dp-h" + height + "dp-notround-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    assertEquals(Configuration.SCREENLAYOUT_ROUND_NO,
+                            activity.getResources().getConfiguration().screenLayout
+                                    & Configuration.SCREENLAYOUT_ROUND_MASK);
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, width, height);
+                    content.removeAllViews();
+                    long now = System.currentTimeMillis();
+                    JSONObject json = WatchContextSnapshot.demo(now).toJson();
+                    json.put("state", "CHANGED").put("headline", LONG_TEXT).put("gate", "B123");
+                    call(activity, "renderAmbient", new Class[]{WatchContextSnapshot.class, long.class},
+                            WatchContextSnapshot.fromJson(json.toString()), now);
+                    measure(scroll, width, height);
+                    assertFits(content);
+                    View last = content.getChildAt(content.getChildCount() - 1);
+                    assertTrue("non-round ambient content fits its vertical budget",
+                            last.getBottom() <= scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom());
+                    TextView clock = field(activity, "ambientClockView", TextView.class);
+                    assertEquals(1, clock.getLineCount());
+                    assertEquals("ambient clock is not replaced by ellipsis", 0,
+                            clock.getLayout().getEllipsisCount(0));
+                }
+            }
+        }
     }
 
     @Test public void longOperationalTextAndButtonsFitSmallRoundScreens() throws Exception {
