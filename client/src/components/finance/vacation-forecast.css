@@ -29,3 +29,20 @@ html body :is([data-vacation-forecast], [data-thirteenth-forecast]) input[type=c
   margin: 8px 8px 8px 0 !important;
   vertical-align: middle;
 }
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) .cc-forecast-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) .cc-forecast-draft-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+}
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) [data-forecast-draft-controls] svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
