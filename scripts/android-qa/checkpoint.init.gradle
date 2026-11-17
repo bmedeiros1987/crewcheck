@@ -1,6 +1,9 @@
-// Explicit opt-in only: gradle -I ../scripts/android-qa/checkpoint.init.gradle :app:assembleCheckpointQa
+// Explicit opt-in only: gradle -I ../scripts/android-qa/checkpoint.init.gradle -Pandroid.builder.sdkDownload=false :app:assembleCheckpointQa
 // Does not modify production sources or create signing credentials.
 gradle.beforeProject { p ->
+    if (p.path == ':app' && p.findProperty('android.builder.sdkDownload')?.toString() != 'false') {
+        throw new GradleException('QA requires -Pandroid.builder.sdkDownload=false; no automatic SDK downloads')
+    }
     if (p.path == ':app') p.plugins.withId('com.android.application') {
         def qaRoot = new File(p.rootDir, '../scripts/android-qa/native').canonicalFile
         // Caller supplies a QA-only key in an OS temporary directory. Never create one implicitly.

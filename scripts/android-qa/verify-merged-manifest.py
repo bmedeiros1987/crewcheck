@@ -7,6 +7,7 @@ def require(condition, message='unsafe manifest'):
 def verify(text):
     root=E.fromstring(text)
     require(root.get('package')=='com.crewcheck.app.qacheckpoint', 'unexpected package')
+    require(not any(root.findall(t) for t in ['permission','permission-group','permission-tree']), 'unexpected permission definition')
     permissions=[e.get(A+'name') for e in root.findall('uses-permission')]
     require(permissions==['android.permission.INTERNET'], 'unexpected permissions')
     require(not root.findall('uses-permission-sdk-23'), 'unexpected SDK permissions')

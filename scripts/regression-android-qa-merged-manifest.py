@@ -14,4 +14,12 @@ for candidate in bad_extra:
     try:m.verify(candidate)
     except ValueError:pass
     else:raise AssertionError('unsafe artifact accepted')
-print('PASS QA merged-manifest checker: 1 synthetic valid, 11 unsafe refused; no actual manifest/SDK claim')
+for definition in [
+ '<permission android:name="com.crewcheck.app.qacheckpoint.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" android:protectionLevel="signature"/>',
+ '<permission android:name="arbitrary" android:protectionLevel="normal"/>',
+ '<permission-group android:name="arbitrary"/>',
+ '<permission-tree android:name="arbitrary"/>']:
+    try:m.verify(xml.replace('</manifest>',definition+'</manifest>'))
+    except ValueError:pass
+    else:raise AssertionError('permission definition accepted')
+print('PASS QA merged-manifest checker: 1 synthetic valid, 15 unsafe refused; no actual manifest/SDK claim')
