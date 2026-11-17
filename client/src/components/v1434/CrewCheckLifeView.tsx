@@ -201,12 +201,7 @@ function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }
       // No request/account-bound native response protocol exists yet; never adopt a broadcast.
       if (!lifeSession.isCurrent()) return;
     };
-    const onActionMessage = (event: Event) => {
-      if (!lifeSession.isCurrent()) return;
-      const detail = parseNativePayload((event as CustomEvent).detail);
-      const message = String(detail.message || '').trim();
-      if (message) toast.error(message);
-    };
+
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
     if (consent.active && nativeHealthEnabled) postAndroid('status');

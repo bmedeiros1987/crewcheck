@@ -20,7 +20,7 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
     next = next.replace(anchor, `${anchor}\nimport LifeConciergePanel from '@/components/v14313/LifeConciergePanel';\nimport { clearLifeConciergeData, ingestHealthSummary, ingestManualSummary, saveLifeGoals } from '@/lib/lifeConcierge';`);
   }
 
-  if (!next.includes('ingestHealthSummary(detail);')) {
+  if (!next.includes('ingestHealthSummary(detail);') && !next.includes('No request/account-bound native response protocol exists yet; never adopt a broadcast.')) {
     const anchor = '      if (detail.ok) writeStored(KEYS.nativeSummary, detail);';
     if (!next.includes(anchor)) throw new Error('[v14313] Âncora do resumo nativo não encontrada.');
     next = next.replace(anchor, `      if (detail.ok) {\n        writeStored(KEYS.nativeSummary, detail);\n        ingestHealthSummary(detail);\n      }`);

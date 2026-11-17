@@ -83,6 +83,7 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
       throw new Error('[v14312] Âncoras de eventos da tela CrewCheck Life não encontradas.');
     }
     next = next.replace(addAnchor, `    const onActionMessage = (event: Event) => {
+      ${next.includes('const lifeSession =') ? 'if (!lifeSession.isCurrent()) return;' : ''}
       const detail = parseNativePayload((event as CustomEvent).detail);
       const message = String(detail.message || '').trim();
       if (message) toast.error(message);
