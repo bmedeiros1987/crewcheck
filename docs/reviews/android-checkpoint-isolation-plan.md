@@ -173,3 +173,17 @@ Reported evidence:
 - No automatic SDK download was observed. No install, app launch or production access was performed.
 
 These observations improve build/manifest/signing evidence for **ac2d31a3 only**. They do not establish isolation during runtime or native save/reopen. HOLD remains for installation/runtime: verify reviewed synthetic UI identity and loopback server, network/fallback containment, SAF file delivery, cancellation/repetition/navigation/recreation and content-URI behavior on the approved emulator before considering broader QA. No merge or deployment is requested by this evidence record.
+
+## Limited emulator runtime evidence reported by coordinator
+
+After Bruno released the emulator for testing, coordinator reports running the previously validated **ac2d31a3** APK (SHA256 `943680173A2A9C7B8A037AABE314A3F4445F442572EE14EC566915FF515E0DDB`) on `emulator-5554`. Only the separate QA package was installed, after verifying it was absent. This executor did not operate that emulator or independently inspect the runtime capture. The tested page was a dedicated synthetic transport fixture, **not the complete CrewCheck application**, and used no real account or roster.
+
+Observed in that bounded fixture:
+- WebView refused an external fetch to `https://example.invalid`, Service Worker and WebSocket; reported CSP violation events identified `connect-src`/`worker-src`. Local API GET returned503 and POST405. These are selected requests, not a complete network audit.
+- SAF saved `crewcheck-qa-roster-checkpoint.json` (212 bytes) containing only a synthetic October/November BSB/GRU/CGH fixture. Selecting it again reported `equal:true, synthetic:true` with `allowContentAccess=false` unchanged. This closes the simple synthetic read-back question for this artifact/scenario, not general checkpoint restoration or Android-version coverage.
+- Cancelling the open picker then opening again worked.
+- Removing the local server and restarting QA left a blank page within the QA package; no production UI was observed. A blank page alone does not prove absence of network/fallback attempts or good recovery UX.
+
+Not exercised: rotation/process death during picker, write errors, redirects/external intents, full application startup/checkpoint semantics, broader network/fallback behavior, real accounts or physical devices. No safe-runtime-complete or backup/restoration claim is made. HOLD remains for that missing coverage and integration review; this report authorizes neither merge, deployment nor production testing.
+
+Coordinator cleanup: stopped only the QA server and QA process, removed ADB reverse17347, left emulator at Home and Chrome intact. QA package and the synthetic JSON intentionally remain for reproduction. No real data was removed. Do not uninstall, clear data or overwrite those remaining artifacts without coordination. Earlier “no install/runtime” entries describe earlier checkpoints; they are superseded only for this specifically reported limited QA fixture run.
