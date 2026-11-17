@@ -1,3 +1,5 @@
+import {startCanonicalWhatsAppChallenge,completeCanonicalWhatsAppLink,canonicalWhatsAppChallengeKey} from '../server/whatsapp-link-proof.mjs';
+import {runLinkIdentityMysqlScenarios} from './whatsapp-link-identity-mysql-scenarios.mjs';
 import {createInfobipSendAdmission} from '../server/infobip-whatsapp-admission.mjs';
 import {preflightInfobipWhatsAppStorage} from '../server/infobip-whatsapp-preflight.mjs';
 import {EventEmitter} from 'node:events';
@@ -24,6 +26,7 @@ import {configureSyntheticOperationalPilot} from './fixtures/infobip-operational
 import {seedSyntheticPilotRenewalLedger} from './fixtures/infobip-pilot-renewal-sql.mjs';
 
 export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock}) {
+ await runLinkIdentityMysqlScenarios({run,db,reset,email,owner,make,event,eventKey,recipient,password,salt,epoch});
  const packet=item=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
  const raw=async()=>{const [r]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);return typeof r[0]?.payload==='string'?JSON.parse(r[0].payload):r[0]?.payload;};
  const configuration={sender,encryptionKey:key,linkHashKey:salt,webhookUsername:'synthetic',webhookPassword:password,baseUrl:'https://synthetic.api.infobip.com',apiKey:'synthetic-api-key-not-real'};
@@ -121,14 +124,14 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
    const source=fs.readFileSync(new URL('../server/whatsapp.mjs',import.meta.url),'utf8');
    const start=source.slice(source.indexOf('async function handleLinkStart('),source.indexOf('\nasync function handleLinkStatus('));
    let code,authorized=0,sent=0,scheduled,cleared=0;
-   const ctx={requireIdentity:async req=>{authorized++;return req.identity;},readJsonBody:async req=>req.body,
+   const ctx={createInfobipSqlBudget,startCanonicalWhatsAppChallenge,requireExistingIdentity:async req=>{authorized++;return req.identity;},readJsonBody:async req=>req.body,
      ensureWhatsAppTables:async()=>db,auditSecret:()=>salt,LINK_TTL_MINUTES:10,crypto:{randomInt:()=>654321},
      linkCodeHash:value=>createHmac('sha256',salt).update(`crewcheck-whatsapp-link|${value}`).digest('hex'),
      normalizePhone:value=>value,businessNumber:()=>sender,sendJson:(_res,status,payload)=>{code=payload.code;return {status,payload};}};
    vm.createContext(ctx);vm.runInContext(start,ctx);
    await ctx.handleLinkStart({method:'POST',identity:null,body:{consentConcierge:true}},{});
-   assert.equal((await ctx.handleLinkStart({method:'POST',identity:{email},body:{consentConcierge:false}},{})).status,400);
-   assert.equal((await ctx.handleLinkStart({method:'POST',identity:{email},body:{consentConcierge:true}},{})).status,200);
+   assert.equal((await ctx.handleLinkStart({method:'POST',identity:{email,db,profile:{public_id:owner}},body:{consentConcierge:false}},{})).status,400);
+   assert.equal((await ctx.handleLinkStart({method:'POST',identity:{email,db,profile:{public_id:owner}},body:{consentConcierge:true}},{})).status,200);
    assert.equal(authorized,3);assert.equal(code,'654321');
    const runtime=createInfobipWhatsAppRuntime({enabled:true,db,configuration,now:()=>epoch,
      scheduler:{set:fn=>{scheduled=fn;return 1;},clear:()=>{cleared++;}},concierge:async()=>assert.fail('link confirmation must not call engine'),
@@ -151,7 +154,8 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
      const target=scenario==='conflict'?'other@example.invalid':email;
      if(scenario==='conflict')await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?,NOW(3))',[target,'synthetic-other-owner']);
      const codeHash=createHmac('sha256',salt).update('crewcheck-whatsapp-link|654321').digest('hex');
-     await db.query(`INSERT INTO crewcheck_whatsapp_link_codes(email,code_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL ${scenario==='expired'?-1:10} MINUTE))`,[target,codeHash]);
+     await createInfobipSqlBudget(db)(c=>startCanonicalWhatsAppChallenge(c,{email:target,publicId:scenario==='conflict'?'synthetic-other-owner':owner,codeHash}));
+     if(scenario==='expired')await db.query('UPDATE crewcheck_whatsapp_link_codes SET expires_at=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 MINUTE) WHERE email=?',[target]);
      const {receive}=make();
      if(scenario==='rate')for(let i=0;i<5;i++)assert.equal((await receive(packet({...event,messageId:'synthetic-bad-'+i,message:{type:'TEXT',text:'000000'}}))).denied,1);
      assert.equal((await receive(packet({...event,message:{type:'TEXT',text:'654321'}}))).denied,1);
@@ -161,7 +165,7 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
  await run('handshake-only production commits proof and fences prior held paid work under InnoDB recreation without reply or quota',async()=>{
    await reset();await db.query('DELETE FROM crewcheck_whatsapp_links');
    const code='654321',codeHash=createHmac('sha256',salt).update('crewcheck-whatsapp-link|'+code).digest('hex');
-   await db.query('INSERT INTO crewcheck_whatsapp_link_codes(email,code_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 10 MINUTE))',[email,codeHash]);
+   await createInfobipSqlBudget(db)(c=>startCanonicalWhatsAppChallenge(c,{email,publicId:owner,codeHash}));
    let calls=0,engineCalls=0;
    configureWhatsAppConcierge(async()=>{engineCalls++;return 'SYNTHETIC';});
    const publicOrigin='https://crewcheck.example.invalid',baseUrl='https://synthetic.api.infobip.com';
@@ -305,14 +309,16 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
  });
  await run('account erase joins actual platform transaction and rolls back atomically',async()=>{
    await reset();await make().receive(packet(event));
+   await createInfobipSqlBudget(db)(c=>startCanonicalWhatsAppChallenge(c,{email,publicId:owner,codeHash:'d'.repeat(64)}));
+   const fenceKey=canonicalWhatsAppChallengeKey(owner);
    const runtime=createInfobipWhatsAppRuntime({enabled:true,db,configuration,now:()=>epoch,scheduler:{set:()=>1,clear(){}},concierge:async()=>assert.fail(),request:async()=>assert.fail()});
    const client=await mysqlAdapter(db).connect();
    try{
      await client.query('BEGIN');await eraseWhatsAppAccountState(email,{client});
      const erased=await client.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=$1',[stateKey]);assert.equal(erased.rows[0].payload.sealed,null);
-     await client.query('ROLLBACK');assert((await raw()).sealed);
+     await client.query('ROLLBACK');assert((await raw()).sealed);assert.equal((await db.query('SELECT state_key FROM crewcheck_telegram_state WHERE state_key=?',[fenceKey]))[0].length,1);
      await client.query('BEGIN');await eraseWhatsAppAccountState(email,{client});await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1',[email]);await client.query('COMMIT');
-     assert.equal((await raw()).sealed,null);assert.equal((await raw()).ownerHash,null);assert.equal((await make().receive(packet(event))).denied,1);
+     assert.equal((await db.query('SELECT state_key FROM crewcheck_telegram_state WHERE state_key=?',[fenceKey]))[0].length,0);assert.equal((await raw()).sealed,null);assert.equal((await raw()).ownerHash,null);assert.equal((await make().receive(packet(event))).denied,1);
    }finally{client.release();await runtime.dispose();}
  });
 }

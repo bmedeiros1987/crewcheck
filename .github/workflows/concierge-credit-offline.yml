@@ -23,6 +23,7 @@ on:
       - 'docs/concierge-shared-credit-sql-off.md'
       - 'docs/concierge-finite-dispatch-off.md'
       - 'docs/concierge-finite-caller-off.md'
+      - 'docs/concierge-finite-cohort-off.md'
       # Canonical preparation imports versioned and non-versioned scripts;
       # this also includes the actual-store regression and shared SQL fixture.
       - 'scripts/**'
@@ -50,6 +51,8 @@ jobs:
         run: node scripts/regression-concierge-promotional-admission.mjs
       - name: Finite gate through actual dispatchAttempt, synthetic I/O only
         run: node scripts/regression-concierge-finite-dispatch-off.mjs
+      - name: Finite cohort max8 and production caller, synthetic I/O only
+        run: node scripts/regression-concierge-finite-cohort.mjs
       - name: Real isolated InnoDB, concurrency and restart without networking
         run: bash scripts/regression-concierge-credit-mysql-ci.sh
       # Keep the owned MySQL runner above preparation: it requires a clean tree.
@@ -58,5 +61,6 @@ jobs:
       - name: Prepared finite dispatch and existing credit/admission contracts
         run: |
           node scripts/regression-concierge-finite-dispatch-off.mjs
+          node scripts/regression-concierge-finite-cohort.mjs
           node scripts/regression-concierge-promotional-admission.mjs
           node scripts/regression-concierge-shared-credit-candidate.mjs
