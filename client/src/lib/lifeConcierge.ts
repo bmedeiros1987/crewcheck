@@ -640,10 +640,9 @@ export function shareGymCheckInText(gymName = ''): string {
   return `Check-in CrewCheck Life: cheguei ${label}. Hoje o objetivo é começar e respeitar meu ritmo. ✈️`;
 }
 
-export function clearLifeConciergeData() {
-  if (!storageAvailable()) return;
-  Object.values(KEYS).filter((key) => ![KEYS.nativeSummary, KEYS.companionSummary, KEYS.profile].includes(key)).forEach((key) => {
-    try { removeLifeAccountValue(key); } catch {}
-  });
+export function clearLifeConciergeData(): boolean {
+  if (!storageAvailable()) return false;
+  const removed = Object.values(KEYS).map(key=>removeLifeAccountValue(key)).every(Boolean);
   window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { cleared: true } }));
+  return removed;
 }

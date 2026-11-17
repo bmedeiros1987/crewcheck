@@ -1,3 +1,6 @@
+import {withLifeAccountBoundary} from '@/components/life/LifeAccountBoundary';
+import {captureAuthSession} from '@/lib/authClient';
+import {useRef} from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BellRing,
@@ -76,7 +79,8 @@ function elapsedLabel(active: ActiveSession, tick: number): string {
   return durationLabel(elapsed);
 }
 
-export default function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgram?: NextProgram | null; healthSummary?: HealthSummary; profile?: LifeProfile }) {
+function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgram?: NextProgram | null; healthSummary?: HealthSummary; profile?: LifeProfile }) {
+  const lifeSession = useRef(captureAuthSession()).current;
   const [preferences, setPreferences] = useState<LifeAdaptivePreferences>(() => getLifeAdaptivePreferences());
   const [context, setContext] = useState<LifeRoutineContext>(() => getLifeRoutineContext());
   const [activeSession, setActiveSession] = useState<ActiveSession>(() => getActiveLifeSession());
@@ -87,13 +91,14 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   const [tick, setTick] = useState(Date.now());
 
   const refresh = useCallback(() => {
+    if (!lifeSession.isCurrent()) return;
     setPreferences(getLifeAdaptivePreferences());
     setContext(getLifeRoutineContext());
     setActiveSession(getActiveLifeSession());
   }, []);
 
   useEffect(() => {
-    const listener = () => refresh();
+    const listener = () => { if (lifeSession.isCurrent()) refresh(); };
     window.addEventListener('crewcheck:life-adaptive-update', listener);
     window.addEventListener('crewcheck:health-summary', listener);
     window.addEventListener('storage', listener);
@@ -110,12 +115,14 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   const recommendation = useMemo(() => buildLifeConciergeRecommendation(nextProgram), [context, nextProgram, tick]);
 
   function registerHydration() {
+    if (!lifeSession.isCurrent()) return;
     recordHydration(preferences.hydrationPortionMl);
     refresh();
     toast.success(`${preferences.hydrationPortionMl} ml registrados. O concierge ajustará o restante do dia.`);
   }
 
   function toggleSession(type: 'study' | 'exercise' | 'leisure') {
+    if (!lifeSession.isCurrent()) return;
     if (activeSession) {
       if (activeSession.type !== type) {
         toast.info('Finalize a atividade em andamento antes de iniciar outra.');
@@ -133,6 +140,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   async function gymCheckIn() {
+    if (!lifeSession.isCurrent()) return;
     const name = gymName.trim() || 'Academia';
     recordGymCheckIn(name, preferences.shareGymCheckins);
     recordLifeEvent({ type: 'exercise', status: 'completed', source: 'gym-checkin', durationMinutes: 0, note: `Check-in em ${name}` });
@@ -150,6 +158,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function savePreferences() {
+    if (!lifeSession.isCurrent()) return;
     const saved = saveLifeAdaptivePreferences(preferences);
     setPreferences(saved);
     setContext(getLifeRoutineContext());
@@ -157,6 +166,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function scheduleReminders() {
+    if (!lifeSession.isCurrent()) return;
     const count = scheduleLifeRemindersForToday();
     const native = (window as any).CrewCheckNative || (window as any).AndroidCrewCheckNative;
     if (typeof native?.scheduleNotification === 'function') {
@@ -281,3 +291,5 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
     <footer className="cc-life-ai-privacy"><HeartHandshake/><p><strong>Assistente de rotina, não avaliação médica.</strong> O aprendizado usa resumos e registros locais. A escala, o deslocamento e o descanso têm prioridade; dados brutos do relógio não são copiados para o servidor.</p></footer>
   </section>;
 }
+
+export default withLifeAccountBoundary(LifeConciergePanel);

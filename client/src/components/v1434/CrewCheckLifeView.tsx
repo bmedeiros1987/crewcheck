@@ -1,3 +1,8 @@
+import {clearLifeConciergeData} from '@/lib/lifeConcierge';
+import {readLifeAccountJson,writeLifeAccountJson,removeLifeAccountValue} from '@/lib/lifeAccountStorage';
+import {withLifeAccountBoundary} from '@/components/life/LifeAccountBoundary';
+import {captureAuthSession} from '@/lib/authClient';
+import {useRef} from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -107,18 +112,8 @@ const DEFAULT_MANUAL: ManualSummary = {
   updatedAt: '',
 };
 
-function readStored<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStored(key: string, value: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
+function readStored<T>(key: string, fallback: T): T { return readLifeAccountJson(key, fallback); }
+function writeStored(key: string, value: unknown) { writeLifeAccountJson(key,value); }
 
 function parseNativePayload(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object') return value as Record<string, unknown>;
@@ -154,7 +149,8 @@ function integrationLabel(status: NativeHealthStatus): string {
   return 'Aguardando app Android';
 }
 
-export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }) {
+function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }) {
+  const lifeSession = useRef(captureAuthSession()).current;
   const [consent, setConsent] = useState<LifeConsent>(() => readStored(KEYS.consent, { active: false, acceptedAt: '', policyVersion: '1.0' }));
   const [consentChecked, setConsentChecked] = useState(false);
   const [profile, setProfile] = useState<LifeProfile>(() => {
@@ -200,11 +196,16 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   useEffect(() => {
-    const onStatus = (event: Event) => setNativeStatus(parseNativePayload((event as CustomEvent).detail) as NativeHealthStatus);
-    const onSummary = (event: Event) => {
-      const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
-      setNativeSummary(detail);
-      if (detail.ok) writeStored(KEYS.nativeSummary, detail);
+    const onStatus = (event: Event) => lifeSession.isCurrent() && setNativeStatus(parseNativePayload((event as CustomEvent).detail) as NativeHealthStatus);
+    const onSummary = (_event: Event) => {
+      // No request/account-bound native response protocol exists yet; never adopt a broadcast.
+      if (!lifeSession.isCurrent()) return;
+    };
+    const onActionMessage = (event: Event) => {
+      if (!lifeSession.isCurrent()) return;
+      const detail = parseNativePayload((event as CustomEvent).detail);
+      const message = String(detail.message || '').trim();
+      if (message) toast.error(message);
     };
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
@@ -218,45 +219,19 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   useEffect(() => {
     const native = (window as any).AndroidCrewCheckNative;
     const readCompanion = () => {
+      if (!lifeSession.isCurrent()) return;
       try {
         const statusRaw = native?.lifeCompanionStatus?.();
         const status = typeof statusRaw === 'string' ? JSON.parse(statusRaw) : (statusRaw || {});
         setCompanionStatus(status);
-        const summaryRaw = native?.readLifeCompanionSummary?.();
-        const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : (summaryRaw || {});
-        if (summary && typeof summary === 'object' && summary.automatic) {
-          const normalized = { ...summary, ok: true, source: 'samsung_health' };
-          setCompanionSummary(normalized);
-          try {
-            localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
-              ...normalized,
-              capturedAt: Number(normalized.generatedAtEpochMs) > 0
-                ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-                : new Date().toISOString(),
-              source: 'samsung-companion',
-            }));
-            window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
-          } catch {}
-        }
+        setCompanionStatus({...status,state:'unverified_account'});
+        // Device-wide cached summaries have no account/request provenance. Do not read or adopt them.
       } catch {}
     };
-    const onCompanion = (event: Event) => {
-      const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
-      if (detail && detail.automatic) {
-        const normalized = { ...detail, ok: true, source: 'samsung_health' };
-        setCompanionSummary(normalized);
-        setCompanionStatus((current) => ({ ...current, installed: true, state: 'connected', automatic: true }));
-        try {
-          localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
-            ...normalized,
-            capturedAt: Number(normalized.generatedAtEpochMs) > 0
-              ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-              : new Date().toISOString(),
-            source: 'samsung-companion',
-          }));
-          window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
-        } catch {}
-      }
+    const onCompanion = (_event: Event) => {
+      if (!lifeSession.isCurrent()) return;
+      // A broadcast without a request-scoped account capability cannot supply personal history.
+      setCompanionStatus(current=>({...current,state:'unverified_account'}));
     };
     readCompanion();
     window.addEventListener('crewcheck:life-companion-summary', onCompanion);
@@ -289,7 +264,9 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       && Number.isFinite(companionAgeMs)
       && companionAgeMs >= 0
   );
-  const companionStateLabel = automaticSamsung
+  const companionStateLabel = companionStatus.state === 'unverified_account'
+    ? 'Resumo automático sem vínculo confirmado com esta conta'
+    : automaticSamsung
     ? 'Samsung Health conectado · automático'
     : companionMigrationRequired
       ? 'Companion antigo · migrar para a versão oficial'
@@ -315,6 +292,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
           : '';
 
   function openCompanionStore() {
+    if (!lifeSession.isCurrent()) return;
     const native = (window as any).AndroidCrewCheckNative;
     try {
       if (native?.openLifeCompanionStore?.()) return;
@@ -328,6 +306,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function migrateCompanionToOfficialPlay() {
+    if (!lifeSession.isCurrent()) return;
     const native = (window as any).AndroidCrewCheckNative;
     try {
       if (native?.migrateLifeCompanionToPlay?.()) {
@@ -416,6 +395,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }, [metrics, nextProgram, profile]);
 
   function activateLife() {
+    if (!lifeSession.isCurrent()) return;
     if (!consentChecked) return;
     const next: LifeConsent = { active: true, acceptedAt: new Date().toISOString(), policyVersion: '1.0' };
     setConsent(next);
@@ -424,6 +404,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function saveProfile() {
+    if (!lifeSession.isCurrent()) return;
     const safe: LifeProfile = {
       ...profile,
       sleepTarget: Math.min(12, Math.max(1, numberOrZero(profile.sleepTarget) || 7.5)),
@@ -436,6 +417,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function saveManual() {
+    if (!lifeSession.isCurrent()) return;
     const safe: ManualSummary = {
       sleepHours: Math.min(24, numberOrZero(manual.sleepHours)),
       steps: Math.min(200000, Math.round(numberOrZero(manual.steps))),
@@ -450,18 +432,21 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function connectAndroid() {
+    if (!lifeSession.isCurrent()) return;
     if (!postAndroid('requestPermissions', { consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('Abra esta opção no aplicativo Android CrewCheck. No navegador, use o lançamento manual.');
     }
   }
 
   function refreshAndroid() {
+    if (!lifeSession.isCurrent()) return;
     if (!postAndroid('readSummary', { days: 7, consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('A atualização automática está disponível no aplicativo Android.');
     }
   }
 
   function setWatchMirror(enabled: boolean) {
+    if (!lifeSession.isCurrent()) return;
     const bridge = (window as any).AndroidCrewCheckNative;
     if (!bridge?.setWatchLifeConsent) {
       toast.info('O espelhamento do CrewLife está disponível no aplicativo Android CrewCheck.');
@@ -480,6 +465,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function connectApple() {
+    if (!lifeSession.isCurrent()) return;
     if (!appleBridge) {
       toast.info('Apple Health será liberado junto com o aplicativo nativo iOS. O modo manual já funciona no iPhone e iPad.');
       return;
@@ -488,15 +474,17 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function revokeNative() {
+    if (!lifeSession.isCurrent()) return;
     postAndroid('revokePermissions');
     try { appleBridge?.postMessage({ action: 'revokeOrOpenSettings' }); } catch {}
     setNativeSummary({});
     setNativeStatus({ availability: androidBridge?.postMessage ? 'permission_required' : 'unavailable' });
-    try { localStorage.removeItem(KEYS.nativeSummary); } catch {}
+    try { removeLifeAccountValue(KEYS.nativeSummary); } catch {}
     toast.success('Resumo local removido. A revogação do sistema foi solicitada quando disponível.');
   }
 
   function pauseLife() {
+    if (!lifeSession.isCurrent()) return;
     const next = { ...consent, active: false };
     setConsent(next);
     writeStored(KEYS.consent, next);
@@ -504,16 +492,21 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function deleteLife() {
-    if (!window.confirm('Apagar consentimento, objetivos e todos os resumos locais do CrewCheck Life neste aparelho?')) return;
+    if (!lifeSession.isCurrent()) return;
+    if (!window.confirm('Apagar os dados locais do CrewCheck Life desta conta? Registros antigos sem conta ficam preservados.')) return;
+    if (!lifeSession.isCurrent()) return;
     postAndroid('revokePermissions');
-    Object.values(KEYS).forEach((key) => { try { localStorage.removeItem(key); } catch {} });
+    if (!lifeSession.isCurrent()) return;
+    const removed = Object.values(KEYS).map(key=>removeLifeAccountValue(key)).every(Boolean);
+    const routineRemoved = clearLifeConciergeData();
     setConsent({ active: false, acceptedAt: '', policyVersion: '1.0' });
     setProfile(DEFAULT_PROFILE);
     setManual(DEFAULT_MANUAL);
     setNativeSummary({});
     setNativeStatus({});
     setConsentChecked(false);
-    toast.success('Dados locais do CrewCheck Life apagados.');
+    if (removed && routineRemoved) toast.success('Dados locais desta conta apagados.');
+    else toast.error('Não foi possível confirmar toda a remoção local. Tente novamente.');
   }
 
   if (!consent.active) {
@@ -633,3 +626,5 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     </section>
   </section>;
 }
+
+export default withLifeAccountBoundary(CrewCheckLifeView);
