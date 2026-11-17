@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { hasCanonicalTelegramLocationRoute } from './telegram-route-marker.mjs';
 
 const VERSION = '13.9.6';
 const NAME = 'crewcheck-v13-9-6-infobip-premium-calls';
@@ -11,7 +12,7 @@ function requireMarker(path, marker) {
 }
 function requireAnyMarker(path, markers) {
   const source = read(path);
-  if (!markers.some((marker) => source.includes(marker))) {
+  if (!markers.some((marker) => source.includes(marker)) && !hasCanonicalTelegramLocationRoute(source)) {
     throw new Error(`v${VERSION}: nenhum marcador compatível encontrado em ${path}: ${markers.join(' | ')}`);
   }
 }
