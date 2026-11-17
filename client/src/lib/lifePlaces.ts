@@ -76,6 +76,7 @@ export async function requestLifeLocation(options: PositionOptions = {}): Promis
   };
   writeJson(LOCATION_KEY, location);
   window.dispatchEvent(new CustomEvent('crewcheck:life-location-update', { detail: location }));
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   void reverseGeocodeLifeLocation(location).catch(() => null);
   return location;
 }
@@ -91,6 +92,7 @@ export async function reverseGeocodeLifeLocation(location: LifeCoordinates): Pro
   const label = String(payload.shortAddress || payload.address || 'Localização atual');
   writeJson(LOCATION_LABEL_KEY, { shortAddress: label, address: payload.address, city: payload.city, state: payload.state, capturedAt: new Date().toISOString() });
   window.dispatchEvent(new CustomEvent('crewcheck:life-location-label-update', { detail: { label } }));
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   return label;
 }
 
