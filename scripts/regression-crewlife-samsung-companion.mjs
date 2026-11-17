@@ -118,15 +118,20 @@ assert.match(mobile, /scoreKind", "ENERGY"/);
 assert.match(life, /CrewLife Companion Samsung/);
 assert.match(life, /Samsung Health · automático/);
 assert.match(life, /Companion antigo · migrar para a versão oficial/);
-assert.match(life, /Migrar para versão oficial/);
-assert.match(life, /Baixar na Play Store/);
+assert.match(life, /disabled=\{companionMigrationRequired\}/);
+assert.match(life, /Integração indisponível/);
+assert.doesNotMatch(life, /migrateCompanionToOfficialPlay\(\);/);
+assert.match(life, /Ver app na Play Store/);
 assert.match(life, /migrateLifeCompanionToPlay/);
 assert.match(life, /openLifeCompanionStore/);
-assert.match(life, /Seu CrewCheck, login e escala não serão removidos/);
+assert.match(life, /data-life-native-hold/);
+assert.match(life, /Sincronização automática indisponível nesta versão/);
+assert.match(life, /Resumos automáticos aguardam confirmação segura da conta/);
+assert.doesNotMatch(life, /Lê automaticamente passos, sono/);
 assert.match(life, /energyScore/);
 assert.match(life, /companionSummary\.automatic/);
 assert.match(life, /nativeHealthEnabled/);
-assert.match(life, /Energy Score/);
+assert.match(life, /No request\/account-bound native response protocol exists yet; never adopt a broadcast\./);
 assert.match(life, /scoreKind = 'ENERGY'/);
 
 // #794 diagnostic contract: never collapse materially different Companion states.
@@ -143,4 +148,4 @@ assert.match(wearSnapshot, /isEnergyScore/);
 assert.match(wearSnapshot, /Energia Samsung/);
 assert.match(wearMain, /Energy Score · Samsung Health/);
 
-console.log('[crewlife-samsung-companion] automatic local Samsung integration contracts OK');
+console.log('[crewlife-samsung-companion] native Samsung scaffolding and Web automatic-import HOLD contracts OK');

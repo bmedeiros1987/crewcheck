@@ -33,6 +33,7 @@ import {
   getActiveLifeSession,
   getLifeAdaptivePreferences,
   getLifeRoutineContext,
+  listLifeEvents,
   recordGymCheckIn,
   recordHydration,
   recordLifeEvent,
@@ -209,6 +210,12 @@ function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgr
   }
 
   const hydrationPercent = Math.min(100, Math.round(context.hydration.progress * 100));
+  const hydrationRecorded = useMemo(() => {
+    const today = new Date(tick);
+    today.setHours(0, 0, 0, 0);
+    return listLifeEvents().some(event => event.type === 'hydration' && event.status === 'completed'
+      && new Date(event.occurredAt).getTime() >= today.getTime());
+  }, [context, tick]);
   const programLabel = nextProgram?.title ? `${nextProgram.title}${nextProgram.presentation ? ` · ${nextProgram.presentation}` : ''}` : 'Sem próxima programação completa';
 
   return <section className="cc-life-ai-shell" aria-label="CrewCheck Life Concierge adaptativo">
@@ -237,10 +244,10 @@ function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgr
 
     <div className="cc-life-ai-dashboard">
       <article><MoonStar/><small>Descanso</small><strong>{context.sleep.available ? durationLabel(context.sleep.latestMinutes) : 'Aguardando sono'}</strong><span>{context.sleep.available ? `${context.sleep.deficitMinutes ? `${durationLabel(context.sleep.deficitMinutes)} abaixo da meta` : 'meta pessoal atendida'}` : 'sem presumir sua disposição'}</span></article>
-      <article><GlassWater/><small>Hidratação</small><strong>{context.hydration.mlToday.toLocaleString('pt-BR')} ml</strong><span>{hydrationPercent}% da meta pessoal</span><i><b style={{ width: `${hydrationPercent}%` }}/></i></article>
-      <article><Dumbbell/><small>Atividades</small><strong>{context.exercise.sessions7Days}/{context.exercise.targetSessions}</strong><span>melhor adesão: {periodLabel(context.exercise.preferredPeriod).toLowerCase()}</span></article>
-      <article><BookOpenCheck/><small>Estudo</small><strong>{context.study.sessions7Days}/{context.study.targetSessions}</strong><span>{durationLabel(context.study.minutes7Days)} na semana</span></article>
-      <article><Palmtree/><small>Lazer</small><strong>{context.leisure.sessions7Days}/{context.leisure.targetSessions}</strong><span>{durationLabel(context.leisure.minutes7Days)} registrados</span></article>
+      <article><GlassWater/><small>Hidratação</small><strong>{hydrationRecorded ? `${context.hydration.mlToday.toLocaleString('pt-BR')} ml` : 'Sem registro'}</strong><span>{hydrationRecorded ? `${hydrationPercent}% da meta pessoal` : `Meta pessoal: ${context.hydration.targetMl.toLocaleString('pt-BR')} ml`}</span>{hydrationRecorded && <i><b style={{ width: `${hydrationPercent}%` }}/></i>}</article>
+      <article><Dumbbell/><small>Atividades</small><strong>{context.exercise.sessions7Days ? `${context.exercise.sessions7Days}/${context.exercise.targetSessions}` : 'Sem registro'}</strong><span>Registros desta conta · últimos 7 dias</span></article>
+      <article><BookOpenCheck/><small>Estudo</small><strong>{context.study.sessions7Days ? `${context.study.sessions7Days}/${context.study.targetSessions}` : 'Sem registro'}</strong><span>{context.study.sessions7Days ? `${durationLabel(context.study.minutes7Days)} na semana` : 'Registros desta conta · últimos 7 dias'}</span></article>
+      <article><Palmtree/><small>Lazer</small><strong>{context.leisure.sessions7Days ? `${context.leisure.sessions7Days}/${context.leisure.targetSessions}` : 'Sem registro'}</strong><span>{context.leisure.sessions7Days ? `${durationLabel(context.leisure.minutes7Days)} registrados` : 'Registros desta conta · últimos 7 dias'}</span></article>
     </div>
 
     <section className="cc-life-ai-actions">
@@ -261,8 +268,8 @@ function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgr
     <section className="cc-life-ai-collapsible">
       <button className="cc-life-ai-collapse-head" onClick={() => setPatternsOpen((value) => !value)}><span><TrendingUp/><span><small>PADRÕES APRENDIDOS</small><strong>Como o CrewCheck está se adaptando</strong></span></span>{patternsOpen ? <ChevronUp/> : <ChevronDown/>}</button>
       {patternsOpen && <div className="cc-life-pattern-grid">
-        <article><Dumbbell/><span><small>Atividade física</small><strong>{periodLabel(context.exercise.preferredPeriod)}</strong><p>{context.exercise.sessions7Days} check-ins/sessões nos últimos 7 dias.</p></span></article>
-        <article><BookOpenCheck/><span><small>Estudo</small><strong>{periodLabel(context.study.preferredPeriod)}</strong><p>{context.study.sessions7Days} blocos concluídos; o horário muda conforme sua adesão.</p></span></article>
+        <article><Dumbbell/><span><small>Atividade física</small><strong>{context.exercise.sessions7Days ? periodLabel(context.exercise.preferredPeriod) : 'Sem padrão registrado'}</strong><p>{context.exercise.sessions7Days ? `${context.exercise.sessions7Days} registros desta conta nos últimos 7 dias.` : 'Registre uma atividade para começar.'}</p></span></article>
+        <article><BookOpenCheck/><span><small>Estudo</small><strong>{context.study.sessions7Days ? periodLabel(context.study.preferredPeriod) : 'Sem padrão registrado'}</strong><p>{context.study.sessions7Days ? `${context.study.sessions7Days} blocos concluídos nesta conta.` : 'Registre um estudo para começar.'}</p></span></article>
         <article><HeartHandshake/><span><small>Estilo do concierge</small><strong>{preferences.flexibility === 'flexivel' ? 'Flexível' : preferences.flexibility === 'equilibrado' ? 'Equilibrado' : 'Estruturado'}</strong><p>Tom {preferences.coachTone}; sugestões nunca substituem sua decisão.</p></span></article>
         <article><BellRing/><span><small>Lembretes</small><strong>{preferences.remindersEnabled ? 'Ativos' : 'Desativados'}</strong><p>No máximo três lembretes úteis no dia, respeitando a escala.</p></span></article>
       </div>}

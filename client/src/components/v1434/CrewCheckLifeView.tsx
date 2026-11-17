@@ -150,6 +150,11 @@ function integrationLabel(status: NativeHealthStatus): string {
   return 'Aguardando app Android';
 }
 
+const accountScopeNotice = <p className="cc-life-sync-note" role="note" data-life-account-scope>
+  <strong>Este resumo usa apenas registros desta conta.</strong>{' '}
+  <span>Registros antigos sem vínculo, se houver, ficam preservados no aparelho.</span>
+</p>;
+
 function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }) {
   const lifeSession = useRef(captureAuthSession()).current;
   const [consent, setConsent] = useState<LifeConsent>(() => readStored(KEYS.consent, { active: false, acceptedAt: '', policyVersion: '1.0' }));
@@ -299,7 +304,7 @@ function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }
       '_blank',
       'noopener,noreferrer',
     );
-    toast.info('A sincronização automática com Samsung Health requer o app Android CrewLife Companion.');
+    toast.info('Instalar o Companion não ativa a sincronização nesta versão do CrewCheck.');
   }
 
   function migrateCompanionToOfficialPlay() {
@@ -512,6 +517,7 @@ function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }
         <span><HeartPulse/></span>
         <div><small>ROTINA PESSOAL OPCIONAL</small><h1 id="crewcheck-life-title">CrewCheck Life</h1><p>Organize descanso, estudos, atividade física e tempo pessoal ao redor da sua escala.</p></div>
       </header>
+      {accountScopeNotice}
       <article className="cc-life-readable cc-life-consent-card">
         <ShieldCheck/>
         <div><h2>Você decide se quer usar</h2><p>O CrewCheck Life não é uma ferramenta médica, não faz diagnóstico e não avalia aptidão. Os dados servem somente para recomendações pessoais e ficam neste aparelho nesta primeira entrega.</p></div>
@@ -531,6 +537,7 @@ function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }
       <div><small>ROTINA PESSOAL · CONTROLE LOCAL</small><h1 id="crewcheck-life-title">CrewCheck Life</h1><p>Planejamento de bem-estar ligado à escala, sem diagnóstico ou avaliação de aptidão.</p></div>
       <b>Ativo</b>
     </header>
+    {accountScopeNotice}
 
     <section className={`cc-life-recommendation ${recommendation.tone}`}>
       <div><small>ORIENTAÇÃO PESSOAL</small><h2>{recommendation.title}</h2><p>{recommendation.body}</p></div>
@@ -558,29 +565,26 @@ function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }
 
     <section className="cc-life-block cc-life-integrations">
       <header><div><small>INTEGRAÇÕES</small><h2>Conecte somente o que quiser</h2></div><ShieldCheck/></header>
+      <p className="cc-life-sync-note" role="status" data-life-native-hold>Sincronização automática indisponível nesta versão.</p>
       <div className="cc-life-integration-grid">
-        <article className={automaticSamsung ? 'connected' : companionStatus.installed ? 'ready' : ''}>
-          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{companionStateLabel}</small>{companionDiagnosticDetail && <p>{companionDiagnosticDetail}</p>}{companionMigrationRequired && <p>Você está usando uma versão piloto antiga. O Android precisa remover somente o Companion uma vez para instalar a versão oficial da Play. Seu CrewCheck, login e escala não serão removidos.</p>}</div>
-          <button className={automaticSamsung ? '' : 'primary'} onClick={() => {
-            if (companionMigrationRequired) {
-              migrateCompanionToOfficialPlay();
-              return;
-            }
+        <article>
+          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Resumos automáticos aguardam confirmação segura da conta. Instalar ou atualizar o Companion não libera a sincronização aqui.</p><small>{companionStateLabel}</small></div>
+          <button disabled={companionMigrationRequired} className={automaticSamsung ? '' : 'primary'} onClick={() => {
             if (!companionStatus.installed) {
               openCompanionStore();
               return;
             }
             const ok = (window as any).AndroidCrewCheckNative?.openLifeCompanion?.();
-            if (!ok) toast.info('Abra o CrewLife Companion para concluir a conexão com o Samsung Health.');
-          }}>{automaticSamsung ? 'Abrir Companion' : companionMigrationRequired ? 'Migrar para versão oficial' : companionConnectedStale ? 'Atualizar no Companion' : companionStatus.installed ? 'Abrir Companion' : 'Baixar na Play Store'}</button>
+            if (!ok) toast.info('O Companion não abriu. A sincronização continua indisponível nesta versão.');
+          }}>{companionMigrationRequired ? 'Integração indisponível' : companionStatus.installed ? 'Abrir Companion' : 'Ver app na Play Store'}</button>
         </article>
-        {nativeHealthEnabled && <article className={nativeStatus.allGranted ? 'connected' : ''}>
-          <Smartphone/><div><h3>Health Connect</h3><p>Integração Android alternativa quando disponível nesta build.</p><small>{integrationLabel(nativeStatus)}</small></div>
-          <div><button className="primary" onClick={connectAndroid}>{nativeStatus.allGranted ? 'Rever permissões' : 'Conectar'}</button>{nativeStatus.allGranted && <button onClick={refreshAndroid}><RefreshCw/> Atualizar</button>}</div>
+        {nativeHealthEnabled && <article>
+          <Smartphone/><div><h3>Health Connect</h3><p>A leitura automática aguarda vínculo seguro com esta conta.</p><small>Indisponível nesta versão</small></div>
+          <div><button disabled onClick={connectAndroid}>Conexão indisponível</button>{nativeStatus.allGranted && <button disabled onClick={refreshAndroid}><RefreshCw/> Atualização indisponível</button>}</div>
         </article>}
-        {(!(window as any).AndroidCrewCheckNative || appleBridge) && <article className={appleBridge ? 'ready' : ''}>
-          <Apple/><div><h3>Apple Health</h3><p>Interface preparada. A leitura depende do aplicativo nativo iOS e da autorização do HealthKit.</p><small>{appleBridge ? 'App iOS pronto para autorizar' : 'Modo manual disponível no iPhone/iPad'}</small></div>
-          <button onClick={connectApple}>{appleBridge ? 'Conectar' : 'Ver disponibilidade'}</button>
+        {(!(window as any).AndroidCrewCheckNative || appleBridge) && <article>
+          <Apple/><div><h3>Apple Health</h3><p>Use o registro manual. A leitura automática ainda não está disponível.</p><small>Indisponível nesta versão</small></div>
+          <button disabled onClick={connectApple}>Conexão indisponível</button>
         </article>}
         <article className="connected">
           <Check/><div><h3>Entrada manual</h3><p>Funciona no navegador e nos aplicativos, sem vincular nenhuma conta de saúde.</p><small>Disponível agora</small></div>
