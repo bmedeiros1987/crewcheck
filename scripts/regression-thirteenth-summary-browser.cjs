@@ -1,0 +1,45 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
+const{createRequire}=require('node:module'),{build}=require('esbuild');
+const{chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
+(async()=>{
+ const out=path.resolve(process.env.FINANCIAL_UI_EVIDENCE_DIR||'artifacts/thirteenth-summary');fs.mkdirSync(out,{recursive:true});
+ const bundle=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import Vacation from './client/src/components/finance/ThirteenthForecast';import{FinancialPrivacyToggle}from './client/src/components/finance/FinancialPrivacy';createRoot(document.getElementById('root')).render(<><FinancialPrivacyToggle/><Vacation/></>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,outdir:'/tmp/vacation-browser-bundle',format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},loader:{'.woff2':'empty','.png':'empty','.svg':'empty'}});
+ const js=bundle.outputFiles.find(f=>f.path.endsWith('.js')).text,css=bundle.outputFiles.find(f=>f.path.endsWith('.css'))?.text||'';
+ const html=`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px system-ui;background:#fff;color:#17213a;margin:0}body.dark{background:#121b2c;color:#eef4ff}main{max-width:850px;padding:16px;margin:auto}*{box-sizing:border-box}input,select{font:inherit;max-width:100%}input[type=checkbox]{min-width:24px;min-height:24px;vertical-align:middle}summary{min-height:44px;padding:12px 0;cursor:pointer}fieldset{min-width:0}p{overflow-wrap:anywhere}${css}</style><main id="root"></main><script src="/fixture.js"></script>`;
+ const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?js:html);});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});let external=0;const results=[];
+ try{for(const width of [320,390,1440])for(const theme of ['light','dark']){
+  const context=await browser.newContext({viewport:{width,height:900},colorScheme:theme});
+  await context.addInitScript(()=>{localStorage.setItem('crewcheck:financial-privacy:v2:synthetic-A','hidden');localStorage.setItem('crewcheck_auth_token','synthetic-A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-A',role:'user'}));});
+  await context.route('**/*',route=>{if(new URL(route.request().url()).hostname==='127.0.0.1')return route.continue();external++;return route.abort();});
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${server.address().port}`);await page.evaluate(theme=>document.body.classList.toggle('dark',theme==='dark'),theme);
+  const card=page.locator('[data-thirteenth-forecast]');await card.locator(':scope > summary').focus();await page.keyboard.press('Enter');
+  const setup=card.locator('[data-thirteenth-setup]');const rules=card.locator('[data-thirteenth-rules]');
+  assert.equal(await setup.getAttribute('open'),null);assert.equal(await rules.getAttribute('open'),null);
+  await card.getByText('Subtotal conhecido do 13º:',{exact:false}).waitFor();
+  assert.equal(await page.getByLabel('Ano do 13º',{exact:true}).isVisible(),false);
+  await setup.locator(':scope > summary').focus();await page.keyboard.press('Enter');
+  await page.getByLabel('Ano do 13º',{exact:true}).fill('2032');
+  await page.getByLabel('Início da apuração da média',{exact:true}).fill('2031-12-01');
+  await page.getByLabel('Fim da apuração da média',{exact:true}).fill('2032-11-30');
+  await page.getByLabel('Avos conferidos no ano · 0 a 12',{exact:true}).fill('12');
+  await page.getByLabel('Cenário anual com vínculo ativo e legislação aplicável; não é rescisão',{exact:true}).check();
+  await card.getByText('Valores e revisão do 13º',{exact:true}).click();
+  assert.equal(await card.locator('input[inputmode=decimal]').count(),0);
+  await page.getByRole('button',{name:'Mostrar valores financeiros'}).click();
+  await page.getByLabel('Remuneração revisada do 13º (R$)',{exact:true}).fill('6000');
+  await page.getByLabel('Fonte revisada do 13º',{exact:true}).fill('synthetic-reviewed');
+  await page.getByLabel('Conferi ano, avos, período, base e valores na fonte',{exact:true}).check();
+  await page.getByLabel('A remuneração contempla todas as parcelas deste cenário',{exact:true}).check();
+  await card.getByText('13º bruto estimado: R$ 6.000,00',{exact:true}).waitFor();
+  await setup.locator(':scope > summary').click();
+  await card.getByText('13º bruto estimado: R$ 6.000,00',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Ocultar valores financeiros'}).click();
+  assert.equal((await card.innerText()).includes('6.000,00'),false);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.screenshot({path:path.join(out,`summary-${width}-${theme}.png`),fullPage:true});
+  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-B',role:'user'}));dispatchEvent(new Event('crewcheck:auth-changed'));});
+  await setup.locator(':scope > summary').click();assert.equal(await page.getByLabel('Ano do 13º',{exact:true}).inputValue(),'');
+  assert.deepEqual(errors,[]);results.push({width,theme,summary:true,keyboard:true,privacy:true,accountIsolation:true});await context.close();
+ }assert.equal(external,0);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({results,external},null,2));console.log('PASS thirteenth summary compiled browser '+JSON.stringify(results));}finally{await browser.close();await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exitCode=1;});
