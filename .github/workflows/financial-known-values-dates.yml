@@ -58,6 +58,7 @@ on:
       - 'scripts/regression-payroll-net-storage.mjs'
       - 'scripts/regression-financial-vacation-*'
       - 'scripts/regression-financial-thirteenth-*'
+      - 'scripts/regression-thirteenth-summary-browser.cjs'
       - 'scripts/regression-financial-review-owner-negative.mjs'
       - 'scripts/regression-financial-review-hardening.mjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
@@ -163,6 +164,7 @@ jobs:
           node scripts/regression-payroll-net-session-browser.mjs
           node scripts/regression-financial-vacation-session-browser.mjs
           node scripts/regression-financial-vacation-browser.cjs
+          node scripts/regression-thirteenth-summary-browser.cjs
           node scripts/regression-financial-vacation-app.cjs
           node scripts/regression-financial-vacation-app.cjs --thirteenth
       - uses: actions/upload-artifact@v4
@@ -179,5 +181,6 @@ jobs:
             artifacts/vacation-forecast/
             artifacts/vacation-app/
             artifacts/thirteenth-app/
+            artifacts/thirteenth-summary/
             artifacts/SYNTHETIC-salary-tariff-pending/
           if-no-files-found: ignore
