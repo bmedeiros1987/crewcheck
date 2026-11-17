@@ -1,4 +1,5 @@
-import {clearLifeConciergeData} from '@/lib/lifeConcierge';
+import LifeConciergePanel from '@/components/v14313/LifeConciergePanel';
+import {clearLifeConciergeData,ingestHealthSummary,ingestManualSummary,saveLifeGoals} from '@/lib/lifeConcierge';
 import {readLifeAccountJson,writeLifeAccountJson,removeLifeAccountValue} from '@/lib/lifeAccountStorage';
 import {withLifeAccountBoundary} from '@/components/life/LifeAccountBoundary';
 import {captureAuthSession} from '@/lib/authClient';
