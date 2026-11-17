@@ -1,4 +1,4 @@
-// Explicit opt-in only: gradle -I ../scripts/android-qa/checkpoint.init.gradle -Pandroid.builder.sdkDownload=false :app:assembleCheckpointQa
+// Explicit opt-in only (PowerShell): gradle -I ../scripts/android-qa/checkpoint.init.gradle "-Pandroid.builder.sdkDownload=false" :app:assembleCheckpointQa
 // Does not modify production sources or create signing credentials.
 gradle.beforeProject { p ->
     if (p.path == ':app' && p.findProperty('android.builder.sdkDownload')?.toString() != 'false') {
