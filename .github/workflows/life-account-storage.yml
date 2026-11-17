@@ -16,12 +16,15 @@ on:
       - 'scripts/regression-life-account-storage.cjs'
       - 'scripts/regression-life-account-boundary.cjs'
       - 'scripts/regression-life-async-owner.cjs'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - '.github/workflows/life-account-storage.yml'
 permissions:
   contents: read
 jobs:
   isolation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,6 +40,14 @@ jobs:
           node scripts/regression-life-account-storage.cjs
           node scripts/regression-life-async-owner.cjs
       - run: npx tsc --noEmit
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Browser with synthetic accounts only
         run: |
           npm install --prefix "$RUNNER_TEMP/life-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

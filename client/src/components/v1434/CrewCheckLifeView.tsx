@@ -199,6 +199,7 @@ function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }
   useEffect(() => {
     const onStatus = (event: Event) => lifeSession.isCurrent() && setNativeStatus(parseNativePayload((event as CustomEvent).detail) as NativeHealthStatus);
     const onSummary = (_event: Event) => {
+      // Ignore legacy health events.
       // No request/account-bound native response protocol exists yet; never adopt a broadcast.
       if (!lifeSession.isCurrent()) return;
     };
