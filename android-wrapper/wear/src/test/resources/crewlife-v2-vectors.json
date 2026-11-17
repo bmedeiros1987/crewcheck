@@ -1,0 +1,141 @@
+[
+  {
+    "id": "zero",
+    "now": 1800000000000,
+    "payload": {
+      "schemaVersion": 2,
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "revision": 2,
+      "kind": "snapshot",
+      "generatedAtEpochMs": 1799999940000,
+      "validUntilEpochMs": 1800000060000,
+      "metrics": {
+        "recoveryScore": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000001000,
+          "value": 0
+        }
+      }
+    },
+    "expectedScore": 0
+  },
+  {
+    "id": "positive",
+    "now": 1800000000000,
+    "payload": {
+      "schemaVersion": 2,
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "revision": 2,
+      "kind": "snapshot",
+      "generatedAtEpochMs": 1799999940000,
+      "validUntilEpochMs": 1800000060000,
+      "metrics": {
+        "recoveryScore": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000001000,
+          "value": 78
+        }
+      }
+    },
+    "expectedScore": 78
+  },
+  {
+    "id": "missing",
+    "now": 1800000000000,
+    "payload": {
+      "schemaVersion": 2,
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "revision": 2,
+      "kind": "snapshot",
+      "generatedAtEpochMs": 1799999940000,
+      "validUntilEpochMs": 1800000060000,
+      "metrics": {
+        "recoveryScore": {
+          "state": "no_data",
+          "validUntilEpochMs": 0
+        }
+      }
+    },
+    "expectedScore": null
+  },
+  {
+    "id": "expired",
+    "now": 1800000000000,
+    "payload": {
+      "schemaVersion": 2,
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "revision": 2,
+      "kind": "snapshot",
+      "generatedAtEpochMs": 1799999940000,
+      "validUntilEpochMs": 1800000060000,
+      "metrics": {
+        "recoveryScore": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000000000,
+          "value": 78
+        }
+      }
+    },
+    "expectedScore": null
+  },
+  {
+    "id": "string",
+    "now": 1800000000000,
+    "payload": {
+      "schemaVersion": 2,
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "revision": 2,
+      "kind": "snapshot",
+      "generatedAtEpochMs": 1799999940000,
+      "validUntilEpochMs": 1800000060000,
+      "metrics": {
+        "recoveryScore": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000001000,
+          "value": "0"
+        }
+      }
+    },
+    "expectedScore": null
+  },
+  {
+    "id": "fraction",
+    "now": 1800000000000,
+    "payload": {
+      "schemaVersion": 2,
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "revision": 2,
+      "kind": "snapshot",
+      "generatedAtEpochMs": 1799999940000,
+      "validUntilEpochMs": 1800000060000,
+      "metrics": {
+        "recoveryScore": {
+          "state": "valid",
+          "validUntilEpochMs": 1800000001000,
+          "value": 1.5
+        }
+      }
+    },
+    "expectedScore": null
+  },
+  {
+    "id": "unknown",
+    "now": 1800000000000,
+    "payload": {
+      "schemaVersion": 2,
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "revision": 2,
+      "kind": "snapshot",
+      "generatedAtEpochMs": 1799999940000,
+      "validUntilEpochMs": 1800000060000,
+      "metrics": {
+        "recoveryScore": {
+          "state": "unknown",
+          "validUntilEpochMs": 1800000001000,
+          "value": 78
+        }
+      }
+    },
+    "expectedScore": null
+  }
+]

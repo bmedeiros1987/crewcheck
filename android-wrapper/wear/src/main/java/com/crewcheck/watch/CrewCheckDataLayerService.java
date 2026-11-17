@@ -23,21 +23,26 @@ import java.nio.charset.StandardCharsets;
 public final class CrewCheckDataLayerService extends WearableListenerService {
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
-        for (DataEvent event : dataEvents) {
+        for (DataEvent event : dataEvents) processDataEvent(event);
+    }
+
+    void processDataEvent(DataEvent event) {
             String path = event.getDataItem().getUri().getPath();
-            if (path == null) continue;
+            if (path == null) return;
 
             // Revogação: o celular apaga o item e o relógio precisa esquecer o dado de saúde
             // que já tinha em cache. A escala não é apagada por esse caminho.
             if (event.getType() == DataEvent.TYPE_DELETED) {
-                if (WatchContract.CREWLIFE_PATH.equals(path)) {
+                if (WatchContract.CREWLIFE_V2_PATH.equals(path)) {
                     new WellbeingStore(this).clearCrewLife();
+                } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
+                    new WellbeingStore(this).rejectLegacyCrewLife();
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     new WellbeingStore(this).clearRoutine();
                 }
-                continue;
+                return;
             }
-            if (event.getType() != DataEvent.TYPE_CHANGED) continue;
+            if (event.getType() != DataEvent.TYPE_CHANGED) return;
 
             try {
                 DataMap dataMap = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
@@ -49,22 +54,29 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                     }
                 } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
-                    if (json != null) new WellbeingStore(this).saveCrewLife(json);
+                    new WellbeingStore(this).rejectLegacyCrewLife();
+                } else if (WatchContract.CREWLIFE_V2_PATH.equals(path)) {
+                    String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
+                    new WellbeingStore(this).applyCrewLifeData(json, event.getDataItem().getUri().getHost(), System.currentTimeMillis());
                 } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_ROUTINE_JSON);
                     if (json != null) new WellbeingStore(this).saveRoutine(json);
                 }
             } catch (Exception ignored) {
-                // Fail closed: keep the last valid snapshot.
+                if (WatchContract.CREWLIFE_V2_PATH.equals(path)) new WellbeingStore(this).clearCrewLife();
+                // Other domains keep their independent last valid snapshot.
             }
-        }
+
     }
 
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
         String path = messageEvent.getPath();
         byte[] data = messageEvent.getData();
-        if (path == null || data == null || data.length == 0) return;
+        if (path == null) return;
+        if (data == null) data = new byte[0];
+        if (data.length == 0 && !WatchContract.CREWLIFE_V2_PATH.equals(path)
+                && !WatchContract.CREWLIFE_CONTROL_PATH.equals(path)) return;
 
         try {
             if (WatchContract.SNAPSHOT_PATH.equals(path)) {
@@ -74,7 +86,14 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
                 WatchNotificationCenter.postForSnapshot(this, snapshot);
             } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
-                new WellbeingStore(this).saveCrewLife(new String(data, StandardCharsets.UTF_8));
+                new WellbeingStore(this).rejectLegacyCrewLife();
+            } else if (WatchContract.CREWLIFE_V2_PATH.equals(path)) {
+                new WellbeingStore(this).applyCrewLifeData(new String(data, StandardCharsets.UTF_8),
+                        messageEvent.getSourceNodeId(), System.currentTimeMillis());
+            } else if (WatchContract.CREWLIFE_CONTROL_PATH.equals(path)) {
+                String ack = new WellbeingStore(this).applyCrewLifeControl(new String(data, StandardCharsets.UTF_8),
+                        messageEvent.getSourceNodeId());
+                if (ack != null) sendCrewLifeAck(messageEvent.getSourceNodeId(), ack);
             } else if (WatchContract.ROUTINE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
                 new WellbeingStore(this).saveRoutine(new String(data, StandardCharsets.UTF_8));
@@ -82,5 +101,9 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
         } catch (Exception ignored) {
             // Fail closed: do not replace a valid cache with malformed data.
         }
+    }
+    private void sendCrewLifeAck(String node, String ack) {
+        com.google.android.gms.wearable.Wearable.getMessageClient(this)
+                .sendMessage(node, WatchContract.CREWLIFE_ACK_PATH, ack.getBytes(StandardCharsets.UTF_8));
     }
 }
