@@ -30,11 +30,27 @@
     return {
       binding: () => transaction((store, done) => { const req = store.get('binding'); req.onsuccess = () => done(req.result || null); }),
       snapshot: ownerId => transaction((store,done)=>{const binding=store.get('binding'),generation=store.get('generation'),renewal=store.get('subscription-renewal:v1'),cancelled=store.get('cancelled-owner:'+String(ownerId));cancelled.onsuccess=()=>done({binding:binding.result||null,generation:generation.result||0,renewal:renewal.result||null,cancelled:cancelled.result===true});}),
-      subscriptionChanged: expectedHash => transaction((store,done)=>{const binding=store.get('binding');binding.onsuccess=()=>{const current=binding.result;if(!current||!expectedHash||current.subscriptionHash!==expectedHash)return done(false);const generation=store.get('generation'),gate=store.get('gate-binding:v1');gate.onsuccess=()=>{store.put((generation.result||0)+1,'generation');store.put(null,'binding');store.put(null,'candidateOwner');if(gate.result)store.put({...gate.result,active:false},'gate-binding:v1');store.put({ownerId:current.ownerId,installationId:current.installationId,consentRevision:current.consentRevision,reason:'subscription_changed'},'subscription-renewal:v1');done(true);};};}),
+      subscriptionChanged: expectedHash => transaction((store,done)=>{const binding=store.get('binding');binding.onsuccess=()=>{const current=binding.result;if(!current||!expectedHash||current.subscriptionHash!==expectedHash)return done(false);const generation=store.get('generation'),gate=store.get('gate-binding:v1');gate.onsuccess=()=>{store.put((generation.result||0)+1,'generation');store.put(null,'binding');store.put(null,'candidateOwner');store.put(null,'candidate-ready-generation:v1');if(gate.result)store.put({...gate.result,active:false},'gate-binding:v1');store.put({ownerId:current.ownerId,installationId:current.installationId,consentRevision:current.consentRevision,reason:'subscription_changed'},'subscription-renewal:v1');done(true);};};}),
       setBinding: binding => transaction((store, done) => { store.put(binding, 'binding'); done(null); }),
-      begin: (ownerId,confirmed=false) => transaction((store,done)=>{const cancelled=store.get('cancelled-owner:'+ownerId);cancelled.onsuccess=()=>{if(cancelled.result===true&&confirmed!==true)return done(null);const req=store.get('generation');req.onsuccess=()=>{const generation=(req.result||0)+1;store.put(generation,'generation');store.put(ownerId,'candidateOwner');store.put(null,'binding');store.put(null,'subscription-renewal:v1');done(generation);};};}),
-      bind: (binding,generation,confirmed=false) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(req.result!==generation)return done(false);const candidate=store.get('candidateOwner'),cancelled=store.get('cancelled-owner:'+binding.ownerId);cancelled.onsuccess=()=>{if(candidate.result!==binding.ownerId||cancelled.result===true&&confirmed!==true)return done(false);store.put(binding,'binding');if(confirmed===true)store.delete('cancelled-owner:'+binding.ownerId);done(true);};};}),
-      cancel: (generation,ownerId,cancelled=false) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(generation!==undefined&&req.result!==generation)return done(false);const finish=()=>{if(cancelled===true&&ownerId)store.put(true,'cancelled-owner:'+ownerId);store.put((req.result||0)+1,'generation');store.put(null,'candidateOwner');store.put(null,'binding');done(true);};if(!ownerId)return finish();const binding=store.get('binding'),candidate=store.get('candidateOwner');candidate.onsuccess=()=>{if(!binding.result&&!candidate.result)return finish();if(binding.result?.ownerId!==ownerId&&candidate.result!==ownerId)return done(false);finish();};};}),
+      begin: (ownerId,confirmed=false) => transaction((store,done)=>{const cancelled=store.get('cancelled-owner:'+ownerId);cancelled.onsuccess=()=>{if(cancelled.result===true&&confirmed!==true)return done(null);const req=store.get('generation');req.onsuccess=()=>{const generation=(req.result||0)+1;store.put(generation,'generation');store.put(ownerId,'candidateOwner');store.put(null,'candidate-ready-generation:v1');store.put(null,'binding');store.put(null,'subscription-renewal:v1');done(generation);};};}),
+      // Readiness is an internal CAS phase, not a new authority or RPC. Exposing
+      // a generation in status cannot bypass a failed/pending notice cleanup.
+      finishBegin: (ownerId,generation) => transaction((store,done)=>{
+        const current=store.get('generation'),candidate=store.get('candidateOwner'),binding=store.get('binding');
+        binding.onsuccess=()=>{if(!Number.isSafeInteger(generation)||generation<1||current.result!==generation||candidate.result!==ownerId||binding.result)return done(false);store.put(generation,'candidate-ready-generation:v1');done(true);};
+      }),
+      bind: (binding,generation,confirmed=false) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{
+        if(!Number.isSafeInteger(generation)||generation<1||req.result!==generation)return done(false);
+        const candidate=store.get('candidateOwner'),current=store.get('binding'),ready=store.get('candidate-ready-generation:v1'),cancelled=store.get('cancelled-owner:'+binding.ownerId);
+        cancelled.onsuccess=()=>{
+          if(candidate.result!==binding.ownerId||cancelled.result===true&&confirmed!==true)return done(false);
+          // An existing legacy binding may be repeated, never replaced in place.
+          if(current.result)return done(cancelled.result!==true&&['ownerId','installationId','consentRevision','subscriptionHash'].every(key=>current.result[key]===binding[key]));
+          if(ready.result!==generation)return done(false);
+          store.put(binding,'binding');store.put(null,'candidate-ready-generation:v1');if(confirmed===true)store.delete('cancelled-owner:'+binding.ownerId);done(true);
+        };
+      };}),
+      cancel: (generation,ownerId,cancelled=false) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(generation!==undefined&&req.result!==generation)return done(false);const finish=()=>{if(cancelled===true&&ownerId)store.put(true,'cancelled-owner:'+ownerId);store.put((req.result||0)+1,'generation');store.put(null,'candidateOwner');store.put(null,'candidate-ready-generation:v1');store.put(null,'binding');done(true);};if(!ownerId)return finish();const binding=store.get('binding'),candidate=store.get('candidateOwner');candidate.onsuccess=()=>{if(!binding.result&&!candidate.result)return finish();if(binding.result?.ownerId!==ownerId&&candidate.result!==ownerId)return done(false);finish();};};}),
       prune: now => transaction((store,done)=>{let count=0,visited=0;const req=store.openCursor();req.onsuccess=()=>{const cursor=req.result;if(!cursor)return done(count);if(String(cursor.key).startsWith('event:')&&Date.parse(cursor.value.expiresAt)<=now){cursor.delete();count++;}if(count<100&&++visited<200)cursor.continue();else done(count);};}),
       claim: (key, envelope) => transaction((store, done) => {
         const binding = store.get('binding'); binding.onsuccess = () => {
@@ -83,16 +99,28 @@ if(typeof ServiceWorkerGlobalScope!=='undefined'&&self instanceof ServiceWorkerG
  const store=self.CrewCheckGateReceiverOffline?self.CrewCheckGateReceiverOffline.withGateStore(base,self.indexedDB):base;
  const gateReceiver=self.CrewCheckGateReceiverOffline&&self.navigator?.locks?.request?self.CrewCheckGateReceiverOffline.create({enabled:true,store,registration:self.registration,locks:self.navigator.locks,processPush:self.CrewCheckPushOffline.processPush}):null;
  const gateExclusive=run=>self.navigator?.locks?.request?self.navigator.locks.request('crewcheck:gate-notice:v1',{mode:'exclusive'},run):run();
+ const closeLocalNotifications=async()=>{for(const notice of await self.registration.getNotifications())await notice.close();};
  self.addEventListener('message',event=>{if(!event.data?.crewcheckPush)return;event.waitUntil((async()=>{let result={ok:false};try{const source=event.source;if(!source||new URL(source.url).origin!==self.location.origin||source.type!=='window')return;const v=event.data;
- if(v.action==='begin'&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.ownerId||''))result=await gateExclusive(async()=>{const generation=await store.begin(v.ownerId,v.confirmed===true);return{ok:Number.isSafeInteger(generation),generation};});
+ if(v.action==='begin'&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.ownerId||''))result=await gateExclusive(async()=>{
+   const generation=await store.begin(v.ownerId,v.confirmed===true);
+   // A successful begin invalidates the previous binding. Close its notices
+   // before ACK, including when the new owner overtakes old-owner cleanup.
+   if(!Number.isSafeInteger(generation))return{ok:false};
+   await closeLocalNotifications();
+   return{ok:await store.finishBegin(v.ownerId,generation),generation};
+ });
  else if(v.action==='bind'&&v.binding&&Number.isSafeInteger(v.generation)&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.ownerId||'')&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.installationId||'')&&Number.isSafeInteger(v.binding.consentRevision)&&v.binding.consentRevision>0)result=await gateExclusive(async()=>({ok:await store.bind(v.binding,v.generation,v.confirmed===true)}));
- else if(v.action==='cancel'&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.ownerId||'')){result=await gateExclusive(async()=>{const ok=await store.cancel(v.generation,v.ownerId,v.cancelled===true);if(ok){for(const item of await self.registration.getNotifications())item.close();}return{ok};});}
+ else if(v.action==='cancel'&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.ownerId||'')){result=await gateExclusive(async()=>{const ok=await store.cancel(v.generation,v.ownerId,v.cancelled===true);if(ok)await closeLocalNotifications();return{ok};});}
  else if(v.action==='status')result={ok:true,...await store.snapshot(v.ownerId)};
  else if(v.action==='gate-sync'&&gateReceiver)result=await gateReceiver.sync(v.gateBinding??null,v.binding,v.generation);
  else if(v.action==='reports')result={ok:true,reports:await store.reports()};
  else if(v.action==='acknowledge'&&Array.isArray(v.keys)&&v.keys.length<=50){await store.acknowledge(v.keys.filter(key=>typeof key==='string'&&key.startsWith('event:')));result={ok:true};}
  }catch{}finally{event.ports[0]?.postMessage(result);}})());});
- self.addEventListener('push',event=>event.waitUntil((async()=>{try{await store.prune(Date.now());const envelope=event.data?.json();if(envelope&&(Object.hasOwn(envelope,'authorityEpoch')||Object.hasOwn(envelope,'topicRevision')||String(envelope.eventKey||'').startsWith('gate-change-v1:'))){if(gateReceiver)await gateReceiver.receive(envelope);}else await self.CrewCheckPushOffline.processPush({enabled:true,envelope,store,registration:self.registration,clock:()=>Date.now()});}catch{}})()));
+ self.addEventListener('push',event=>event.waitUntil((async()=>{try{await store.prune(Date.now());const envelope=event.data?.json();if(envelope&&(Object.hasOwn(envelope,'authorityEpoch')||Object.hasOwn(envelope,'topicRevision')||String(envelope.eventKey||'').startsWith('gate-change-v1:'))){if(gateReceiver)await gateReceiver.receive(envelope);}else if(typeof self.navigator?.locks?.request==='function'){
+   // Gate receive owns this same non-reentrant lock. Acquire it only for the
+   // generic branch, through display completion; never fall back unlocked.
+   await gateExclusive(()=>self.CrewCheckPushOffline.processPush({enabled:true,envelope,store,registration:self.registration,clock:()=>Date.now()}));
+ }}catch{}})()));
  // This event is optional browser evidence, not a universal renewal guarantee.
  // No token, permission prompt, subscribe or authenticated HTTP exists in worker.
  self.addEventListener('pushsubscriptionchange',event=>event.waitUntil((async()=>{
@@ -102,7 +130,7 @@ if(typeof ServiceWorkerGlobalScope!=='undefined'&&self instanceof ServiceWorkerG
      if(typeof endpoint==='string'&&self.crypto?.subtle&&self.navigator?.locks?.request){
        const bytes=await self.crypto.subtle.digest('SHA-256',new TextEncoder().encode(new URL(endpoint).href));
        const hash=Array.from(new Uint8Array(bytes),value=>value.toString(16).padStart(2,'0')).join('');
-       changed=await self.navigator.locks.request('crewcheck:push-subscription:v1',()=>gateExclusive(async()=>{const changed=await store.subscriptionChanged(hash);if(changed)for(const notice of await self.registration.getNotifications())notice.close();return changed;}));
+       changed=await self.navigator.locks.request('crewcheck:push-subscription:v1',()=>gateExclusive(async()=>{const changed=await store.subscriptionChanged(hash);if(changed)await closeLocalNotifications();return changed;}));
      }
      for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({crewcheckPush:true,action:'subscription-recheck',changed});
    }catch{}

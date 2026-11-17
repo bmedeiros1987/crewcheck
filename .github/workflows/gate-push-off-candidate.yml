@@ -90,6 +90,7 @@ jobs:
         run: |
           node scripts/regression-gate-receiver-browser.mjs
           node scripts/regression-web-push-shipping-worker.mjs
+          node scripts/regression-web-push-generic-cancellation-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
 
   isolated-sql:
