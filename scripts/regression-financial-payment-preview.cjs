@@ -155,7 +155,7 @@ async function assertAllowanceStatementMonth(page,month){
       const reopened=await page.evaluate(()=>({io:globalThis.__financialCacheIo,commit:window.__CREWCHECK_BUILD__?.commit}));
       if(reopened.commit&&!['local','unknown'].includes(reopened.commit)){assert(reopened.io.reads>0,'same-source reopening after selected-period navigation reads saved cache');assert.equal(reopened.io.writes,0,'same-source reopening after selected-period navigation does not recalculate');}
       else assert.equal(reopened.io.writes,0,'an unidentified build must not persist reusable calculations');
-      await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-hero').waitFor();
+      await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-overview').waitFor();await showFinancial(page,'overview');await page.locator('.cc-payment-hero').waitFor();
       await showFinancial(page,'statement');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-01');await assertAllowanceStatementMonth(page,'2032-01');
       await showFinancial(page,'overview');assert.equal(await page.locator('.cc-payment-value').textContent(),overviewAmount,'reopening does not replace the next-cycle amount with the selected-month amount');
       await showFinancial(page,'statement');await page.getByLabel('Competência de referência',{exact:true}).selectOption(selectedMonth);await assertAllowanceStatementMonth(page,selectedMonth);
@@ -216,8 +216,11 @@ async function assertAllowanceStatementMonth(page,month){
 
   }
   if(width===390&&theme==='light'&&scenario==='complete'){
-    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-hero').waitFor();await showFinancial(page,'statement');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-overview').waitFor();await showFinancial(page,'overview');await page.locator('.cc-payment-hero').waitFor();await showFinancial(page,'statement');
     await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-02');await assertAllowanceStatementMonth(page,'2032-02');
+    const revealAmounts=page.getByRole('button',{name:'Mostrar valores financeiros',exact:true});if(await revealAmounts.count())await revealAmounts.click();
+    await page.waitForFunction(()=>[...document.querySelectorAll('.cc-statement-summary .cc-payment-value')].some(el=>el.getClientRects().length&&/[0-9]/.test(el.textContent)));
+    assert(await page.locator('.cc-statement-summary .cc-payment-value').evaluateAll(nodes=>nodes.some(el=>el.getClientRects().length&&/[0-9]/.test(el.textContent))),'account-switch counterproof starts with a visible numeric amount owned by account A');
     await page.evaluate(()=>{globalThis.__financialCacheIo={reads:0,writes:0,writeKeys:[]};window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-other',name:'SYNTHETIC OTHER ACCOUNT',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-other-account');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
     await page.waitForFunction(()=>JSON.parse(localStorage.getItem('crewcheck_auth_user')||'null')?.id==='financial-ui-other'&&[...document.querySelectorAll('.cc-statement-summary .cc-payment-value')].filter(el=>el.getClientRects().length).every(el=>!/[0-9]/.test(el.textContent)));
     assert(!(await page.evaluate(()=>globalThis.__financialCacheIo.writeKeys)).some(key=>key.startsWith('crewcheck_financial_calculation_cache_v1:financial-ui-qa:')),'another account cannot rewrite the original account cache');
