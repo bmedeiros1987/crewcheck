@@ -55,3 +55,31 @@ for (const step of ['Install Play API client for version allocation', 'Allocate 
 assert.throws(() => assertAllocationGuard("github.ref == 'refs/heads/main'"));
 assert.throws(() => assertAllocationGuard("github.event_name == 'workflow_dispatch'"));
 console.log('PASS: Play allocator excluded from push/PR; build-only dispatch skips Play imports/allocation; explicit publishing dispatch remains gated');
+
+// Companion contract changes also trigger this workflow on main. Even opening a
+// temporary Play edit must require the explicit operator publishing decision.
+const companion = fs.readFileSync('.github/workflows/crewlife-companion-play.yml', 'utf8');
+const companionAllocationCondition = "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_internal && env.SAMSUNG_SDK_READY == 'true'";
+function assertCompanionAllocationGuard(condition) {
+  assert.equal(condition, companionAllocationCondition, 'Companion allocation must remain manual-only with a ready SDK');
+}
+for (const step of ['Install Play API client', 'Allocate live Companion version']) {
+  const start = companion.indexOf('      - name: ' + step + '\n');
+  assert.ok(start >= 0, 'Companion allocation step missing: ' + step);
+  const tail = companion.slice(start).split('\n      - ', 1)[0];
+  const condition = tail.match(/\n        if: ([^\n]+)/)?.[1];
+  assertCompanionAllocationGuard(condition);
+  const evaluate = new Function('github', 'inputs', 'env', 'return (' + condition + ');');
+  for (const ref of ['refs/heads/main', 'refs/heads/test']) {
+    for (const event_name of ['push', 'pull_request', 'workflow_dispatch']) {
+      for (const publish_internal of [false, true]) {
+        for (const SAMSUNG_SDK_READY of ['false', 'true']) {
+          assert.equal(evaluate({ref, event_name}, {publish_internal}, {SAMSUNG_SDK_READY}),
+            ref === 'refs/heads/main' && event_name === 'workflow_dispatch' && publish_internal && SAMSUNG_SDK_READY === 'true');
+        }
+      }
+    }
+  }
+}
+assert.throws(() => assertCompanionAllocationGuard("github.ref == 'refs/heads/main' && env.SAMSUNG_SDK_READY == 'true'"));
+console.log('PASS: Companion Play imports/allocation excluded from push/PR and build-only dispatch');
