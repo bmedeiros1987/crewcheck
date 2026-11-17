@@ -18,6 +18,9 @@ public class ReceiverFenceFixture {
  static class PackageManager {static final int PERMISSION_GRANTED=0;}
  static class Build {static class VERSION{static int SDK_INT=36;}static class VERSION_CODES{static final int O=26;}}
  static class MainActivity {}
+ // Legacy fixture keys are ordinary SHA256 jobs; the Life branch has its own actual-ledger suite.
+ static class LifeReminderLedger {static boolean lifeKey(String key){return false;}}
+ static class LifeReminderAndroid {LifeReminderAndroid(Context c){}LifeReminderAndroid ledger(){return this;}boolean claim(String k,String e,long at){throw new AssertionError("legacy fixture entered Life branch");}}
  static class Intent {static final int FLAG_ACTIVITY_SINGLE_TOP=1,FLAG_ACTIVITY_CLEAR_TOP=2;Map<String,Object> values=new HashMap<>();Intent(){}Intent(Context c,Class<?> type){}void addFlags(int f){}String getStringExtra(String k){return (String)values.get(k);}long getLongExtra(String k,long fallback){return values.containsKey(k)?(Long)values.get(k):fallback;}}
  static class Context {static final String NOTIFICATION_SERVICE="notifications";NotificationManager manager=new NotificationManager();boolean allowed=true;int checkSelfPermission(String p){return allowed?0:1;}Object getSystemService(String name){return manager;}}
  static class PendingIntent {static final int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;static PendingIntent getActivity(Context c,int id,Intent i,int flags){return new PendingIntent();}}

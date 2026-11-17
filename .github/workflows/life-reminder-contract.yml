@@ -1,0 +1,73 @@
+name: Life selective reminder contract
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/LifeReminder*'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/NotificationLedger*'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckNotificationReceiver.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'android-wrapper/app/src/test/java/com/crewcheck/app/LifeReminderAndroidTest.java'
+      - 'android-wrapper/app/build.gradle'
+      - 'scripts/regression-life-reminder-contract.mjs'
+      - 'scripts/fixtures/LifeReminderLedgerFixture.java'
+      - '.github/workflows/life-reminder-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-and-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - name: Pinned framework for synthetic JVM contracts only
+        run: |
+          framework_jar="$RUNNER_TEMP/android-all-15.jar"
+          curl --fail --silent --show-error --location --retry 3 --output "$framework_jar" https://repo.maven.apache.org/maven2/org/robolectric/android-all/15-robolectric-12650502/android-all-15-robolectric-12650502.jar
+          printf '%s  %s\n' 6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b "$framework_jar" | sha256sum --check
+          echo "ANDROID_ALL_JAR=$framework_jar" >> "$GITHUB_ENV"
+      - name: Raw Life and unchanged global cancellation contracts
+        run: |
+          node scripts/regression-life-reminder-contract.mjs
+          node scripts/regression-native-reminder-cancellation.mjs
+          node scripts/regression-android-alarm-acceptance.mjs
+      - run: node scripts/v139/apply.mjs
+      - name: Prepared Life and global cancellation contracts
+        run: |
+          node scripts/regression-life-reminder-contract.mjs
+          node scripts/regression-native-reminder-cancellation.mjs
+          node scripts/regression-android-alarm-acceptance.mjs
+      - run: npx vite build
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - name: Actual adapter, OS shadows, receiver and complete release compile
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:testReleaseUnitTest --tests com.crewcheck.app.LifeReminderAndroidTest
+      - name: Require all Android cases without skips
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as E
+          p='android-wrapper/app/build/test-results/testReleaseUnitTest/TEST-com.crewcheck.app.LifeReminderAndroidTest.xml'
+          r=E.parse(p).getroot()
+          assert r.attrib['tests']=='15'
+          assert all(r.attrib[k]=='0' for k in ['failures','errors','skipped'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: life-reminder-synthetic-results
+          path: android-wrapper/app/build/test-results/testReleaseUnitTest/
+          retention-days: 7
