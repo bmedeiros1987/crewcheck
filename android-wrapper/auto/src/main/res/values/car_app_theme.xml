@@ -1,0 +1,12 @@
+<resources>
+    <color name="drive_primary">#5130A8</color>
+    <color name="drive_primary_dark">#C9ACFF</color>
+    <color name="drive_secondary">#007F96</color>
+    <color name="drive_secondary_dark">#6DDCE7</color>
+    <style name="CarAppTheme">
+        <item name="carColorPrimary">@color/drive_primary</item>
+        <item name="carColorPrimaryDark">@color/drive_primary_dark</item>
+        <item name="carColorSecondary">@color/drive_secondary</item>
+        <item name="carColorSecondaryDark">@color/drive_secondary_dark</item>
+    </style>
+</resources>

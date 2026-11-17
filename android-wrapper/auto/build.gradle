@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+
+def generatedCrewCheckAutoRes = file("$buildDir/generated/res/crewcheckAutoBrand")
+tasks.register('generateCrewCheckAutoBrandAssets') {
+    inputs.file(file('../../client/public/icons/crewcheck-icon-v2.png'))
+    outputs.file(file("$generatedCrewCheckAutoRes/drawable-nodpi/crewcheck_icon_site.png"))
+    doLast {
+        def target = file("$generatedCrewCheckAutoRes/drawable-nodpi")
+        target.mkdirs()
+        copy {
+            from file('../../client/public/icons/crewcheck-icon-v2.png')
+            into target
+            rename { 'crewcheck_icon_site.png' }
+        }
+    }
+}
+android {
+    namespace 'com.crewcheck.auto'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'com.crewcheck.auto.prototype'
+        minSdk 28
+        targetSdk 36
+        versionCode 3
+        versionName '0.3.0-lab'
+    }
+    sourceSets { main.res.srcDir generatedCrewCheckAutoRes }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release { minifyEnabled false; shrinkResources false }
+        debug { debuggable true }
+    }
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            maxHeapSize = '2g'
+            maxParallelForks = 1
+            systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+        }
+    }
+}
+preBuild.dependsOn generateCrewCheckAutoBrandAssets
+
+dependencies {
+    implementation 'androidx.car.app:app:1.7.0'
+    implementation 'androidx.car.app:app-projected:1.7.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'androidx.car.app:app-testing:1.7.0'
+    // Test-only dependency alignment; none of these libraries enter the APK.
+    testImplementation 'org.bouncycastle:bcprov-jdk18on:1.84'
+    testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.84'
+    testImplementation 'org.bouncycastle:bcutil-jdk18on:1.84'
+}
