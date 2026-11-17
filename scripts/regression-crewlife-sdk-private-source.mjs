@@ -90,10 +90,23 @@ assert.doesNotMatch(
   /github\.event_name\s*==\s*'push'/,
   'CrewLife publication must never run merely because main received a push',
 );
-assert.match(
-  playWorkflow,
-  /Install Play API client[\s\S]*?if:\s*github\.ref == 'refs\/heads\/main' && env\.SAMSUNG_SDK_READY == 'true'/,
-  'Play API calls must not run when the private Samsung SDK is unavailable',
-);
+for (const name of ['Install Play API client', 'Allocate live Companion version']) {
+  const stepStart = playWorkflow.indexOf(`      - name: ${name}\n`);
+  assert.ok(stepStart >= 0, `Missing Play step: ${name}`);
+  const step = playWorkflow.slice(stepStart).split('\n      - ', 1)[0];
+  const condition = step.match(/\n        if:\s*([^\n]+)/)?.[1];
+  assert.ok(condition, `Missing Play condition: ${name}`);
+  assert.match(condition, /env\.SAMSUNG_SDK_READY\s*==\s*'true'/,
+    `${name} must require a verified private Samsung SDK`);
+  const evaluate = new Function('github', 'inputs', 'env', `return (${condition});`);
+  for (const ready of ['false', '', undefined]) {
+    assert.equal(evaluate({ref: 'refs/heads/main', event_name: 'workflow_dispatch'},
+      {publish_internal: true}, {SAMSUNG_SDK_READY: ready}), false,
+      `${name} must refuse missing/unverified SDK even with manual publication requested`);
+  }
+  assert.equal(evaluate({ref: 'refs/heads/main', event_name: 'workflow_dispatch'},
+    {publish_internal: true}, {SAMSUNG_SDK_READY: 'true'}), true,
+    `${name} must preserve the verified-SDK explicit manual path`);
+}
 
 console.log('PASS CrewLife Samsung SDK private-source-only policy across build and Play workflows');
