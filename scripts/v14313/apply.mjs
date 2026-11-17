@@ -50,7 +50,7 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
     next = next.replace(anchor, `    <LifeConciergePanel nextProgram={nextProgram} healthSummary={nativeSummary} profile={profile}/>\n\n${anchor}`);
   }
 
-  if (!next.includes('LifeConciergePanel') || !next.includes('ingestHealthSummary(detail)') || !next.includes('clearLifeConciergeData()')) {
+  if (!next.includes('LifeConciergePanel') || (!next.includes('ingestHealthSummary(detail)') && !next.includes('No request/account-bound native response protocol exists yet; never adopt a broadcast.')) || !next.includes('clearLifeConciergeData()')) {
     throw new Error('[v14313] Concierge adaptativo não foi integrado à tela Life por completo.');
   }
   return next;
