@@ -31,3 +31,15 @@ This is a release checklist, not evidence of Play approval or physical-device va
 ## Preserved blockers
 
 The coordinator last observed 14 mixed pending changes and seven policy issues; separation of that batch was not demonstrated. These are historical observations requiring Console reconfirmation. Do not retry the denied Actions dispatch, switch credentials, create services/costs, or submit the old batch as a shortcut. PDF #1340 remains under its own audit/HOLD.
+
+## Reconciliation on 2026-11-17
+
+Main `2162b6d0f166a0c5ae4f533e8299b6fb12dae874` already includes #1336 and the build-only version-code preparation in #1351. The #1335 composition merges this main without textual conflict; all nine original #1335 paths were unchanged on main since its historical base. It retains the hotel/occurrence/gate implementation and the three independent scrollbar settings rather than importing the conflicting #1184 mode/navigation changes.
+
+The current policy proposes mobile `144160`, Wear `144161` and separate-package watch face `144112`, target API 36. These are not live allocations. Official main build `44080719233` passed, with combined artifact `14327012014` (ZIP SHA-256 `03a1e8674bdf01936a6a4a2b971f84628d21da8f1a93eff5104eb757945d3f1a`); Play client installation, allocation and publication were skipped. This artifact predates the #1335 composition and cannot certify its future release.
+
+Existing Robolectric round-screen assertions remain. Added non-round 192×192, 227×227 and 192×240 dp cases at font scales 1/1.5/2 check the real TextViews, black ScrollView background, indicator settings and reachable final navigation row. They are pending execution in the existing native CI, not locally approved or physical-watch evidence. No Android SDK, Gradle or adb is configured in this executor; no native result is inferred from Node checks.
+
+Read-only source review finds that the principal Play variant excludes Health Connect and uses its manual bridge, while health-related features still exist. Old policy reports refer to package 140382 in open testing and Wear 144101; their resolution still requires reconciling retained tracks and the truthful health/store declarations. Companion automation claims also need specific availability/consent evidence. No health permission, feature, legal text or store field was removed or broadened here.
+
+This executor currently has no authenticated Console/desktop capability. The fresh combined archive is available through the authorized GitHub connector but its file-download host is outside this executor's enforced allowlist; no unsupported transfer route was used. The Console's current upload certificate, complete code inventory and ownership/scope of the pending mixed changes remain unverified. Keep submission, real phone/watch validation and publication on HOLD until those gates are satisfied through existing authorized access.

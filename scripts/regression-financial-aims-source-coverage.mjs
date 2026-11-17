@@ -12,7 +12,7 @@ const selected=new Set(),todo=['buildLegs','calculatePerDiem','financeSnapshot',
 const vars=ast.statements.filter(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>['AIRLINE_NAMES','PRESENTATION_RULES_KEY','PRESENTATION_OVERRIDES_KEY'].includes(d.name.getText(ast))));
 const noWrite=()=>{throw Error('No writes allowed in financial diagnostic')};
 const rateConfig={taxiRate:31.5,rates:{domestic:{mainMeal:100,currency:'BRL',label:'SYNTHETIC'}},domesticBreakfast:25,domesticMainMealSource:'synthetic',domesticBreakfastSource:'synthetic',breakfastPercent:.25,source:'SYNTHETIC',act:{version:'synthetic'}};
-const context=vm.createContext({...libs,React,useMemo:React.useMemo,useState:React.useState,console,storage:{get:(k,f)=>f,set:noWrite,remove:noWrite},city:x=>x,
+const context=vm.createContext({...libs,React,captureAuthSession:()=>({isCurrent:()=>true}),getStoredUser:()=>null,getToken:()=>null,financialRateOwner:()=>null,useMemo:React.useMemo,useState:React.useState,console,storage:{get:(k,f)=>f,set:noWrite,remove:noWrite},city:x=>x,
 perDiemConfig:()=>rateConfig,loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:origin=>({rateKey:'domestic',airport:origin,reason:'synthetic'}),readOptionalNumberSetting:()=>null,calculateSalary:()=>({notUnderTest:true}),
 useFinancialPrivacy:()=>({hidden:false,text:v=>v,amount:v=>v}),FinancialPrivacyToggle:()=>null,PersonalAllowanceReference:()=>null,FinancialStatementImporter:()=>null,FinancialScreen:p=>p.children,Brand:()=>null,KpiCard:p=>React.createElement('article',null,p.title,': ',p.value,' — ',p.detail),BriefcaseBusiness:()=>null,CalendarDays:()=>null,Plane:()=>null,DollarSign:()=>null,MoneyText:p=>React.createElement('span',null,p.value),
 });

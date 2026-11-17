@@ -79,6 +79,8 @@ on:
       - 'client/src/lib/rosterStartup.ts'
       - 'scripts/roster-startup/**'
       - 'scripts/regression-demo-bootstrap-*'
+      - 'scripts/regression-demo-anonymous-browser.cjs'
+      - 'client/src/lib/authClient.ts'
       - 'scripts/v1432/apply.mjs'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
       - 'scripts/regression-publication-import-flow.cjs'
@@ -230,6 +232,11 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           DEMO_BOOTSTRAP_OUTPUT: artifacts/demo-bootstrap
         run: node scripts/regression-demo-bootstrap-offline.cjs
+      - name: Verify actual guest demo survives protected telemetry failures
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-demo-anonymous-browser.cjs
       - name: Verify quick roster card presentation with synthetic events
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -277,6 +284,7 @@ jobs:
             artifacts/roster-summary
             artifacts/roster-layout-session
             artifacts/demo-bootstrap
+            artifacts/demo-anonymous
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
             artifacts/menu-density

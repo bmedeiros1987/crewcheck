@@ -33,6 +33,8 @@ export function salaryDsrReceipt(owner:string,month:string,signature:string,fenc
  const captured=record;
  return Object.freeze({revision:captured.revision,sourceId:captured.sourceId,ownerId:owner,competence:month,scope,isCurrent:()=>isCurrent()&&receipts.get(key)===captured});
 }
+/** Revoke only this calculation scope when its financial inputs changed. */
+export function invalidateSalaryDsrReceipt(owner:string,month:string,scope='forecast'){receipts.delete(JSON.stringify([owner,month,scope]));}
 /** Consume existing engine results. Partial observations never masquerade as full components.
  * No production/rate/DSR arithmetic is duplicated here; only final monetary conversion. */
 export function consumeSalaryDsr(args:{ownerId:string;month:string;receipt:ReturnType<typeof salaryDsrReceipt>;parts:SalaryDsrPart[];context:ReturnType<typeof confirmedPayrollDsrContext>;isCurrent:()=>boolean}){

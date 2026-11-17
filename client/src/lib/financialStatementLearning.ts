@@ -250,6 +250,9 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     const candidate = base.candidates[0];
     rates.push({ ...rate('salary.base', 'Salário-base', candidate.value, 'month', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'printed', evidence: candidate.sources.map(source => ({ page: source.page, origin: source.origin, line: source.line, field: 'monthlyBase', value: candidate.value })) });
   }
+  // Positioned tables expose printed quantity/rate only for private review.
+  // Do not infer/adopt a KM or hourly tariff from this single document.
+  if (payrollExtraction.layout !== 'positioned-table') {
   for (const [pattern, key, label, unit] of PAYROLL_KEYS) {
     const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
     const m = validateOccurrences(matches, key, label);
@@ -274,6 +277,7 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
     if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: matches.flatMap(match => rateEvidence(match, hourlyValue)) });
   }
+  }
   // The legacy rate pass can add ambiguity after the pure extractor checked the printed totals.
   if (payrollExtraction.incomplete) payrollExtraction.reconciliation = 'unavailable';
   const warnings: string[] = [...payrollExtraction.warnings];
@@ -281,7 +285,7 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
   if (!effectiveFrom) warnings.push('Competência não identificada; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa salarial identificada.');
   const dsrOwner = financialRateOwner();
-  const payrollDsrDraft = dsrOwner ? draftPayrollDsrEvidence({ ownerId:dsrOwner, sourceFingerprint:fp, sourceText:text, extraction:payrollExtraction, pages:pages || [{page:1,text,origin:'document-logical'}] }) : null;
+  const payrollDsrDraft = dsrOwner && payrollExtraction.layout !== 'positioned-table' ? draftPayrollDsrEvidence({ ownerId:dsrOwner, sourceFingerprint:fp, sourceText:text, extraction:payrollExtraction, pages:pages || [{page:1,text,origin:'document-logical'}] }) : null;
   return {
     ...(payrollDsrDraft ? {payrollDsrDraft} : {}),
     payrollExtraction, paymentDate: payrollExtraction.creditDate.state === 'candidate' ? payrollExtraction.creditDate.candidates[0].value : undefined,

@@ -129,7 +129,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
 import NextPaymentCard from '@/components/finance/NextPaymentCard';
 import {useSalaryDisplayBasis} from '@/components/finance/SalaryDisplayBasis';
-import { consumeSalaryDsr, salaryDsrReceipt, observedSalaryFlightSubtotal } from '@/lib/salaryDsrConsumer';
+import { consumeSalaryDsr, salaryDsrReceipt, invalidateSalaryDsrReceipt, observedSalaryFlightSubtotal } from '@/lib/salaryDsrConsumer';
 import {payrollOperationalCoverage} from '@/lib/payrollPaymentComposition';
 import {salaryDisplaySummary,sumSalaryDisplaySummaries} from '@/lib/salaryDisplayBasis';
 import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
@@ -137,7 +137,8 @@ import VacationForecast from '@/components/finance/VacationForecast';
 import ThirteenthForecast from '@/components/finance/ThirteenthForecast';
 import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/finance/SalaryBreakdownChart';
 import FinancialScreen, {useFinancialScreen} from '@/components/finance/FinancialScreen';
-import { nextAllowancePayment } from '@/lib/nextFinancialPayment';
+import { nextAllowancePayment, type NextPayment } from '@/lib/nextFinancialPayment';
+import {createFinancialCalculationCache,financialInputSignature} from '@/lib/financialCalculationCache';
 import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
 import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
 import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceReference';
@@ -2460,11 +2461,40 @@ function homeAllowancePayment(roster: CrewRoster) {
   const evidence=aggregateAllowanceEvidence([snapshot]);
   return nextAllowancePayment(evidence.rows,evidence.unclassifiedItems,[month],new Date(),nominalFinancialDays([roster]));
 }
+const FINANCIAL_CACHE_BUILD=import.meta.env.VITE_CREWCHECK_BUILD_COMMIT||'local';
+const financialCalculationCache=createFinancialCalculationCache();
 function financeSnapshot(roster: CrewRoster, salaryScope = 'forecast') {
-  const events = buildLegs(roster);
-  const perdiem = calculatePerDiem(events, roster);
-  const salary = calculateSalary(events, roster, salaryScope);
-  return { roster, perdiem, salary };
+  const fence=captureAuthSession(),events=buildLegs(roster);
+  const calculate=()=>{
+    const {dsr,gross:_gross,net:_net,...salary}=calculateSalary(events,roster,salaryScope);
+    // Cache only observed monetary inputs; never persist an ephemeral DSR receipt/fence.
+    const dsrParts=dsr.components.map(component=>({key:component.key,amount:component.amountMinor===null?null:component.amountMinor/100,complete:component.amountMinor!==null,knownAmount:(dsr.observedParts.find(part=>part.key===component.key)?.amountMinor??null)===null?null:dsr.observedParts.find(part=>part.key===component.key)!.amountMinor!/100}));
+    return {perdiem:calculatePerDiem(events,roster),salary,dsrParts};
+  };
+  const context=()=>{
+    const user=getStoredUser(),token=getToken(),owner=financialRateOwner()||'';
+    if(!fence.isCurrent()||!owner||!token||['guest','visitor'].includes(user?.role||''))return null;
+    const inputs:Record<string,string|null>={};
+    for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key&&/^crewcheck_(financial_|personal_allowance_|act_|salary_|perdiem_|fx_|profile_rank|local_holiday_dates|instructor)/.test(key)&&!key.startsWith('crewcheck_financial_calculation_cache_'))inputs[key]=localStorage.getItem(key);}
+    return {owner,session:owner+':'+token,period:`${roster.year}-${String(roster.month).padStart(2,'0')}`,scope:salaryScope,
+      version:FINANCIAL_CACHE_BUILD,
+      signature:financialInputSignature({roster,inputs,profile:{id:user?.id,email:user?.email,name:user?.name,role:user?.role},day:rosterOperationalIso(new Date())})};
+  };
+  let initial:ReturnType<typeof context>=null;try{initial=context();}catch{}
+  // Unavailable storage/identity cannot make caching a prerequisite for the existing calculator.
+  if(!initial)return {roster,perdiem:calculatePerDiem(events,roster),salary:calculateSalary(events,roster,salaryScope)};
+  let first=true;const currentContext=()=>{if(first){first=false;return initial;}return context();};
+  let cacheStorage:Storage|undefined;try{if(!['local','unknown'].includes(FINANCIAL_CACHE_BUILD))cacheStorage=localStorage;}catch{}
+  const cached=financialCalculationCache.read(currentContext,calculate,cacheStorage,value=>Boolean(value&&Array.isArray(value.perdiem?.rows)&&Array.isArray(value.perdiem?.monthlyRows)&&value.perdiem?.nativeSummary&&Array.isArray(value.salary?.rows)&&value.salary?.config&&Array.isArray(value.dsrParts)&&value.dsrParts.length===7));
+  if(cached.state==='changed'||!fence.isCurrent())throw Error('FINANCIAL_CALCULATION_CONTEXT_CHANGED');
+  const assertSource=()=>{let next:ReturnType<typeof context>=null;try{next=context();}catch{}if(!next||next.signature!==initial.signature||next.owner!==initial.owner||next.session!==initial.session||!fence.isCurrent()){invalidateSalaryDsrReceipt(initial.owner,initial.period,salaryScope);throw Error('FINANCIAL_CALCULATION_CONTEXT_CHANGED');}return next;};
+  const current=assertSource(),month=`${roster.year}-${String(roster.month).padStart(2,'0')}`,owner=financialRateOwner()||'';
+  const receipt=salaryDsrReceipt(owner,month,'cached-calculation:v1:'+(current?.signature||''),fence,salaryScope);
+  const dsr=consumeSalaryDsr({ownerId:owner,month,receipt,parts:cached.value.dsrParts,context:fence.isCurrent()?confirmedPayrollDsrContext(month):null,isCurrent:fence.isCurrent});
+  const gross=dsr.current&&dsr.composition.grossMinor!==null?dsr.composition.grossMinor/100:NaN;
+  const net=salaryDisplaySummary('net',Number.isFinite(gross)?gross:null,Number.isFinite(gross),[month],[readMonthlyFinancialSettings(month)]).amount??NaN;
+  assertSource();
+  return {roster,perdiem:cached.value.perdiem,salary:{...cached.value.salary,dsr,gross,net}};
 }
 function notifyCrewCheck(title: string, body: string, displayDetail = body) {
   const reminder = /despertador|soneca/i.test(title);
@@ -4483,8 +4513,10 @@ function PerDiemView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDay
       const knownPeriods = new Set(snapshots.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`));
       const auditRows = projectAllowanceFxRows(evidence.rows,fx.quotes,new Date().toISOString().slice(0,10));
       const payment = nextAllowancePayment(auditRows, evidence.unclassifiedItems, coverageReady?[...knownPeriods]:[], new Date(), coveredDays);
+      // The statement summarizes its selected scope, independently of today's next cycle.
+      const statementPayment:NextPayment = {kind:'allowance',range,lines:forecast.monthlyRows,totals:forecast.nativeSummary.complete?forecast.nativeSummary.totalsByCurrency:null,calculationTotals:Object.keys(forecast.nativeSummary.knownTotalsByCurrency).length?forecast.nativeSummary.knownTotalsByCurrency:null,calculationPartial:!forecast.nativeSummary.complete,issues:forecast.monthlyUnclassifiedItems.map(item=>item.reason||'Dados do período pendentes.'),timing:'Crédito a confirmar para este período.',source:'Previsão da escala para o período selecionado; não confirma recebimento.',caption:'Diárias · período selecionado'};
       const captureFlights = [...new Map(snapshots.flatMap(item=>buildLegs(item.roster).filter(event=>event.kind==='flight'&&event.salaryClockKnown===true&&item.roster.days.some(day=>day.date===event.day.date&&(day.legs||[]).some(leg=>leg.flightNumber===event.flightNumber&&leg.origin===event.origin&&leg.destination===event.destination&&leg.departureTime===event.leg?.departureTime&&leg.arrivalTime===event.leg?.arrivalTime))&&/^\d{2}\/\d{2}\/\d{4}$/.test(event.day.date)).map(event=>({id:event.id,published:true,localDate:event.day.date.split('/').reverse().join('-'),timezone:'America/Sao_Paulo',airport:event.origin,label:`${event.day.date} · ${event.flightNumber} · ${event.origin} → ${event.destination} · ${event.departure} BRT`}))).map(flight=>[flight.id,flight])).values()];
-      return <><CanonicalForecastCapture key={JSON.stringify([getStoredUser()?.email,range,captureRows,captureFlights,forecast.nativeSummary.complete&&!forecast.scopeIncomplete])} flights={captureFlights} rows={captureRows} range={range} complete={forecast.nativeSummary.complete&&!forecast.scopeIncomplete} crewId={selected.roster.crewId} airline={selected.roster.airline||''} coveredDays={coveredDays}/><PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} fxControl={<FinancialFxSourceControl/>} onExchangeConfigured={()=>fx.setMode('manual')} nextPayment={<NextPaymentCard payment={payment} requestRange={requestRange} extraDetails={graph}/>} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<><FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} coveredDays={coverageReady?coveredDays:[]} quotes={fx.quotes} today={new Date().toISOString().slice(0,10)} rows={evidence.rows} unclassified={evidence.unclassifiedItems}/></>}/></>;
+      return <><CanonicalForecastCapture key={JSON.stringify([getStoredUser()?.email,range,captureRows,captureFlights,forecast.nativeSummary.complete&&!forecast.scopeIncomplete])} flights={captureFlights} rows={captureRows} range={range} complete={forecast.nativeSummary.complete&&!forecast.scopeIncomplete} crewId={selected.roster.crewId} airline={selected.roster.airline||''} coveredDays={coveredDays}/><PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} fxControl={<FinancialFxSourceControl/>} onExchangeConfigured={()=>fx.setMode('manual')} nextPayment={<NextPaymentCard payment={payment} statementPayment={statementPayment} requestRange={requestRange} extraDetails={graph}/>} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<><FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} coveredDays={coverageReady?coveredDays:[]} quotes={fx.quotes} today={new Date().toISOString().slice(0,10)} rows={evidence.rows} unclassified={evidence.unclassifiedItems}/></>}/></>;
     }}/>
 }
 function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {

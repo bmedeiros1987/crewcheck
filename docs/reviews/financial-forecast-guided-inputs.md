@@ -1,0 +1,13 @@
+# Guided vacation and thirteenth inputs
+
+This increment reduces repeated entry; it does not derive remuneration averages, service-month fractions, deductions or legal applicability from a partial roster or an ordinary monthly salary. The existing pure calculation engines and monthly payroll/history writers are unchanged.
+
+Vacation results now precede a collapsed setup, matching the thirteenth summary. Rules and source explanations remain available under disclosure. The thirteenth shows a concrete next missing step and offers an explicit button to use the year of a valid single-year financial selection. Changing the selection alone never overwrites the scenario.
+
+Saving is optional and explicit. Only whitelisted input fields are stored locally by authenticated owner, forecast type and an explicit year/acquisition interval. No token, calculated total, legal applicability, review or completeness confirmation is stored. Reuse explicitly loads the latest available input draft, identifies the visible year/acquisition period and saved date, and resets all confirmations before recalculation. It does not activate payroll, create a received payment or apply monthly settings.
+
+The dedicated namespace is crewcheck:financial-forecast:draft:v1:. It does not read legacy shared data or emit monthly financial configuration events. This is local account partitioning, not encryption, server authorization, synchronization or a verified source. Web Locks and crypto.randomUUID are required for writes/removal; unsupported environments fail closed with an unavailable message. UUID compare-and-set prevents stale overwrites, including delete/recreate ABA. Removal deletes only the selected account/type/period slot; no tombstone or retention policy is introduced.
+
+Session generation, owner and the captured financial session are checked around serialization, parsing and lock acquisition. UI replies are additionally fenced by the active period. Editing while saving reports that the previous input was saved; changing accounts or periods cannot turn an old reply into a success for the new context. Quota, invalid data, missing drafts and revision conflicts are distinguished without presenting success.
+
+Validation uses synthetic accounts and values only: actual helper tests, raw/prepared calculator and review gates, browser save/reload/reuse, A/B/A, known zero, cross-tab CAS/delete/recreate, delayed lock with edits/account/period changes, quota failures, keyboard/privacy and responsive layout. No real profile, roster, payslip, API, payment or message is used. Final exact-HEAD CI, compiled-application checks and independent review are required before integration. Android device/old-WebView support is not established by a desktop Chromium test.
