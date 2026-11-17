@@ -4,10 +4,11 @@ import {financialRateOwner,financialRateSession} from '@/lib/financialStatementL
 import {vacationForecast,type VacationEvidence} from '../../../../shared/financialVacationForecast.mjs';
 import {useFinancialPrivacy} from './FinancialPrivacy';
 import './vacation-forecast.css';
+import ForecastDraftControls from './ForecastDraftControls';
 
 const empty=()=>({acquisitionStart:'',acquisitionEnd:'',split:false,starts:['',''],basis:'monthly_average' as 'monthly_average'|'period_amount',amounts:['',''],source:'',reviewed:false,earningsComplete:false,deductionsComplete:false,lawApplicable:false,retentions:['',''],consigned:['',''],advances:['','']});
-// An editable scenario, deliberately ephemeral: it is not the monthly payroll
-// writer, an import confirmation, or a bank settlement. No automatic carryover.
+// Editable scenario inputs may be saved explicitly per account and period.
+// Reuse never restores confirmations or writes a payroll/import/settlement.
 export default function VacationForecast(){
  const session=financialRateSession(),owner=financialRateOwner(),privacy=useFinancialPrivacy();
  const guard=owner?captureAuthSession():null;
@@ -41,10 +42,15 @@ export default function VacationForecast(){
  const dateField=(label:string,value:string,onChange:(v:string)=>void)=><label style={{display:'block',marginBlock:8}}>{label}<input type="date" value={value} onChange={e=>onChange(e.target.value)} style={{display:'block',maxWidth:'100%',minHeight:44}}/></label>;
  const amountField=(label:string,value:string,onChange:(v:string)=>void)=><label style={{display:'block',marginBlock:8}}>{label}<input inputMode="decimal" value={value} onChange={e=>onChange(e.target.value)} style={{display:'block',width:'100%',maxWidth:280,minHeight:44}}/></label>;
  const indexed=(key:'starts'|'amounts'|'retentions'|'consigned'|'advances',index:number,value:string)=>change({[key]:draft[key].map((old,i)=>i===index?value:old)});
+ const values={acquisitionStart:draft.acquisitionStart,acquisitionEnd:draft.acquisitionEnd,split:draft.split,starts:draft.starts,basis:draft.basis,amounts:draft.amounts,source:draft.source,retentions:draft.retentions,consigned:draft.consigned,advances:draft.advances};
+ const civil=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)?value.split('-').reverse().join('/'):'a definir';
  return <details className="cz-finance-table" style={{overflowWrap:'anywhere'}} data-vacation-forecast><summary>Previsão de férias · separada do salário</summary>
- <p>Não some esta previsão automaticamente à folha mensal. Direito ao gozo e arredondamento da empresa ainda não avaliados.</p>
- <p>Simulação nesta tela, sem salvar ou alterar sua folha. Médias e retenções ainda não são recuperadas automaticamente do holerite.</p>
+ <p>Previsão separada da folha. Recebimento não confirmado.</p>
  {!owner?<p>Entre na sua conta para simular.</p>:<>
+ <p>{draft.acquisitionStart||draft.acquisitionEnd?`Período aquisitivo: ${civil(draft.acquisitionStart)} a ${civil(draft.acquisitionEnd)}`:'Período aquisitivo a definir.'}</p>
+ <div aria-live="polite">{result.periods.length?result.periods.map((p,i)=><section key={p.id}><h4>Gozo {i+1} · {p.days} dias</h4><p>Remuneração: {money(p.earningsMinor)} · terço: {money(p.thirdMinor)}</p><p><strong>{p.grossMinor===null?'Subtotal conhecido com terço':'Bruto estimado'}: {money(p.knownSubtotalMinor)}</strong></p><p>Saldo estimado após descontos e adiantamentos: {money(p.netMinor)}</p>{!privacy.hidden&&p.cashState==='negative_review'&&<p role="status">Saldo negativo: revise os valores e a conciliação dos adiantamentos.</p>}<p>Data limite legal: {p.deadlineDate||'Pendente de data e enquadramento'}. Depósito não confirmado.</p>{p.pending.length>0&&<small>Composição integral e/ou retenções ainda pendentes; campos ausentes não são zero.</small>}</section>):<p>Informe período aquisitivo válido e gozos sem sobreposição para preparar a previsão.</p>}</div>
+ <ForecastDraftControls kind="vacation" session={session} guard={state.guard} draftRevision={state.revision} values={values} onRestore={values=>change({...values as Partial<ReturnType<typeof empty>>,reviewed:false,earningsComplete:false,deductionsComplete:false,lawApplicable:false})}/>
+ <details data-vacation-setup><summary>Configurar férias</summary>
  <fieldset><legend>Períodos</legend>
  {dateField('Início do período aquisitivo',draft.acquisitionStart,v=>change({acquisitionStart:v}))}
  {dateField('Fim do período aquisitivo',draft.acquisitionEnd,v=>change({acquisitionEnd:v}))}
@@ -65,8 +71,9 @@ export default function VacationForecast(){
  </>}
  <p>Consignados reduzem o caixa; não reduzem automaticamente remuneração ou base tributável. Não calculamos tributos de férias com a tabela da folha mensal.</p>
  </details>
- <div aria-live="polite">{result.periods.length?result.periods.map((p,i)=><section key={p.id}><h4>Gozo {i+1} · {p.days} dias</h4><p>Remuneração: {money(p.earningsMinor)} · terço: {money(p.thirdMinor)}</p><p><strong>{p.grossMinor===null?'Subtotal conhecido com terço':'Bruto estimado'}: {money(p.knownSubtotalMinor)}</strong></p><p>Saldo estimado após descontos e adiantamentos: {money(p.netMinor)}</p>{!privacy.hidden&&p.cashState==='negative_review'&&<p role="status">Saldo negativo: revise os valores e a conciliação dos adiantamentos.</p>}<p>Data limite legal: {p.deadlineDate||'Pendente de data e enquadramento'}. Depósito não confirmado.</p>{p.pending.length>0&&<small>Composição integral e/ou retenções ainda pendentes; campos ausentes não são zero.</small>}</section>):<p>Informe período aquisitivo válido e gozos sem sobreposição para preparar a previsão.</p>}</div>
+ </details>
  </>}
- <p><a href="/legal/ACT-Comissarios-2025-2027.pdf" target="_blank" rel="noopener noreferrer">ACT comissários TAM · 3.2.1 e 3.7.5</a> · Lei 13.475, arts. 67–71. O prazo é dois dias corridos antes de cada início, sem inferir depósito.</p>
+ <details data-vacation-rules><summary>Regras e fontes</summary>
+ <p><a href="/legal/ACT-Comissarios-2025-2027.pdf" target="_blank" rel="noopener noreferrer">ACT comissários TAM · 3.2.1 e 3.7.5</a> · Lei 13.475, arts. 67–71. O prazo é dois dias corridos antes de cada início, sem inferir depósito. Direito ao gozo, médias e arredondamento da empresa exigem fonte própria.</p></details>
  </details>;
 }

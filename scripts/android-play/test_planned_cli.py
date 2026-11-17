@@ -23,7 +23,11 @@ def exercise(scenario, isolated_qa=False, handoff=None):
  with tempfile.TemporaryDirectory() as temp:
   root=Path(temp);original_cwd=Path.cwd();os.chdir(root)
   try:
-   policy_path=root/'policy.json';policy_path.write_text(json.dumps(POLICY));out=root/'out';out.mkdir()
+   # This fictional inventory contains APK144155 and starts at144156. Do not let
+   # the real release policy's moving floor alter fixture filenames or generations.
+   fixture_policy=copy.deepcopy(POLICY)
+   fixture_policy['knownMaxVersionCode'][m.PACKAGE]=144154
+   policy_path=root/'policy.json';policy_path.write_text(json.dumps(fixture_policy));out=root/'out';out.mkdir()
    initial_tracks=copy.deepcopy(TRACKS)
    next_code=144156 if handoff is None else handoff['record']['history'][-1]['highWaterVersionCode']+1
    initial_bundles=[dict(versionCode=144154,sha256='a'*64)]

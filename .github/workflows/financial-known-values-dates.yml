@@ -31,6 +31,9 @@ on:
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/ownerPerDiemReview.ts'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/financialForecastDrafts.ts'
+      - 'scripts/regression-financial-forecast-drafts.cjs'
+      - 'scripts/regression-financial-forecast-guided-browser.cjs'
       - 'client/src/lib/personalAllowanceReference.ts'
       - 'scripts/regression-personal-allowance-*.mjs'
       - 'scripts/regression-owner-per-diem-review.mjs'
@@ -58,6 +61,7 @@ on:
       - 'scripts/regression-payroll-net-storage.mjs'
       - 'scripts/regression-financial-vacation-*'
       - 'scripts/regression-financial-thirteenth-*'
+      - 'scripts/regression-thirteenth-summary-browser.cjs'
       - 'scripts/regression-financial-review-owner-negative.mjs'
       - 'scripts/regression-financial-review-hardening.mjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
@@ -82,6 +86,7 @@ jobs:
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
           node scripts/regression-financial-review-hardening.mjs
+          node scripts/regression-financial-forecast-drafts.cjs
           TZ=UTC node scripts/regression-financial-known-values-dates.mjs
           TZ=America/Sao_Paulo node scripts/regression-financial-known-values-dates.mjs
           TZ=Asia/Tokyo node scripts/regression-financial-known-values-dates.mjs
@@ -111,6 +116,7 @@ jobs:
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
           node scripts/regression-financial-review-hardening.mjs
+          node scripts/regression-financial-forecast-drafts.cjs
           node scripts/regression-financial-known-values-dates.mjs
           node scripts/regression-financial-preset-allowances.mjs
           node scripts/regression-allowance-occurrence-reconciliation.mjs
@@ -163,6 +169,8 @@ jobs:
           node scripts/regression-payroll-net-session-browser.mjs
           node scripts/regression-financial-vacation-session-browser.mjs
           node scripts/regression-financial-vacation-browser.cjs
+          node scripts/regression-thirteenth-summary-browser.cjs
+          node scripts/regression-financial-forecast-guided-browser.cjs
           node scripts/regression-financial-vacation-app.cjs
           node scripts/regression-financial-vacation-app.cjs --thirteenth
       - uses: actions/upload-artifact@v4
@@ -179,5 +187,7 @@ jobs:
             artifacts/vacation-forecast/
             artifacts/vacation-app/
             artifacts/thirteenth-app/
+            artifacts/thirteenth-summary/
+            artifacts/forecast-guided/
             artifacts/SYNTHETIC-salary-tariff-pending/
           if-no-files-found: ignore

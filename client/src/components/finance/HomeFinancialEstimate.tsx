@@ -10,6 +10,7 @@ import {Calculator} from 'lucide-react';
 import './financial-summary-clarity.css';
 import {FinancialPrivacyToggle,useFinancialPrivacy} from './FinancialPrivacy';
 const Context=createContext<NextPayment|null>(null);
+const CalculationStatus=createContext({pending:false,retry:()=>{}});
 export const useHomeFinancialEstimate=()=>useContext(Context);
 const account=()=>String(getStoredUser()?.id||getStoredUser()?.email||'');
 export function HomeFinancialEstimateProvider({roster,calculate,children,accessKey}:{accessKey?:string;roster:CrewRoster;calculate:(roster:CrewRoster)=>NextPayment|null;children:ReactNode}){
@@ -18,11 +19,13 @@ export function HomeFinancialEstimateProvider({roster,calculate,children,accessK
  useEffect(()=>{const update=()=>refresh(n=>n+1);for(const e of ['crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:auth-will-change','crewcheck:financial-config-changed','storage'])window.addEventListener(e,update);return()=>{for(const e of ['crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:auth-will-change','crewcheck:financial-config-changed','storage'])window.removeEventListener(e,update);};},[]);
  const allowed=owner&&token&&bound.current.owner===owner&&!['visitor','guest'].includes(getStoredUser()?.role||'');
  // Reuse the canonical producer; never query or mutate the ledger for a Home estimate.
- const payment=allowed&&roster.days?.length?calculate(roster):null;
- return <FinancialFxProvider accessKey={accessKey}><Context.Provider value={payment}>{children}</Context.Provider></FinancialFxProvider>;
+ let payment:NextPayment|null=null,pending=false;
+ try{payment=allowed&&roster.days?.length?calculate(roster):null;}catch(error){if(error instanceof Error&&error.message==='FINANCIAL_CALCULATION_CONTEXT_CHANGED')pending=true;else throw error;}
+ return <FinancialFxProvider accessKey={accessKey}><CalculationStatus.Provider value={{pending,retry:()=>refresh(n=>n+1)}}><Context.Provider value={payment}>{children}</Context.Provider></CalculationStatus.Provider></FinancialFxProvider>;
 }
 export default function HomeFinancialEstimate(){
- const payment=useContext(Context),privacy=useFinancialPrivacy(),fx=useFinancialFx();
+ const payment=useContext(Context),privacy=useFinancialPrivacy(),fx=useFinancialFx(),calculation=useContext(CalculationStatus);
+ if(calculation.pending)return <div className="cc-home-brl-estimate" role="status"><p>Atualização financeira pendente</p><button type="button" className="min-h-11" onClick={calculation.retry}>Atualizar previsão</button></div>;
  if(!payment)return null;
  const today=new Date().toISOString().slice(0,10),quotes=fx.quotes;
  const lines=payment.lines.map((line:any)=>({...line,id:[line.eventId||'',line.iso,line.label,line.currency].join(':')}));
