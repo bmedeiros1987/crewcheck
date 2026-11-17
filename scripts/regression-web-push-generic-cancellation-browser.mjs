@@ -132,6 +132,30 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const evidence = [];
 let cases = 0;
 
+const awaitedBarrierEvidence = [];
+// Await the resolved RPC/lock snapshot before testing it. An async predicate
+// passed to waitForFunction can itself be truthy before its result is known.
+async function awaitedBarrier(label, read, accepts) {
+  const deadline = performance.now() + 10_000;
+  let last, polls = 0;
+  while (performance.now() < deadline) {
+    let timeout;
+    try {
+      last = await Promise.race([
+        Promise.resolve().then(read),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(Error(`Barrier read timed out: ${label}`)), Math.max(1, Math.ceil(deadline - performance.now()))); }),
+      ]);
+    } finally { clearTimeout(timeout); }
+    polls++;
+    if (accepts(last)) {
+      awaitedBarrierEvidence.push({ label, polls, observed: last });
+      return last;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(10, Math.max(1, deadline - performance.now()))));
+  }
+  assert.fail(`Barrier not reached: ${label}; last observed ${JSON.stringify(last)}`);
+}
+
 async function withFixture(run, { noLocks = false } = {}) {
   const context = await browser.newContext();
   const pageErrors = []; let externalRequests = 0;
@@ -185,13 +209,27 @@ async function withFixture(run, { noLocks = false } = {}) {
         assert.equal((await f.bind(binding, start.generation, confirmed)).ok, true); return start.generation;
       },
       async held(kind) {
-        await page.waitForFunction(async kind => {
-          const stats = await window.qa.rpc({ qa: true, action: 'stats' });
-          return stats[kind === 'display' ? 'waitingDisplay' : 'waitingClose'] > 0;
-        }, kind);
+        const value = await awaitedBarrier(`held ${kind}`, async () => {
+          const stats = await f.stats();
+          const locks = await page.evaluate(async name => {
+            const value = await navigator.locks.query();
+            return { held: value.held.filter(lock => lock.name === name).map(lock => lock.mode),
+              pending: value.pending.filter(lock => lock.name === name).map(lock => lock.mode) };
+          }, LOCK);
+          return { waiting: stats[kind === 'display' ? 'waitingDisplay' : 'waitingClose'], attempts: stats.attempts, ...locks };
+        }, value => value.waiting === 1 && value.held.length === 1);
+        assert.equal(value.waiting, 1, 'the worker actually entered the requested barrier');
+        assert.equal(value.attempts, 1, 'exactly one display reached the pending operation');
+        assert.deepEqual(value.held, ['exclusive'], 'the real native lock remains held');
       },
       async queued(count = 1) {
-        await page.waitForFunction(async ({ count, name }) => (await navigator.locks.query()).pending.filter(lock => lock.name === name).length >= count, { count, name: LOCK });
+        const value = await awaitedBarrier(`queued ${count}`, () => page.evaluate(async name => {
+          const value = await navigator.locks.query();
+          return { held: value.held.filter(lock => lock.name === name).map(lock => lock.mode),
+            pending: value.pending.filter(lock => lock.name === name).map(lock => lock.mode) };
+        }, LOCK), value => value.held.length === 1 && value.pending.length === count);
+        assert.deepEqual(value.held, ['exclusive'], 'the real native lock remains held');
+        assert.deepEqual(value.pending, Array(count).fill('exclusive'), 'the exact expected native queue exists before continuation');
       },
     };
     const initial = await f.stats();
@@ -412,6 +450,7 @@ try {
     realWebLocks: true, nativeDelegations: evidence.reduce((sum, item) => sum + item.nativeDelegations, 0),
     nativeGrants: evidence.reduce((sum, item) => sum + item.nativeGrants, 0), unavailableLockContexts: evidence.filter(item => !item.exposedLocks).length,
     realReadyTransactionAborts: evidence.reduce((sum, item) => sum + item.abortedReadyWrites, 0),
+    awaitedBarriers: awaitedBarrierEvidence,
     scope: 'shipping listeners, real IndexedDB/Web Locks and same-origin WindowClients; synthetic arrivals/display/failures and local clock; no subscription, permission request, external API or OS delivery' }));
 } finally {
   await browser?.close(); await new Promise(resolve => server.close(resolve));
