@@ -1,0 +1,53 @@
+name: Mobile Drive Lab ownership
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/mobile-core/drive-lab/**'
+      - '.github/workflows/mobile-drive-lab-owner.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  phone-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android API
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Normal phone debug (without lab opt-in)
+        run: gradle -p android-wrapper --no-daemon :app:assembleDebug
+      - name: Explicit Mobile-owned Phone Lab
+        run: gradle -p android-wrapper -I "$GITHUB_WORKSPACE/android-wrapper/mobile-core/drive-lab/init.gradle" --no-daemon :app:assembleDriveLab
+      - name: Verify package isolation and no provider in the normal app
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          NORMAL=android-wrapper/app/build/outputs/apk/debug/app-debug.apk
+          LAB=android-wrapper/app/build/outputs/apk/driveLab/app-driveLab.apk
+          "$TOOLS/aapt" dump badging "$LAB" | grep -F "package: name='com.crewcheck.app.drivelab'"
+          "$TOOLS/aapt" dump xmltree "$NORMAL" AndroidManifest.xml > "$RUNNER_TEMP/normal-manifest.txt"
+          "$TOOLS/aapt" dump xmltree "$LAB" AndroidManifest.xml > "$RUNNER_TEMP/lab-manifest.txt"
+          ! grep -F 'CrewCheckDriveProvider' "$RUNNER_TEMP/normal-manifest.txt"
+          ! grep -F 'permission.READ_DRIVE' "$RUNNER_TEMP/normal-manifest.txt"
+          grep -F 'CrewCheckDriveProvider' "$RUNNER_TEMP/lab-manifest.txt"
+          grep -F 'permission.READ_DRIVE' "$RUNNER_TEMP/lab-manifest.txt"
+          "$TOOLS/apksigner" verify "$LAB"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-drive-lab-manifests
+          path: ${{ runner.temp }}/*-manifest.txt
+          retention-days: 7
