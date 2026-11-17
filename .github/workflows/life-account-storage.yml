@@ -1,0 +1,26 @@
+name: Life account storage isolation
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/lifeAccountStorage.ts'
+      - 'client/src/lib/lifeConcierge.ts'
+      - 'client/src/lib/authClient.ts'
+      - 'scripts/v14313/hardening.mjs'
+      - 'scripts/regression-life-account-storage.cjs'
+      - '.github/workflows/life-account-storage.yml'
+permissions:
+  contents: read
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/regression-life-account-storage.cjs
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-life-account-storage.cjs
+      - run: npx tsc --noEmit
