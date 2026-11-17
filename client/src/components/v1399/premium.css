@@ -182,3 +182,11 @@ html[data-crew-theme="light"] .cc-reg-automatic article { background: rgba(224, 
   .cc-admin-health-grid-v1399,
   .cc-admin-module-grid-v1399 { grid-template-columns: 1fr !important; }
 }
+
+/* Civil month/year selection: keep the connector “de” lowercase. */
+.cc-roster-period-split { grid-template-columns: repeat(2,minmax(0,1fr)) auto !important; }
+.cc-roster-period-split select,.cc-roster-period-split .cc-roster-period-label { text-transform:none !important; }
+.cc-roster-period-split .cc-roster-period-label { grid-column:1 / -1; font-weight:700; }
+.cc-roster-period-split > button { grid-column:3; grid-row:1; }
+.cc-roster-period-split .cc-roster-period-count { grid-column:1 / -1; }
+@media(max-width:640px){.cc-roster-period-split{grid-template-columns:repeat(2,minmax(0,1fr)) !important}.cc-roster-period-split > button{grid-column:1 / -1;grid-row:auto}}

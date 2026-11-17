@@ -1,3 +1,4 @@
+import RosterPeriodPicker, {rosterPeriodLabel} from '@/components/roster/RosterPeriodPicker';
 import { FlightCrewDetails } from '@/components/roster/FlightCrewDetails';
 import { filterRosterEvents, rosterCardPresentation, rosterProgramMode, rosterModeMeta, type RosterMode } from '@/lib/rosterPresentation';
 import { carePresentationForScheduleActivity } from '@/lib/scheduleActivityClassification';
@@ -134,8 +135,7 @@ function monthOf(event: RosterEvent) {
 }
 
 function monthLabel(value: string) {
-  const [year, month] = value.split('-').map(Number);
-  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
+  return rosterPeriodLabel(value);
 }
 
 function formatDate(date: Date | null) {
@@ -330,9 +330,9 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     <V139Header title="Escala" detail=""/>
     {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
-    <section className="cc-roster-period-v1399" aria-label="Período da escala">
+    <section className="cc-roster-period-v1399 cc-roster-period-split" aria-label="Período da escala">
 
-      <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month).replace(/ de (\d{4})$/, ' $1')}</option>)}</select></label>
+      <RosterPeriodPicker periods={months} value={selectedMonth} onChange={setSelectedMonth}/>
       <button type="button" onClick={goToday}><Clock/> Hoje</button>
       <p className="cc-roster-period-count" role="status">{periodEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}</p>
     </section>
