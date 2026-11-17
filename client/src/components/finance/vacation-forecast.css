@@ -46,3 +46,6 @@ html body :is([data-vacation-forecast], [data-thirteenth-forecast]) [data-foreca
   height: 18px;
   flex-shrink: 0;
 }
+html body :is([data-vacation-forecast], [data-thirteenth-forecast]) [data-forecast-draft-controls] p[role=status]:empty {
+  margin: 0;
+}

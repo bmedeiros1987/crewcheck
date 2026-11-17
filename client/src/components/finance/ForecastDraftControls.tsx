@@ -48,7 +48,7 @@ export default function ForecastDraftControls({kind,session,guard,draftRevision,
   setState({...state,guard:captured,busy:true,message:''});
   const result=await removeForecastDraft(kind,planId,expected,{guard:captured,session});
   if(!captured.isCurrent()||session!==financialRateSession()||currentDraft.current.kind!==kind||currentDraft.current.planId!==planId)return;
-  setState({session,guard:captured,planId,revision:result.status==='removed'||result.status==='missing'?null:expected,busy:false,message:result.status==='removed'||result.status==='missing'?'Preenchimento deste período removido.':failure(result.status)});
+  setState({session,guard:captured,planId,revision:result.status==='removed'||result.status==='missing'?null:expected,busy:false,message:result.status==='removed'||result.status==='missing'?'Preenchimento salvo deste período removido.':failure(result.status)});
  }
  return <div data-forecast-draft-controls>
   <div className="cc-forecast-draft-actions" role="group" aria-label={`Preenchimento local de ${label}`}>
@@ -57,6 +57,6 @@ export default function ForecastDraftControls({kind,session,guard,draftRevision,
   </div>
   <small>Preenchimento opcional, só nesta conta e aparelho. Não altera a folha.</small>
   <p role="status" aria-live="polite">{message}</p>
-  <details><summary>Gerenciar preenchimento</summary><button type="button" onClick={()=>void remove()} disabled={!stateCurrent||!state.revision||busy} aria-label={`Apagar preenchimento de ${label}`}><Trash2 aria-hidden="true"/> Apagar este período</button></details>
+  <details><summary>Gerenciar preenchimento</summary><p>Os campos da tela permanecem.</p><button type="button" onClick={()=>void remove()} disabled={!stateCurrent||!state.revision||busy} aria-label={`Apagar preenchimento salvo de ${label}`}><Trash2 aria-hidden="true"/> Apagar salvo</button></details>
  </div>;
 }
