@@ -49,7 +49,9 @@ const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'concierge'})));
   const card=page.getByRole('region',{name:'Próximas previsões financeiras'});await card.locator('li button').first().waitFor();
   const opener=card.locator('li button').first(),key=await opener.getAttribute('data-financial-origin');
-  await opener.focus();await opener.evaluate(button=>{button.scrollIntoView({block:'center'});window.__originScroll=scrollY;});
+  await opener.evaluate(button=>{button.scrollIntoView({block:'center',behavior:'instant'});button.focus({preventScroll:true});});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await page.evaluate(()=>{window.__originScroll=scrollY;});
   const y=await page.evaluate(()=>window.__originScroll);await opener.press('Enter');
   await page.getByRole('heading',{name:'Diárias',exact:true}).waitFor();
   assert.equal(new URL(page.url()).searchParams.get('view'),'perdiem');
