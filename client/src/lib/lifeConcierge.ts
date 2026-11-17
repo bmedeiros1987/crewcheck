@@ -1,4 +1,4 @@
-import {readLifeAccountJson, writeLifeAccountJson, removeLifeAccountValue} from './lifeAccountStorage';
+import {readLifeAccountJson, writeLifeAccountJson, removeLifeAccountValue, clearLifeAccountStorage} from './lifeAccountStorage';
 export type LifePeriod = 'auto' | 'manha' | 'tarde' | 'noite' | 'qualquer';
 export type LifeFlexibility = 'flexivel' | 'equilibrado' | 'estruturado';
 export type LifeCoachTone = 'acolhedor' | 'direto' | 'discreto';
@@ -642,7 +642,7 @@ export function shareGymCheckInText(gymName = ''): string {
 
 export function clearLifeConciergeData(): boolean {
   if (!storageAvailable()) return false;
-  const removed = Object.values(KEYS).map(key=>removeLifeAccountValue(key)).every(Boolean);
+  const removed = clearLifeAccountStorage();
   window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { cleared: true } }));
   return removed;
 }

@@ -4,9 +4,18 @@ on:
     paths:
       - 'client/src/lib/lifeAccountStorage.ts'
       - 'client/src/lib/lifeConcierge.ts'
+      - 'client/src/lib/lifePlaces.ts'
+      - 'client/src/components/life/**'
+      - 'client/src/components/v1434/CrewCheckLifeView.tsx'
+      - 'client/src/components/v14313/LifeConciergePanel.tsx'
+      - 'client/src/components/v14314/RoutineDailyConcierge.tsx'
       - 'client/src/lib/authClient.ts'
       - 'scripts/v14313/hardening.mjs'
+      - 'scripts/v14312/apply.mjs'
+      - 'scripts/v14313/apply.mjs'
       - 'scripts/regression-life-account-storage.cjs'
+      - 'scripts/regression-life-account-boundary.cjs'
+      - 'scripts/regression-life-async-owner.cjs'
       - '.github/workflows/life-account-storage.yml'
 permissions:
   contents: read
@@ -20,7 +29,16 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: node scripts/regression-life-account-storage.cjs
+      - run: |
+          node scripts/regression-life-account-storage.cjs
+          node scripts/regression-life-async-owner.cjs
       - run: node scripts/v139/apply.mjs
-      - run: node scripts/regression-life-account-storage.cjs
+      - run: |
+          node scripts/regression-life-account-storage.cjs
+          node scripts/regression-life-async-owner.cjs
       - run: npx tsc --noEmit
+      - name: Browser with synthetic accounts only
+        run: |
+          npm install --prefix "$RUNNER_TEMP/life-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/life-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          MENU_PLAYWRIGHT_PACKAGE="$RUNNER_TEMP/life-browser/package.json" node scripts/regression-life-account-boundary.cjs

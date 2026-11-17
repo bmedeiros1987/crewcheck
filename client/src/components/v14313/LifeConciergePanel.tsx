@@ -189,6 +189,7 @@ function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgr
   }
 
   function runPrimaryAction() {
+    if(!lifeSession.isCurrent())return;
     if (recommendation.category === 'hydration') registerHydration();
     else if (recommendation.category === 'study') toggleSession('study');
     else if (recommendation.category === 'exercise') void gymCheckIn();
@@ -200,6 +201,7 @@ function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgr
   }
 
   function sendFeedback(useful: boolean) {
+    if(!lifeSession.isCurrent())return;
     recordRecommendationFeedback(recommendation.id, useful);
     setFeedback(useful ? 'yes' : 'no');
     refresh();

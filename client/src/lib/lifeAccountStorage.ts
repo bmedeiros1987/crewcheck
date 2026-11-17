@@ -21,3 +21,12 @@ export function removeLifeAccountValue(key:string):boolean{
  const ctx=context(key);if(!ctx)return false;
  try{if(!ctx.session.isCurrent())return false;localStorage.removeItem(ctx.key);return true;}catch{return false;}
 }
+/** Removes only this account's v2 Life namespace; never the legacy shared keys. */
+export function clearLifeAccountStorage():boolean{
+ const ctx=context('crewcheck:life:');if(!ctx)return false;
+ const prefix=ctx.key;
+ try{const keys:string[]=[];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key?.startsWith(prefix))keys.push(key);}
+ for(const key of keys){if(!ctx.session.isCurrent())return false;localStorage.removeItem(key);}
+ return ctx.session.isCurrent();
+ }catch{return false;}
+}
