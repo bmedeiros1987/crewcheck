@@ -187,3 +187,23 @@ Observed in that bounded fixture:
 Not exercised: rotation/process death during picker, write errors, redirects/external intents, full application startup/checkpoint semantics, broader network/fallback behavior, real accounts or physical devices. No safe-runtime-complete or backup/restoration claim is made. HOLD remains for that missing coverage and integration review; this report authorizes neither merge, deployment nor production testing.
 
 Coordinator cleanup: stopped only the QA server and QA process, removed ADB reverse17347, left emulator at Home and Chrome intact. QA package and the synthetic JSON intentionally remain for reproduction. No real data was removed. Do not uninstall, clear data or overwrite those remaining artifacts without coordination. Earlier “no install/runtime” entries describe earlier checkpoints; they are superseded only for this specifically reported limited QA fixture run.
+
+## Additional bounded runtime observations and next tests
+
+Coordinator reports another synthetic-only run of the same QA host: activating `https://example.invalid/qa-navigation` left the fixture rendered with QA package focused; activating `intent://qa-probe/#Intent;scheme=qa;package=invalid.qa;end` also left QA focused without another app observed. CSP fetch/ServiceWorker/WebSocket refusals were repeated. These observations do not establish absence of every network packet, nor do they test an actual HTTP redirect chain.
+
+The attempted lifecycle interruption is **inconclusive, not PASS**: after force-stop during ACTION_OPEN_DOCUMENT and am start, DocumentsUI remained and Android reported delivery to the current top-most instance. Clean recovery, callback invalidation and post-process-death state were not demonstrated. No real file was selected. Coordinator returned Home and stopped QA/server/reverse. UIAutomator sometimes reported an empty WebView while screenshots/logs showed the fixture; do not infer a blank screen solely from accessibility hierarchy.
+
+Deterministic follow-up design (not implemented or executed by this documentation):
+
+| Test | Minimal evidence | Required outcome |
+| --- | --- | --- |
+| Rotation while OPEN/SAVE picker is active | QA PID, Activity instance ID, page generation, request type and callback count | Old callback is cancelled at most once; no result reaches a new/stale page; fresh user action can retry |
+| Process death while picker active | PID before/after, explicit task/Activity state, recreated pending state | No old buffer/result is silently delivered or written; recovery remains local and fresh action is required |
+| Navigation while result returns | Generation before/after and accepted/rejected callback event | Old generation refused, no URI or payload logged |
+| Synthetic provider open/write/close failures | QA-only injected provider mode and operation outcome | Truthful failure/cancellation, cleared pending state and repeat works; no real document is modified |
+| HTTP redirect chain | Separate explicitly local redirect fixture and request ledger, including attempted target | Redirect to disallowed origin never produces an accepted remote response or external Activity; local recovery remains local |
+
+Instrumentation must be QA-only, bounded metadata (event, generation, PID/instance, request kind, outcome), without URI, filename, JSON/base64, token, account or file contents. Logs are not an authorization to retain user data. A synthetic DocumentsProvider/test double must be scoped to a separate test artifact and reviewed manifest so it does not weaken the host's no-provider gate or become an exported production component. Deliberate throwing/closed streams can exercise I/O errors; never fill disk or change user-file permissions. A redirect test server must be a separate test-only fixture: preserve the ordinary fixture server's no-redirect contract.
+
+These tests require coordinated SDK/emulator work and a reviewed new QA artifact if instrumentation/provider changes are made. They do not justify installing an unreviewed build, changing real account data, broadening permissions or treating the full app as tested. HOLD remains for lifecycle, I/O, redirects, broader network/recovery and full-application checkpoint semantics.
