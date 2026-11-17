@@ -1,0 +1,42 @@
+name: QA roster checkpoint
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/qaRosterCheckpoint.ts'
+      - 'client/src/components/qa/QaRosterCheckpoint.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-qa-roster-checkpoint*'
+      - 'scripts/android-qa/**'
+      - 'scripts/regression-android-qa-isolation-contract.mjs'
+      - 'scripts/regression-android-qa-native-overlay.mjs'
+      - 'scripts/regression-android-qa-fixture-server.mjs'
+      - 'scripts/regression-android-qa-merged-manifest.py'
+      - '.github/workflows/qa-roster-checkpoint.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-rehearsal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Raw account and competence isolation
+        run: |
+          node scripts/regression-qa-roster-checkpoint.mjs
+          node scripts/regression-android-qa-isolation-contract.mjs
+          node scripts/regression-android-qa-native-overlay.mjs
+          node scripts/regression-android-qa-fixture-server.mjs
+          python scripts/regression-android-qa-merged-manifest.py
+      - run: node scripts/v139/apply.mjs
+      - name: Prepared account and competence isolation
+        run: |
+          node scripts/regression-qa-roster-checkpoint.mjs
+          node scripts/regression-android-qa-isolation-contract.mjs
+          node scripts/regression-android-qa-native-overlay.mjs
+          node scripts/regression-android-qa-fixture-server.mjs
+          python scripts/regression-android-qa-merged-manifest.py
+      - run: npx tsc --noEmit

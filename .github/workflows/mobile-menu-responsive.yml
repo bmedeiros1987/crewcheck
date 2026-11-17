@@ -79,6 +79,9 @@ on:
       - 'client/src/lib/rosterStartup.ts'
       - 'scripts/roster-startup/**'
       - 'scripts/regression-demo-bootstrap-*'
+      - 'client/src/lib/qaRosterCheckpoint.ts'
+      - 'client/src/components/qa/QaRosterCheckpoint.tsx'
+      - 'scripts/regression-qa-roster-checkpoint-browser.mjs'
       - 'scripts/v1432/apply.mjs'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
       - 'scripts/regression-publication-import-flow.cjs'
@@ -230,6 +233,10 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
           DEMO_BOOTSTRAP_OUTPUT: artifacts/demo-bootstrap
         run: node scripts/regression-demo-bootstrap-offline.cjs
+      - name: Verify test-build roster checkpoint download and isolated rehearsal
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-qa-roster-checkpoint-browser.mjs
       - name: Verify quick roster card presentation with synthetic events
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -277,6 +284,7 @@ jobs:
             artifacts/roster-summary
             artifacts/roster-layout-session
             artifacts/demo-bootstrap
+            artifacts/qa-roster-checkpoint
             artifacts/quick-roster-cards
             artifacts/pulse-content-space
             artifacts/menu-density
