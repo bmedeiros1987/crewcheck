@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "flight": "LA9999",
+  "origin": "GRU",
+  "destination": "BSB",
+  "gate": "SYNTHETIC-A1",
+  "terminal": "SYNTHETIC-T2",
+  "status": "SYNTHETIC-STATUS",
+  "occurrenceKey": "LA|9999|2030-01-01|GRU|BSB|12:00",
+  "provenance": {
+    "occurrenceKey": "LA|9999|2030-01-01|GRU|BSB|12:00",
+    "fields": {
+      "departureGate": {"value":"SYNTHETIC-A1","provider":"fixture-gate","observedAt":"2030-01-01T11:59:00Z","occurrenceKey":"LA|9999|2030-01-01|GRU|BSB|12:00"},
+      "departureTerminal": {"value":"SYNTHETIC-T2","provider":"fixture-terminal","observedAt":"2030-01-01T11:59:00Z","occurrenceKey":"LA|9999|2030-01-01|GRU|BSB|12:00"},
+      "status": {"value":"SYNTHETIC-STATUS","provider":"fixture-status","observedAt":"2030-01-01T11:59:00Z","occurrenceKey":"LA|9999|2030-01-01|GRU|BSB|12:00"}
+    }
+  }
+}

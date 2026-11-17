@@ -1,0 +1,26 @@
+name: Partner gate provenance offline
+on:
+  pull_request:
+    paths:
+      - 'server/v1413/partnerGate*.mjs'
+      - 'server/radar-field-provenance.mjs'
+      - 'server/radar-occurrence-identity.mjs'
+      - 'scripts/regression-partner-gate-*.mjs'
+      - 'docs/partner-gate-http.openapi.json'
+      - 'scripts/fixtures/partner-gate/**'
+      - '.github/workflows/partner-gate-provenance-off.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/regression-partner-gate-api.mjs
+      - run: node scripts/regression-partner-gate-http.mjs
+      - run: node scripts/regression-radar-field-provenance.mjs
+      - run: node scripts/regression-radar-occurrence-identity.mjs
+      - run: node scripts/regression-cirium-radar-provider-off.mjs

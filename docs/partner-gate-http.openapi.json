@@ -1,0 +1,205 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CrewCheck Partner Gate HTTP (unregistered, fail-closed)",
+    "version": "1.2.0",
+    "description": "Gate GET contract selectively recovered from PR #579. Optional route queries resolve to an exact server-side occurrence. No credentials or external activation installed."
+  },
+  "security": [
+    {
+      "partnerApiKey": []
+    }
+  ],
+  "paths": {
+    "/api/v1/flights/{flight}/gate": {
+      "get": {
+        "operationId": "getFlightGate",
+        "parameters": [
+          {
+            "name": "flight",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "origin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 3
+            }
+          },
+          {
+            "name": "destination",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 3
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved fields or unavailable, independently redacted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid flight or route"
+          },
+          "401": {
+            "description": "Invalid or revoked credential"
+          },
+          "403": {
+            "description": "Missing gates:read scope"
+          },
+          "405": {
+            "description": "GET required"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "502": {
+            "description": "Radar or rights read failed"
+          },
+          "503": {
+            "description": "Disabled, incomplete composition or unresolved occurrence"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "partnerApiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "ck_live_... / ck_test_..."
+      }
+    },
+    "schemas": {
+      "GateResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "apiVersion",
+          "flight",
+          "origin",
+          "destination",
+          "gate",
+          "terminal",
+          "flightStatus",
+          "confidence",
+          "confidenceBand",
+          "source",
+          "sourceClass",
+          "shareable",
+          "retrievedAt",
+          "occurrenceMatch",
+          "occurrenceVerified",
+          "provenance",
+          "gateStatus"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "apiVersion": {
+            "type": "string",
+            "const": "v1"
+          },
+          "flight": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "destination": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terminal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flightStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "confidenceBand": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceClass": {
+            "type": "string"
+          },
+          "shareable": {
+            "type": "boolean"
+          },
+          "retrievedAt": {
+            "type": "string"
+          },
+          "occurrenceMatch": {
+            "type": "string",
+            "const": "live-flight-route"
+          },
+          "occurrenceVerified": {
+            "type": "boolean"
+          },
+          "provenance": {
+            "type": "object"
+          },
+          "gateStatus": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "restricted"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
