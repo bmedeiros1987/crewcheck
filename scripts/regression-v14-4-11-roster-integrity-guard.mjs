@@ -207,10 +207,24 @@ assert.match(loader, /v14411\/apply\.mjs/);
 assert.equal(policy.versionName, '14.4.11');
 assert.equal(release.version, '14.4.11');
 assert.equal(pkg.version, '14.4.11');
-// Live Play already contains mobile144157; this reviewed phone candidate must upgrade it.
-assert.equal(policy.artifacts.app.versionCode, 144158);
-assert.equal(policy.artifacts.wear.versionCode, 144111);
-assert.equal(policy.artifacts.watchface.versionCode, 144112);
+// Check the prepared source against its reviewed policy, not a historical build
+// number. This does not establish live Play availability or a code reservation.
+const packages = {app:'com.crewcheck.app',wear:'com.crewcheck.app',watchface:'com.crewcheck.watch.app'};
+assert.deepEqual(Object.keys(policy.artifacts).sort(), Object.keys(packages).sort());
+const releaseCodes = new Set();
+for (const [module, spec] of Object.entries(policy.artifacts)) {
+  assert.equal(spec.package, packages[module], `${module}: package targeting`);
+  assert.ok(Number.isSafeInteger(spec.versionCode) && spec.versionCode > 0 && spec.versionCode < 2100000000, `${module}: valid versionCode`);
+  const floor = policy.knownMaxVersionCode[spec.package];
+  assert.ok(Number.isSafeInteger(floor) && floor >= 0 && spec.versionCode > floor, `${module}: above the reviewed known floor`);
+  const identity = `${spec.package}:${spec.versionCode}`;
+  assert.ok(!releaseCodes.has(identity), `${module}: unique code within the shared package`);
+  releaseCodes.add(identity);
+  const gradle = fs.readFileSync(`android-wrapper/${module}/build.gradle`, 'utf8');
+  assert.equal(gradle.match(/^\s*versionCode\s+(\d+)\s*$/m)?.[1], String(spec.versionCode), `${module}: prepared code matches policy`);
+  const expectedName = policy.versionName + (module === 'app' ? '' : '-' + module);
+  assert.equal(gradle.match(/^\s*versionName\s+['"]([^'"]+)['"]/m)?.[1], expectedName, `${module}: prepared name matches policy`);
+}
 
 harness.cleanup();
 console.log('PASS CrewCheck v14.4.11 — Roster Integrity Guard + correction release');

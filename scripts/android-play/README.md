@@ -1,24 +1,51 @@
 # Android store release
 
-Current correction release: **14.4.11** — P0 Roster Integrity Guard / midnight APZ continuity.
+Current build-only label: **14.4.11** — existing P0 Roster Integrity Guard / midnight APZ continuity.
 
 The terminal canonical preparation step applies `release-policy.json` after all legacy patches.
 The web version is independent of Android store version codes. Increment all applicable codes
 before each new upload; codes are unique across phone and Wear because they share a package.
 Known floors are a conservative snapshot, not a substitute for live Play validation.
-Phone candidate144157 supersedes144156 after the cancellation/privacy change.
-The144156 draft upload has an uncertain UI outcome and must be inspected before
-any new store write; neither code is claimed published.
+The shared-package floor 144159 records the latest supplied read-only QA snapshot:
+mobile 144158 is already used, and 144159 belongs to an existing open-test draft.
+This is an observed lower bound, not a complete current inventory or a reservation.
+Historical candidate 144157 and the uncertain 144156 draft remain historical evidence;
+this preparation does not resolve or replace any existing draft.
 
 | Artifact | Package | Code | Track |
 | --- | --- | --- | --- |
-| Mobile | com.crewcheck.app | 144157 | qa (internal testing) |
-| CrewWatch | com.crewcheck.app | 144111 | wear:qa |
+| Mobile | com.crewcheck.app | 144160 | qa (internal testing) |
+| CrewWatch | com.crewcheck.app | 144161 | wear:qa |
 | Watch face (WFF 1) | com.crewcheck.watch.app | 144112 | wear:qa |
 
 All target API 36. Minimum APIs remain 26/30/33. The resource-only WFF 1 face requires
 Wear OS 4; the companion remains compatible with Wear OS 3. The phone and companion
 retain their existing shared application ID and signing key for Data Layer compatibility.
+
+## Provisional build-only preparation
+
+Mobile 144160 and Wear 144161 are distinct provisional build codes above that observed
+shared-package floor. Neither code is confirmed free or reserved in Play. Watch face 144112
+and its package policy are unchanged; its current Play maximum has not been verified.
+No Watch Face upload or new code is selected by this change.
+
+Use the existing `Android signed store bundles` workflow only for build/validation,
+with `publish_internal_drafts=false` (also the default for manual dispatch). Normal PR
+builds already follow this build-only path. Live allocation and publication must remain
+skipped. The terminal `prepare.mjs` consumes this policy and updates generated Gradle
+versions; editing Gradle alone is not the source of truth. No workflow, allocator,
+journal, signing identity, native functionality or publication guard is changed here.
+
+Review the exact source/CI, then verify the resulting three AABs, effective manifests,
+signatures, `release-report.json`, `resolved-release-policy.json` and checksums. A green
+build establishes artifact correctness against this policy, not store eligibility,
+unused codes, physical-device behavior or resolution of policy findings.
+
+A final submission still requires a fresh complete package/track inventory, preserved
+drafts and review state, reviewed durable shared-package reservation/all-writer
+coordination and allocation before the final build. Keep the existing live shared-package
+writer guards OFF until those dependencies are proven. Do not use these provisional
+artifacts to bypass allocation or the mixed mobile/Wear/declaration review.
 
 ## CrewLife and policy rejection
 
