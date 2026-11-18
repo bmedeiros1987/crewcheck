@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import ts from 'typescript';
 import fs from 'node:fs';import path from 'node:path';import http from 'node:http';import {createRequire} from 'node:module';import {build} from 'esbuild';
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const home=fs.readFileSync('client/src/pages/Home.tsx','utf8'),existing=fs.readFileSync('scripts/regression-wakeup-session-browser.mjs','utf8');
 const from=home.indexOf('function StayAwareWakeupView('),to=home.indexOf('function PresentationManagerView',from);assert(from>=0&&to>from,'use canonical prepared actual wrapper and host');
 assert(home.slice(from,to).includes('alertRosterOwned(roster)'),'prepare latest account-revalidating wrapper before running fixture');
 const watchFrom=home.indexOf('const selected = buildCrewCheckWatchSnapshot(events, event, null, now);'),watchTo=home.indexOf('// Mesmo próximo voo',watchFrom);assert(watchFrom>=0&&watchTo>watchFrom);const watchBlock=home.slice(watchFrom,watchTo);assert(watchBlock.includes('projectedEvent'),'use actual clone fallback projection callsite');
+const homeSource = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const watchVacationProjection = homeSource.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === 'watchEventsWithPublishedVacation');
+assert(watchVacationProjection, 'use the actual Wear vacation projection');
 const kfrom=home.indexOf('function KpiCard('),kto=home.indexOf('\ntype RadarSnapshot',kfrom);assert(kfrom>=0&&kto>kfrom);
 const pfrom=existing.indexOf('const hostPrelude=`')+'const hostPrelude=`'.length,pto=existing.indexOf('`;\nconst bundle=',pfrom);assert(pto>pfrom);
 let prelude=existing.slice(pfrom,pto).replace("const eventStartDateTime=()=>new Date('2032-02-01T10:00:00Z'),wakeupDateForEvent=eventStartDateTime;","const eventStartDateTime=e=>new Date(e.canonical.startDateTime),wakeupDateForEvent=eventStartDateTime;");
@@ -13,8 +18,10 @@ import{readStayOperationalProjection,selectCurrentStayOperationalProjection,stay
 import{openStayProgramEditor as editOperationalStay,readStayEditorIntent}from'./client/src/lib/stayEditorNavigation';
 import{loadStayEditor,persistStayEditor,savedStayEditorEvent}from'./client/src/lib/stayEditorStore';
 import{alertRosterOwned}from'./client/src/lib/alertRosterOwnership';import{startupKey,startupOwner}from'./client/src/lib/rosterStartup';import{captureAuthSession}from'./client/src/lib/authClient';import{buildCrewCheckWatchSnapshot}from'./client/src/lib/watchContext';
+import{careStateForScheduleActivity}from'./client/src/lib/scheduleActivityClassification';
 import{WakeDiagnostic}from'./client/src/components/notifications/WakeDiagnostic';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';import{WakeupChannelSelection}from'./client/src/components/notifications/WakeupChannelSelection';import MoneyText from './client/src/components/MoneyText';import{createRoot}from'react-dom/client';
 ${home.slice(kfrom,kto)}${home.slice(from,to)}
+${watchVacationProjection.getText(homeSource)}
 const roster={year:2032,month:2,days:[{date:'01/02/2032',type:'PERNOITE',legs:[]}]};if(getStoredUser()?.id==='A'&&!localStorage.getItem(startupKey()))localStorage.setItem(startupKey(),JSON.stringify({owner:startupOwner(),roster}));
 const original={id:'stay-synthetic',kind:'stay',hotel:'ORIGINAL HOTEL',origin:'SYN',destination:'SYN',date:new Date('2032-02-01T00:00:00Z'),canonical:{startDateTime:'2032-01-31T18:00:00Z',endDateTime:'2032-02-01T12:00:00Z'}};
 const flight={id:'flight-original-prefix',kind:'flight',origin:'SYN',destination:'SYN',presentation:'08:35',placeholder:false,canonical:{startDateTime:'2032-02-01T09:00:00Z',endDateTime:'2032-02-01T11:00:00Z'}};
