@@ -1,4 +1,4 @@
-// Isolated known-owner composition, not a configured receiver or unknown-event inbox.
+// Known-owner event transaction. Unknown events require a separate ingestion policy.
 // No provider I/O, raw purchase token, schema installation, timers or retention policy.
 import {createHash} from 'node:crypto';
 import {withProfileLocks,assertTransactionClient} from './profile-locks.mjs';
@@ -34,14 +34,20 @@ export async function commitObservedGoogleEvent(db,input){
  const fence=input?.expectedStateFence;if(!digest(fence))throw fail('GOOGLE_STATE_FENCE_REQUIRED');
  return commit(db,input,fence);
 }
+export async function hasGoogleEventReceipt(db,{eventId,payloadHash},lock=false){
+ if(lock)assertTransactionClient(db);
+ const {rows}=await db.query("SELECT event_id,payload_hash FROM crewcheck_platform_webhook_events WHERE provider='google_play' AND event_id=$1"+(lock?' FOR UPDATE':''),[eventId]);
+ if(!rows.length)return false;
+ if(rows.length!==1||rows[0].event_id!==eventId||rows[0].payload_hash!==payloadHash)throw fail('GOOGLE_EVENT_RECEIPT_CONFLICT');
+ return true;
+}
 async function commit(db,input,expectedStateFence){
  const prepared=snapshot(input),sub=prepared.subscription;await requireGoogleEventSchema(db);
  try{return await withProfileLocks(db,[sub.email],async client=>{
   assertTransactionClient(client);
   const current=await readLockedPlatformEntitlement(client,sub);
   if(current.subscription?.provider!=='google_play'||current.subscription.purchase_token_hash!==sub.tokenHash)throw fail('BILLING_PROVIDER_RECONCILIATION_REQUIRED');
-  const receipts=(await client.query("SELECT event_id,payload_hash FROM crewcheck_platform_webhook_events WHERE provider='google_play' AND event_id=$1 FOR UPDATE",[prepared.eventId])).rows;
-  if(receipts.length){if(receipts.length!==1||receipts[0].event_id!==prepared.eventId||receipts[0].payload_hash!==prepared.payloadHash)throw fail('GOOGLE_EVENT_RECEIPT_CONFLICT');return {duplicate:true};}
+  if(await hasGoogleEventReceipt(client,prepared,true))return {duplicate:true};
   if(expectedStateFence!==null&&googleStateObservationHash(current.subscription)!==expectedStateFence)throw fail('GOOGLE_STATE_RECHECK_REQUIRED');
   const saved=await writeVerifiedGoogleSubscriptionInTransaction(client,sub);
   await client.query("INSERT INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash) VALUES('google_play',$1,$2)",[prepared.eventId,prepared.payloadHash]);

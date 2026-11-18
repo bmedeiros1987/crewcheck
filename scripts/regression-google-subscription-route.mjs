@@ -1,15 +1,71 @@
-import {googleSubscriptionStatus} from '../server/google-subscription-status.mjs';
-import assert from 'node:assert/strict';import fs from 'node:fs';import {createHash} from 'node:crypto';
-globalThis.fetch=()=>{throw Error('Provider network forbidden');};const source=fs.readFileSync('server/platform.mjs','utf8'),norm=(x,n)=>String(x||'').trim().slice(0,n),hash=x=>createHash('sha256').update(x).digest('hex');
-const start=source.indexOf('function normalizedGoogleStatus('),end=source.indexOf('async function verifyGooglePubSubIdentity(',start);let captured;
-const save=new Function('normalizeText','sha256','GOOGLE_PLAY_PRODUCTS','writeVerifiedGoogleSubscription','googleSubscriptionStatus',source.slice(start,end)+';return saveGoogleSubscription;')(norm,hash,new Map([['synthetic.monthly','premium_monthly']]),async(db,input)=>{captured=input;return{active:true};},googleSubscriptionStatus);
-await save({},'synthetic@example.invalid','SYNTHETIC_RAW_TOKEN',{item:{productId:'synthetic.monthly'},expiry:new Date('2099-01-01T00:00:00Z'),payload:{subscriptionState:'SUBSCRIPTION_STATE_ACTIVE',externalAccountIdentifiers:{obfuscatedExternalAccountId:'GOOGLE_TEST'},latestOrderId:'SYNTHETIC_ORDER',acknowledgementState:'ACKNOWLEDGED'}},'GOOGLE_TEST',true);
-assert.equal(captured.tokenHash,hash('SYNTHETIC_RAW_TOKEN'));assert.equal(captured.expectedPublicId,'GOOGLE_TEST');assert.equal(captured.verifiedPublicId,'GOOGLE_TEST');assert.equal(captured.existingOnly,true);assert(!JSON.stringify(captured).includes('SYNTHETIC_RAW_TOKEN'));
-const a=source.indexOf('async function handleGoogleRtdn('),b=source.indexOf('\nfunction meaningfulComplianceAlerts(',a);
-for(const mode of ['unauthenticated','unknown','unknown-repeated','ambiguous-owner','known','profile-missing','ambiguous-profile','duplicate','provider-unavailable','storage-unavailable']){
- let bodies=0,reads=0,verifications=0,writes=0,eventWrites=0;const notification={packageName:'com.crewcheck.app',subscriptionNotification:{purchaseToken:'SYNTHETIC_TOKEN'}};
- const db={query:async(sql)=>{reads++;if(mode==='storage-unavailable')throw Object.assign(Error('SYNTHETIC_DB_UNAVAILABLE'),{code:'ECONNRESET'});if(sql.startsWith('INSERT')){eventWrites++;return{rows:[]};}if(sql.includes('webhook_events'))return{rows:mode==='duplicate'?[{}]:[]};if(sql.includes('purchase_token_hash'))return{rows:mode.startsWith('unknown')?[]:mode==='ambiguous-owner'?[{email:'one'},{email:'two'}]:[{email:'synthetic@example.invalid'}]};if(sql.includes('profiles'))return{rows:mode==='profile-missing'?[]:mode==='ambiguous-profile'?[{email:'synthetic@example.invalid',public_id:'GOOGLE_TEST'},{email:'other@example.invalid',public_id:'OTHER'}]:[{email:'synthetic@example.invalid',public_id:'GOOGLE_TEST'}]};throw Error('Unexpected synthetic query');}};
- const handler=new Function('verifyGooglePubSubIdentity','readBody','normalizeText','env','pool','sendJson','verifyGooglePlaySubscription','sha256','saveGoogleSubscription',source.slice(a,b)+';return handleGoogleRtdn;')(async()=>{if(mode==='unauthenticated')throw Object.assign(Error('SYNTHETIC_UNAUTHORIZED'),{status:403});},async()=>{bodies++;return{message:{messageId:'SYNTHETIC_EVENT',data:Buffer.from(JSON.stringify(notification)).toString('base64')}};},norm,(k,d)=>d,async()=>db,(res,status,body)=>Object.assign(res,{status,body}),async()=>{verifications++;if(mode==='provider-unavailable')throw Object.assign(Error('SYNTHETIC_PROVIDER_UNAVAILABLE'),{status:503});return{payload:{externalAccountIdentifiers:{obfuscatedExternalAccountId:'GOOGLE_TEST'}}};},hash,async(...args)=>{writes++;assert.equal(args[4],'GOOGLE_TEST');assert.equal(args[5],true);});
- const res={};if(mode==='unauthenticated'){await assert.rejects(handler({method:'POST'},res));assert.equal(bodies+reads+writes+verifications+eventWrites,0);}else if(['provider-unavailable','storage-unavailable'].includes(mode)){await assert.rejects(handler({method:'POST'},res));assert.equal(res.status,undefined);assert.equal(writes+eventWrites,0);assert.equal(verifications,mode==='provider-unavailable'?1:0);}else{await handler({method:'POST'},res);if(mode==='unknown-repeated')await handler({method:'POST'},res);assert.equal(writes,mode==='known'?1:0);assert.equal(eventWrites,mode==='known'?1:0);assert.equal(verifications,mode==='known'?1:0,'unknown/ambiguous/missing owner must not consume provider verification');if(['unknown','unknown-repeated','ambiguous-owner'].includes(mode)){assert.equal(res.body.ignored,true);assert.equal(reads,mode==='unknown-repeated'?4:2,'unknown token must not adopt a profile from a claimed public ID');assert.equal(res.body.needsAcknowledgement,undefined);}if(['profile-missing','ambiguous-profile'].includes(mode))assert.equal(res.status,409);}
+import assert from 'node:assert/strict';
+import { googleSubscriptionStatus } from '../server/google-subscription-status.mjs';
+import { createRtdnFixture, googleRtdnMessage, hash, platformFunctionBlock, qaCatalog, qaProduct } from './fixtures/google-rtdn-route.mjs';
+
+globalThis.fetch = () => assert.fail('Provider network forbidden');
+let captured;
+const save = new Function('normalizeText', 'sha256', 'GOOGLE_PLAY_PRODUCTS', 'writeVerifiedGoogleSubscription', 'googleSubscriptionStatus',
+  platformFunctionBlock('function normalizedGoogleStatus(', 'async function verifyGooglePubSubIdentity(') + ';return saveGoogleSubscription;')(
+  (value, limit) => String(value || '').trim().slice(0, limit), hash, qaCatalog,
+  async (_db, input) => { captured = input; return { active: true }; }, googleSubscriptionStatus,
+);
+await save({}, 'synthetic@example.invalid', 'SYNTHETIC_RAW_TOKEN', {
+  item: { productId: qaProduct }, expiry: new Date('2099-01-01T00:00:00Z'),
+  payload: { subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', externalAccountIdentifiers: { obfuscatedExternalAccountId: 'GOOGLE_TEST' }, latestOrderId: 'SYNTHETIC_ORDER', acknowledgementState: 'ACKNOWLEDGED' },
+}, 'GOOGLE_TEST', true);
+assert.equal(captured.tokenHash, hash('SYNTHETIC_RAW_TOKEN'));
+assert.equal(captured.expectedPublicId, 'GOOGLE_TEST');
+assert.equal(captured.verifiedPublicId, 'GOOGLE_TEST');
+assert.equal(captured.existingOnly, true);
+assert(!JSON.stringify(captured).includes('SYNTHETIC_RAW_TOKEN'));
+
+const token = 'SYNTHETIC_TOKEN';
+const eventId = 'SYNTHETIC_EVENT';
+const message = googleRtdnMessage(token, eventId);
+const payloadHash = hash(Buffer.from(message.message.data, 'base64').toString('utf8'));
+for (const test of [
+  { options: { authorization: '' }, status: 401, auth: 0 },
+  { configured: false, status: 503, auth: 0 },
+  { claims: { aud: 'wrong' }, status: 403, auth: 1 },
+  { claims: { aud: 'https://rtdn.example.invalid', email: 'events@example.invalid', email_verified: false }, status: 403, auth: 1 },
+]) {
+  const fixture = createRtdnFixture(test);
+  await assert.rejects(fixture.run(message, test.options), { status: test.status });
+  assert.deepEqual(fixture.counts, { verifiedAuth: test.auth, body: 0, database: 0, publisher: 0 });
 }
-console.log('PASS actual Google save wrapper and10 authenticated RTDN mock scenarios; hash-only write input, no public-ID adoption or provider network');
+const blocked = createRtdnFixture({});
+assert.equal((await blocked.run(message, { method: 'GET' })).status, 405);
+assert.equal(blocked.counts.verifiedAuth, 0);
+for (const malformed of [googleRtdnMessage(token, eventId + '\n'), googleRtdnMessage(token + '\n', eventId), googleRtdnMessage(token, eventId, { packageName: 'invalid.example' }), { message: { messageId: eventId, data: '%%%%' } }]) {
+  assert.equal((await blocked.run(malformed)).status, 400);
+}
+assert.equal(blocked.counts.database, 0);
+for (const mode of ['unknown', 'ambiguous-owner', 'known', 'profile-missing', 'ambiguous-profile', 'duplicate', 'conflict', 'storage-unavailable']) {
+  let observed = 0;
+  const database = { query: async sql => {
+    if (mode === 'storage-unavailable') throw Object.assign(Error('SYNTHETIC_DB_UNAVAILABLE'), { code: 'ECONNRESET' });
+    if (sql.includes('webhook_events')) return { rows: ['duplicate', 'conflict'].includes(mode) ? [{ event_id: eventId, payload_hash: mode === 'duplicate' ? payloadHash : hash('wrong') }] : [] };
+    if (sql.includes('purchase_token_hash')) return { rows: mode === 'unknown' ? [] : mode === 'ambiguous-owner' ? [{ email: 'one' }, { email: 'two' }] : [{ email: 'synthetic@example.invalid' }] };
+    if (sql.includes('profiles')) return { rows: mode === 'profile-missing' ? [] : mode === 'ambiguous-profile' ? [{ public_id: 'A' }, { public_id: 'B' }] : [{ public_id: 'GOOGLE_TEST' }] };
+    assert.fail('Unexpected synthetic SQL');
+  }};
+  const fixture = createRtdnFixture({ database, createObserver: () => async (owner, event, transientToken) => {
+    observed++;
+    assert.deepEqual(owner, { email: 'synthetic@example.invalid', expectedPublicId: 'GOOGLE_TEST', tokenHash: hash(token) });
+    assert.deepEqual(event, { eventId, payloadHash });
+    assert.equal(transientToken, token);
+    return { duplicate: false };
+  } });
+  if (mode === 'conflict' || mode === 'storage-unavailable') {
+    await assert.rejects(fixture.run(message), { code: mode === 'conflict' ? 'GOOGLE_EVENT_RECEIPT_CONFLICT' : 'ECONNRESET' });
+  } else {
+    const response = await fixture.run(message);
+    if (mode === 'profile-missing' || mode === 'ambiguous-profile') assert.equal(response.status, 409);
+    else assert.equal(response.status, 200);
+    if (mode === 'duplicate') assert.equal(response.body.duplicate, true);
+    if (mode === 'unknown' || mode === 'ambiguous-owner') assert.equal(response.body.ignored, true);
+  }
+  assert.equal(observed, mode === 'known' ? 1 : 0);
+  assert.equal(fixture.counts.publisher, 0);
+}
+console.log('PASS actual checkout write wrapper and 17 authenticated RTDN boundary cases; zero provider traffic');

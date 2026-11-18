@@ -1,6 +1,6 @@
 # Contracting-intent preparation — HOLD
 
-This follow-up belongs to Work's existing billing branch. It is not wired to platform routes, native billing, webhooks, RTDN, a queue, timer or provider. It performs no provider transport and grants no entitlement. No production migration, charge, cancellation, refund or release is included.
+This follow-up belongs to Work's existing billing branch. The contracting-intent helpers remain isolated from routes, native billing, webhooks, queues and timers. The latest section records the separate change to the existing authenticated RTDN route. No production migration, charge, cancellation, refund or release is included.
 
 ## Schema and privacy boundary
 
@@ -195,3 +195,13 @@ The prepared cancellation-journal run exposed a separate eight-owner token race:
 The concurrent fixture requires one exact token owner and no subscription or premium plan for every loser; losers may receive only proven-link conflict or explicit busy. Deterministic driver faults require two rolled-back attempts for exhaustion, and one discarded attempt with no retry for rollback failure. Existing lost-COMMIT tests remain required. This is a bounded safe error contract, not a guarantee that database deadlocks cannot occur.
 
 HOLD remains for authenticated/provider integration, launch-origin proof, unknown-receipt quarantine and protected retention/erasure. None is selected or activated by this correction; no real cancellation, payment, schema migration or publication.
+
+## Authenticated RTDN receipt and access transaction
+
+The existing Google RTDN handler now uses the known-owner observation and receipt transaction. It retains the Pub/Sub identity check before payload or subscription processing. Only an existing Google subscription with a uniquely linked token hash is eligible. The authenticated Publisher response must also confirm the same current account and a supported catalog item. No recovery by public ID or unlinked token is added.
+
+The same event ID and payload hash return a duplicate acknowledgement. A reused ID with different content returns a conflict, including if two deliveries overlap. Access and the receipt share one transaction. A stale read is rejected if another writer changed the subscription, so Pub/Sub timestamps and the opaque ETag do not determine entitlement order. The process-local observer bounds concurrent Publisher verification and deduplicates identical in-flight deliveries. It does not establish a distributed quota or provider-side ordering.
+
+The previous route could commit access before its receipt insert failed. The regression injects that failure after the access update and checks rollback and successful retry. The local SQL suite also exercises overlapping duplicates, competing observations, account and provider changes, conflict detection and duplicate readback. A legacy subscription with no observation fence can still get the fence metadata before the transaction. The token stays transient.
+
+HOLD remains for rollout and validation against real Google data, unknown-owner retention, durable admission of new purchases across Asaas and Google, reconciliation of conflicting subscriptions, cancellation and provider-specific rights. The strict existing current-read adapter fails closed for unsupported plan and response shapes. The synthetic fixtures do not activate transport or prove these other paths.

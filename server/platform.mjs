@@ -1,6 +1,9 @@
 import {googleSubscriptionStatus} from './google-subscription-status.mjs';
 import {readBillingCancellation,commitAcknowledgedAsaasCancellation} from './billing-cancellation.mjs';
 import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
+import {createGoogleCurrentReadAdapter} from './billing-current-read-adapters.mjs';
+import {createGoogleEventObserver} from './google-event-observation.mjs';
+import {hasGoogleEventReceipt} from './google-event-transaction.mjs';
 import {resolveOwnedGatePublication} from './radar-publication-authority.mjs';
 import { PLATFORM_PLAN_IDS as PLAN_IDS, readPlatformEntitlement } from './platform-entitlement.mjs';
 import { asaasEnvelope, receiveAsaasEvent, asaasInboxSummary } from './asaas-webhook-inbox.mjs';
@@ -1485,31 +1488,60 @@ async function handleAdminAsaasInbox(req, res) {
   catch { return sendJson(res, 503, { ok: false, code: 'ASAAS_INBOX_UNAVAILABLE' }); }
 }
 
+const googleRtdnObservers = new WeakMap();
+
+function validGoogleRtdnIdentifier(value, limit) {
+  return typeof value === 'string' && value.length > 0 && value.length <= limit && !/[^\x21-\x7e]/.test(value);
+}
+
+function googleRtdnObserver(db, packageName) {
+  const existing = googleRtdnObservers.get(db);
+  if (existing?.packageName === packageName) return existing.observe;
+
+  const readCurrent = createGoogleCurrentReadAdapter({
+    packageName, products: GOOGLE_PLAY_PRODUCTS, expectedPlanType: 'autoRenewingPlan',
+    readJson: async (url, { method }) => {
+      const accessToken = await googleAccessToken();
+      if (!accessToken) throw new Error('Verificação Google Play aguardando credencial segura do servidor.');
+      const response = await fetch(url, { method, redirect: 'error', headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
+      return { status: response.status, body: await response.json().catch(() => null) };
+    },
+  });
+  const observe = createGoogleEventObserver({
+    db, products: GOOGLE_PLAY_PRODUCTS, verificationConcurrency: 2,
+    verifyCurrent: (known, purchaseToken) => readCurrent({ known, purchaseToken }),
+  });
+  googleRtdnObservers.set(db, { packageName, observe });
+  return observe;
+}
+
 async function handleGoogleRtdn(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   await verifyGooglePubSubIdentity(req);
   const body = await readBody(req, 1_000_000);
-  const eventId = normalizeText(body.message?.messageId, 180);
+  const eventId = body?.message?.messageId;
   let notification;
-  try { notification = JSON.parse(Buffer.from(String(body.message?.data || ''), 'base64').toString('utf8')); }
+  try { notification = JSON.parse(Buffer.from(String(body?.message?.data || ''), 'base64').toString('utf8')); }
   catch { return sendJson(res, 400, { ok: false, message: 'RTDN inválida.' }); }
-  const purchaseToken = normalizeText(notification?.subscriptionNotification?.purchaseToken, 5000);
-  const packageName = normalizeText(notification?.packageName, 180);
-  if (!eventId || !purchaseToken || packageName !== env('GOOGLE_PLAY_PACKAGE_NAME', 'com.crewcheck.app')) return sendJson(res, 400, { ok: false, message: 'RTDN incompleta.' });
+  const purchaseToken = notification?.subscriptionNotification?.purchaseToken;
+  const packageName = env('GOOGLE_PLAY_PACKAGE_NAME', 'com.crewcheck.app');
+  if (!validGoogleRtdnIdentifier(eventId, 180) || !validGoogleRtdnIdentifier(purchaseToken, 5000) || notification?.packageName !== packageName) {
+    return sendJson(res, 400, { ok: false, message: 'RTDN incompleta.' });
+  }
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  const duplicate = await db.query("SELECT 1 FROM crewcheck_platform_webhook_events WHERE provider='google_play' AND event_id=$1", [eventId]);
-  if (duplicate.rows[0]) return sendJson(res, 200, { ok: true, duplicate: true });
+  const event = { eventId, payloadHash: sha256(JSON.stringify(notification)) };
+  if (await hasGoogleEventReceipt(db, event)) return sendJson(res, 200, { ok: true, duplicate: true });
   // Unknown-owner recovery is on HOLD: avoid a provider lookup that cannot be applied.
   // This is not quarantine, purchase acknowledgment or permission to adopt a claimed ID.
-  const owner = await db.query('SELECT email FROM crewcheck_platform_subscriptions WHERE purchase_token_hash=$1 LIMIT 2', [sha256(purchaseToken)]);
+  const tokenHash = sha256(purchaseToken);
+  const owner = await db.query("SELECT email FROM crewcheck_platform_subscriptions WHERE provider='google_play' AND purchase_token_hash=$1 LIMIT 2", [tokenHash]);
   if (owner.rows.length !== 1) return sendJson(res, 200, { ok: true, ignored: true, message: 'Compra sem conta CrewCheck conciliável.' });
   const profiles = await db.query('SELECT email,public_id FROM crewcheck_platform_profiles WHERE email=$1', [owner.rows[0].email]);
   if (profiles.rows.length !== 1) return sendJson(res, 409, { ok: false, code: 'GOOGLE_OWNER_EVIDENCE_REQUIRED' });
-  const verified = await verifyGooglePlaySubscription(purchaseToken, '', true);
-  await saveGoogleSubscription(db, owner.rows[0].email, purchaseToken, verified, profiles.rows[0].public_id, true);
-  await db.query("INSERT IGNORE INTO crewcheck_platform_webhook_events(provider,event_id,payload_hash) VALUES('google_play',$1,$2)", [eventId, sha256(JSON.stringify(notification))]);
-  return sendJson(res, 200, { ok: true });
+  const known = { email: owner.rows[0].email, expectedPublicId: profiles.rows[0].public_id, tokenHash };
+  const result = await googleRtdnObserver(db, packageName)(known, event, purchaseToken);
+  return sendJson(res, 200, result.duplicate ? { ok: true, duplicate: true } : { ok: true });
 }
 
 function meaningfulComplianceAlerts(compliance = {}) {
