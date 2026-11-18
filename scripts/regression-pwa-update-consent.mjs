@@ -13,6 +13,7 @@ assert.notEqual(stampServiceWorkerBuild(raw,html('a')).buildId,stampServiceWorke
 assert.throws(()=>stampServiceWorkerBuild(raw,'<p>announcement only</p>'),'announcement without served entry is not downloadable');
 let stage='a',missing=false,servedMismatch=false,htmlTamper=false;
 const server=http.createServer((req,res)=>{res.setHeader('cache-control','no-store');if(req.url==='/sw.js'){res.setHeader('content-type','text/javascript');res.end(stampServiceWorkerBuild(raw,html(stage),['/assets/pdf-dynamic.js','/assets/pdf.worker.mjs']).source);}
+ else if(req.url==='/crewcheck-gate-receiver-offline.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync('client/public/crewcheck-gate-receiver-offline.js','utf8'));}
  else if(req.url==='/crewcheck-push-offline.js'){res.setHeader('content-type','text/javascript');res.end(push);}
  else if(req.url==='/assets/pdf-dynamic.js'||req.url==='/assets/pdf.worker.mjs'){res.setHeader('content-type','text/javascript');if(req.url===missing){res.statusCode=404;res.end('');}else res.end('// synthetic lazy PDF dependency');}
  else if(req.url?.startsWith('/assets/')){res.setHeader('content-type','text/javascript');res.end(js+`;window.fixtureVersion=${JSON.stringify(req.url.match(/app-(\w+)\.js/)?.[1])};`);}

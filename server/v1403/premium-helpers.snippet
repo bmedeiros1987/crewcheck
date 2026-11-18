@@ -146,6 +146,9 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
         await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
         if (!owns(currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
           return gateQuerySuppressed({reason:'response-context-expired'}).message;
+        // The departure summary only receives gate/status proven for this occurrence.
+        const verified = verifiedRadarFields(radar, queryContext.gateQueryEvidence, Date.now());
+        radar = { ...radar, gate: verified.gate, status: verified.status, registration: verified.registration };
       }
     }
   }

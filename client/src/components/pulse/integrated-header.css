@@ -50,3 +50,34 @@ html body #root .cz-app[data-version]>.cz-global-header .cc-brand-and-notice .cc
 /* Reuse the existing notice pictogram only while its owner-bound queue exists. */
 html body #root .cz-app[data-version]>.cz-global-header .cz-brand-lockup .cc-pulse-brand-mark {display:grid!important;flex:0 0 28px!important;width:28px!important;height:28px!important;min-width:28px!important;background:linear-gradient(135deg,#7442c8,#bd206a)!important;color:#fff!important}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-brand-mark>svg {display:block;flex:none;width:18px!important;height:18px!important}
+
+/* Keep the full notice width on phones; the existing footer retains Menu.
+   Missing/hidden/covered footer keeps header access outside active modals;
+   Back is never removed. */
+@media(max-width:639px){
+html body #root .cz-app[data-version]>.cz-global-header[data-bottom-menu-available="true"] .cz-menu-btn[data-header-navigation="menu"],
+html body #root .cz-app[data-version]>.cz-global-header[data-header-navigation-suppressed="true"] .cz-menu-btn[data-header-navigation="menu"] {display:none!important}
+}
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-collapse {display:inline-grid!important;place-items:center!important;padding:0!important;line-height:1!important}
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-collapse>svg {display:block;flex:none;margin:0;transform:rotate(180deg)}
+
+/* Real, roomy touch targets in the expanded notice; never invisible extensions.
+   Keep the small pictograms centered and preserve the normal-flow text column. */
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover .cc-pulse-controls {grid-template-columns:48px!important;grid-auto-rows:minmax(48px,auto)!important;gap:8px!important;align-self:start!important}
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover .cc-pulse-controls>:is(.cc-pulse-collapse,.cc-pulse-dismiss) {box-sizing:border-box!important;width:48px!important;min-width:48px!important;height:48px!important;min-height:48px!important}
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover .cc-pulse-controls>.cc-pulse-dismiss::after {content:none!important;display:none!important}
+
+/* Two soft breaths per new notice, never a flashing or auto-rotating message. */
+.cc-pulse-brand-mark>i {animation:cc-pulse-soft-beat 2.4s ease-in-out 2 both}
+.cc-pulse-compact .cc-pulse-popover {animation:cc-pulse-detail-enter 160ms ease-out both}
+@keyframes cc-pulse-soft-beat {
+  0%,100% {opacity:.55;transform:scale(1);box-shadow:0 0 0 0 #ffffff00}
+  50% {opacity:.9;transform:scale(1.15);box-shadow:0 0 0 3px #ffffff20}
+}
+@keyframes cc-pulse-detail-enter {
+  from {opacity:0;transform:translateY(2px)}
+  to {opacity:1;transform:none}
+}
+@media(prefers-reduced-motion:reduce){
+ .cc-pulse-brand-mark>i,.cc-pulse-compact .cc-pulse-popover {animation:none!important;transform:none!important}
+}

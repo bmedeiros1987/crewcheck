@@ -1,3 +1,5 @@
+import { rosterProgramMode, rosterModeMeta } from '@/lib/rosterPresentation';
+import { RosterActivityIcon } from '@/components/v1391/RosterLegend';
 import {
   ChevronRight,
   Clock3,
@@ -335,18 +337,22 @@ export default function OperationalDayTimeline({
       <div className="cc14349-dayline-list">
         {timeline.map((item) => {
           const Icon = iconForTone[item.tone];
+          // Presentation only: do not alter the timeline, its now/next selection or chronology.
+          const sourceMatches = item.tone === 'presentation' ? [] : events.filter(event => event.id && item.id === `${item.tone}-${event.id}`);
+          const displayMode = sourceMatches.length === 1 ? rosterProgramMode(sourceMatches[0]) : undefined;
           const isCurrent = current?.id === item.id;
           const isNext = next?.id === item.id;
           return <button
             type="button"
             key={item.id}
-            className={`cc14349-dayline-item tone-${item.tone}${isCurrent ? ' is-current' : ''}${isNext ? ' is-next' : ''}`}
+            data-roster-mode={displayMode}
+            className={`cc14349-dayline-item cc-roster-token tone-${item.tone}${isCurrent ? ' is-current' : ''}${isNext ? ' is-next' : ''}`}
             onClick={() => { if (!item.targetView || item.targetView === 'roster') setPendingRosterFocus(item.at); onNavigate(item.targetView || 'roster'); }}
           >
             <span className="cc14349-dayline-time"><strong>{timeLabel(item.at)}</strong><small>{dateLabel(item.at)}</small></span>
-            <span className="cc14349-dayline-marker" aria-hidden="true"><Icon/></span>
+            <span className="cc14349-dayline-marker" aria-hidden="true">{displayMode ? <RosterActivityIcon mode={displayMode}/> : <Icon/>}</span>
             <span className="cc14349-dayline-copy">
-              <small>{item.eyebrow}{isCurrent && <b>Agora</b>}{isNext && <b>Próximo</b>}</small>
+              <small>{displayMode && !['Luto', 'Férias'].includes(item.title) ? rosterModeMeta[displayMode].shortLabel : item.eyebrow}{isCurrent && <b>Agora</b>}{isNext && <b>Próximo</b>}</small>
               <strong>{item.title}</strong>
               <span><MapPin aria-hidden="true"/>{item.detail}</span>
               {item.meta && <em>{item.meta}</em>}

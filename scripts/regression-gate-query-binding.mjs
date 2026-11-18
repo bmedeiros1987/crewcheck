@@ -5,6 +5,7 @@ import ts from 'typescript';
 import {pathToFileURL} from 'node:url';
 import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs';
 import * as current from '../shared/gate-query-day.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 prepareConciergeCanonicalBridge();
 const {buildCanonicalRosterEvents}=await import('../server/concierge/generated/canonicalRoster.mjs');
 const held=process.argv.includes('--held-before'),root=process.env.GATE_REVIEW2_ROOT;
@@ -25,19 +26,22 @@ if(!selected||selected==='unordered'){
 function functions(file,names){const source=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);return names.map(name=>{const n=ast.statements.find(x=>ts.isFunctionDeclaration(x)&&x.name?.text===name);assert(n,name);return ts.transpileModule(n.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;}).join('\n');}
 let now=Date.parse('2032-10-14T12:00:00Z'),writes=0,reads=0,calls=0,removeOnSecondRead=false;
 let r=roster([{date:'13/10/2032',legs:[leg('LA100','GRU','REC','09:00','11:00','old-13')]},{date:'14/10/2032',legs:[leg('LA100','GRU','REC','09:00','11:00','old-14')]}]);
-const fake=async()=>{calls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z'};};
+let proven=true;const gateProof=()=>({version:1,provider:'custom',kind:'departure-gate-update',sourceUpdatedAt:new Date(now-60000).toISOString(),gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00.000Z'});
+const fake=async()=>{calls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z',...(proven?{gateUpdate:gateProof()}:{})};};
 const records=()=>r.days.map(day=>({day,legs:day.legs}));
-const scope=vm.createContext({...policy,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
- ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,publicRadarPayload:x=>x,scoreRadar:()=>95,configuredProviders:()=>[],
+const scope=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
+ ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,ciriumRadarProjection:()=>({}),scoreRadar:()=>95,configuredProviders:()=>[],
  providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),telegramRequestUser:()=>({email:'fictional-a',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,
  conciergeLoadSnapshot:async()=>{reads++;if(removeOnSecondRead&&reads===2)r.days[0].legs=[];return {email:'fictional-a',roster:r};},conciergeAccessMatches:()=>true,
  conciergeFindFlight:()=>({record:records()[0],leg:r.days[0].legs[0]}),conciergeSaveSnapshotAsync:async()=>{writes++;},sendJson:(_r,_s,data)=>data,
  conciergeExtractFlight:()=> 'LA100',conciergeNextProgram:()=>records()[0],conciergeNextJourneyProgram:()=>records()[0],conciergeProgramRecords:records,conciergeJourneyProgramRecords:(_r,rs)=>rs});
-vm.runInContext(functions(held?root+'/server.mjs':'server.mjs',['runRadarRace','handleRadar','conciergeRadarReply','conciergeApplyRadar']),scope);
+vm.runInContext(functions(held?root+'/server.mjs':'server.mjs',['firstKnown','publicRadarPayload','runRadarRace','handleRadar','conciergeRadarReply','conciergeApplyRadar']),scope);
 if(!selected||selected==='repeated-date'){
  const reply=await scope.conciergeRadarReply('/radar LA100',{email:'fictional-a'},{roster:r});assert(calls>0);assert.match(reply,/46/);assert.equal(writes,1);
- assert.equal(r.days[0].legs[0].gate,'old-13','yesterday leg must remain untouched');assert.equal(r.days[1].legs[0].gate,'46','persist exactly verified today leg');
+ assert.equal(r.days[0].legs[0].gate,'old-13','yesterday leg must remain untouched');assert.equal(r.days[0].legs[0].radarEvidence,undefined,'yesterday leg receives no radar evidence');assert.equal(r.days[1].legs[0].gate,'old-14','published gate is never overwritten');assert.equal(r.days[1].legs[0].radarEvidence.gate,'46','proven gate kept apart on exactly today leg');
+ delete r.days[1].legs[0].radarEvidence;proven=false;writes=0;reads=0;const unproven=await scope.conciergeRadarReply('/radar LA100',{email:'fictional-a'},{roster:r});
+ assert.match(unproven,/Portão: indisponível \(fonte sem horário de observação deste campo\)/);assert.doesNotMatch(unproven,/Portão: 46/);assert.doesNotMatch(unproven,/comprovado pela fonte/);assert.equal(r.days[1].legs[0].gate,'old-14','gate without source observation is never persisted');assert.equal(r.days[1].legs[0].radarEvidence,null,'no evidence without proof');assert.equal(r.days[0].legs[0].gate,'old-13');proven=true;
  console.log('PASS actual Concierge repeated flight dates: query and persistence bind exactly today occurrence');
 }
 if(!selected||selected==='removed'){

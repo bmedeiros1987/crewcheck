@@ -1,0 +1,46 @@
+name: Financial calculation cache
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/financialCalculationCache.ts'
+      - 'client/src/lib/financialCalculationDigest.ts'
+      - 'client/src/lib/salaryDsrConsumer.ts'
+      - 'client/src/components/ErrorBoundary.tsx'
+      - 'client/src/components/finance/HomeFinancialEstimate.tsx'
+      - 'scripts/regression-financial-calculation-pending.mjs'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/pages/InfoPage.tsx'
+      - 'scripts/regression-financial-calculation-cache.mjs'
+      - 'scripts/regression-financial-snapshot-cache-integration.mjs'
+      - 'scripts/regression-financial-aims-source-coverage.mjs'
+      - '.github/workflows/financial-calculation-cache.yml'
+      - 'package-lock.json'
+permissions:
+  contents: read
+jobs:
+  isolated-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Raw cache correctness and corruption/failure isolation
+        run: |
+          node scripts/regression-financial-calculation-cache.mjs
+          node scripts/regression-financial-snapshot-cache-integration.mjs
+      - name: Canonical preparation
+        run: node scripts/v139/apply.mjs
+      - name: Prepared cache and existing financial contracts
+        run: |
+          node scripts/regression-financial-calculation-cache.mjs
+          node scripts/regression-financial-snapshot-cache-integration.mjs
+          node scripts/regression-financial-aims-source-coverage.mjs
+          node scripts/regression-financial-history-periods.mjs
+          node scripts/regression-financial-known-values-dates.mjs
+      # Sources were prepared explicitly above. Diagnostic artifacts change the
+      # preparation fingerprint; do not replay legacy patches over that tree.
+      - name: Typecheck the prepared candidate
+        run: npx tsc --noEmit

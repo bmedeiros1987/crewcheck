@@ -94,5 +94,31 @@ if (preOpenSlice.includes('setRosterWindow(primary);')) {
   throw new Error(`[${marker}] refresh ainda encolhe a Escala antes da materialização histórica`);
 }
 
+// Presentation-only provenance. Keep the original loader, visual window and
+// startup account/token fences intact; failed/cancelled reads never reactivate it.
+if (source.includes('function acceptBrowserRadarWindow(') && !source.includes('P0_673_RADAR_PRESENTATION_WINDOW')) {
+  const start = source.indexOf('  const [rosterWindow, setRosterWindow]');
+  const end = source.indexOf('  }, [bundle.roster]);', start);
+  if (start < 0 || end < start) throw new Error(`[${marker}] browser window effect absent`);
+  let block = source.slice(start, end);
+  const replace = (before, after) => {
+    if (!block.includes(before)) throw new Error(`[${marker}] browser window anchor absent: ${before}`);
+    block = block.replace(before, after);
+  };
+  replace('    let alive = true;', '    let alive = true;\n    let lastBrowserWindowRead: ReturnType<typeof invalidateBrowserRadarWindow> | null = null;');
+  replace('      void openRosterDisplayWindow(primary)', `      // P0_673_RADAR_PRESENTATION_WINDOW: revoke before awaiting any publication.
+      const browserWindowRead = invalidateBrowserRadarWindow(primary, JSON.stringify(primary));
+      lastBrowserWindowRead = browserWindowRead;
+      void openRosterDisplayWindow(primary)`);
+  replace('        .then((windowRoster) => {', `        .then((windowRoster) => {
+          if (alive && requestId === rosterWindowRequestRef.current) acceptBrowserRadarWindow(browserWindowRead, windowRoster);`);
+  replace('      rosterWindowRequestRef.current += 1;', `      rosterWindowRequestRef.current += 1;
+      if (lastBrowserWindowRead === browserRadarContext) invalidateBrowserRadarWindow(bundle.roster, JSON.stringify(bundle.roster));`);
+  source = source.slice(0, start) + block + source.slice(end);
+  const activeOnly = "  setBrowserRadarContext(alertRosterOwned(bundle.roster)?rosterReadRevision:'');";
+  if (!source.includes(activeOnly)) throw new Error(`[${marker}] browser active-only revision anchor absent`);
+  source = source.replace(activeOnly, '  syncBrowserRadarWindow(bundle.roster, rosterReadRevision);');
+}
+
 fs.writeFileSync(path, source, 'utf8');
 console.log(`[${marker}] refresh histórico monotônico e pós-persistência aplicado.`);

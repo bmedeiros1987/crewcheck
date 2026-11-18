@@ -8,7 +8,8 @@ const css = read('client/src/components/navigation/flight-context.css');
 const navigation = read('client/src/lib/navigationContext.ts');
 
 // FlightDeck deposits explicit, reviewable identifiers only. No parser/compliance work here.
-assert.match(home, /function openFlightSurface\(targetView: 'radar' \| 'weather'\)/, 'FlightDeck deve ter uma única ponte para Radar/Meteorologia');
+assert.match(home, /function openFlightSurface\(targetView: 'radar' \| 'weather' \| 'departure'\)/, 'FlightDeck deve ter uma única ponte para Radar/Meteorologia/Saída');
+assert.equal([...home.matchAll(/function openFlightSurface\(/g)].length, 1, 'a ponte compartilhada deve continuar única');
 for (const marker of [
   "sourceView: 'cockpit'",
   'dateEpochMs: eventStartDateTime(event).getTime()',
@@ -21,10 +22,11 @@ for (const marker of [
 ]) assert.ok(home.includes(marker), `contexto FlightDeck ausente: ${marker}`);
 assert.match(home, /openFlightSurface\('radar'\)/, 'Radar deve abrir pelo Navigation Context');
 assert.match(home, /openFlightSurface\('weather'\)/, 'Meteorologia deve abrir pelo Navigation Context');
+assert.match(home, /openFlightSurface\('departure'\)/, 'Saída deve usar a mesma ponte contextual');
 
 // Destination resolves exactly the program id supplied by FlightDeck. If it disappeared,
 // fail closed instead of silently switching to another real flight.
-assert.match(home, /events\.find\(\(candidate\) => candidate\.id === flightSurfaceContext\.programId && candidate\.kind === 'flight' && !candidate\.placeholder\) \|\| null/, 'destino deve resolver pelo programId exato');
+assert.match(home, /rosterEvents\.find\(\(candidate\) => candidate\.id === flightSurfaceContext\.programId && candidate\.kind === 'flight' && !candidate\.placeholder\) \|\| null/, 'destino deve resolver pelo programId exato');
 assert.match(home, /const flightSurfaceEvent = flightSurfaceContext\?\.programId \? contextualFlightEvent : flightEvent;/, 'entrada global pode usar próximo voo; entrada contextual não pode substituir voo ausente');
 assert.doesNotMatch(home, /flightSurfaceContext\?\.programId[\s\S]{0,220}contextualFlightEvent\s*\|\|\s*flightEvent/, 'contexto não pode cair silenciosamente em outro voo');
 assert.match(home, /FlightDeckContextUnavailable targetView="radar"/, 'Radar deve falhar fechado quando contexto não existir mais');

@@ -1,0 +1,53 @@
+# Allowlist build context: only what `npm ci && npm run build` needs reaches the daemon. Local
+# runtime files, credentials, caches and builds never do, at any depth. Verified with synthetic
+# canaries by scripts/regression-container-context.mjs (Docker's own matching).
+*
+!package.json
+!package-lock.json
+!server.mjs
+!vite.config.ts
+!tsconfig.json
+!tsconfig.node.json
+!render.yaml
+!capacitor.config.ts
+!crewcheck_auth_rebind_1371.js
+!elevenlabs_tts_1377.js
+!menu_scroll_1373.css
+!client
+!config
+!database
+!migrations
+!scripts
+!server
+!shared
+# The canonical preparation also patches the Android wrapper sources and checks required docs.
+!android-wrapper
+!docs
+
+# Re-excluded inside the allowed directories, at any depth.
+**/.env
+**/.env.*
+**/.npmrc
+**/.yarnrc*
+**/.crewcheck-*
+**/node_modules
+**/dist
+**/artifacts
+**/test-results
+**/*.log
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/id_rsa*
+**/id_ed25519*
+**/local.properties
+**/google-services.json
+**/.gradle
+**/build
+**/*.pem
+# Public CA that pins TLS to the existing MySQL (server/mysql-verified-tls.mjs): required, not a secret.
+!server/certs/crewcheck-aiven-project-ca.pem
+# Versioned template with names only (no values); read by the canonical preparation.
+!.env.example

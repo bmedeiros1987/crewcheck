@@ -6,6 +6,7 @@ import ts from 'typescript';
 import {pathToFileURL} from 'node:url';
 import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs';
 import * as current from '../shared/gate-query-day.mjs';
+import * as radarEvidence from '../shared/radar-field-evidence.mjs';
 prepareConciergeCanonicalBridge();
 const {buildCanonicalRosterEvents}=await import('../server/concierge/generated/canonicalRoster.mjs');
 const held=process.argv.includes('--held-before');
@@ -35,19 +36,20 @@ if(!selected||selected==='brt'){
 function functions(file,names){const source=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);return names.map(name=>{const n=ast.statements.find(x=>ts.isFunctionDeclaration(x)&&x.name?.text===name);assert(n,name);return ts.transpileModule(n.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;}).join('\n');}
 let now=Date.parse('2032-10-14T12:00:00Z'),calls=0,writes=0,reads=0,expireOnSecondRead=false,changeAccountOnSecondRead=false,account='fictional-a';
 const r=roster(),snapshot={email:'fictional-a',roster:r};const profile={email:'fictional-a',authenticated:true};
-const fake=async()=>{calls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z'};};
+let proven=true;const gateProof=()=>({version:1,provider:'custom',kind:'departure-gate-update',sourceUpdatedAt:new Date(now-60000).toISOString(),gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00.000Z'});
+const fake=async()=>{calls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',scheduledDepartureUtc:'2032-10-14T12:00:00Z',departure:'2032-10-14T12:00:00Z',...(proven?{gateUpdate:gateProof()}:{})};};
 const records=[{day:r.days[0],legs:r.days[0].legs}];
-const scope=vm.createContext({...policy,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
- ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,publicRadarPayload:x=>x,scoreRadar:()=>95,configuredProviders:()=>[],
+const scope=vm.createContext({...policy,...radarEvidence,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
+ ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,ciriumRadarProjection:()=>({}),scoreRadar:()=>95,configuredProviders:()=>[],
  providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),telegramRequestUser:()=>({email:account,authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,
  conciergeLoadSnapshot:async()=>{reads++;if(reads===2&&expireOnSecondRead)now=Date.parse('2032-10-15T03:00:00Z');if(reads===2&&changeAccountOnSecondRead)account='fictional-b';return snapshot;},
  conciergeAccessMatches:()=>true,conciergeFindFlight:()=>({record:records[0],leg:r.days[0].legs[0]}),conciergeApplyRadar:()=>{},conciergeSaveSnapshotAsync:async()=>{writes++;},sendJson:(_r,_s,data)=>data,
  conciergeExtractFlight:()=> 'LA100',conciergeNextProgram:()=>records[0],conciergeNextJourneyProgram:()=>records[0],conciergeProgramRecords:()=>records,conciergeJourneyProgramRecords:()=>records,
 });
-vm.runInContext(functions(held?heldRoot+'/server.mjs':'server.mjs',['runRadarRace','handleRadar','conciergeRadarReply']),scope);
+vm.runInContext(functions(held?heldRoot+'/server.mjs':'server.mjs',['firstKnown','publicRadarPayload','runRadarRace','handleRadar','conciergeRadarReply']),scope);
 if(!selected||selected==='concierge'){
- const reply=await scope.conciergeRadarReply('/radar LA100',profile,snapshot);assert(calls>0,'today Concierge must derive UTC from authorized real canonical roster');assert.match(reply,/46/);assert.equal(writes,1);console.log('PASS actual today Concierge derives canonical UTC and queries fictional providers');
+ const reply=await scope.conciergeRadarReply('/radar LA100',profile,snapshot);assert(calls>0,'today Concierge must derive UTC from authorized real canonical roster');assert.match(reply,/Portão: 46/);assert.equal(writes,1);const keptWrites=writes;proven=false;const unproven=await scope.conciergeRadarReply('/radar LA100',profile,snapshot);assert.match(unproven,/Portão: indisponível \(fonte sem horário de observação deste campo\)/);assert.doesNotMatch(unproven,/Portão: 46/);assert.equal(writes,keptWrites+1,'unproven reply still records the radar response (raw values plus gaps), never as proof');proven=true;writes=keptWrites;console.log('PASS actual today Concierge derives canonical UTC and queries fictional providers');
 }
 if(!selected||selected==='last-await'){
  calls=0;writes=0;reads=0;now=Date.parse('2032-10-14T12:00:00Z');expireOnSecondRead=true;

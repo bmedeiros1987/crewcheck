@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -26,6 +27,7 @@ try {
    perDiemConfig:()=>({rates:{domestic:{mainMeal:100,currency:'BRL',label:'SYNTHETIC'}},domesticBreakfast:25,domesticMainMealSource:'synthetic',domesticBreakfastSource:'synthetic',breakfastPercent:.25,exchangeRates:{BRL:1},source:'SYNTHETIC NOT A TARIFF',act:{version:'SYNTHETIC'}}),
    loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:origin=>({rateKey:'domestic',airport:origin,reason:'synthetic fixture'}),readOptionalNumberSetting:()=>null});
  vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(home)).join('\n')+'\nglobalThis.subject={buildLegs,calculateSalary,calculatePerDiem,financialFlightRule,eventStartDateTime,eventEndDateTime,nightHoursInsideWindow,isSundayOrConfiguredHoliday,moneyBRL};',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+  installAllowanceDependencies(context,{stubConfig:true});
 
  const asbFallback=parser.parseASB(['ASB','04:10']);assert.equal(asbFallback.dutyDebrief,'10:10');assert.equal(asbFallback.dutyDebriefSource,'estimated','six-hour fallback equal to literal release stays estimated');
  const hsbInferred=parser.parseStandby(['HSB','09:00','ASB','13:00','19:00'],'HSB');assert.equal(hsbInferred.dutyDebrief,'13:00');assert.equal(hsbInferred.dutyDebriefSource,'estimated','next activity does not prove standby end');

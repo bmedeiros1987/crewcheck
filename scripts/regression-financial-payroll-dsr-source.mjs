@@ -10,6 +10,18 @@ try {
  const document=syntheticDsrPayroll;
  const learn=(text=document)=>learning.learnFinancialStatement(text,'synthetic-payroll.pdf',[{page:1,text,origin:'pdf-physical'}]);
  const result=learn();assert.equal(result.payrollExtraction.incomplete,false);assert.equal(result.payrollDsrDraft?.regime,'NB');
+ const printedRest=learn(document.replace('1326 DSR','1330 Repouso Remunerado'));
+ assert.equal(printedRest.payrollExtraction.incomplete,false);
+ assert.equal(printedRest.payrollDsrDraft?.regime,'NB','ordinary printed Repouso Remunerado must feed the existing reviewed DSR flow');
+ assert.deepEqual(printedRest.payrollDsrDraft.basisMinor,result.payrollDsrDraft.basisMinor);
+ assert.equal(printedRest.payrollDsrDraft.reportedDsrMinor,result.payrollDsrDraft.reportedDsrMinor);
+ for(const label of ['1330 Repouso Remunerado CMS','1330 repouso remunerado','1330 Descanso Semanal Remunerado']) {
+  assert.equal(learn(document.replace('1326 DSR',label)).payrollDsrDraft?.regime,'NB');
+ }
+ for(const label of ['1330 Ajuste Repouso Remunerado','1330 Repouso Remunerado Férias','1330 Diferença Repouso Remunerado','1330 Repouso Remunerado complementar']) {
+  assert.equal(learn(document.replace('1326 DSR',label)).payrollDsrDraft,undefined,'qualified/adjustment rubrics cannot be adopted as ordinary DSR');
+ }
+ assert.equal(learn(document.replace('1326 DSR','1330 Repouso Remunerado').replace('880,00','879,99')).payrollDsrDraft,undefined,'the alias never bypasses reconciliation');
  assert.deepEqual(result.payrollDsrDraft.basisMinor,{production:220000,reserve:22000,standby:0});
  assert.equal(result.payrollDsrDraft.operationalMonth,'2026-08');assert.equal(result.payrollDsrDraft.payrollMonth,'2026-09');
  assert.equal(learning.confirmedPayrollDsrContext('2026-08'),null,'import draft does not adopt evidence');
@@ -42,5 +54,15 @@ try {
  assert.equal(producer.validPayrollDsrEvidence({...result.payrollDsrDraft,text:document}),false,'raw text cannot enter metadata');
  assert.equal(producer.validPayrollDsrEvidence({...result.payrollDsrDraft,reportedDsrMinor:1}),false);
  assert.equal(producer.validPayrollDsrEvidence({...result.payrollDsrDraft,basisMinor:{production:1,reserve:0,standby:0},reportedDsrMinor:0}),false,'archive validator also requires unique ratio');
+ store.clear();globalThis.fixtureUser={id:'synthetic-A',role:'crew'};globalThis.fixtureToken='synthetic-token-A';
+ const printedRates=learning.applyReviewedPayrollCycle(printedRest).filter(rate=>rate.valueOrigin==='printed').map(rate=>({...rate,confirmed:true}));
+ assert.equal(learning.saveConfirmedFinancialRates(learning.mergeConfirmedRates([],printedRates)),true);
+ const printedContext=learning.confirmedPayrollDsrContext('2026-08');
+ assert.equal(printedContext.reportedDsr.amountMinor,88000,'actual alias -> review -> archive -> operational-month reader');
+ assert.equal(printedContext.sourcePayrollMonth,'2026-09');
+ assert.equal(learning.confirmedPayrollDsrContext('2026-09'),null,'no alias carries the source into another operational competence');
+ assert.equal(learning.mergeConfirmedRates(learning.readConfirmedFinancialRates(),printedRates).length,printedRates.length,'reimport remains idempotent');
+ globalThis.fixtureUser={id:'synthetic-B',role:'crew'};
+ assert.equal(learning.confirmedPayrollDsrContext('2026-08'),null,'the printed alias does not relax owner isolation');
  console.log('PASS actual payroll extraction -> review/cycle -> immutable owner archive -> DSR source/model: company/cabin, reconciled inventory, CO exclusion, unknown/zero, scope, conflicts, idempotent enrichment, account isolation, no source-text persistence; synthetic only');
 }finally{modules.cleanup();}

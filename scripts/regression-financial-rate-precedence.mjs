@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -103,19 +104,20 @@ try {
   const ast = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const fn = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'perDiemConfig');
   assert(fn, 'extract actual perDiemConfig');
-  const context = vm.createContext({ ...amounts, confirmedRateAt: learning.confirmedRateAt, confirmedRateValueAt: learning.confirmedRateValueAt,
+  const context = vm.createContext({ ...amounts, confirmedPerDiemReferencesAt: learning.confirmedPerDiemReferencesAt, confirmedRateAt: learning.confirmedRateAt, confirmedRateValueAt: learning.confirmedRateValueAt,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1', breakfastPercent: 0.25,
       perDiem: [{ key: 'domestic', label: 'Synthetic domestic', currency: 'BRL', mainMeal: 100 }] }),
     readOptionalNumberSetting: () => null, readNumberSetting: () => 0, loadAirportPerDiemOverrides: () => ({}) });
   vm.runInContext(ts.transpileModule(fn.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+  installAllowanceDependencies(context,{});
   login('owner-precedence');
   const config = date => { const c = context.perDiemConfig({}, date); return [c.rates.domestic.mainMeal, c.domesticBreakfast, c.taxiRate]; };
   assert.deepEqual(config('2032-02-10'), [200, 50, 50], 'A still in force on 10/02, not ACT 100/25/null');
   assert.deepEqual(config('2032-02-08'), [180, 45, 45]);
-  assert.deepEqual(config('2032-03-01'), [100, 25, null], 'ACT reference only where no source is in force');
+  assert.deepEqual(config('2032-03-01'), [NaN, NaN, null], 'no automatic ACT amount without explicit applicability');
   login('owner-other');
-  assert.deepEqual(config('2032-02-10'), [100, 25, null], 'other owner gets ACT reference only');
-  console.log(`PASS actual perDiemConfig caller: 10/02 uses A 200/50/50, B inside 07-09, ACT outside; TZ=${process.env.TZ || 'default'}`);
+  assert.deepEqual(config('2032-02-10'), [NaN, NaN, null], 'other owner has no implicit ACT enrollment');
+  console.log(`PASS actual perDiemConfig caller: 10/02 uses A 200/50/50, B inside 07-09, pending without applicability outside; TZ=${process.env.TZ || 'default'}`);
 } finally {
   modules.cleanup();
   globalThis.localStorage = previous.localStorage;

@@ -1,3 +1,4 @@
+import {installAllowanceDependencies} from './lib/shared-allowance-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -18,6 +19,7 @@ try {
  loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:()=>({rateKey:'domestic',airport:'TEST',reason:'synthetic'}),isOperationalEvent:()=>true,financialEventCode:e=>e.day.type,
  eventStartDateTime:e=>new Date(e.start),eventEndDateTime:e=>new Date(e.end),dateChip:d=>d.toISOString().slice(0,10)});
  vm.runInContext(ts.transpileModule(storageNode.getText(ast)+'\n'+functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.calculate=calculatePerDiem;',{compilerOptions:{target:99}}).outputText,context);
+ installAllowanceDependencies(context);
  const month='2032-08',iso=month+'-06',roster={year:2032,month:8,base:'TEST'};
  const reserve=date=>({id:'synthetic-reserve',kind:'duty',origin:'TEST',destination:'TEST',start:date+'T04:10:00-03:00',end:date+'T12:30:00-03:00',day:{type:'ASB',dutyReport:'04:10',dutyDebrief:'12:30',dutyReportSource:'published',dutyDebriefSource:'published'}});
  const run=(date=iso)=>context.calculate([reserve(date)],roster,new Date(date+'T15:00:00Z'));
@@ -25,14 +27,14 @@ try {
  login('synthetic-a');
  const input={ownerId:'synthetic-a',month,meal:'196,00',reference:'Synthetic bounded confirmation',breakfastQuarter:false,taxiQuarter:false};
  const save=changes=>{const draft=ownerPerDiemReview({...input,...changes});assert(draft.length);const next=learning.mergeConfirmedRates(learning.readConfirmedFinancialRates(),draft.map(r=>({...r,confirmed:true})));assert.equal(learning.saveConfirmedFinancialRates(next,learning.financialRateSession()),true);};
- save({});let result=run();assert.equal(row(result,'Almoço').value,196);assert.equal(row(result,'Café').value,25);assert.equal(row(result,'Café').rateSource,'act');assert.equal(row(result,'Táxi'),undefined);
+ save({});let result=run();assert.equal(row(result,'Almoço').value,196);assert.equal(row(result,'Café'),undefined,'unchecked quarter does not create an ACT default without applicability');assert(result.unclassifiedItems.some(item=>item.pendingKind==='allowance_reference'));assert.equal(row(result,'Táxi'),undefined);
  save({breakfastQuarter:true,taxiQuarter:true});result=run();assert.equal(row(result,'Café').value,49);assert.equal(row(result,'Táxi').value,49);assert.equal(row(result,'Café').rateSource,'learned');
  // A new review unchecks both without deleting the immutable rate archive.
- save({meal:'200,00'});result=run();assert.equal(row(result,'Almoço').value,200);assert.equal(row(result,'Café').value,25);assert.equal(row(result,'Café').rateSource,'act');assert.equal(row(result,'Táxi'),undefined);
+ save({meal:'200,00'});result=run();assert.equal(row(result,'Almoço').value,200);assert.equal(row(result,'Café'),undefined,'unchecked quarter does not create an ACT default without applicability');assert(result.unclassifiedItems.some(item=>item.pendingKind==='allowance_reference'));assert.equal(row(result,'Táxi'),undefined);
  assert(learning.readConfirmedFinancialRates().some(r=>r.key==='per_diem.taxi'&&r.value===49),'old review remains auditable');
- const stored=JSON.stringify([...storage]);storage.clear();for(const [k,v] of JSON.parse(stored))storage.set(k,v);result=run();assert.equal(row(result,'Café').value,25);assert.equal(row(result,'Táxi'),undefined,'persisted consent remains off after reread');
+ const stored=JSON.stringify([...storage]);storage.clear();for(const [k,v] of JSON.parse(stored))storage.set(k,v);result=run();assert.equal(row(result,'Café'),undefined);assert.equal(row(result,'Táxi'),undefined,'persisted consent remains off after reread');
  assert.equal(settings.writeFinancialSetting('crewcheck_perdiem_rate_domestic','80'),true);save({breakfastQuarter:true,taxiQuarter:true});result=run();assert.equal(row(result,'Almoço').value,196,'explicit monthly owner review prevails over a legacy manual principal');assert.equal(row(result,'Café').value,49);assert.equal(settings.readFinancialSetting('crewcheck_perdiem_rate_domestic'),'80','manual value is preserved');
  assert.equal(row(run('2032-09-06'),'Almoço').value,80,'outside the reviewed month manual principal resumes');
- login('synthetic-b');result=run();assert.equal(row(result,'Almoço').value,100);assert.equal(row(result,'Café').value,25);assert.equal(row(result,'Táxi'),undefined);assert.equal(settings.readFinancialSetting('crewcheck_perdiem_rate_domestic'),'');login('synthetic-a');assert.equal(settings.readFinancialSetting('crewcheck_perdiem_rate_domestic'),'80');
+ login('synthetic-b');result=run();assert.equal(row(result,'Almoço'),undefined);assert.equal(row(result,'Café'),undefined);assert.equal(result.monthly,null,'other owner is not silently enrolled in the ACT');assert.equal(row(result,'Táxi'),undefined);assert.equal(settings.readFinancialSetting('crewcheck_perdiem_rate_domestic'),'');login('synthetic-a');assert.equal(settings.readFinancialSetting('crewcheck_perdiem_rate_domestic'),'80');
  console.log('PASS real per-diem caller: unchecked consent, edit/re-read, account/month isolation, independent source and bounded precedence over preserved manual settings');
 } finally {modules.cleanup();Object.assign(globalThis,previous);}

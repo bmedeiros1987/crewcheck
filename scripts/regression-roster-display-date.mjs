@@ -93,3 +93,6 @@ for(const a of ordering)for(const b of ordering){
 const tied=[{id:'z',canonical:{date:'01/10/2026',startDateTime:'2026-10-01T23:00:00Z'}},{id:'a',canonical:{date:'01/10/2026',startDateTime:'2026-10-01T23:00:00Z'}}];
 assert.deepEqual([...tied].sort(rosterDisplayCompare).map(e=>e.id),['z','a'],'equal instants retain canonical source order');
 console.log('PASS comparator symmetry/transitivity and stable canonical ties');
+
+// Keep real mixed-marker daily/full composition on this existing gate.
+await import('./regression-roster-untimed-marker-order.mjs');

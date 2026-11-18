@@ -1,3 +1,4 @@
+import {planReviewedPayrollDeductions,type DeductionReviewContext} from './reviewedPayrollDeductions';
 import { financialRateOwner, financialRateSession } from './financialStatementLearning';
 import { getMe } from './authClient';
 import { payrollMonthBounds } from './financialPayrollPeriods';
@@ -56,4 +57,25 @@ export async function saveMonthlyFinancialEdit(args:{month:string;expectedRevisi
     window.dispatchEvent(new Event('crewcheck:financial-config-changed'));
     return {saved:true as const,scope:'account_local' as const,month:next.month,revision:next.revision};
   }catch{return {saved:false as const,reason:'verification_or_storage_unavailable'};}
+}
+
+/** Explicit document review only; replan against live account and revision after verification. */
+export async function saveReviewedPayrollDeductions(context:DeductionReviewContext, reviewIsCurrent:()=>boolean) {
+  const request=structuredClone(context), owner=financialRateOwner();
+  if(typeof reviewIsCurrent!=='function'||!reviewIsCurrent())return {saved:false,reason:'review_cancelled'};
+  if(!owner||owner!==request.ownerId||financialRateSession()!==request.expectedSession)return {saved:false,reason:'session_changed'};
+  try {
+    const verified=await getMe();
+    if(verified.id!==owner||['visitor','guest'].includes(verified.role||'')||financialRateOwner()!==owner||financialRateSession()!==request.expectedSession)return {saved:false,reason:'session_changed'};
+    if(!reviewIsCurrent())return {saved:false,reason:'review_cancelled'};
+    const current=readMonthlyFinancialSettings(request.month);
+    const plan=planReviewedPayrollDeductions({...request,current,currentSession:financialRateSession()||''});
+    if(!plan.reviewable||!current)return {saved:false,reason:'review_conflict'};
+    const next=planMonthlyFinancialEdit(current,request.expectedRevision,plan.changes);
+    if(!next)return {saved:false,reason:'review_conflict'};
+    if(!reviewIsCurrent())return {saved:false,reason:'review_cancelled'};
+    localStorage.setItem(key(owner,request.month),JSON.stringify(next));
+    window.dispatchEvent(new Event('crewcheck:financial-config-changed'));
+    return {saved:true,reason:'saved'};
+  } catch {return {saved:false,reason:'verification_or_storage_unavailable'};}
 }

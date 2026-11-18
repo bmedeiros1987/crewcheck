@@ -18526,3 +18526,24 @@ body.crewcheck-menu-open .cz-bottom-nav {
   white-space: normal !important;
   overflow-wrap: anywhere !important;
 }
+
+/* Semantic feedback pilot: aliases only; no existing token or default is replaced. */
+:root {
+  --cc-feedback-surface: var(--popover, #0d1829);
+  --cc-feedback-hover-surface: var(--background, #080f1e);
+  --cc-feedback-ink: var(--foreground, #f0f8ff);
+  --cc-feedback-muted: var(--muted-foreground, #7a9ab8);
+  --cc-feedback-action: var(--primary, #22d3ee);
+  --cc-feedback-action-ink: var(--primary-foreground, #020810);
+  --cc-feedback-focus: var(--ring, #22d3ee);
+  --cc-feedback-success: var(--event-conforme, #10b981);
+  --cc-feedback-danger: var(--destructive, #f87171);
+  --cc-feedback-pending: var(--muted-foreground, #7a9ab8);
+  --cc-feedback-border: #637d96;
+  --cc-feedback-duration: 150ms;
+}
+/* The legacy light primary is too light for white text; only this opt-in alias deepens it. */
+html[data-crew-theme="light"] {
+  --cc-feedback-action: #05679f;
+  --cc-feedback-focus: var(--cc-feedback-action);
+}

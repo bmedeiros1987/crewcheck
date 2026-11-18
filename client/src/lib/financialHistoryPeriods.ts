@@ -5,6 +5,41 @@ export function validFinancialDay(value: string): boolean {
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value && Number(value.slice(0, 4)) >= 2000 && Number(value.slice(0, 4)) <= 2200;
 }
 const civil = (d: Date) => d.toISOString().slice(0, 10);
+// Adjacent sources can prove carry-in rows, but can publish daily coverage
+// only for their own nominal competence. Never borrow an old foreign DO.
+export function nominalFinancialDays(rosters: readonly ({ year?: number | null; month?: number | null; days?: readonly { date: string }[] } | null | undefined)[]): string[] {
+  const dates = new Set<string>();
+  for (const roster of rosters) {
+    const month = `${roster?.year}-${String(roster?.month).padStart(2,'0')}`;
+    if (!validFinancialDay(month+'-01')) continue;
+    for (const day of roster?.days || []) {
+      if (typeof day.date!=='string') continue;
+      const iso = /^\d{2}\/\d{2}\/\d{4}$/.test(day.date) ? day.date.split('/').reverse().join('-') : day.date;
+      if (validFinancialDay(iso) && iso.slice(0,7)===month) dates.add(iso);
+    }
+  }
+  return [...dates].sort();
+}
+// Only published dates prove daily coverage. Rows (including an overnight
+// meal/carry-in) cannot prove that an otherwise absent day was a day off.
+export function financialDayCoverage(range: FinancialRange, coveredDays: readonly string[] = []): { valid: boolean; missingDays: string[] } {
+  const valid = range.valid && validFinancialDay(range.start) && validFinancialDay(range.end) && range.start <= range.end;
+  if (!valid) return { valid: false, missingDays: [] };
+  const covered = new Set(coveredDays.filter(validFinancialDay)), missingDays: string[] = [];
+  for (const day = new Date(range.start + 'T12:00:00Z'); civil(day) <= range.end; day.setUTCDate(day.getUTCDate() + 1)) {
+    const iso = civil(day);
+    if (!covered.has(iso)) missingDays.push(iso);
+  }
+  return { valid: true, missingDays };
+}
+// At a competence boundary the preceding source/day can contain the beginning
+// of a journey that produces meals in this selection. This is a source scope,
+// not an extension of payable dates or a change to the nominal competence.
+export function allowanceSourceRange(range: FinancialRange): FinancialRange {
+  if (!range.valid || !validFinancialDay(range.start) || !range.start.endsWith('-01')) return range;
+  const previous = new Date(range.start + 'T12:00:00Z'); previous.setUTCDate(previous.getUTCDate() - 1);
+  return { ...range, start:civil(previous) };
+}
 export function financialRange(kind: FinancialRange['kind'], month: string, day: string, start: string, end: string): FinancialRange {
   let a = start, b = end;
   if (kind === 'week' && !validFinancialDay(day)) return { start: '', end: '', valid: false, kind };

@@ -12,8 +12,15 @@ brand = brand.replace('{pulse ? <CrewCheckPulse compact fallback={lockup}/> : lo
 if (!brand.includes('cc-brand-and-notice')) throw new Error('Pulse experience: preserved brand lockup anchor missing');
 if (!brand.includes('if (!global && !pulse) return null;')) throw new Error('Pulse experience: global header guard missing');
 brand = brand.replace("aria-label={back ? backLabel || 'Voltar ao FlightDeck' : 'Menu'}", "aria-label={back ? backLabel || alertText().back : alertText().menu}");
+// Keep Back everywhere and Menu as a fallback. The frame only hides the mobile
+// Menu when the already-existing footer Menu is actually reachable.
+if (!brand.includes('data-header-navigation=')) {
+ const anchor = '<button className="cz-menu-btn"';
+ if (!brand.includes(anchor)) throw new Error('Pulse experience: header navigation control missing');
+ brand = brand.replace(anchor, '<button data-header-navigation={back ? "back" : "menu"} className="cz-menu-btn"');
+}
 // Canonical preparation rebuilds Brand upstream: reapply the owned header behavior here.
-brand = brand.replace('<CrewCheckMark/>', '<CrewCheckPulse compact brandMark fallback={<CrewCheckMark/>}/>');
+if (!brand.includes('brandMark fallback={<CrewCheckMark/>}')) brand = brand.replace('<CrewCheckMark/>', '<CrewCheckPulse compact brandMark fallback={<CrewCheckMark/>}/>');
 if (!brand.includes('brandMark fallback={<CrewCheckMark/>}')) throw new Error('Pulse experience: notification mark anchor missing');
 const legacyBack = "(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })))";
 const financialBack = "(() => { if (['perdiem','salary'].includes(new URLSearchParams(location.search).get('view') || '') && history.state?.ccEnteredFromConcierge) history.back(); else window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })); })";
@@ -29,6 +36,11 @@ if(dispositionStart>=0&&dispositionEnd>dispositionStart)home=home.slice(0,dispos
 const navStart=home.indexOf('function BottomNav('), navEnd=home.indexOf('function KpiCard(',navStart);
 if(navStart<0||navEnd<0)throw new Error('Pulse experience: review-aware navigation anchor missing');
 let bottomNav=home.slice(navStart,navEnd);
+if (!bottomNav.includes('data-crewcheck-menu-trigger=')) {
+ const anchor = '<button key={v}';
+ if (!bottomNav.includes(anchor) || !bottomNav.includes('const isMenu =')) throw new Error('Pulse experience: existing bottom Menu control missing');
+ bottomNav = bottomNav.replace(anchor, '<button data-crewcheck-menu-trigger={isMenu ? "true" : undefined} key={v}');
+}
 if(bottomNav.includes('const currentSignature =')) {
  const seenStart=bottomNav.indexOf('  const currentSignature ='), itemsStart=bottomNav.indexOf('  const items:',seenStart);
  if(itemsStart<0)throw new Error('Pulse experience: navigation items anchor missing');

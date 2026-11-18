@@ -5,6 +5,7 @@ const root=process.cwd(),home=fs.readFileSync('client/src/pages/Home.tsx','utf8'
 const names=['pad2','safe','placeholderLeg','noFutureLeg','nextFlight','chronologicalNextRosterLeg','isOperationalEvent','eventStartDateTime','eventEndDateTime'];
 const functions=names.map(name=>{const node=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(node,'Missing actual Home selector '+name);return node.getText(ast);}).join('\n');
 const entry=`import React from 'react';import {createRoot} from 'react-dom/client';
+import {isProgramScheduleActivity,careStateForScheduleActivity} from '${root}/client/src/lib/scheduleActivityClassification.ts';
 import View from '${root}/client/src/components/regulation/RegulationScenarioView.tsx';import {regulationProgramDay,resolveRegulationProgram} from '${root}/shared/regulationScenarioPrefill.mjs';import {regulationLastActivity} from '${root}/shared/regulationDeadlineSummary.mjs';import {selectNextRosterEvent,isOperationalCanonicalEvent,buildCanonicalRosterEvents} from '${root}/client/src/lib/canonicalRoster.ts';
 const storage={get:(key,fallback)=>fallback};${functions}
 const root=createRoot(document.getElementById('root'));

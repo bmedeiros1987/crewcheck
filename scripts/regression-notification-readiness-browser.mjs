@@ -8,7 +8,7 @@ const {chromium}=require('playwright');
 const bundle=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';createRoot(document.getElementById('root')).render(<NotificationReadiness/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},plugins:[{name:'alias',setup(b){b.onResolve({filter:/\.css$/},()=>({path:'css',namespace:'style'}));b.onLoad({filter:/.*/,namespace:'style'},()=>({contents:'',loader:'js'}));b.onResolve({filter:/^@\//},({path:p})=>({path:path.resolve('client/src',p.slice(2)+'.ts')}));}}]});
 const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles[0].text:'<div id="root"></div><script src="/fixture.js"></script>');});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
-let browser,offline=false,hold=false,resume,signal;const reads=[];
+let browser,offline=false,malformed=false,hold=false,resume,signal;const reads=[];
 try{
  browser=await chromium.launch({args:['--no-sandbox'],...process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}});
  const context=await browser.newContext({serviceWorkers:'block'});
@@ -16,27 +16,27 @@ try{
  await context.route('**/*',async route=>{
   const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();
   if(!url.pathname.startsWith('/api/'))return route.continue();
-  assert.equal(url.pathname,'/api/alarm/scheduled');assert.equal(req.method(),'GET');
+  assert.equal(url.pathname,'/api/notifications/diagnostic');assert.equal(req.method(),'GET');
   const token=req.headers().authorization?.replace('Bearer ','');assert(['A','B'].includes(token));reads.push(token);
   if(offline)return route.abort();
   if(hold&&token==='B'){hold=false;signal();await new Promise(r=>resume=r);}
-  return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:token==='A'},jobs:token==='A'?[{id:1,status:'pending'},{id:2,status:'sent'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
+  const states=['pending','processing','dispatching','sent','failed','expired','uncertain','cancelled','partial','held','other'];const counts=Object.fromEntries(states.map(state=>[state,token==='A'?1:0]));return route.fulfill({contentType:'application/json',body:JSON.stringify(malformed?{ok:true,jobs:[]}:{ok:true,observational:true,alarms:{scope:'current_account_notification_job_history',status:token==='A'?'recorded':'absent',counts,total:token==='A'?states.length:0,pendingPastDispatchWindow:token==='A'?1:0,received:null,sentMeaning:'provider_accepted_unconfirmed'}})});
  });
  const page=await context.newPage();
- await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','A');window.permissionsRequested=0;window.Notification={permission:'denied',requestPermission(){window.permissionsRequested++;throw Error('Permission must not be requested');}};});
- await page.goto(origin);await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();
- assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 aceitos pelo provedor'));
- assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 com resultado desconhecido'));
+ await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'owner-A'}));window.permissionsRequested=0;window.Notification={permission:'denied',requestPermission(){window.permissionsRequested++;throw Error('Permission must not be requested');}};});
+ await page.goto(origin);await page.getByText('11 registro(s) no servidor · recebimento não confirmado.',{exact:false}).waitFor();
+ for(const label of ['Pendentes','Em processamento','Envio em andamento','Aceitos pelo provedor; entrega não confirmada','Falha no envio','Prazo de envio expirado','Resultado do envio incerto','Cancelados','Envio parcial; entrega não confirmada','Retidos','Outros estados; verificação necessária'])assert((await page.getByLabel('Estados dos registros no servidor').textContent()).includes(label+': 1'));await page.getByText('Pendentes fora da janela de envio: 1.',{exact:true}).waitFor();assert.equal(await page.getByText('Conta vinculada',{exact:false}).count(),0);
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);
- offline=true;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();
- offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();
+ offline=true;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Diagnóstico indisponível.',{exact:false}).waitFor();
+ offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('11 registro(s) no servidor · recebimento não confirmado.',{exact:false}).waitFor();
+ malformed=true;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Diagnóstico indisponível.',{exact:true}).waitFor();assert.equal(await page.getByLabel('Estados dos registros no servidor').count(),0);malformed=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('11 registro(s) no servidor · recebimento não confirmado.',{exact:true}).waitFor();
  const began=new Promise(r=>signal=r);hold=true;
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');window.dispatchEvent(new Event('crewcheck:auth-changed'));});await began;
- assert.equal(await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).count(),0);
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();resume();
- await page.waitForTimeout(100);assert.equal(await page.getByText('Conta não vinculada.',{exact:false}).count(),0);
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Conta não vinculada.',{exact:true}).waitFor();
- await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'owner-B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await began;
+ assert.equal(await page.getByText('11 registro(s) no servidor · recebimento não confirmado.',{exact:false}).count(),0);
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'owner-A'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('11 registro(s) no servidor · recebimento não confirmado.',{exact:false}).waitFor();resume();
+ await page.waitForTimeout(100);assert.equal(await page.getByText('Nenhum registro no histórico desta conta.',{exact:false}).count(),0);
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'owner-B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Nenhum registro no histórico desta conta.',{exact:true}).waitFor();
+ await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await page.getByText('Diagnóstico indisponível.',{exact:false}).waitFor();
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);assert(reads.includes('A')&&reads.includes('B'));
  await page.evaluate(()=>{
    window.nativeStatus={notifications:true,notificationAppEnabled:false,notificationChannelEnabled:true};
@@ -63,6 +63,6 @@ try{
  await page.getByText('Notificações não autorizadas', {exact:false}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:true,notificationAppEnabled:true,notificationChannelEnabled:true};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
  await page.getByText('Permissão disponível.', {exact:true}).waitFor();await page.locator('summary[aria-label="Ajuda: Permissão e outros aparelhos"]').click();await page.getByText('não comprova envio ou recebimento', {exact:false}).waitFor();
- console.log('Actual notification readiness UI PASS: current bearer, offline/reconnect, cleared account state, discarded late responses, acceptance/unknown/expiry/cancel labels, zero sends or permission requests.');
+ console.log('Actual notification observer UI PASS: SELECT-only endpoint, all queue states, malformed/offline/reconnect, current owner/bearer, discarded late replies, no channel-readiness or receipt claims, zero sends or permission requests.');
  console.log('Device readiness PASS: app/channel blocks, legacy unknown status, explicit permission tap only, queued request never reported granted, fresh native status, zero notification sends.');
 }finally{resume?.();await browser?.close();await new Promise(r=>server.close(r));}

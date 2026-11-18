@@ -50,7 +50,7 @@ html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) 
 html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content .cz-finance-row > span { grid-area: date; }
 html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content .cz-finance-row > strong { grid-area: label; }
 html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content .cz-finance-row > b { grid-area: amount; text-align: right; }
-html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content .cc-per-diem-source { grid-area: source; color: var(--cc-review-muted); }
+html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content .cc-per-diem-source { color: var(--cc-review-muted); }
 html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content .cc-per-diem-source summary { padding-block: 4px; line-height: 1.5; cursor: pointer; }
 html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content .cc-per-diem-source small { display: block; font-size: .875rem; opacity: 1 !important; overflow-wrap: anywhere; }
 @media (max-width: 600px) {

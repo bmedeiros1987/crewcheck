@@ -11,6 +11,7 @@ on:
       - 'scripts/auth-contract-fixture.mjs'
       - 'scripts/regression-v14-0-2-auth-expired-login.mjs'
       - 'scripts/regression-getme-error-differentiation.mjs'
+      - 'scripts/regression-demo-anonymous-401.mjs'
       - 'client/src/components/ErrorBoundary.tsx'
       - 'client/src/components/startup-progress.css'
       - 'scripts/v14366/apply.mjs'
@@ -30,6 +31,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Raw anonymous401 and actual-session protection
+        run: node scripts/regression-demo-anonymous-401.mjs
       - name: Raw optional-profile deadline
         run: node scripts/regression-startup-profile-deadline.mjs
       - run: node scripts/v139/apply.mjs
@@ -39,6 +42,7 @@ jobs:
         run: node scripts/regression-startup-profile-deadline.mjs
       - run: node scripts/regression-v14-0-2-auth-expired-login.mjs
       - run: node scripts/regression-getme-error-differentiation.mjs
+      - run: node scripts/regression-demo-anonymous-401.mjs
       - run: node scripts/regression-error-boundary-safe.mjs
       - run: node scripts/p0-android-self-heal/regression.mjs
       - run: node scripts/regression-v14-3-66-stable-boot-logo.mjs

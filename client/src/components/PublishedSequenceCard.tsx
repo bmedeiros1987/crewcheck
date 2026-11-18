@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { EscalaContactButton } from './EscalaContact';
 import type { CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { sequenceEvidence, publishedSequenceCode } from '@/lib/publishedSequence';
 import { publication } from '@/lib/rosterPublicationReview';
@@ -34,7 +35,7 @@ export function PublishedSequenceCard({ events, anchorId }: { events: CanonicalR
   const shortened = standbyRoot && owner && review?.owner === owner && review.publication.revision === snapshot.revision && review.history.filter(change => change.version === review.version && change.kind === 'changed' && change.after && JSON.stringify(change.after) === JSON.stringify(current) && change.before?.start === current.start && Number.isFinite(Date.parse(change.before.end)) && Date.parse(change.before.end) > Date.parse(current.end));
   const shortening = Array.isArray(shortened) && shortened.length === 1;
   return <article className="cc-published-sequence" data-published-sequence="true">
-    <h3>Sequência disponível na escala</h3>
+    <header className="cc-published-sequence-heading"><h3>Sequência disponível na escala</h3><EscalaContactButton/></header>
     <p>Programado · horários publicados em BRT (UTC−03), sem confirmação de realização.</p>
     <ol>{result.rows.map(row => <li key={row.id}><strong>{row.code || 'Atividade'}</strong><span>{row.date} · {row.published.start && row.published.end ? publishedWindowLabel(row.published.start, row.published.end, row.date) : 'Horário publicado incompleto'}</span><small>Programado</small></li>)}</ol>
     {shortening && <p>Janela de sobreaviso encurtada entre versões publicadas; motivo não confirmado.</p>}

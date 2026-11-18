@@ -1,3 +1,4 @@
+import BackToTop from './components/BackToTop';
 import { useStartupCopy } from './components/startupCopy';
 import { StartupProgress, type StartupStage } from "./components/StartupProgress";
 import { useEffect, useState, type ReactNode } from "react";
@@ -258,6 +259,6 @@ export default function App() {
 
   return <ErrorBoundary>
     <Toaster richColors position={appMode ? "top-center" : "top-right"} />
-    <NativePlayUpdateNotice /><PwaInstallNotice /><Router /><CrewCheckGlobalBottomMenu />
+    <NativePlayUpdateNotice /><PwaInstallNotice /><Router /><CrewCheckGlobalBottomMenu /><BackToTop />
   </ErrorBoundary>;
 }

@@ -17,6 +17,6 @@ public class WatchOvernightTextTest {
    .put("hotelPickup","APZ hotel 19/10 07:30 America/Recife").put("validUntilEpochMs",now+1000);
   var s=WatchContextSnapshot.fromJson(json.toString());
   assertTrue(s.complicationLongText(now).contains("19/10 07:30"));
-  assertEquals("Abra o CrewCheck no celular",s.complicationLongText(now+1001));
+  assertEquals("Abra no celular",s.complicationLongText(now+1001));
  }
 }

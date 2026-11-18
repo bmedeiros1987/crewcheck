@@ -817,18 +817,19 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
     const hasExactContinuity = Boolean(continuityStart && continuityEnd && Number.isFinite(continuityStart.getTime()) && Number.isFinite(continuityEnd.getTime()) && continuityEnd >= continuityStart);
     const start = hasExactContinuity ? continuityStart! : dateAt(day, startTime, 0);
     const end = hasExactContinuity ? continuityEnd! : dateAt(day, endTime, 23);
+    const operationalAirport = String((day as any).operationalAirport || (day as any).airport || day.base || '').trim().toUpperCase();
     if (!hasExactContinuity && (minutes(endTime) ?? 0) < (minutes(startTime) ?? 0)) end.setUTCDate(end.getUTCDate() + 1);
 
     events.push({
-      id: `${day.date}|${kind}|${day.pairingCode || day.type || 'event'}`,
+      id: `${day.date}|${kind}|${day.pairingCode || day.type || 'event'}|${startTime}|${endTime}|${operationalAirport}`,
       kind,
       date: day.date,
       publishedDay: day,
       startDateTime: start.toISOString(),
       endDateTime: end.toISOString(),
       flightNumber: day.pairingCode || day.type || 'DUTY',
-      origin: day.base,
-      destination: day.base,
+      origin: operationalAirport,
+      destination: operationalAirport,
       presentation: startTime,
       departure: startTime,
       arrival: endTime,
@@ -838,7 +839,11 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
       legCount: 1,
       showPresentation: true,
       groundBeforeMinutes: null,
-      journeyId: `${kind}|${day.date}|${day.pairingCode || day.type || 'event'}`,
+      // A ground duty is one occurrence, not every same-code activity that day.
+      // Reuse the existing v14347 event identity; do not create another ID scheme.
+      journeyId: kind === 'duty'
+        ? `${day.date}|${kind}|${day.pairingCode || day.type || 'event'}|${startTime}|${endTime}|${operationalAirport}`
+        : `${kind}|${day.date}|${day.pairingCode || day.type || 'event'}`,
       journeyBoundary: 'primeira-etapa',
     });
   });

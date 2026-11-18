@@ -47,10 +47,19 @@ export type WellhubRoutineSuggestion = {
 };
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: 'no-store', credentials: 'include' });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload) throw new Error(payload?.message || `Erro HTTP ${response.status}`);
-  return payload as T;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(url, { cache: 'no-store', credentials: 'include', signal: controller.signal });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload) throw new Error(payload?.message || `Erro HTTP ${response.status}`);
+    return payload as T;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('A busca demorou mais que o esperado. Tente novamente quando quiser.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function fetchWellhubVerifiedSearch(input: {

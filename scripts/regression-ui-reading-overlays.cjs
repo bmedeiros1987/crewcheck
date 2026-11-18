@@ -86,7 +86,7 @@ async function visibleTextBounds(page, selector) {
         if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false,"items":[],"data":[],"enabled":false}' });
         return route.continue();
       });
-      await context.addInitScript(fixtureScope.qaSeed, { theme, kind: fixtureScope.qaRoster('multi'), amount: 1234567.89 });
+      await context.addInitScript(fixtureScope.qaSeed, { theme, kind: fixtureScope.qaRoster('multi'), amount: 1234567.89, language: 'pt' });
       await context.addInitScript(() => localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa', JSON.stringify({ version: 1, mode: 'personalized', order: ['summary', 'finance', 'next', 'limits', 'smart'], visible: ['summary', 'next', 'limits'] })));
       const page = await context.newPage();
       await page.goto(origin + '/app'); await page.locator('.cz-app').waitFor();

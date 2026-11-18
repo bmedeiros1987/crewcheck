@@ -70,6 +70,11 @@ function eventEnd(event: RosterEvent) {
   return new Date(event.canonical?.endDateTime || event.canonical?.startDateTime || event.date || 0);
 }
 
+// Canonical identity of a roster occurrence; saved stays keep the value they were confirmed against.
+function stayEventSignature(event: RosterEvent) {
+  return [event.id, event.canonical?.startDateTime, event.canonical?.endDateTime, event.origin, event.destination].join('|');
+}
+
 function hoursBetween(a: Date, b: Date) {
   return Math.max(0, (b.getTime() - a.getTime()) / 3600000);
 }
@@ -122,6 +127,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   const [screenshotEpoch, setScreenshotEpoch] = useState(0);
   const nativeHost = useRef(preparedStayAlarmAdapter());
   const alarmController = useRef(createStayAlarmController(nativeHost.current));
+  const invalidateDurableAlarms = () => { if (editorSessionCurrent()) void nativeHost.current?.invalidate(); };
   const [hostReady, setHostReady] = useState(() => Boolean(nativeHost.current?.ready()));
   useEffect(() => { const changed = () => setHostReady(Boolean(nativeHost.current?.ready()));
     window.addEventListener('crewcheck:stay-host-state', changed);
@@ -204,7 +210,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   useEffect(() => {
     setRemoved(Boolean(selectedId && !selected));
     if (!selected || owner.current !== getToken()) return;
-    const signature = [selected.id, selected.canonical?.startDateTime, selected.canonical?.endDateTime, selected.origin, selected.destination].join('|');
+    const signature = stayEventSignature(selected);
     if (previousId.current === selected.id && eventSignature.current && signature !== eventSignature.current) { setNeedsReview(true); setApzConfirmed(false); }
     eventSignature.current = signature;
     if (previousId.current === selected.id && dirty.current) return;
@@ -219,7 +225,8 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
       setDraft(catalogue?{...persisted.draft,hotelName:catalogue.name,airport:catalogue.airport||persisted.draft.airport}:persisted.draft); setManual(!catalogue); setHotelTimeZone(persisted.timeZone); setApzDate(persisted.apzDate);
       setAlarmChoice(persisted.choice); setBreakfastPlan(persisted.breakfastPlan); setApzConfirmed(persisted.apzConfirmed && !changed && !catalogue); setApzSource(persisted.apzSource);
       setTransport(readTransport(persisted.transport)); setScreenshotImport(persisted.screenshotImport);
-      setAlarmCancelled(persisted.alarmState === 'cancelled'); setNeedsReview(changed); if(catalogue)dirty.current=true; return;
+      // Choosing a saved stay (even through the bubbling form onChange) is not an edit.
+      setAlarmCancelled(persisted.alarmState === 'cancelled'); setNeedsReview(changed); dirty.current = Boolean(catalogue); return;
     }
     const date = isoDay(selected.date || selected.canonical?.startDateTime);
     const direct = stays.filter(item => item.rosterEventId === selected.id);
@@ -263,7 +270,35 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     } catch { toast.error('Não foi possível salvar a preferência de exibição.'); }
   }
 
-  useEffect(() => { void nativeHost.current?.invalidate(); }, [events, selectedId, apzEpoch, apzConfirmed, hotelTimeZone, alarmChoice, defaultLead, defaultWithoutBreakfast, breakfastPlan, draft.hotelName]);
+  // Opening, hydrating or remounting a saved stay is not an edit and must keep its
+  // durable alarm authority; only inputs the user changed (dirty) revoke it.
+  useEffect(() => { if (dirty.current && editorSessionCurrent()) void nativeHost.current?.invalidate(); }, [apzDate, draft.presentationTime, apzEpoch, apzConfirmed, hotelTimeZone, alarmChoice, defaultLead, defaultWithoutBreakfast, breakfastPlan, draft.hotelName]);
+  // Real stay changes still revoke, also on a fresh mount: a known stay whose canonical
+  // occurrence changed, or that disappeared while still current; a saved stay whose
+  // occurrence changed, or that vanished while its APZ date is still current and its
+  // alarm was not cancelled. Past occurrences leaving the roster are not changes, and
+  // an empty roster is unknown inventory, never evidence of removal.
+  const stayCanonical = useMemo(() => new Map(events.filter(event => event.kind === 'stay').map(event => [event.id, { signature: stayEventSignature(event), end: eventEnd(event).getTime() }])), [events]);
+  const canonicalRoster = useMemo(() => JSON.stringify([...stayCanonical.values()].map(stay => stay.signature).sort()), [stayCanonical]);
+  const seenStays = useRef<Map<string, { signature: string; end: number }> | null>(null);
+  useEffect(() => {
+    if (!events.length || !editorSessionCurrent()) return;
+    const now = Date.now(), current = stayCanonical, previous = seenStays.current;
+    seenStays.current = current;
+    const stillCurrent = (end: number) => !Number.isFinite(end) || end >= now - 86400000;
+    const rosterChanged = previous !== null && [...previous].some(([id, before]) => {
+      const after = current.get(id);
+      return after ? after.signature !== before.signature : stillCurrent(before.end);
+    });
+    const recentDay = new Date(now - 86400000).toISOString().slice(0, 10);
+    const savedChanged = Object.entries(loadStayEditor().stays || {}).some(([id, record]: [string, any]) => {
+      if (typeof record?.signature !== 'string') return false;
+      const after = current.get(id);
+      if (after) return after.signature !== record.signature;
+      return record.alarmState !== 'cancelled' && typeof record.apzDate === 'string' && record.apzDate >= recentDay;
+    });
+    if (rosterChanged || savedChanged) invalidateDurableAlarms();
+  }, [canonicalRoster]);
 
   function chooseHotel(hotel: (typeof CREW_HOTEL_CATALOG)[number]) {
     dirty.current = true;
@@ -326,7 +361,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     const value = Number(defaultInput);
     const withoutBreakfast = Number(withoutBreakfastInput);
     if (!defaultInput.trim() || !withoutBreakfastInput.trim() || ![value, withoutBreakfast].every(minutes => Number.isInteger(minutes) && minutes >= 0 && minutes <= 720)) return toast.info('Informe os dois padrões entre 0 e 720 minutos.');
-    try { const current = loadStayEditor(); persistStayEditor({ ...current, defaultLeadMinutes: value, defaultWithoutBreakfastMinutes: withoutBreakfast }, renderAccount); setDefaultLead(value); setDefaultWithoutBreakfast(withoutBreakfast); toast.success('Padrões salvos para sua conta neste aparelho. Overrides individuais preservados.'); }
+    try { const current = loadStayEditor(); persistStayEditor({ ...current, defaultLeadMinutes: value, defaultWithoutBreakfastMinutes: withoutBreakfast }, renderAccount); setDefaultLead(value); setDefaultWithoutBreakfast(withoutBreakfast); invalidateDurableAlarms(); toast.success('Padrões salvos para sua conta neste aparelho. Overrides individuais preservados.'); }
     catch (error) { toast.error(error instanceof Error ? error.message : 'Não foi possível salvar o padrão.'); }
   }
   async function cancelStayAlarm() {

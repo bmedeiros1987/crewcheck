@@ -35,9 +35,18 @@ for (const file of ['client/index.html', 'client/src/lib/brand.ts', 'client/src/
 for (const name of ['CACHE_NAME', 'RUNTIME_CACHE']) assert.match(sw, new RegExp(`const ${name} = '[^']+-brand936-${APPROVED_BRAND_SHA.slice(0, 12)}'`));
 assert.match(sw, /SHARED_PDF_CACHE = 'crewcheck-pwa-shared-pdf-v1'/, 'Shared PDFs retain their independent cache');
 assert.match(fs.readFileSync('android-wrapper/app/src/main/res/drawable/ic_launcher.xml', 'utf8'), /android:src="@drawable\/crewcheck_icon_site"/);
+// Every Android brand input must be the approved art itself: either a finalized alias
+// (icons/crewcheck-icon-v2|v3, checked above) or the official 2026 source the Wear app and
+// watch face read directly since #1282. Check the bytes of each file Gradle copies, not a name.
+const brandInputs = new Set(['client/public/icons/crewcheck-icon-v2.png', 'client/public/icons/crewcheck-icon-v3.png', 'client/public/assets/brand/crewcheck-app-icon-2026.png']);
 for (const module of ['app', 'wear', 'watchface']) {
   const gradle = fs.readFileSync(`android-wrapper/${module}/build.gradle`, 'utf8');
-  assert.match(gradle, /client\/public\/icons\/crewcheck-icon-v[23]\.png/);
+  const inputs = [...gradle.matchAll(/file\('\.\.\/\.\.\/(client\/public\/[^']+\.png)'\)/g)].map(m => m[1]);
+  assert(inputs.length >= 2, `${module}: brand input and copy source declared`);
+  for (const input of inputs) {
+    assert(brandInputs.has(input), `${module}: ${input} is not an approved brand input`);
+    assert.equal(sha(input), APPROVED_BRAND_SHA, `${module}: ${input} bytes`);
+  }
   assert.match(gradle, /preBuild.dependsOn generateCrew/);
 }
 const watched = ['client/public/brand/crewcheck-mark.svg', 'client/public/brand/crewcheck-play-store-source.svg', 'client/public/manifest.json', 'client/public/sw.js', 'client/index.html', 'client/src/main.tsx', 'client/src/pages/Home.tsx', 'client/src/lib/brand.ts', 'client/src/styles/brand-mark-2026.css'];

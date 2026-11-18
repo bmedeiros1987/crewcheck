@@ -4,11 +4,23 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
+      - 'scripts/lib/roster-geometry-diagnostics.cjs'
+      - 'scripts/regression-roster-geometry-diagnostics.cjs'
       - 'client/src/components/v1391/**'
       - 'client/src/lib/rosterLayoutPreference.ts'
       - 'scripts/regression-aims-document-browser.mjs'
       - 'scripts/regression-aims-document-app.cjs'
+      - 'scripts/lib/aims-preaction-stability.cjs'
+      - 'scripts/lib/aims-scroll-affordance.cjs'
+      - 'scripts/regression-aims-scroll-affordance.cjs'
+      - 'scripts/lib/roster-format-controls.cjs'
+      - 'scripts/regression-aims-preaction-stability.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
+      - 'scripts/regression-roster-direct-actions-browser.mjs'
+      - 'scripts/regression-roster-summary-browser.mjs'
       - '.github/workflows/aims-document-browser.yml'
   workflow_dispatch:
 
@@ -21,7 +33,7 @@ concurrency:
 
 jobs:
   document-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -32,6 +44,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Reject unstable preparation and application layout shifts
+        run: |
+          node scripts/regression-aims-preaction-stability.cjs
+          node scripts/regression-aims-scroll-affordance.cjs
       - name: Prepare once and build the shipping app
         run: |
           node scripts/v139/apply.mjs
@@ -40,10 +56,26 @@ jobs:
           npx vite build
       - name: Verify account-scoped mode and existing layouts
         run: node scripts/regression-roster-layout-preference.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated browser runtime
         run: |
           npm install --prefix "$RUNNER_TEMP/aims-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/aims-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify accessible format choices, keyboard and persistence (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
+        run: |
+          node scripts/regression-roster-geometry-diagnostics.cjs
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-direct-actions-browser.mjs
+          ROSTER_PRODUCTION_CSS="$(node -e 'const fs=require("node:fs");const files=fs.readdirSync("dist/assets").filter(f=>/^index-.*\.css$/.test(f));if(files.length!==1)throw Error("Expected one production stylesheet");process.stdout.write("dist/assets/"+files[0])')" node scripts/regression-roster-summary-browser.mjs
       - name: Verify synthetic document zoom, gestures, exact events and accessibility
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
@@ -58,5 +90,7 @@ jobs:
           path: |
             artifacts/aims-document
             artifacts/aims-document-app
+            artifacts/roster-direct-actions
+            artifacts/roster-summary
           if-no-files-found: warn
           retention-days: 7

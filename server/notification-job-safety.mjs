@@ -1,3 +1,5 @@
+import { createWakeupSpokenEnvelope, isReservedWakeupMessage } from './wakeup-spoken-program.mjs';
+import { BRIEFING_JOB_PREFIX, dispatchTelegramBriefing, TELEGRAM_OPERATIONAL_BRIEFING_ENABLED } from './concierge/telegram-briefing.mjs';
 // Safety boundary for the existing SQL notification queue. No new provider/queue.
 import { LEAVE_CYCLE, cycleJobPrefix, lockCycle } from './v139/notificationCycles.mjs';
 export const JOB_GRACE_SECONDS = 120;
@@ -44,9 +46,16 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   const phone = String(body.phone || body.mobile || '').trim();
   if ((channels.includes('telegram') && !chatId) || (channels.includes('telegram-call') && !username) || (channels.includes('phone-call') && !phone)) return sendJson(res, 400, { ok: false, message: 'Vínculo ou destinatário indisponível.' });
   const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
-  if (/^(cycle:|free-day:)/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
+  if (/^(cycle:|free-day:|operational-briefing:)/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
+  let message = String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000);
+  if (body.spokenProgram !== undefined && typeof body.spokenProgram !== 'boolean') return sendJson(res, 400, { ok: false, message: 'Confirme explicitamente o conteúdo deste alerta.' });
+  if (body.spokenProgram === true) {
+    if (!jobKey.startsWith('wakeup:')) return sendJson(res, 400, { ok: false, message: 'A programação falada exige um despertador identificado.' });
+    try { message = await createWakeupSpokenEnvelope({ db, account: user, eventId: body.eventId, scheduledAt: scheduledAt.getTime() }); }
+    catch { return sendJson(res, 409, { ok: false, message: 'Não foi possível confirmar essa programação na próxima jornada da escala ativa. Desmarque o roteiro ou confira a escala antes de ativar.' }); }
+  } else if (isReservedWakeupMessage(message)) return sendJson(res, 400, { ok: false, message: 'Conteúdo reservado; use a escolha explícita de programação.' });
   const job = { email: user.email, job_key: jobKey, scheduled_at: scheduledAt, channel, chat_id: chatId, telegram_username: username, phone,
-    message: String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000) };
+    message };
   const [existing] = await db.query('SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE email=? AND job_key=? LIMIT 1', [user.email, jobKey]);
   const old = existing[0];
   if (old && (terminal.has(old.status) || ['processing', 'dispatching'].includes(old.status))) {
@@ -79,10 +88,11 @@ export async function safeCancelJob({ req, res, identity, readJson, dbPool, send
   return sendJson(res, inFlight ? 409 : 200, { ok: !inFlight, cancelled: result.affectedRows, inFlight, message: inFlight ? 'Envio já iniciou; não foi possível confirmar cancelamento.' : 'Cancelamento verificado; mensagens já aceitas não podem ser recolhidas.' });
 }
 
-export async function dispatchClaimedJob(db, selected, { deliver, findLink, now = Date.now() }) {
+export async function dispatchClaimedJob(db, selected, { deliver, findLink, now = Date.now(), operationalBriefingEnabled = TELEGRAM_OPERATIONAL_BRIEFING_ENABLED, clock = Date.now }) {
   const [rows] = await db.query("SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE id=? AND status='processing' LIMIT 1", [selected.id]);
   const job = rows[0];
   if (!job) return { status: 'skipped' }; // cancellation after selection/claim
+  if (/^operational-briefing:/i.test(String(job.job_key || ''))) return dispatchTelegramBriefing(db, job, { enabled: operationalBriefingEnabled, deliver, clock });
   // Legacy/forged phone jobs have no durable verified recipient proof either.
   // Reject the whole combined job rather than silently dropping a selected channel.
   if (includesPhone(job.channel)) {

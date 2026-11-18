@@ -22,7 +22,7 @@ const session=()=>{const u=getStoredUser(),t=getToken();return u&&t&&!['visitor'
 const number=(s:string)=>/^\d+$/.test(s)?Number(s):null;
 const dateOf=(s?:string|null)=>{const m=String(s||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);return m?`${m[3]}-${m[2]}-${m[1]}`:/^\d{4}-\d{2}-\d{2}$/.test(s||'')?s!:'';};
 const defaults=()=>({takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação',limitBasis:'',presentation:'',presentationReviewed:false,acclimatizedClockReviewed:false,regime:'',timingChange:'flight-delay',changeReviewed:false,method:'schedule',plannedEnd:'',plannedEndSource:'',scheduledArrival:'',reviewRequired:false,manualLastActivity:'unknown'});
-function localClock(instant:string|undefined,offset:string){if(!instant||!/^([+-])(\d{2}):(\d{2})$/.test(offset))return '—';const sign=offset[0]==='-'?-1:1,shift=sign*(Number(offset.slice(1,3))*60+Number(offset.slice(4)))*60000;return new Date(Date.parse(instant)+shift).toISOString().slice(0,16).replace('T',' · ');}
+function localClock(instant:string|undefined,offset:string){if(!instant||!/^([+-])(\d{2}):(\d{2})$/.test(offset))return '-';const sign=offset[0]==='-'?-1:1,shift=sign*(Number(offset.slice(1,3))*60+Number(offset.slice(4)))*60000;return new Date(Date.parse(instant)+shift).toISOString().slice(0,16).replace('T',' · ');}
 // Optional admitted-host input. No current cache is promoted into admission and
 // no subscription/fetch is created here. captureAuthSession is continuity only;
 // the supplying host must separately confirm authenticated source authority.
@@ -100,8 +100,8 @@ export function DetailedRegulationScenarioView({scheduleDay,compliance,program,o
   <section className="cc-reg-scenario-result" aria-label="Resultado temporal" data-state={deadlines.marginMinutes===null?'indeterminate':deadlines.marginMinutes<0?'exceeds_temporal_reference':'within_temporal_reference'}>
    <span>{deadlines.normalDutyEnd?'REFERÊNCIA REVISADA · SIMULAÇÃO':'REFERÊNCIA A CONFIRMAR · SIMULAÇÃO'}</span>
    <div className="cc-reg-deadlines">
-    <div><h2>Limite normal da jornada</h2><strong>{localClock(deadlines.normalDutyEnd||undefined,form.offset).split(' · ').at(-1)}</strong><small>{deadlines.normalDutyEnd?localClock(deadlines.normalDutyEnd,form.offset).split(' · ')[0]+' · UTC'+form.offset:'Dados a confirmar'}</small></div>
-    <div><h2>Corte dos motores até</h2><strong>{localClock(deadlines.engineStopLimit||undefined,form.offset).split(' · ').at(-1)}</strong><small>{deadlines.engineStopLimit?localClock(deadlines.engineStopLimit,form.offset).split(' · ')[0]+' · UTC'+form.offset:'Confirme pós-voo e tarefas'}</small></div>
+    <div><h2>Corte dos motores</h2><strong role={!deadlines.engineStopLimit ? 'img' : undefined} aria-label={!deadlines.engineStopLimit ? 'Corte dos motores: limite previsto não calculável' : undefined}>{localClock(deadlines.engineStopLimit||undefined,form.offset).split(' · ').at(-1)}</strong>{deadlines.engineStopLimit&&<small>{localClock(deadlines.engineStopLimit,form.offset).split(' · ')[0]+' · UTC'+form.offset}</small>}</div>
+    <div><h2>Fim da jornada</h2><strong role={!deadlines.normalDutyEnd ? 'img' : undefined} aria-label={!deadlines.normalDutyEnd ? 'Fim da jornada: limite previsto não calculável' : undefined}>{localClock(deadlines.normalDutyEnd||undefined,form.offset).split(' · ').at(-1)}</strong>{deadlines.normalDutyEnd&&<small>{localClock(deadlines.normalDutyEnd,form.offset).split(' · ')[0]+' · UTC'+form.offset}</small>}</div>
    </div>
    {deadlines.marginMinutes!==null?<p className="cc-reg-margin" role="status">{deadlines.marginMinutes>=0?`${deadlines.marginMinutes} min de margem ${useOperational?'da previsão operacional':'da programação'}`:`Excede a referência em ${Math.abs(deadlines.marginMinutes)} min`}</p>:<p role="status">Falta confirmar: {(deadlines.missing.length?deadlines.missing:deadlines.marginMissing).slice(0,3).join(' · ')}{deadlines.missing.length>3?'…':''}.</p>}
    {deadlines.projectedDutyEnd&&<p>Encerramento previsto: <b>{localClock(deadlines.projectedDutyEnd,form.offset)}</b></p>}
@@ -119,7 +119,7 @@ export function DetailedRegulationScenarioView({scheduleDay,compliance,program,o
    <p>Recalcula a previsão. O atraso não aumenta o limite da jornada.</p>
   </section>
   {known&&(useOperational?operationalCrossesDate:result.crossesReferenceDate)&&<p role="status" className="cc-reg-scenario-warning">A projeção muda de data. Madrugadas e histórico precisam ser reavaliados.</p>}
-  <details className="cc-reg-scenario-details"><summary>Como foi calculado <ChevronDown aria-hidden="true"/></summary>
+  <details className="cc-reg-scenario-details"><summary>Como foi calculado <ChevronDown aria-hidden="true"/></summary><p>Corte dos motores e fim da jornada são limites previstos e condicionais do cenário, nessa ordem cronológica. Não confirmam corte real nem execução da jornada. O sinal - indica dado não confirmado ou limite não calculável; os motivos permanecem nos dados e nas regras deste cenário.</p>
   {!useOperational&&explanation&&<section className="cc-reg-scenario-details" aria-label="Concierge explica esta jornada">
    <h2>Concierge · Entenda esta jornada</h2>
    {explanation.facts.map((text:string,index:number)=><p key={index}>{text}</p>)}
@@ -181,5 +181,5 @@ export default function RegulationScenarioView(props:Parameters<typeof DetailedR
  const imported=Boolean(props.scheduleDay&&props.scheduleDay.type!=='IMPORTAR'&&(props.scheduleDay.legs?.length||props.program?.kind==='duty'));
  const automatic=imported&&props.scheduleDay?.type==='VOO'&&!manual;
  if(automatic)return <RegulationAutomaticView scheduleDay={props.scheduleDay!} program={props.program} compliance={props.compliance} operationalArrival={props.operationalArrival} onManual={()=>setManual(true)}/>;
- return <>{imported&&<button className="cc-reg-return-auto" type="button" onClick={()=>setManual(false)}>Voltar ao cenário automático</button>}<DetailedRegulationScenarioView {...props} scheduleDay={imported?props.scheduleDay:null} program={imported?props.program:null}/></>;
+ return <>{imported&&<div className="cc-regulation-scenario cc-reg-return-bar"><button className="cc-reg-return-auto" type="button" onClick={()=>setManual(false)}>Voltar ao cenário automático</button></div>}<DetailedRegulationScenarioView {...props} scheduleDay={imported?props.scheduleDay:null} program={imported?props.program:null}/></>;
 }

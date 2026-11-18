@@ -2,17 +2,40 @@ name: Financial known values and payment dates
 on:
   pull_request:
     paths:
+      - 'client/src/components/preferences/PreferenceSwitch.tsx'
+      - 'client/src/components/preferences/preference-switch.css'
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/lib/rosterDayAllowanceSummary.ts'
+      - 'scripts/regression-roster-daily-allowance-browser.mjs'
+      - 'scripts/regression-allowance-closed-duty-browser.cjs'
+      - 'scripts/fixtures/allowance-closed-duty-cycle.mjs'
       - 'client/src/lib/*Salary*.ts'
       - 'client/src/lib/salaryDisplayBasis.ts'
       - 'scripts/regression-salary-display-basis*'
       - 'client/src/lib/payrollPaymentComposition.ts'
+      - 'client/src/lib/payrollProjectionPeriods.ts'
+      - 'client/src/lib/allowanceStatementReconciliation.ts'
+      - 'scripts/regression-allowance-occurrence-reconciliation.mjs'
+      - 'scripts/regression-allowance-page-continuity.mjs'
+      - 'scripts/regression-allowance-import-continuity-browser.mjs'
+      - 'scripts/regression-financial-preset-allowances.mjs'
+      - 'scripts/regression-financial-period-invalid-browser.mjs'
+      - 'scripts/regression-payroll-projection-periods.mjs'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/financialLocalUpcoming.ts'
       - 'client/src/lib/financialIntervalEvidence.ts'
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/ownerPerDiemReview.ts'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/financialForecastDrafts.ts'
+      - 'scripts/regression-financial-forecast-drafts.cjs'
+      - 'scripts/regression-financial-forecast-guided-browser.cjs'
+      - 'client/src/lib/personalAllowanceReference.ts'
+      - 'scripts/regression-personal-allowance-*.mjs'
       - 'scripts/regression-owner-per-diem-review.mjs'
       - 'scripts/regression-owner-per-diem-browser.mjs'
       - 'scripts/regression-owner-per-diem-caller.mjs'
@@ -25,20 +48,29 @@ on:
       - 'client/src/components/finance/**'
       - 'shared/spBankCalendar2026.mjs'
       - 'shared/financial*.mjs'
+      - 'shared/financialVacationForecast.d.mts'
+      - 'shared/financialThirteenthForecast.d.mts'
       - 'client/src/lib/cabinSalaryRateReference.ts'
       - 'scripts/regression-financial-concierge-*'
       - 'scripts/regression-financial-history-loading-ui.cjs'
       - 'scripts/regression-financial-persisted-comparison.mjs'
       - 'scripts/regression-cabin-rate-audit.mjs'
+      - 'scripts/regression-salary-tariff-pending-browser.mjs'
       - 'scripts/regression-financial-known-values*'
+      - 'scripts/regression-payroll-net-session-browser.mjs'
+      - 'scripts/regression-payroll-net-storage.mjs'
+      - 'scripts/regression-financial-vacation-*'
+      - 'scripts/regression-financial-thirteenth-*'
+      - 'scripts/regression-thirteenth-summary-browser.cjs'
       - 'scripts/regression-financial-review-owner-negative.mjs'
+      - 'scripts/regression-financial-review-hardening.mjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
       - '.github/workflows/financial-known-values-dates.yml'
 permissions:
   contents: read
 jobs:
   known-values-dates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +82,11 @@ jobs:
       - run: npm ci
       - name: Raw real-function contracts in three device timezones
         run: |
+          node scripts/regression-payroll-net-storage.mjs
+          node scripts/regression-financial-vacation-forecast.mjs
+          node scripts/regression-financial-thirteenth-forecast.mjs
+          node scripts/regression-financial-review-hardening.mjs
+          node scripts/regression-financial-forecast-drafts.cjs
           TZ=UTC node scripts/regression-financial-known-values-dates.mjs
           TZ=America/Sao_Paulo node scripts/regression-financial-known-values-dates.mjs
           TZ=Asia/Tokyo node scripts/regression-financial-known-values-dates.mjs
@@ -59,9 +96,32 @@ jobs:
           TZ=Asia/Tokyo node scripts/regression-salary-display-basis.mjs
       - run: npm run build
       - run: npx tsc --noEmit
+      - name: Raw payroll reference and credit periods in three timezones
+        run: |
+          TZ=UTC node scripts/regression-financial-preset-allowances.mjs
+          TZ=UTC node scripts/regression-allowance-occurrence-reconciliation.mjs
+          TZ=UTC node scripts/regression-allowance-page-continuity.mjs
+          TZ=UTC node scripts/regression-payroll-projection-periods.mjs
+          TZ=America/Sao_Paulo node scripts/regression-financial-preset-allowances.mjs
+          TZ=America/Sao_Paulo node scripts/regression-allowance-occurrence-reconciliation.mjs
+          TZ=America/Sao_Paulo node scripts/regression-allowance-page-continuity.mjs
+          TZ=America/Sao_Paulo node scripts/regression-payroll-projection-periods.mjs
+          TZ=America/Los_Angeles node scripts/regression-financial-preset-allowances.mjs
+          TZ=America/Los_Angeles node scripts/regression-allowance-occurrence-reconciliation.mjs
+          TZ=America/Los_Angeles node scripts/regression-allowance-page-continuity.mjs
+          TZ=America/Los_Angeles node scripts/regression-payroll-projection-periods.mjs
       - name: Prepared real-function contracts and existing negative gates
         run: |
+          node scripts/regression-payroll-net-storage.mjs
+          node scripts/regression-financial-vacation-forecast.mjs
+          node scripts/regression-financial-thirteenth-forecast.mjs
+          node scripts/regression-financial-review-hardening.mjs
+          node scripts/regression-financial-forecast-drafts.cjs
           node scripts/regression-financial-known-values-dates.mjs
+          node scripts/regression-financial-preset-allowances.mjs
+          node scripts/regression-allowance-occurrence-reconciliation.mjs
+          node scripts/regression-allowance-page-continuity.mjs
+          node scripts/regression-payroll-projection-periods.mjs
           node scripts/regression-next-financial-payment.mjs
           node scripts/regression-payroll-payment-coverage.mjs
           node scripts/regression-financial-monthly-foundation.mjs
@@ -75,6 +135,15 @@ jobs:
           node scripts/regression-owner-per-diem-caller.mjs
           node scripts/regression-cabin-rate-audit.mjs
           node scripts/regression-financial-persisted-comparison.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated UI browser
         run: |
           npm install --prefix "$RUNNER_TEMP/finance-known-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -89,8 +158,21 @@ jobs:
           node scripts/regression-financial-history-loading-ui.cjs
           node scripts/regression-owner-per-diem-browser.mjs
           node scripts/regression-taxi-pending-row-browser.mjs
+          node scripts/regression-roster-daily-allowance-browser.mjs
+          node scripts/regression-salary-tariff-pending-browser.mjs
+          node scripts/regression-allowance-closed-duty-browser.cjs
+          TZ=UTC node scripts/regression-finance-actionable-browser.mjs
+          TZ=America/Sao_Paulo node scripts/regression-finance-actionable-browser.mjs
+          TZ=Pacific/Auckland node scripts/regression-finance-actionable-browser.mjs
           node scripts/regression-financial-long-history.cjs
           node scripts/regression-salary-display-basis-browser.cjs
+          node scripts/regression-payroll-net-session-browser.mjs
+          node scripts/regression-financial-vacation-session-browser.mjs
+          node scripts/regression-financial-vacation-browser.cjs
+          node scripts/regression-thirteenth-summary-browser.cjs
+          node scripts/regression-financial-forecast-guided-browser.cjs
+          node scripts/regression-financial-vacation-app.cjs
+          node scripts/regression-financial-vacation-app.cjs --thirteenth
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -98,6 +180,14 @@ jobs:
           path: |
             artifacts/financial-focus-probe/
             artifacts/financial-known-values/
+            artifacts/SYNTHETIC-allowance-closed-duty/
             artifacts/financial-long-history/
             artifacts/salary-display-basis/
+            artifacts/payroll-net-session/
+            artifacts/vacation-forecast/
+            artifacts/vacation-app/
+            artifacts/thirteenth-app/
+            artifacts/thirteenth-summary/
+            artifacts/forecast-guided/
+            artifacts/SYNTHETIC-salary-tariff-pending/
           if-no-files-found: ignore

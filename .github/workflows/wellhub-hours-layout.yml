@@ -2,6 +2,9 @@ name: Wellhub hours and compact cards
 on:
   pull_request:
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'shared/wellhub-*'
       - 'server/v14407/wellhub.mjs'
       - 'client/src/lib/wellhub*'
@@ -46,6 +49,15 @@ jobs:
       - run: node scripts/regression-concierge-wellhub-conversation.mjs --materialized
       - run: node scripts/regression-concierge-wellhub-plan-recognition.mjs --materialized
       - run: npm install --prefix /tmp/wellhub-browser playwright@1.64.0 --ignore-scripts --no-audit --no-fund
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - run: /tmp/wellhub-browser/node_modules/.bin/playwright install --with-deps chromium
       - name: Validate materialized cards, fixed-navigation clearance and reduced keyboard viewport
         run: MENU_PLAYWRIGHT_PACKAGE=/tmp/wellhub-browser/package.json node scripts/regression-wellhub-cards-browser.mjs

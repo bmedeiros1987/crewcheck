@@ -139,6 +139,11 @@ fs.writeFileSync(homeFile, home, 'utf8');
 
 let roster = fs.readFileSync(rosterFile, 'utf8');
 
+if (roster.includes("from '@/lib/rosterPresentation';")) {
+  const presentation = fs.readFileSync('client/src/lib/rosterPresentation.ts', 'utf8');
+  for (const contract of ['Descanso na base', 'isBaseRest(event)', "mode === 'stay' ? meaningful"]) if (!presentation.includes(contract)) throw new Error('[v14393] shared nonoperational presentation absent: ' + contract);
+  if (!roster.includes("{mode === 'stay' && <button")) throw new Error('[v14393] hotel action must require an actual overnight.');
+} else {
 const restTitleOld = `  if (mode === 'rest') {\n    if (/(DO|DOF|DOP|OFF)/.test(code)) return \`Folga publicada\${code ? \` · \${code}\` : ''}\`;\n    return \`Descanso publicado\${code ? \` · \${code}\` : ''}\`;\n  }`;
 const restTitleNew = `  if (mode === 'rest') {\n    if (/DESCANSO_BASE_CONTINUIDADE/.test(code)) return 'Descanso na base';\n    if (/(DO|DOF|DOP|OFF)/.test(code)) return \`Folga publicada\${code ? \` · \${code}\` : ''}\`;\n    return 'Descanso publicado';\n  }`;
 if (!roster.includes("return 'Descanso na base';")) {
@@ -169,6 +174,7 @@ if (!roster.includes("(mode === 'stay' || event.hotel) && !atBase")) {
 
 if (!roster.includes("return 'Descanso na base';")) throw new Error('[v14393] rótulo humano de descanso na base ausente.');
 if (roster.includes('Descanso publicado${code ?')) throw new Error('[v14393] código técnico ainda pode vazar no descanso.');
+}
 fs.writeFileSync(rosterFile, roster, 'utf8');
 
 console.log(`[v14393] CrewCheck ${VERSION}: fila local sobe antes da verdade ativa da conta; reconexão entre canais e descanso na base permanecem canônicos.`);

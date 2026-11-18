@@ -1,0 +1,253 @@
+{
+  "synthetic": true,
+  "todayColors": [
+    {
+      "kind": "today-colors",
+      "width": 320,
+      "theme": "dark",
+      "font": 16,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 320,
+      "theme": "dark",
+      "font": 32,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 320,
+      "theme": "light",
+      "font": 16,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    },
+    {
+      "kind": "today-colors",
+      "width": 320,
+      "theme": "light",
+      "font": 32,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    },
+    {
+      "kind": "today-colors",
+      "width": 390,
+      "theme": "dark",
+      "font": 16,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 390,
+      "theme": "dark",
+      "font": 32,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 390,
+      "theme": "light",
+      "font": 16,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    },
+    {
+      "kind": "today-colors",
+      "width": 390,
+      "theme": "light",
+      "font": 32,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    },
+    {
+      "kind": "today-colors",
+      "width": 844,
+      "theme": "dark",
+      "font": 16,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 844,
+      "theme": "dark",
+      "font": 32,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 844,
+      "theme": "light",
+      "font": 16,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    },
+    {
+      "kind": "today-colors",
+      "width": 844,
+      "theme": "light",
+      "font": 32,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    },
+    {
+      "kind": "today-colors",
+      "width": 1440,
+      "theme": "dark",
+      "font": 16,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 1440,
+      "theme": "dark",
+      "font": 32,
+      "background": "rgb(38, 49, 61)",
+      "color": "rgb(248, 251, 255)",
+      "border": "2px",
+      "children": [
+        "rgb(248, 251, 255)",
+        "rgb(248, 251, 255)"
+      ],
+      "contrast": 12.732910044571854
+    },
+    {
+      "kind": "today-colors",
+      "width": 1440,
+      "theme": "light",
+      "font": 16,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    },
+    {
+      "kind": "today-colors",
+      "width": 1440,
+      "theme": "light",
+      "font": 32,
+      "background": "rgb(233, 237, 241)",
+      "color": "rgb(16, 36, 58)",
+      "border": "2px",
+      "children": [
+        "rgb(16, 36, 58)",
+        "rgb(16, 36, 58)"
+      ],
+      "contrast": 13.364915259060927
+    }
+  ],
+  "checks": [
+    "today UTC-03 and midnight",
+    "pageshow and visibility return",
+    "today header contrast both themes",
+    "selected day is not today",
+    "Oct02 three flights fit",
+    "Oct03 flight/stay/new journey fit",
+    "stay short stripe",
+    "APZ separate from connection",
+    "timezone visible",
+    "month31/last day reachable",
+    "published (+1) intact",
+    "all seven official activity modes",
+    "unknown dates retained",
+    "duplicate IDs complete day",
+    "all legs + overnight",
+    "three repeat returns preserve position/zoom",
+    "keyboard/focus/Escape",
+    "drag/pinch suppress clicks",
+    "zoom buttons/fit/44px activity cards/24px stay stripe/44px picker",
+    "rotation/theme/font200%",
+    "owner reset and empty data"
+  ],
+  "failures": []
+}

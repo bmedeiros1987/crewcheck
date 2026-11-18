@@ -6,7 +6,7 @@ const scope=vm.createContext({guardStaticHtml: require('../server/static-html-gu
 const server=http.createServer((req,res)=>scope.respond(req,res,new URL(req.url,'http://localhost')));
 function seed({unknown,unknownAddition,futureForeign}){
  const NativeDate=Date,instant=Date.parse('2026-10-18T15:00:00Z');globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
- const owner='financial-ui-qa';localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner,email:'synthetic@example.invalid',name:'SYNTHETIC FINANCE',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-only');
+ const owner='financial-ui-qa';localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner,email:'synthetic@example.invalid',name:'SYNTHETIC FINANCE',role:'user'}));localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-only');
  localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');localStorage.setItem('crewcheck_demo_mode_seen','1');
  const days=Array.from({length:31},(_,i)=>({date:String(i+1).padStart(2,'0')+'/10/2026',dayOfWeek:'SYN',type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,legs:[],dutyHours:0,flyingHours:0,isNextDay:false,hotel:null,base:'BSB',rawText:'SYNTHETIC QA ONLY'}));
  const leg=(flightNumber,origin,destination,departureTime,arrivalTime)=>({flightNumber,origin,destination,departureTime,arrivalTime,workType:'OP',duration:120,aircraftType:'SYN'});
@@ -29,7 +29,11 @@ const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace
 function maySeed(){
  const owner='financial-ui-qa',key='crewcheck_roster_choice_v1_'+owner,stored=JSON.parse(localStorage.getItem(key));
  stored.roster.month=5;stored.roster.year=2026;stored.roster.days.forEach(d=>d.date=d.date.replace('/10/2026','/05/2026'));
- stored.roster.days[9]={...stored.roster.days[9],type:'FLIGHT',pairingCode:'SYN-USD',base:'MVD',dutyReport:'08:00',dutyDebrief:'17:00',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'SYN-MERCOSUL',origin:'MVD',destination:'ASU',departureTime:'10:00',arrivalTime:'12:00',workType:'OP',duration:120,aircraftType:'SYN'}],dutyHours:9,flyingHours:2};
+ // Foreign-currency presentation needs a complete published trip, not geography alone.
+ stored.roster.days[8]={...stored.roster.days[8],type:'FLIGHT',pairingCode:'SYN-OUT',dutyReport:'09:00',dutyDebrief:'18:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'SYN-OUT',origin:'BSB',destination:'MVD',departureTime:'10:00',arrivalTime:'18:00',workType:'OP'}]};
+ stored.roster.days.push({date:'09/05/2026',type:'PERNOITE',pairingCode:'SYN-STAY',base:'MVD',dutyReport:'20:00',dutyDebrief:'08:00',dutyReportSource:'published',dutyDebriefSource:'published',legs:[]});
+ localStorage.setItem('crewcheck_financial_act_applicability_v1:'+owner,JSON.stringify({schema:1,ownerId:owner,revision:1,events:[{revision:1,from:'2026-05-01',through:'2026-05-31',confirmed:true,source:'owner_financial_confirmation',active:true,employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'}]}));
+ stored.roster.days[9]={...stored.roster.days[9],type:'FLIGHT',pairingCode:'SYN-USD',base:'MVD',dutyReport:'08:00',dutyDebrief:'17:00',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'SYN-MERCOSUL',origin:'MVD',destination:'ASU',departureTime:'10:00',arrivalTime:'12:00',workType:'OP',duration:120,aircraftType:'SYN'},{flightNumber:'SYN-RETURN',origin:'ASU',destination:'BSB',departureTime:'14:00',arrivalTime:'16:00',workType:'OP',duration:120,aircraftType:'SYN'}],dutyHours:9,flyingHours:4};
  localStorage.setItem(key,JSON.stringify(stored));localStorage.setItem('crewcheck_financial_settings_v1:'+owner+':crewcheck_perdiem_rate_south_america_caribbean','100');
 }
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});let financialWrites=0,external=0;const cases=[],blockedWrites=[];

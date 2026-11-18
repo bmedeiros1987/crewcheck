@@ -13,6 +13,12 @@ public final class GateComplicationService extends BaseComplicationService {
         return 12;
     }
 
+    /** Tocar no portão mostra de onde ele veio e se está confirmado. */
+    @Override
+    protected String tapScreen() {
+        return "gate";
+    }
+
     @Override
     protected ComplicationRendering render(long nowEpochMs, boolean preview) {
         WatchContextSnapshot snapshot = preview

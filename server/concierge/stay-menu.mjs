@@ -1,3 +1,5 @@
+import { whatsappTextMenu } from './whatsapp-text-menu.mjs';
+import { operationalQuestion } from './operational-question.mjs';
 import { dbPool, safeEmail } from '../v139/common.mjs';
 
 const PAGE_SIZE = 5;
@@ -14,8 +16,10 @@ export function stayMenuIntent(text = '') {
   if (/^(?:\/adicionar_quarto|adicionar (?:o )?quarto)$/.test(value)) return { kind: 'room' };
   const history = value.match(/^(?:\/(?:historico_pernoites|pernoites_registrados)|historico de pernoites|pernoites registrados)(?:\s+(\d+))?$/);
   if (history) return { kind: 'history', page: Math.min(MAX_PAGE, Math.max(1, Number(history[1] || 1))) };
-  // Exact logistics questions only. Nearby searches and hospital requests keep
+  // Bounded logistics questions only. Nearby searches and hospital requests keep
   // their existing routes. No position is inferred from current time.
+  const operational = operationalQuestion(text);
+  if (operational?.kind === 'logistics-question') return operational;
   const question = value.replace(/[?.!]+$/, '').trim();
   let subject = null;
   if (/^qual (?:e )?(?:o )?(?:meu )?hotel(?: do (?:meu )?pernoite)?$/.test(question)) subject = 'hotel';
@@ -70,10 +74,13 @@ const hotelHandoff = `${appPath}\nSelecione a data e o pernoite certo, toque em 
 const roomHandoff = `${appPath}\nSelecione o pernoite e toque em “Editar pernoite”. Confira a data e o hotel, preencha o quarto desta estadia e toque em “Salvar hotel”.\n\nO quarto é opcional. Não use o quarto de uma estadia anterior. O cadastro por esta conversa ainda não está disponível.`;
 
 export async function stayMenuReply(text, profile = {}, deps = {}) {
-  const intent = stayMenuIntent(text);
-  if (!intent) return { handled: false };
+  const textMenu = whatsappTextMenu(text, profile);
+  if (textMenu?.reply) return { handled: true, reply: textMenu.reply };
+  const intent = stayMenuIntent(textMenu?.text || text);
+  if (!intent) return textMenu?.text ? { handled: false, text: textMenu.text } : { handled: false };
   if (intent.kind === 'logistics-question') {
     const replies = {
+      apz: 'Você quer a apresentação no aeroporto, a APZ no hotel ou a saída da van? São horários distintos. Informe qual deles deseja; não tenho fonte confirmada de hotel ou pickup nesta leitura.',
       hotel: 'O hotel desta estadia não está confirmado nesta leitura. Qual é a data e o aeroporto do pernoite?',
       'hotel-time': 'Horário no hotel não confirmado. A chegada do voo é ao aeroporto; não informa chegada, saída ou apresentação no hotel.',
       wait: 'Prazo máximo de espera da van não confirmado. Confirme com o transporte operacional da empresa.',
@@ -81,6 +88,7 @@ export async function stayMenuReply(text, profile = {}, deps = {}) {
     };
     const reply = intent.subject === 'pickup'
       ? intent.direction ? `Pickup ${intent.direction === 'airport-hotel' ? 'aeroporto → hotel' : 'hotel → aeroporto'} não confirmado nesta leitura. Confira data, fuso e situação da reserva na fonte operacional.`
+        : intent.origin === 'hotel' ? 'O hotel é o ponto de partida informado. O pickup ainda não está confirmado nesta leitura. Confira data, fuso e reserva na fonte operacional.'
         : 'Você quer a van do aeroporto para o hotel ou do hotel para o aeroporto? O pickup ainda não está confirmado nesta leitura.'
       : replies[intent.subject];
     return { handled: true, reply };

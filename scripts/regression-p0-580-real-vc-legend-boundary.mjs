@@ -20,6 +20,8 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
 }).outputText;
 fs.writeFileSync(path.join(outDir, 'pdfParser.js'), compiled);
+// Compile the real new parser dependency; retain every boundary assertion.
+fs.writeFileSync(path.join(outDir, 'crewOccurrenceAssociation.js'), ts.transpileModule(fs.readFileSync(path.join(root, 'client/src/lib/crewOccurrenceAssociation.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText);
 const require = createRequire(import.meta.url);
 const { parseCrewRosterReportRows } = require(path.join(outDir, 'pdfParser.js'));
 

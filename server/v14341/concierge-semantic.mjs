@@ -1,3 +1,4 @@
+import { operationalQuestion } from '../concierge/operational-question.mjs';
 import {
   normalizeConciergeNaturalTextV14338 as normalizeBase,
   interpretConciergeNaturalTextV14338 as interpretBase,
@@ -27,7 +28,12 @@ export function isConciergeContextFreshV14341(context = null, now = new Date()) 
   return isContextFreshBase(context, now);
 }
 export function interpretConciergeNaturalTextV14341(text = '', previousContext = null, now = new Date()) {
-  const interpreted = interpretBase(text, previousContext, now);
+  let interpreted = interpretBase(text, previousContext, now);
+  const operational = operationalQuestion(text);
+  // Alias expansion only: preserve the existing temporal parser and context rules.
+  if (operational?.kind === 'schedule' && interpreted.intent === 'unknown' && !interpreted.dateKey) {
+    interpreted = { ...interpreted, intent: operational.intent, rewrite: operational.rewrite, confidence: 0.84 };
+  }
   const airport = validAirportToken(interpreted.airport) ? interpreted.airport : '';
   let rewrite = interpreted.rewrite;
   if (interpreted.intent === 'weather' && interpreted.airport && !airport) rewrite = '/metar decodificado';

@@ -23,3 +23,5 @@ html body .cz-app[data-version] .cc-roster-period-v1399.cc-financial-period labe
 @media(max-width:600px) { html body .cz-app[data-version] .cc-roster-period-v1399.cc-financial-period { grid-template-columns:minmax(0,1fr)!important; } }
 
 html body #root .cz-app[data-version] .cc-roster-period-v1399.cc-financial-period label>span{color:var(--cc-review-text,#12304d)!important}
+
+.cc-financial-range>.cc-financial-retry{min-height:48px;min-width:48px;padding:12px;font:inherit;white-space:normal}

@@ -25,7 +25,28 @@ try{
   const intl=context({...day,legs:[{...leg,destination:'EZE'}]});assert.equal(intl.form.operation,'international');assert.equal(intl.form.postFlight,'45');assert.equal(m.regulationAutomaticAssessment(intl,{...intl.form,postFlight:'30'}).engineStopLimit,null);
   const noArrival=context({...day,legs:[{...leg,arrivalTime:''}]});assert.ok(m.regulationAutomaticAssessment(noArrival,noArrival.form).normalDutyEnd,'missing arrival does not erase independent normal reference');
   const noApz=context({...day,dutyReport:null,dutyReportSource:'absent',legs:[{...leg,presentationTime:undefined}]});assert.equal(noApz.form.presentation,'');assert.equal(m.regulationAutomaticAssessment(noApz,noApz.form).normalDutyEnd,null);
-  for(const workType of ['PS','']){const other=context({...day,legs:[{...leg,workType}]});assert.equal(m.regulationAutomaticAssessment(other,other.form).normalDutyEnd,null,'unproved PS/OP rule never becomes daily limit');}
+  for(const workType of ['PS','']){const other=context({...day,legs:[{...leg,workType}]});assert.equal(other.form.composition,'','PS/unknown aircraft must not default an operating crew composition');assert.equal(m.regulationAutomaticAssessment(other,other.form).normalDutyEnd,null,'unproved PS/OP rule never becomes daily limit');}
+  const ps=context({...day,legs:[{...leg,workType:'PS'}]});
+  const psExplicit=m.regulationAutomaticAssessment(ps,{...ps.form,composition:'simple'});
+  assert.equal(psExplicit.normalDutyEnd,'2026-10-21T20:00:00.000Z','explicit simple PS comparison uses same conditional B.1 cell as OP');
+  assert.equal(psExplicit.engineStopLimit,null,'PS-only has no operated engine-stop deadline');
+  for(const types of [['PS'],['PS','OP'],['OP','PS'],['OP','PS','OP']]){
+   const mixed=context({...day,legs:types.map((workType,i)=>({...leg,flightNumber:'QA'+(2000+i),origin:i%2?'GRU':'BSB',destination:i%2?'BSB':'GRU',presentationTime:i===0?'06:00':undefined,departureTime:String(7+i*2).padStart(2,'0')+':00',arrivalTime:String(8+i*2).padStart(2,'0')+':00',workType}))});
+   assert.equal(mixed.form.composition,'');
+   assert.equal(m.regulationAutomaticAssessment(mixed,mixed.form).normalDutyEnd,null,'PS never infers simple crew');
+   const compared=m.regulationAutomaticAssessment(mixed,{...mixed.form,composition:'simple'});
+   assert.equal(compared.reference.sectors,types.length,'all physical PS/OP legs count for this comparison');
+   assert.equal(compared.normalDutyEnd,'2026-10-21T20:00:00.000Z');
+   assert.equal(compared.engineStopLimit!==null,types.at(-1)==='OP');
+   assert.equal(compared.evidence.positioningSectors,'LATAM_user_operational_confirmation_scenario_only');
+   assert.equal(compared.evidence.regulatoryApplicability,'not_assessed');
+   for(const acclimatization of ['unknown','not_acclimatized'])assert.equal(m.regulationAutomaticAssessment(mixed,{...mixed.form,composition:'simple',acclimatization}).normalDutyEnd,null);
+  }
+  for(const [count,hours] of [[2,13],[3,13],[4,13],[5,12],[6,11],[7,10]]){
+   const band=context({...day,dutyReport:'08:00',legs:Array.from({length:count},(_,i)=>({...leg,flightNumber:'QA'+(3000+i),origin:i%2?'GRU':'BSB',destination:i%2?'BSB':'GRU',presentationTime:i===0?'08:00':undefined,departureTime:String(9+i).padStart(2,'0')+':00',arrivalTime:String(10+i).padStart(2,'0')+':00',workType:i===0?'PS':'OP'}))});
+   const result=m.regulationAutomaticAssessment(band,{...band.form,composition:'simple'});
+   assert.equal(result.reference.sectors,count);assert.equal(result.reference.maxDutyMinutes,hours*60,'independent B.1 08:00 band including PS');
+  }
   const missingRelease=context({...day,dutyDebrief:null,dutyDebriefSource:'absent'});const er=m.regulationAutomaticAssessment(missingRelease,{...missingRelease.form,tasks:'15'});assert.equal(er.projectedDutyEnd,'2026-10-21T12:45:00.000Z','scenario postflight/tasks recompute from last scheduled arrival');
   const changed=m.regulationAutomaticAssessment(c,{...c.form,presentation:'2026-10-21T07:00'});assert.notEqual(changed.normalDutyEnd,r.normalDutyEnd);assert.equal(changed.evidence.presentation,'user_scenario');
  }

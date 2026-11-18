@@ -229,7 +229,8 @@ async function jsonFetch<T>(url: string, init?: RequestInit, session?: { isCurre
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     const reason = classifyAuthErrorReason(response.status, String(payload?.code || '').toUpperCase(), protectedRequest);
-    if (reason === 'session_expired' && token === getToken() && (!requestSession || requestSession.isCurrent()) && (!session || session.isCurrent())) {
+    // A guest401 is still rejected, but cannot expire a session that never existed.
+    if (reason === 'session_expired' && Boolean(token) && token === getToken() && (!requestSession || requestSession.isCurrent()) && (!session || session.isCurrent())) {
       session?.onExpired?.();
       if (token === getToken() && (!requestSession || requestSession.isCurrent()) && (!session || session.isSameSession())) expireSession();
     }

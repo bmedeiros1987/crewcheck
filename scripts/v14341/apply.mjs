@@ -82,7 +82,8 @@ update('client/src/pages/Home.tsx', (source) => {
     .replace('<h2>Prévia dos comandos</h2>', '<h2>Teste a conversa</h2>')
     .replace('Teste aqui a mesma resposta operacional que o bot usa. No Telegram, também funciona com perguntas naturais e mensagem de voz.', 'Faça uma pergunta completa ou use os botões apenas como atalhos. Perguntas relacionadas podem continuar com frases curtas, como “e o portão?” ou “e depois?”.')
     .replace('placeholder="Ex.: qual o portão do LA3730?"', 'placeholder="Ex.: o que tenho na próxima sexta? Depois pergunte: e que horas me apresento?"');
-  if (!next.includes('Converse normalmente') || !next.includes('contexto expira em até 6 horas') || !next.includes('title="Compreensão" value="Natural"')) {
+  if (!next.includes('Converse normalmente') || !next.includes('contexto expira em até 6 horas')
+    || (!next.includes('title="Compreensão" value="Natural"') && !next.includes('title="Comandos" value="Prévia" detail="Disponibilidade conforme o canal"'))) {
     throw new Error('[v14341] Interface semântica do Concierge incompleta.');
   }
   return next;

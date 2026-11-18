@@ -19,18 +19,19 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
   const listener=event=>{try{
     const value=JSON.parse(event.data),request=pending.get(value.id);if(!request)return;
     pending.delete(value.id);clearTimer(request.timer);
-    if(request.generation!==generation||value.state!==({authenticate:'verified',revoke:'revoked',transact:'ok'}[request.action]))request.reject(Error('host session unavailable'));
+    if(request.generation!==generation||value.state!==({authenticate:'verified',revoke:'revoked',suspend:'suspended',transact:'ok'}[request.action]))request.reject(Error('host session unavailable'));
     else request.resolve(value.payload);
   }catch{}};
   port.addEventListener('message',listener);
   function reset(retained=null){generation++;activeScope=null;inactiveScope=retained;adapter=null;session=null;permission=false;onState(false);if(leaseTimer!==null)clearTimer(leaseTimer);leaseTimer=null;
     for(const request of pending.values()){clearTimer(request.timer);request.reject(Error('session invalidated'));}pending.clear();}
-  async function revoke(){const retained=activeScope||inactiveScope;reset(retained);try{await send('revoke');return {state:'native-revoked',cancelConfirmed:false};}catch{return {state:'revocation-unknown',cancelConfirmed:false};}}
+  async function suspend(){const retained=activeScope||inactiveScope;reset(retained);try{await send('suspend');return {state:'native-suspended',cancelConfirmed:false};}catch{return {state:'suspension-unknown',cancelConfirmed:false};}}
+  async function revoke(){const retained=activeScope||inactiveScope;reset(retained);try{await send('revoke',retained?{ownerId:retained.account,ownerEpoch:retained.epoch}:{});return {state:'native-revoked',cancelConfirmed:false};}catch{return {state:'revocation-unknown',cancelConfirmed:false};}}
   async function revokeScope(scope){
     if(activeScope!==scope&&inactiveScope!==scope)return {state:'superseded-session',cancelConfirmed:false};
     return revoke();
   }
-  async function authenticate(){reset();const captured=generation,account=readAccount(),token=readToken();
+  async function authenticate(){const retained=activeScope||inactiveScope;reset(retained);const captured=generation,account=readAccount(),token=readToken();
     if(!account||!token){await revoke();return false;}
     try{
       const raw=await send('authenticate',{token});const caps=JSON.parse(raw);
@@ -43,11 +44,11 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
       const remaining=caps.leaseRemainingMillis ?? 300000;
       if(!Number.isSafeInteger(remaining)||remaining<=0||remaining>18*3600000){void revoke();return false;}
       activeScope={account,epoch:caps.ownerEpoch};inactiveScope=null;
-      onState(true);leaseTimer=setTimer(()=>{void revoke();},remaining);
+      onState(true);leaseTimer=setTimer(()=>{void suspend();},remaining);
       return true;
     }catch{if(captured===generation){adapter=null;session=null;}return false;}
   }
-  return {authenticate,revoke,
+  return {authenticate,revoke,suspend,
     async replace(input){const current=adapter,scope=activeScope;
       if(!current||!scope)return {state:'not-programmed',reason:'native-host-unavailable',key:input.key};
       if(!belongs(input.key,scope))return {state:'not-programmed',reason:'owner-epoch-mismatch',key:input.key};
@@ -63,20 +64,36 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
     atomicReplace:true,acknowledgedCancel:true,
     async invalidate(){const current=adapter,scope=activeScope;
       if(!current||!scope){
-        if(inactiveScope&&inactiveScope.account===readAccount()&&jobs(inactiveScope).size)return revokeScope(inactiveScope);
-        return {state:'no-current-session-jobs'};
+        if(inactiveScope){
+          if(inactiveScope.account!==readAccount())return {state:'superseded-session',cancelConfirmed:false};
+          return revokeScope(inactiveScope);
+        }
+        // A cold page with failed/pending authentication knows no native epoch,
+        // not that the durable journal is empty. Revoke without invented scope;
+        // native accepts only without an active online owner and advances its
+        // generation so late verification cannot resurrect the old authority.
+        // reset() also fences pending web receipts. Rejection/timeout stays
+        // unknown; never retry by suspending a possibly newer online owner.
+        return revoke();
       }
+      if(scope.account!==readAccount())return {state:'superseded-session',cancelConfirmed:false};
       const programmed=jobs(scope);
-      if(!programmed.size)return {state:'no-known-jobs'};
+      // This map contains only calls observed by this page, never a complete
+      // native journal inventory. Empty after reopening cannot authorize jobs.
+      if(!programmed.size)return revokeScope(scope);
       session=`${session}:edit-${++sequence}`;
       for(const key of [...programmed]){
         if(activeScope!==scope)return {state:'superseded-session',cancelConfirmed:false};
         const result=await current.cancel({key});
         if(result.state==='cancelled'&&result.key===key)programmed.delete(key);
         else return revokeScope(scope);
-      }return {state:'cancelled'};
+      }
+      // Cancelled known keys do not prove that an older native job is absent.
+      // Tombstone this exact scope; a newer account/epoch is fenced above and
+      // by revokeScope. Revalidation uses the existing explicit UI action.
+      return revokeScope(scope);
     },
     uncertainKeys:()=>[...scopes.values()].flatMap(scope=>[...scope.keys]),
     uncertainJobs:()=>[...scopes.values()].flatMap(scope=>[...scope.keys].map(key=>({key,account:scope.account,epoch:scope.epoch}))),
-    permission:()=>permission,close(){void revoke();port.removeEventListener('message',listener);},ready:()=>Boolean(adapter),session:()=>session};
+    permission:()=>permission,close(){void suspend();port.removeEventListener('message',listener);},ready:()=>Boolean(adapter),session:()=>session};
 }

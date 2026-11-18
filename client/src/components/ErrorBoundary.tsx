@@ -88,10 +88,15 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
+    if(error.message==='FINANCIAL_CALCULATION_CONTEXT_CHANGED')return;
     console.error(`[CrewCheck] erro capturado pela proteção global · ${errorReference(error)}`, error);
   }
 
   render() {
+    if(this.state.hasError&&this.state.error?.message==='FINANCIAL_CALCULATION_CONTEXT_CHANGED')return <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#eef5f8] p-5 text-[#092846] dark:bg-[#06101d] dark:text-white" role="status">
+      <RotateCcw aria-hidden="true"/><p>Atualização financeira pendente</p>
+      <button type="button" className="min-h-11 rounded-xl border px-4 py-3" onClick={()=>this.setState({hasError:false,error:null})}>Atualizar previsão</button>
+    </div>;
     if (this.state.hasError) {
       const reference = errorReference(this.state.error);
       return (

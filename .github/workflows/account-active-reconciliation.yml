@@ -6,6 +6,8 @@ on:
       - 'client/src/lib/rosterPublicationRuntime.ts'
       - 'scripts/roster-startup/**'
       - 'scripts/regression-account-active-reconciliation.mjs'
+      - 'scripts/regression-demo-bootstrap-*'
+      - 'scripts/v1432/apply.mjs'
       - '.github/workflows/account-active-reconciliation.yml'
   workflow_dispatch:
 permissions:
@@ -28,6 +30,8 @@ jobs:
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-account-active-reconciliation.mjs
       - run: node scripts/regression-roster-startup-state.mjs
+      - run: node scripts/regression-demo-bootstrap-owner.mjs
+      - run: node scripts/regression-demo-bootstrap-preparation.mjs
       - run: node scripts/regression-roster-choice-settlement.mjs
       - run: node scripts/regression-roster-two-tab-bootstrap.mjs
       - run: node scripts/regression-roster-history-strict.mjs

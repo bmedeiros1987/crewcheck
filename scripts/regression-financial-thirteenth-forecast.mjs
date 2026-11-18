@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {thirteenthForecast} from '../shared/financialThirteenthForecast.mjs';
+const plan={ownerId:'fiction-A',revision:3,year:2032,averagePeriod:{start:'2031-12-01',end:'2032-11-30'}};
+const source={kind:'manual_scenario',itemId:'remuneration',id:'synthetic-reviewed-source',revision:2,reviewed:true};
+const evidence={ownerId:plan.ownerId,planRevision:3,year:2032,averagePeriod:{...plan.averagePeriod},source,amountMinor:600000,avos:12,basis:'full_year_equivalent',earningsComplete:true,deductionsComplete:false,deductions:[]};
+const run=(e=evidence,p=plan,extra={})=>thirteenthForecast({ownerId:'fiction-A',plan:p,evidence:e,lawApplicable:true,activeEmployment:true,...extra});
+assert.equal(run().grossMinor,600000);assert.equal(run({...evidence,amountMinor:null}).knownSubtotalMinor,null);assert.equal(run({...evidence,amountMinor:0}).grossMinor,0);assert.equal(run({...evidence,avos:7}).grossMinor,350000);
+assert.equal(run({...evidence,avos:0}).grossMinor,0);assert.equal(run({...evidence,avos:null}).grossMinor,null);
+assert.equal(run({...evidence,basis:'annual_proportional_amount',avos:7,amountMinor:350000}).grossMinor,350000,'do not apply avos twice');
+assert.equal(run({...evidence,basis:'annual_proportional_amount',avos:0,amountMinor:350000}).grossMinor,null,'zero avos contradict a positive already-proportional amount');
+assert.equal(run({...evidence,averagePeriod:{...plan.averagePeriod,end:'2033-01-31'}},{...plan,averagePeriod:{...plan.averagePeriod,end:'2033-01-31'}}).grossMinor,null,'a reviewed annual average cannot include a period after that year');
+assert.equal(run({...evidence,amountMinor:1,avos:6}).grossMinor,1,'half cent rounds once');
+assert.equal(run().netMinor,null);assert.equal(run().firstAdvanceEstimateMinor,null);assert.equal(run().finalDeadlineDate,'2032-12-20');assert.equal(run().expectedDepositDate,null);
+const deductions=[{id:'tax',component:'total',kind:'retention',source:{...source,itemId:'tax'},amountMinor:40000},{id:'loan',component:'total',kind:'consigned',source:{...source,itemId:'loan'},amountMinor:60000},{id:'advance',component:'total',kind:'advance',source:{...source,itemId:'advance'},amountMinor:200000}];
+assert.equal(run({...evidence,deductions,deductionsComplete:true}).netMinor,300000);
+assert.equal(run({...evidence,deductions,deductionsComplete:true}).grossMinor,600000);assert.equal(run().taxableBaseMinor,null);
+assert.equal(run({...evidence,deductions:[...deductions,deductions[2]],deductionsComplete:true}).netMinor,null,'advance cannot be deducted twice by identity');
+assert.equal(run({...evidence,deductions:[null],deductionsComplete:true}).grossMinor,600000,'invalid offset does not erase valid gross');
+assert.equal(run({...evidence,earningsComplete:false}).knownSubtotalMinor,600000);assert.equal(run({...evidence,earningsComplete:false}).grossMinor,null);
+for(const e of [{...evidence,ownerId:'fiction-B'},{...evidence,planRevision:2},{...evidence,year:2031},{...evidence,averagePeriod:{...plan.averagePeriod,end:'2032-12-31'}},{...evidence,source:{...source,reviewed:false}},{...evidence,avos:13},{...evidence,amountMinor:NaN}])assert.equal(run(e).grossMinor,null);
+for(const extra of [{ownerId:'fiction-B'},{activeEmployment:false},{lawApplicable:false}]){assert.equal(run(evidence,plan,extra).grossMinor,null);assert.equal(run(evidence,plan,extra).finalDeadlineDate,null);}
+assert.equal(run(evidence,{...plan,averagePeriod:{start:'2032-02-30',end:'2032-11-30'}}).grossMinor,null);
+const before=JSON.stringify({plan,evidence});run();assert.equal(JSON.stringify({plan,evidence}),before);
+console.log('PASS thirteenth reviewed contract: 12/7/0/unknown avos, no double proportion/third, partial/gross/net, source/year/owner/revision, offsets, no automatic first parcel/tax or writes');

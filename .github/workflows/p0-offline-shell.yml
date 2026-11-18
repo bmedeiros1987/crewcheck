@@ -5,6 +5,8 @@ on:
     paths:
       - 'client/public/sw.js'
       - 'client/src/lib/offlineRuntime.ts'
+      - 'client/src/lib/offlineSync.ts'
+      - 'scripts/regression-pwa-offline-account-fence.mjs'
       - 'client/src/main.tsx'
       - 'scripts/regression-p0-offline-shell.mjs'
       - '.github/workflows/p0-offline-shell.yml'
@@ -23,5 +25,9 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '22.13.0'
+      - name: Install existing test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate offline account and provenance fences
+        run: node scripts/regression-pwa-offline-account-fence.mjs
       - name: Validate P0 offline shell contract
         run: node scripts/regression-p0-offline-shell.mjs

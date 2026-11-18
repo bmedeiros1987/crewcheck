@@ -15,6 +15,7 @@ try {
    .replace("import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';","const pdfWorkerUrl='';")
    .replace("import { normalizeRosterDays } from './canonicalRoster';",'const normalizeRosterDays=x=>x;');
   source+='\nexport {parseTransposedFlightGroup};';
+  fs.writeFileSync(path.join(parserDir,'crewOccurrenceAssociation.js'),ts.transpileModule(fs.readFileSync('client/src/lib/crewOccurrenceAssociation.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText);
   const file=path.join(parserDir,'parser.cjs');fs.writeFileSync(file,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText);
   const item=(str,x,y)=>({str,x,y,page:1});const items=[item('BSB 05:00',0,100),item('GRU 07:00',0,200),item('LA0001',0,50)];
   parsed=createRequire(import.meta.url)(file).parseTransposedFlightGroup(items,'SYNTHETIC ONLY',{day:20,month:10,year:2032},'BSB','LA0001');

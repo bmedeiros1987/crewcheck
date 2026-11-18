@@ -1,0 +1,62 @@
+name: Concierge shared credits OFF candidate
+on:
+  pull_request:
+    paths:
+      - 'server/concierge-shared-credit-candidate.mjs'
+      - 'server/concierge-finite-reserve-off.mjs'
+      - 'server/concierge-finite-admission-off.mjs'
+      - 'server/concierge-finite-credit-sql.mjs'
+      - 'scripts/concierge-finite-reserve-sql-scenarios.mjs'
+      - 'server/concierge-promotional-admission.mjs'
+      - 'server/concierge-promotional-credit-sql.mjs'
+      - 'scripts/concierge-promotional-grant-sql-scenarios.mjs'
+      - 'scripts/regression-concierge-promotional-admission.mjs'
+      - 'server/infobip-whatsapp-sql-budget.mjs'
+      - 'server/infobip-whatsapp-store.mjs'
+      - 'server/infobip-whatsapp-*.mjs'
+      - 'server/v139/common.mjs'
+      - 'server/mysql-verified-tls.mjs'
+      - 'server/web-push/installationRegistry.mjs'
+      - 'server/whatsapp-link-proof.mjs'
+      - 'scripts/regression-concierge-shared-credit-candidate.mjs'
+      - 'scripts/regression-concierge-credit-mysql*'
+      - 'docs/concierge-shared-credit-sql-off.md'
+      - 'docs/concierge-finite-dispatch-off.md'
+      - 'docs/concierge-finite-caller-off.md'
+      # Canonical preparation imports versioned and non-versioned scripts;
+      # this also includes the actual-store regression and shared SQL fixture.
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/concierge-credit-offline.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-credit-reservations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Synthetic contract, no transport
+        run: node scripts/regression-concierge-shared-credit-candidate.mjs
+      - name: Existing HMAC receiver and sealed production dispatch with synthetic I/O
+        run: node scripts/regression-concierge-promotional-admission.mjs
+      - name: Finite gate through actual dispatchAttempt, synthetic I/O only
+        run: node scripts/regression-concierge-finite-dispatch-off.mjs
+      - name: Real isolated InnoDB, concurrency and restart without networking
+        run: bash scripts/regression-concierge-credit-mysql-ci.sh
+      # Keep the owned MySQL runner above preparation: it requires a clean tree.
+      - name: Prepare existing canonical sources
+        run: npm run prepare:v139
+      - name: Prepared finite dispatch and existing credit/admission contracts
+        run: |
+          node scripts/regression-concierge-finite-dispatch-off.mjs
+          node scripts/regression-concierge-promotional-admission.mjs
+          node scripts/regression-concierge-shared-credit-candidate.mjs

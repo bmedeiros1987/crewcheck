@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, Database, FileClock, Mail, Navigation, QrCode, RefreshCw, ShieldCheck, TicketCheck, UserRound, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/authClient';
+import { EscalaContactAdmin } from '@/components/EscalaContact';
 import './control-center.css';
 
 type Overview = {
@@ -93,6 +94,7 @@ export default function AdminControlCenter() {
   const mapsNeedsConfiguration = Boolean(maps && (!maps.googleConfigured || !maps.tomtomConfigured));
 
   return <section className="cc-control-shell">
+    <EscalaContactAdmin/>
     <header className="cc-control-hero admin"><span><BarChart3/></span><div><small>ADMIN · VISÃO AGREGADA</small><h1>Central de controle CrewCheck</h1><p>Indicadores operacionais e de crescimento sem abrir nomes, e-mails, escalas, localizações ou informações de saúde.</p></div><button onClick={load} disabled={busy}><RefreshCw className={busy ? 'cc-spin' : ''}/> Atualizar</button></header>
     <div className="cc-admin-privacy"><ShieldCheck/><div><strong>LGPD por padrão</strong><span>{overview?.dataPolicy || 'Somente contagens agregadas são exibidas.'}</span></div></div>
     <section className="cc-control-card cc-maps-budget" data-maps-budget-status={budget?.blocked || maps?.ok === false ? 'fallback' : 'google'}>

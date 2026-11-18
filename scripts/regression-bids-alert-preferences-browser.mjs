@@ -58,15 +58,15 @@ try {
   await page.getByRole('combobox', { name: /^Modo\b/ }).selectOption('manual');
   await setTime('10:30'); await page.getByLabel('Origem do fuso',{exact:true}).selectOption('manual'); await page.getByLabel('Escolha o fuso',{exact:true}).selectOption('UTC');
   await page.getByLabel('Quero avisos BIDS', { exact: false }).check();
-  await page.getByRole('checkbox', { name: 'Relógio', exact: true }).check();
-  await page.getByRole('checkbox', { name: 'CrewCheck', exact: true }).uncheck();
-  await page.getByRole('checkbox', { name: 'Todos', exact: true }).check();
-  for (const name of ['CrewCheck', 'Relógio', 'CrewCierge']) { assert.equal(await page.getByRole('checkbox', { name, exact: true }).isChecked(), true); assert.equal(await page.getByRole('checkbox', { name, exact: true }).isDisabled(), true); }
-  await page.getByRole('checkbox', { name: 'Todos', exact: true }).uncheck();
-  assert.equal(await page.getByRole('checkbox', { name: 'CrewCheck', exact: true }).isChecked(), false);
-  assert.equal(await page.getByRole('checkbox', { name: 'Relógio', exact: true }).isChecked(), true);
-  assert.equal(await page.getByRole('checkbox', { name: 'CrewCierge', exact: true }).isChecked(), false);
-  await page.getByRole('checkbox', { name: 'Todos', exact: true }).check();
+  await page.getByRole('switch', { name: 'Relógio', exact: true }).check();
+  await page.getByRole('switch', { name: 'CrewCheck', exact: true }).uncheck();
+  await page.getByRole('switch', { name: 'Todos', exact: true }).check();
+  for (const name of ['CrewCheck', 'Relógio', 'CrewCierge']) { assert.equal(await page.getByRole('switch', { name, exact: true }).isChecked(), true); assert.equal(await page.getByRole('switch', { name, exact: true }).isDisabled(), true); }
+  await page.getByRole('switch', { name: 'Todos', exact: true }).uncheck();
+  assert.equal(await page.getByRole('switch', { name: 'CrewCheck', exact: true }).isChecked(), false);
+  assert.equal(await page.getByRole('switch', { name: 'Relógio', exact: true }).isChecked(), true);
+  assert.equal(await page.getByRole('switch', { name: 'CrewCierge', exact: true }).isChecked(), false);
+  await page.getByRole('switch', { name: 'Todos', exact: true }).check();
   await page.getByRole('combobox', { name: /^Modo\b/ }).selectOption('auto');
   assert.equal(await readTime(), '10:30', 'manual override survives Auto toggle');
   await page.getByRole('button', { name: 'Salvar preferências' }).click();
@@ -106,7 +106,7 @@ try {
   await page.evaluate(() => { localStorage.setItem('crewcheck_auth_token', 'B'); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
   await page.waitForFunction(() => document.querySelector('select[aria-label="Hora · Horário padrão para BIDS"]').value === '09' && document.querySelector('select[aria-label="Minuto · Horário padrão para BIDS"]').value === '00');
   resume(); await page.waitForTimeout(50); assert.equal(await readTime(), '09:00', 'late A save cannot repopulate B');
-  assert.equal(await page.getByRole('checkbox', { name: 'Todos', exact: true }).isChecked(), false, 'B cannot inherit A channels');
+  assert.equal(await page.getByRole('switch', { name: 'Todos', exact: true }).isChecked(), false, 'B cannot inherit A channels');
   await setTime('12:15');
   await page.evaluate(() => window.dispatchEvent(new Event('online'))); assert.equal(await readTime(), '12:15', 'unsaved override not reset by online refresh');
   readyCampaign = true; await page.evaluate(() => window.dispatchEvent(new Event('crewcheck:auth-changed')));

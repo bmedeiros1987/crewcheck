@@ -29,14 +29,26 @@ update('server.mjs', (source) => {
 
 update('client/src/pages/Home.tsx', (source) => {
   let next = source;
+  const captureImport = "import { captureAuthSession as captureWhatsAppLinkSession } from '@/lib/authClient';";
+  if (!next.includes(captureImport)) next = captureImport + '\n' + next;
   if (!next.includes('async function openWhatsAppBinding()')) {
     const marker = 'async function openTelegramBinding() {';
     if (!next.includes(marker)) throw new Error('[v14383] Fluxo de vínculo Telegram não localizado.');
-    const functionSource = `async function openWhatsAppBinding() {\n  try {\n    const result = await authFetch<{ ok: boolean; code: string; expiresInMinutes: number; openUrl?: string; message?: string }>('/api/whatsapp/link/start', {\n      method: 'POST',\n      body: JSON.stringify({ consentConcierge: true }),\n    });\n    if (!result?.code) throw new Error('Não consegui gerar o código de vínculo.');\n    if (result.openUrl) window.open(result.openUrl, '_blank', 'noopener,noreferrer');\n    else {\n      try { await navigator.clipboard.writeText(result.code); } catch {}\n    }\n    toast.success(\`Código de vínculo WhatsApp: \${result.code}. Válido por \${result.expiresInMinutes || 10} minutos.\`);\n  } catch (error) {\n    toast.error(error instanceof Error ? error.message : 'Não consegui iniciar o vínculo do WhatsApp.');\n  }\n}\n\n`;
+    const functionSource = `async function openWhatsAppBinding() {\n  try {\n    const result = await authFetch<{ ok: boolean; code: string; expiresInMinutes: number; openUrl?: string; message?: string }>('/api/whatsapp/link/start', {\n      method: 'POST',\n      body: JSON.stringify({ consentConcierge: true, provider: 'infobip' }),\n    });\n    if (!result?.code) throw new Error('Não consegui gerar o código de vínculo.');\n    if (result.openUrl) window.open(result.openUrl, '_blank', 'noopener,noreferrer');\n    else {\n      try { await navigator.clipboard.writeText(result.code); } catch {}\n    }\n    toast.success(\`Código de vínculo WhatsApp: \${result.code}. Válido por \${result.expiresInMinutes || 10} minutos.\`);\n  } catch (error) {\n    toast.error(error instanceof Error ? error.message : 'Não consegui iniciar o vínculo do WhatsApp.');\n  }\n}\n\n`;
     next = next.replace(marker, `${functionSource}${marker}`);
   }
 
   const telegramButton = '<button onClick={openTelegramBinding}><Send/> Vincular Telegram</button>';
+  const linkStart = next.indexOf('async function openWhatsAppBinding() {');
+  const linkEnd = next.indexOf('\n}\n', linkStart) + 3;
+  if (linkStart < 0 || linkEnd < linkStart) throw Error('WhatsApp challenge boundary missing');
+  let link = next.slice(linkStart, linkEnd);
+  if (!link.includes('const session = captureWhatsAppLinkSession();')) {
+    link = link.replace('async function openWhatsAppBinding() {', 'async function openWhatsAppBinding() {\n  const session = captureWhatsAppLinkSession();');
+    link = link.replace("    if (!result?.code)", "    if (!session.isCurrent()) return;\n    if (!result?.code)");
+    link = link.replace('  } catch (error) {', '  } catch (error) {\n    if (!session.isCurrent()) return;');
+    next = next.slice(0, linkStart) + link + next.slice(linkEnd);
+  }
   const whatsappButton = '<button onClick={openWhatsAppBinding}><Send/> Vincular WhatsApp</button>';
   if (!next.includes(whatsappButton)) {
     if (!next.includes(telegramButton)) throw new Error('[v14383] Botão de vínculo Telegram não localizado.');

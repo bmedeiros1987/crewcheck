@@ -358,19 +358,33 @@ export function applyDocumentLanguage(): CrewLanguage {
 
 const staticUiTranslations: Partial<Record<CrewLanguage, Record<string, string>>> = {
   en: {
-    'Resumo': 'Summary', 'Minha escala': 'My roster', 'Escala': 'Roster', 'Alertas': 'Alerts', 'Irregularidades': 'Irregularities', 'Conformidade': 'Compliance', 'Rotina': 'Routine', 'Carga da escala': 'Roster load', 'Histórico': 'History', 'Configurações': 'Settings', 'Manual': 'Manual', 'Nova escala': 'New roster', 'Carregar nova escala': 'Load new roster', 'Próximas programações': 'Upcoming schedule', 'A partir do dia vigente, sem voltar para o início do mês.': 'Starting from the current day, without going back to the beginning of the month.', 'Abrir escala': 'Open roster', 'Status': 'Status', 'Portão': 'Gate', 'Terminal': 'Terminal', 'Atualizado': 'Updated', 'Sem dados online': 'No live data', 'Dados do voo': 'Flight data', 'Treino': 'Workout', 'Estudo': 'Study', 'Folgas': 'Days off', 'Pernoites': 'Layovers', 'Eventos': 'Events', 'Perfil': 'Profile', 'Tema': 'Theme', 'Idioma': 'Language', 'Salvar perfil': 'Save profile', 'Trocar foto': 'Change photo', 'Remover foto': 'Remove photo', 'Importar PDF': 'Import PDF', 'Puxar escala agora': 'Fetch roster now', 'Abrir iFlight': 'Open iFlight', 'Mais funções': 'More features', 'Sair': 'Sign out', 'Privacidade e proteção de dados': 'Privacy and data protection', 'Banco de dados': 'Database', 'Salvar análise': 'Save analysis', 'Exportar ICS': 'Export ICS', 'Só voos': 'Flights only', 'Academia': 'Gym', 'E-mail': 'Email', 'Suporte': 'Support', 'Ajuda e atendimento': 'Help and support'
+    // Database status card (Settings, admin): same honesty as the Portuguese source, no promised resend.
+    'Banco conectado': 'Database connected', 'Banco conectado · modo resiliente': 'Database connected · resilient mode', 'Modo local protegido': 'Protected local mode',
+    'Aiven MySQL ativo': 'Aiven MySQL active', 'Histórico local ativo': 'Local history active', 'Fallback local ativo': 'Local fallback active',
+    'Sincronização liberada': 'Sync available', 'Sincronização pendente': 'Sync pending', 'Verificar conexão': 'Check connection', 'Verificando…': 'Checking…',
+    'Banco indisponível. Dados deste dispositivo continuam aqui; sincronização pendente.': 'Database unavailable. Data on this device stays here; sync is pending.',
+    'Banco indisponível e sem login. Dados deste dispositivo ficam só aqui.': 'Database unavailable and not signed in. Data on this device stays only here.',
+    'Banco principal disponível. Faça login para sincronizar esta conta.': 'Main database available. Sign in to sync this account.',
+    'Login expirado. Histórico local ativo; entre novamente para sincronizar.': 'Session expired. Local history active; sign in again to sync.',
+    'Sincronização em nuvem indisponível. O histórico local continua ativo neste dispositivo.': 'Cloud sync unavailable. Local history stays active on this device.',
+    'Sincronização segura disponível para os módulos internos.': 'Secure sync available for internal modules.',
+    'Banco aguardando configuração.': 'Database awaiting configuration.',
+    'Banco principal': 'Main database', 'Verifique conexão e migração': 'Check connection and migration',
+    // The count is its own text node, so the translator matches the fixed part.
+    'módulo(s) aguardando migração': 'module(s) awaiting migration',
+    'Saída': 'Depart', 'Resumo': 'Summary', 'Minha escala': 'My roster', 'Escala': 'Roster', 'Alertas': 'Alerts', 'Irregularidades': 'Irregularities', 'Conformidade': 'Compliance', 'Rotina': 'Routine', 'Carga da escala': 'Roster load', 'Histórico': 'History', 'Configurações': 'Settings', 'Manual': 'Manual', 'Nova escala': 'New roster', 'Carregar nova escala': 'Load new roster', 'Próximas programações': 'Upcoming schedule', 'A partir do dia vigente, sem voltar para o início do mês.': 'Starting from the current day, without going back to the beginning of the month.', 'Abrir escala': 'Open roster', 'Status': 'Status', 'Portão': 'Gate', 'Terminal': 'Terminal', 'Atualizado': 'Updated', 'Sem dados online': 'No live data', 'Dados do voo': 'Flight data', 'Treino': 'Workout', 'Estudo': 'Study', 'Folgas': 'Days off', 'Pernoites': 'Layovers', 'Eventos': 'Events', 'Perfil': 'Profile', 'Tema': 'Theme', 'Idioma': 'Language', 'Salvar perfil': 'Save profile', 'Trocar foto': 'Change photo', 'Remover foto': 'Remove photo', 'Importar PDF': 'Import PDF', 'Puxar escala agora': 'Fetch roster now', 'Abrir iFlight': 'Open iFlight', 'Mais funções': 'More features', 'Sair': 'Sign out', 'Privacidade e proteção de dados': 'Privacy and data protection', 'Banco de dados': 'Database', 'Salvar análise': 'Save analysis', 'Exportar ICS': 'Export ICS', 'Só voos': 'Flights only', 'Academia': 'Gym', 'E-mail': 'Email', 'Suporte': 'Support', 'Ajuda e atendimento': 'Help and support', 'Índice de intensidade da escala.': 'Roster intensity index.', 'Índice parcial: datas com disponibilidade pendente fora do cálculo.': 'Partial index: dates with pending availability left out.', 'Índice indeterminado: disponibilidade pendente nos dias mensuráveis.': 'Undetermined index: availability pending on measurable days.', 'Extrato': 'Statement'
   },
   es: {
-    'Resumo': 'Resumen', 'Minha escala': 'Mi escala', 'Escala': 'Escala', 'Alertas': 'Alertas', 'Irregularidades': 'Irregularidades', 'Conformidade': 'Conformidad', 'Rotina': 'Rutina', 'Carga da escala': 'Carga de la escala', 'Histórico': 'Historial', 'Configurações': 'Ajustes', 'Manual': 'Manual', 'Nova escala': 'Nueva escala', 'Carregar nova escala': 'Cargar nueva escala', 'Próximas programações': 'Próximas programaciones', 'Abrir escala': 'Abrir escala', 'Status': 'Estado', 'Portão': 'Puerta', 'Terminal': 'Terminal', 'Atualizado': 'Actualizado', 'Sem dados online': 'Sin datos en línea', 'Dados do voo': 'Datos del vuelo', 'Folgas': 'Días libres', 'Pernoites': 'Pernoctas', 'Eventos': 'Eventos', 'Perfil': 'Perfil', 'Tema': 'Tema', 'Idioma': 'Idioma', 'Salvar perfil': 'Guardar perfil', 'Trocar foto': 'Cambiar foto', 'Remover foto': 'Quitar foto', 'Importar PDF': 'Importar PDF', 'Puxar escala agora': 'Traer escala ahora', 'Abrir iFlight': 'Abrir iFlight', 'Mais funções': 'Más funciones', 'Sair': 'Salir', 'Privacidade e proteção de dados': 'Privacidad y protección de datos', 'Banco de dados': 'Base de datos', 'Salvar análise': 'Guardar análisis', 'Exportar ICS': 'Exportar ICS', 'Só voos': 'Solo vuelos', 'Academia': 'Gimnasio', 'E-mail': 'Email', 'Suporte': 'Soporte', 'Ajuda e atendimento': 'Ayuda y soporte'
+    'Saída': 'Salida', 'Resumo': 'Resumen', 'Minha escala': 'Mi escala', 'Escala': 'Escala', 'Alertas': 'Alertas', 'Irregularidades': 'Irregularidades', 'Conformidade': 'Conformidad', 'Rotina': 'Rutina', 'Carga da escala': 'Carga de la escala', 'Histórico': 'Historial', 'Configurações': 'Ajustes', 'Manual': 'Manual', 'Nova escala': 'Nueva escala', 'Carregar nova escala': 'Cargar nueva escala', 'Próximas programações': 'Próximas programaciones', 'Abrir escala': 'Abrir escala', 'Status': 'Estado', 'Portão': 'Puerta', 'Terminal': 'Terminal', 'Atualizado': 'Actualizado', 'Sem dados online': 'Sin datos en línea', 'Dados do voo': 'Datos del vuelo', 'Folgas': 'Días libres', 'Pernoites': 'Pernoctas', 'Eventos': 'Eventos', 'Perfil': 'Perfil', 'Tema': 'Tema', 'Idioma': 'Idioma', 'Salvar perfil': 'Guardar perfil', 'Trocar foto': 'Cambiar foto', 'Remover foto': 'Quitar foto', 'Importar PDF': 'Importar PDF', 'Puxar escala agora': 'Traer escala ahora', 'Abrir iFlight': 'Abrir iFlight', 'Mais funções': 'Más funciones', 'Sair': 'Salir', 'Privacidade e proteção de dados': 'Privacidad y protección de datos', 'Banco de dados': 'Base de datos', 'Salvar análise': 'Guardar análisis', 'Exportar ICS': 'Exportar ICS', 'Só voos': 'Solo vuelos', 'Academia': 'Gimnasio', 'E-mail': 'Email', 'Suporte': 'Soporte', 'Ajuda e atendimento': 'Ayuda y soporte'
   },
   fr: {
-    'Resumo': 'Résumé', 'Minha escala': 'Mon planning', 'Escala': 'Planning', 'Alertas': 'Alertes', 'Irregularidades': 'Irrégularités', 'Conformidade': 'Conformité', 'Rotina': 'Routine', 'Carga da escala': 'Charge du planning', 'Histórico': 'Historique', 'Configurações': 'Paramètres', 'Nova escala': 'Nouveau planning', 'Próximas programações': 'Prochaines programmations', 'Abrir escala': 'Ouvrir le planning', 'Status': 'Statut', 'Portão': 'Porte', 'Terminal': 'Terminal', 'Dados do voo': 'Données du vol', 'Perfil': 'Profil', 'Tema': 'Thème', 'Idioma': 'Langue', 'Importar PDF': 'Importer PDF', 'Puxar escala agora': 'Récupérer le planning', 'Mais funções': 'Plus de fonctions', 'Sair': 'Déconnexion'
+    'Saída': 'Départ', 'Resumo': 'Résumé', 'Minha escala': 'Mon planning', 'Escala': 'Planning', 'Alertas': 'Alertes', 'Irregularidades': 'Irrégularités', 'Conformidade': 'Conformité', 'Rotina': 'Routine', 'Carga da escala': 'Charge du planning', 'Histórico': 'Historique', 'Configurações': 'Paramètres', 'Nova escala': 'Nouveau planning', 'Próximas programações': 'Prochaines programmations', 'Abrir escala': 'Ouvrir le planning', 'Status': 'Statut', 'Portão': 'Porte', 'Terminal': 'Terminal', 'Dados do voo': 'Données du vol', 'Perfil': 'Profil', 'Tema': 'Thème', 'Idioma': 'Langue', 'Importar PDF': 'Importer PDF', 'Puxar escala agora': 'Récupérer le planning', 'Mais funções': 'Plus de fonctions', 'Sair': 'Déconnexion'
   },
   it: {
-    'Resumo': 'Riepilogo', 'Minha escala': 'La mia turnazione', 'Escala': 'Turnazione', 'Alertas': 'Avvisi', 'Irregularidades': 'Irregolarità', 'Conformidade': 'Conformità', 'Rotina': 'Routine', 'Carga da escala': 'Carico turnazione', 'Histórico': 'Cronologia', 'Configurações': 'Impostazioni', 'Nova escala': 'Nuova turnazione', 'Próximas programações': 'Prossime programmazioni', 'Abrir escala': 'Apri turnazione', 'Status': 'Stato', 'Portão': 'Gate', 'Terminal': 'Terminal', 'Dados do voo': 'Dati del volo', 'Perfil': 'Profilo', 'Tema': 'Tema', 'Idioma': 'Lingua', 'Importar PDF': 'Importa PDF', 'Puxar escala agora': 'Recupera turnazione', 'Mais funções': 'Altre funzioni', 'Sair': 'Esci'
+    'Saída': 'Uscita', 'Resumo': 'Riepilogo', 'Minha escala': 'La mia turnazione', 'Escala': 'Turnazione', 'Alertas': 'Avvisi', 'Irregularidades': 'Irregolarità', 'Conformidade': 'Conformità', 'Rotina': 'Routine', 'Carga da escala': 'Carico turnazione', 'Histórico': 'Cronologia', 'Configurações': 'Impostazioni', 'Nova escala': 'Nuova turnazione', 'Próximas programações': 'Prossime programmazioni', 'Abrir escala': 'Apri turnazione', 'Status': 'Stato', 'Portão': 'Gate', 'Terminal': 'Terminal', 'Dados do voo': 'Dati del volo', 'Perfil': 'Profilo', 'Tema': 'Tema', 'Idioma': 'Lingua', 'Importar PDF': 'Importa PDF', 'Puxar escala agora': 'Recupera turnazione', 'Mais funções': 'Altre funzioni', 'Sair': 'Esci'
   },
   de: {
-    'Resumo': 'Übersicht', 'Minha escala': 'Mein Dienstplan', 'Escala': 'Dienstplan', 'Alertas': 'Warnungen', 'Irregularidades': 'Unregelmäßigkeiten', 'Conformidade': 'Konformität', 'Rotina': 'Routine', 'Carga da escala': 'Dienstplanbelastung', 'Histórico': 'Verlauf', 'Configurações': 'Einstellungen', 'Nova escala': 'Neuer Dienstplan', 'Próximas programações': 'Nächste Einsätze', 'Abrir escala': 'Dienstplan öffnen', 'Status': 'Status', 'Portão': 'Gate', 'Terminal': 'Terminal', 'Dados do voo': 'Flugdaten', 'Perfil': 'Profil', 'Tema': 'Design', 'Idioma': 'Sprache', 'Importar PDF': 'PDF importieren', 'Puxar escala agora': 'Dienstplan abrufen', 'Mais funções': 'Weitere Funktionen', 'Sair': 'Abmelden'
+    'Saída': 'Abfahrt', 'Resumo': 'Übersicht', 'Minha escala': 'Mein Dienstplan', 'Escala': 'Dienstplan', 'Alertas': 'Warnungen', 'Irregularidades': 'Unregelmäßigkeiten', 'Conformidade': 'Konformität', 'Rotina': 'Routine', 'Carga da escala': 'Dienstplanbelastung', 'Histórico': 'Verlauf', 'Configurações': 'Einstellungen', 'Nova escala': 'Neuer Dienstplan', 'Próximas programações': 'Nächste Einsätze', 'Abrir escala': 'Dienstplan öffnen', 'Status': 'Status', 'Portão': 'Gate', 'Terminal': 'Terminal', 'Dados do voo': 'Flugdaten', 'Perfil': 'Profil', 'Tema': 'Design', 'Idioma': 'Sprache', 'Importar PDF': 'PDF importieren', 'Puxar escala agora': 'Dienstplan abrufen', 'Mais funções': 'Weitere Funktionen', 'Sair': 'Abmelden'
   },
 };
 
@@ -390,6 +404,16 @@ export function installGlobalStaticTranslations() {
   if (win.__crewcheckStaticTranslatorInstalled) return;
   win.__crewcheckStaticTranslatorInstalled = true;
   let busy = false;
+  // Every node this translator rewrote keeps its Portuguese source. Switching language (back to
+  // Portuguese included) re-renders from the source, so no label stays in the previous language
+  // when React does not re-render it. A text changed by the app itself becomes the new source.
+  const translated = new Map<Text, { source: string; applied: string }>();
+  const sourceOf = (node: Text) => {
+    const record = translated.get(node);
+    if (record && node.nodeValue === record.applied) return record.source;
+    translated.delete(node);
+    return node.nodeValue || '';
+  };
   const apply = () => {
     if (busy) return;
     busy = true;
@@ -397,7 +421,11 @@ export function installGlobalStaticTranslations() {
       try {
         const language = getSavedLanguage();
         document.documentElement.lang = language === 'pt' ? 'pt-BR' : language;
-        if (language !== 'pt') {
+        for (const node of [...translated.keys()]) if (!node.isConnected) translated.delete(node);
+        if (language === 'pt') {
+          for (const [node, record] of translated) if (node.nodeValue === record.applied) node.nodeValue = record.source;
+          translated.clear();
+        } else {
           const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
             acceptNode(node) {
               const parent = node.parentElement;
@@ -410,14 +438,20 @@ export function installGlobalStaticTranslations() {
           });
           const nodes: Text[] = [];
           while (walker.nextNode()) nodes.push(walker.currentNode as Text);
-          nodes.forEach((node) => { const next = translateNodeText(node.nodeValue || '', language); if (next !== node.nodeValue) node.nodeValue = next; });
+          nodes.forEach((node) => {
+            const source = sourceOf(node), next = translateNodeText(source, language);
+            if (next !== node.nodeValue) node.nodeValue = next;
+            if (next !== source) translated.set(node, { source, applied: next }); else translated.delete(node);
+          });
         }
       } finally { busy = false; }
     });
   };
   const observer = new MutationObserver(() => apply());
   observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  // Both the language menu and the account settings (pt-BR/en-US values) announce a change.
   window.addEventListener('crewcheck:language-change', apply);
+  window.addEventListener('crewcheck:locale-change', apply);
   window.addEventListener('storage', apply);
   apply();
 }

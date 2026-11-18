@@ -23,6 +23,11 @@ if (!classification.includes("'DESCANSO_BASE_CONTINUIDADE'")) throw new Error('[
 fs.writeFileSync(classificationFile, classification, 'utf8');
 
 let roster = fs.readFileSync(rosterFile, 'utf8');
+if (roster.includes("from '@/lib/rosterPresentation';")) {
+  if (!roster.includes('return rosterProgramMode(event)')) throw new Error('[v14387a] shared roster presentation delegation absent.');
+  const presentation = fs.readFileSync('client/src/lib/rosterPresentation.ts', 'utf8');
+  if (!presentation.includes('classifyScheduleActivity(event)') || !presentation.includes("category === 'REPOUSO'")) throw new Error('[v14387a] shared rest classification absent.');
+} else {
 const importAnchor = `import '@/components/v1397/roster-premium.css';`;
 const importLine = `import { classifyScheduleActivity } from '@/lib/scheduleActivityClassification';`;
 if (!roster.includes(importLine)) {
@@ -49,5 +54,6 @@ if (!roster.includes("scheduleCategory === 'FOLGA' || scheduleCategory === 'REPO
 if (!roster.includes("scheduleCategory === 'PERNOITE'")) throw new Error('[v14387a] pernoite não alinhado.');
 if (/PERNOITE\|ESTADIA\|DESCANSO_BASE_CONTINUIDADE/.test(roster)) throw new Error('[v14387a] visão mensal ainda mistura descanso base com pernoite.');
 
+}
 fs.writeFileSync(rosterFile, roster, 'utf8');
 console.log(`[v14387a] CrewCheck ${VERSION}: descanso de continuidade na base não é contado nem rotulado como pernoite.`);

@@ -29,7 +29,7 @@ function swap({owner,roster,returnBefore=false}) {
   assert.equal(await card.getByRole('button',{name:/Abrir .* na escala/}).count(),3);
   for(const date of ['02/10/2032','30/09/2032','02/10/2032','01/10/2032']) {
    await card.getByRole('button',{name:'Abrir '+date+' na escala',exact:true}).click();
-   await page.getByRole('heading',{name:'Escala inteligente',exact:true}).waitFor();
+   await page.locator('.cc-roster-premium-v1397').getByRole('heading',{name:'Escala',exact:true}).waitFor();
    const iso=date.split('/').reverse().join('-');const group=page.locator('[data-roster-iso="'+iso+'"]').first();
    await group.waitFor();
    await page.waitForFunction(key=>{const box=document.querySelector('[data-roster-iso="'+key+'"]')?.getBoundingClientRect();return box&&box.top<innerHeight&&box.bottom>0},iso);
@@ -42,7 +42,7 @@ function swap({owner,roster,returnBefore=false}) {
   await card.getByRole('button',{name:'Abrir 30/09/2032 na escala',exact:true}).click();
   const other={...kind,days:[{...night('20/10/2032','LA9999'),dutyReport:'12:00',dutyDebrief:'18:00',legs:[{flightNumber:'LA9999',origin:'GRU',destination:'REC',departureTime:'12:40',arrivalTime:'17:30',workType:'OP'}]}]};
   await page.evaluate(swap,{owner:'syn-b',roster:other});await page.locator('.cz-app[data-view="cockpit"]').waitFor();
-  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'})));await page.getByRole('heading',{name:'Escala inteligente',exact:true}).waitFor();
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'roster'})));await page.locator('.cc-roster-premium-v1397').getByRole('heading',{name:'Escala',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Voltar ao alerta',exact:true}).count(),0);assert.equal(await page.locator('[data-roster-iso="2032-09-30"]').count(),0);
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'alerts'})));assert.equal(await page.getByRole('button',{name:/Abrir .* na escala/}).count(),0);
   const pending={...kind,days:[{...night('01/10/2032','LA9904'),dutyDebrief:null,dutyDebriefSource:undefined},{date:'02/10/2032',year:2032,month:10,type:'HSB',pairingCode:'HSB',dutyReport:'12:00',dutyReportSource:'published',legs:[]},{...night('09/10/2032','LA9905'),dutyReport:'20:10',dutyDebrief:'01:00',legs:[{flightNumber:'LA9905',origin:'GRU',destination:'REC',departureTime:'20:50',arrivalTime:'00:30',presentationTime:'20:10',workType:'OP'}]}]};

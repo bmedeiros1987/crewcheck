@@ -3,8 +3,12 @@ on:
   pull_request:
     branches: [main, fix/regulation-prefill-20261020]
     paths:
+      - 'scripts/ci/prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-prefer-ubuntu-archive.py'
+      - 'scripts/ci/test-browser-mirror-coverage.py'
       - 'client/src/pages/Home.tsx'
       - 'scripts/v14331/**'
+      - 'scripts/home-standby-departure/**'
       - 'scripts/v1406/route-helpers.snippet'
       - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/regression-web-departure-program-*'
@@ -14,6 +18,7 @@ on:
     paths:
       - 'client/src/pages/Home.tsx'
       - 'scripts/v14331/**'
+      - 'scripts/home-standby-departure/**'
       - 'scripts/v1406/route-helpers.snippet'
       - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/regression-web-departure-program-*'
@@ -25,7 +30,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   synthetic-offline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -38,7 +43,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Raw source compatibility
-        run: npx tsc --noEmit
+        run: |
+          npx tsc --noEmit
+          node scripts/regression-web-departure-program-fallback.mjs
       - name: Prepare canonical sources once
         run: node scripts/v139/apply.mjs
       - name: Prepared types and build
@@ -51,6 +58,7 @@ jobs:
           mkdir -p artifacts/web-departure-program
           for zone in UTC America/Sao_Paulo Asia/Tokyo America/New_York; do
             TZ="$zone" node scripts/regression-web-departure-program-selection.mjs
+            TZ="$zone" node scripts/regression-web-departure-program-fallback.mjs --prepared
           done | tee artifacts/web-departure-program/selection.log
       - name: Retained policy, source preparation and route-state gates
         run: |
@@ -60,6 +68,15 @@ jobs:
           node scripts/regression-positioning-session-isolation.mjs
           node scripts/regression-p0-530-adjacent-month-retention.mjs
           node scripts/regression-regulation-window-selection.mjs
+      # Keep the runner's signed Ubuntu HTTPS fallbacks; avoid degraded Azure APT.
+      - name: Prefer Ubuntu archive for browser system dependencies
+        run: |
+          python3 scripts/ci/test-prefer-ubuntu-archive.py
+          python3 scripts/ci/test-browser-mirror-coverage.py
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            python3 scripts/ci/prefer-ubuntu-archive.py /etc/apt/apt-mirrors.txt > "$RUNNER_TEMP/browser-apt-mirrors.txt"
+            sudo install -m 644 "$RUNNER_TEMP/browser-apt-mirrors.txt" /etc/apt/apt-mirrors.txt
+          fi
       - name: Install isolated Chromium fixture dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/departure-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0

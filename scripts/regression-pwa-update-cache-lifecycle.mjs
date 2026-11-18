@@ -21,6 +21,7 @@ let heldInstall;
 const server=http.createServer((req,res)=>{
  res.setHeader('cache-control','no-store');
  if(req.url==='/sw.js'){res.setHeader('content-type','text/javascript');res.end(stamped(stage).source);}
+ else if(req.url==='/crewcheck-gate-receiver-offline.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync('client/public/crewcheck-gate-receiver-offline.js','utf8'));}
  else if(req.url==='/crewcheck-push-offline.js'){res.setHeader('content-type','text/javascript');res.end(push);}
  else if(req.url==='/assets/app-c.js'&&holdInstall){installRequested();heldInstall.then(()=>{res.setHeader('content-type','text/javascript');res.end(js);});}
  else if(req.url?.startsWith('/assets/')){res.setHeader('content-type','text/javascript');res.end(js+`;window.fixtureVersion=${JSON.stringify(req.url.match(/app-(\w+)\.js/)?.[1])};`);}

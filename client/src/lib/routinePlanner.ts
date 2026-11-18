@@ -138,6 +138,9 @@ export function buildRoutineSuggestions(days: DayLoadAnalysis[], activities: Rou
   if (!chronological.length || !activities.length) return suggestions;
 
   const weeks = splitDaysByRosterWeek(chronological);
+  // Unknown availability (an activity window the parser could not attribute) is not free time:
+  // no timed suggestion (routine, rest or meal) is offered on that date, even around its published programs.
+  const unresolvedDates = new Set(chronological.filter(day => day.availabilityUnresolved).map(day => day.date));
 
   activities.forEach((activity) => {
     const desiredPerWeek = Math.max(1, Math.min(7, Number(activity.frequencyPerWeek) || 1));
@@ -191,6 +194,7 @@ export function buildRoutineSuggestions(days: DayLoadAnalysis[], activities: Rou
 
   return applyPremiumRoutineReliability([...suggestions, ...restSuggestions, ...mealSuggestions], chronological)
     .sort((a, b) => parseRosterDate(a.date).getTime() - parseRosterDate(b.date).getTime() || a.startTime.localeCompare(b.startTime))
+    .filter((item) => !unresolvedDates.has(item.date))
     .slice(0, 220);
 }
 

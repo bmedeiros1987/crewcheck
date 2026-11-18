@@ -12,7 +12,7 @@ import {financialRange} from './client/src/lib/financialHistoryPeriods';
 import {FinancialScreenContext} from './client/src/components/finance/FinancialScreen';import useNavigation from './client/src/components/finance/useFinancialNavigation';
 import {publication,observePublication,writeReview,reviewKey} from './client/src/lib/rosterPublicationReview';
 const owner='synthetic-alpha',day='2032-02-10',range={start:'2032-02-01',end:'2032-02-29',kind:'month',valid:true};
-function seed(id=owner){localStorage.setItem('crewcheck_auth_token','synthetic-only');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id,email:id+'@example.invalid',role:'user'}));
+function seed(id=owner){localStorage.setItem('crewcheck_language','pt');localStorage.setItem('crewcheck_auth_token','synthetic-only');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id,email:id+'@example.invalid',role:'user'}));
 const e={kind:'flight',date:day,flightNumber:'TEST001',origin:'BSB',destination:'GRU',departure:'08:00',arrival:'10:00',publishedDay:{hotel:'JPY 400'},leg:{workType:'OP'}};
 const first=observePublication(id,null,publication([e],[day]));const next=observePublication(id,first,publication([{...e,departure:'09:00',publishedDay:{hotel:'JPY 500'}}],[day]));writeReview(localStorage,next);return next;}
 if(!localStorage.getItem('crewcheck_auth_user'))seed();
