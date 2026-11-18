@@ -25,6 +25,54 @@ export async function runAsaasScenarios(fixture) {
   await run('legacy hash alone never proves completion',async()=>{await seed();await legacy('evt_synthetic');assert.equal((await receiveAsaasEvent(db,body())).body.reason,'legacy_receipt_unverified');assert.equal((await state()).profiles['fictional@example.test'],'free');assert.equal((await retryAsaasReceipt(db,'evt_synthetic')).reason,'legacy_receipt_unverified');});
   await run('out of order activation cannot undo later refund',async()=>{await seed();await receiveAsaasEvent(db,body('evt_refund',{event:'PAYMENT_REFUNDED',dateCreated:'2026-10-10 14:00:00'}));assert.equal((await receiveAsaasEvent(db,body())).body.disposition,'stale');assert.equal((await state()).profiles['fictional@example.test'],'free');});
   await run('late older debit cannot remove later paid access',async()=>{await seed();await receiveAsaasEvent(db,body());assert.equal((await receiveAsaasEvent(db,body('evt_old',{event:'PAYMENT_OVERDUE',dateCreated:'2026-10-08 14:00:00'}))).body.disposition,'stale');assert.equal((await state()).profiles['fictional@example.test'],'premium_monthly');});
+  await run('contradictory overdue after confirmed payment preserves the same funded period across months',async()=>{
+    await seed();
+    const payment=body().payment;
+    const paid=body('evt_paid_october',{
+      dateCreated:'2026-10-31 18:00:00',
+      payment:{...payment,confirmedDate:'2026-10-31'},
+    });
+    const overdue=body('evt_overdue_november',{
+      event:'PAYMENT_OVERDUE',
+      dateCreated:'2026-11-01 09:00:00',
+      payment:{...payment,status:'OVERDUE',confirmedDate:null},
+    });
+    assert.equal((await receiveAsaasEvent(db,paid,{now:()=>Date.parse('2026-10-31T21:00:00Z')})).body.disposition,'processed');
+    const before=await state();
+    assert(before.receipts[paid.id].funded_period_end);
+    const overdueClock={now:()=>Date.parse('2026-11-01T12:00:00Z')};
+    const result=await receiveAsaasEvent(db,overdue,overdueClock);
+    assert.equal(result.body.disposition,'quarantined');
+    assert.equal(result.body.reason,'overdue_conflicts_with_paid_receipt');
+    const after=await state();
+    assert.deepEqual(after.subscriptions,before.subscriptions);
+    assert.deepEqual(after.profiles,before.profiles);
+    assert.equal(after.receipts[overdue.id].funded_period_end,null);
+    assert.equal((await receiveAsaasEvent(db,overdue,overdueClock)).body.duplicate,true);
+    assert.equal((await retryAsaasReceipt(db,overdue.id)).reason,'overdue_conflicts_with_paid_receipt');
+    assert.deepEqual(await state(),after);
+
+    const refund=body('evt_refunded_november',{
+      event:'PAYMENT_REFUNDED',dateCreated:'2026-11-02 09:00:00',
+      payment:{...payment,status:'REFUNDED'},
+    });
+    assert.equal((await receiveAsaasEvent(db,refund)).body.disposition,'processed');
+    const reversed=await state();
+    assert.equal(reversed.subscriptions[0].status,'refunded');
+    assert.equal(reversed.subscriptions[0].current_period_end,null);
+    assert.equal(reversed.profiles['fictional@example.test'],'free');
+  });
+  await run('overdue without a funded receipt remains eligible for existing unpaid classification',async()=>{
+    await seed();
+    const overdue=body('evt_unpaid_overdue',{
+      event:'PAYMENT_OVERDUE',payment:{...body().payment,status:'OVERDUE',confirmedDate:null},
+    });
+    assert.equal((await receiveAsaasEvent(db,overdue)).body.disposition,'processed');
+    const snapshot=await state();
+    assert.equal(snapshot.subscriptions[0].status,'past_due');
+    assert.equal(snapshot.subscriptions[0].current_period_end,null);
+    assert.equal(snapshot.profiles['fictional@example.test'],'free');
+  });
   await run('equal timestamps do not guess event order',async()=>{await seed();await receiveAsaasEvent(db,body());assert.equal((await receiveAsaasEvent(db,body('evt_tie',{event:'PAYMENT_REFUNDED'}))).body.reason,'ambiguous_event_order');});
   await run('confirmed then received keeps paid period and owner',async()=>{await seed();await receiveAsaasEvent(db,body());const previous=(await state()).subscriptions[0].current_period_end;await receiveAsaasEvent(db,body('evt_received',{event:'PAYMENT_RECEIVED',dateCreated:'2026-10-10 14:00:00',payment:{...body().payment,status:'RECEIVED'}}));assert.equal((await state()).subscriptions[0].current_period_end,previous);});
   await run('refund of different payment is held for review',async()=>{await seed();await receiveAsaasEvent(db,body());assert.equal((await receiveAsaasEvent(db,body('evt_other_refund',{event:'PAYMENT_REFUNDED',dateCreated:'2026-10-10 14:00:00',payment:{...body().payment,id:'pay_old'}}))).body.reason,'different_payment_requires_review');assert.equal((await state()).profiles['fictional@example.test'],'premium_monthly');});

@@ -32,3 +32,9 @@ A consulta de conciliação usa somente GET. O adaptador aceita uma remoção ex
 A composição preparada continua isolada do dispatcher público. O contrato de produção ainda precisa reconciliar o efeito sobre cobranças pendentes e vencidas, pois a remoção da assinatura alcança todas as cobranças vinculadas nesses estados. Preservam-se o período pago, a política 3/30 em revisão, o tratamento humano de comprovantes e o HOLD de auditoria. Os testes usam somente clientes simulados e MySQL descartável.
 
 Referências oficiais: [Recuperar uma assinatura](https://docs.asaas.com/reference/recuperar-uma-unica-assinatura) e [Remover assinatura](https://docs.asaas.com/reference/remover-assinatura).
+
+## Evento de vencimento após confirmação
+
+Uma cobrança Asaas com recibo local de financiamento ficou marcada como vencida quando o mesmo identificador chegou mais tarde como `PAYMENT_OVERDUE` no teste anterior. A correção mantém esse evento em reconciliação e conserva o período e o acesso já registrados. Uma cobrança sem financiamento continua elegível à classificação de vencida. Um estorno concluído continua sendo tratado em separado. O teste cruza outubro e novembro, confere a preservação do período e exige idempotência no replay.
+
+O fluxo documentado do Asaas mostra vencimento antes da confirmação. O recibo já registrado, e não apenas a data do evento mais recente, sustenta a retenção desta contradição. O recorte não confirma a origem de períodos históricos nem altera a carência, a política 3/30 ou as regras de cancelamento. [Eventos de cobrança do Asaas](https://docs.asaas.com/docs/webhook-para-cobrancas).

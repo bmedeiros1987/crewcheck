@@ -58,6 +58,10 @@ async function lockSubscription(client, ref) {
   await client.query('INSERT INTO crewcheck_asaas_subscription_locks(subscription_ref) VALUES($1) ON DUPLICATE KEY UPDATE subscription_ref=subscription_ref', [ref]);
   await client.query('SELECT subscription_ref FROM crewcheck_asaas_subscription_locks WHERE subscription_ref=$1 FOR UPDATE', [ref]);
 }
+async function recordedFundingEnd(client, { subscriptionRef, paymentId }) {
+  const funding = await client.query("SELECT funded_period_end FROM crewcheck_asaas_webhook_inbox WHERE subscription_ref=$1 AND payment_ref=$2 AND disposition='processed' AND funded_period_end IS NOT NULL ORDER BY funded_period_end DESC LIMIT 1 FOR UPDATE", [subscriptionRef, paymentId]);
+  return funding.rows[0]?.funded_period_end;
+}
 async function applyReceipt(client, event, { legacyReceipt = false, now = Date.now } = {}) {
   const end = (state, reason) => settle(client, event.eventId, state, reason);
   if (legacyReceipt) return end('quarantined', 'legacy_receipt_unverified');
@@ -85,6 +89,10 @@ async function applyReceipt(client, event, { legacyReceipt = false, now = Date.n
   if (event.eventName.startsWith('PAYMENT_') && !event.paymentId) return end('quarantined', 'missing_payment_reference');
   if (!PAID.has(event.eventName) && event.paymentId && metadata.lastAsaasPaymentId
     && metadata.lastAsaasPaymentId !== event.paymentId) return end('quarantined', 'different_payment_requires_review');
+  // An overdue signal for the same already-funded payment is contradictory.
+  // Hold it without changing the recorded period or treating it as a reversal.
+  if (event.eventName === 'PAYMENT_OVERDUE' && metadata.lastAsaasPaidPaymentId === event.paymentId
+    && await recordedFundingEnd(client, event)) return end('quarantined', 'overdue_conflicts_with_paid_receipt');
   // A pending refund is not a completed refund. Keep the receipt for explicit
   // reconciliation; do not grant, extend, revoke or relabel the current subscription.
   if (refundInProgress) return end('quarantined', 'refund_in_progress_requires_reconciliation');
@@ -107,8 +115,7 @@ async function applyReceipt(client, event, { legacyReceipt = false, now = Date.n
     const date = new Date(event.paidDate + 'T12:00:00.000Z');
     date.setUTCDate(date.getUTCDate() + (subscription.plan === 'premium_annual' ? 366 : 31));
     const candidate = date.toISOString().slice(0, 23).replace('T', ' ');
-    const funding = await client.query("SELECT funded_period_end FROM crewcheck_asaas_webhook_inbox WHERE subscription_ref=$1 AND payment_ref=$2 AND disposition='processed' AND funded_period_end IS NOT NULL ORDER BY funded_period_end DESC LIMIT 1 FOR UPDATE", [event.subscriptionRef, event.paymentId]);
-    const samePaymentEnd = funding.rows[0]?.funded_period_end;
+    const samePaymentEnd = await recordedFundingEnd(client, event);
     if (samePaymentEnd && candidate > String(samePaymentEnd)) return end('quarantined', 'payment_period_changed_requires_review');
     if (!samePaymentEnd && periodEnd && !metadata.lastAsaasPaidPaymentId) return end('quarantined', 'unverified_existing_period');
     // Provider dateCreated has no timezone. Do NOT convert it into an instant.
