@@ -8,7 +8,7 @@ export function assertTransactionClient(client){
 }
 const uncertain=code=>Object.assign(new Error(code),{code,status:503});
 const connectionFailure=error=>error?.fatal===true||['PROTOCOL_CONNECTION_LOST','ECONNRESET','ETIMEDOUT','EPIPE','PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR','ER_SERVER_SHUTDOWN'].includes(error?.code);
-export async function withTransaction(db, action, { repeatableRead = false } = {}) {
+export async function withTransaction(db, action, { repeatableRead = false, retryDeadlock = true } = {}) {
   for (let attempt = 0; ; attempt++) {
     const client = await db.connect();
     let phase='setup',discard=false;
@@ -28,7 +28,7 @@ export async function withTransaction(db, action, { repeatableRead = false } = {
       try { await client.query('ROLLBACK');rolledBack=true; } catch { discard=true; }
       if(phase==='commit'||connectionFailure(error))discard=true;
       if(discard||!rolledBack)throw uncertain('PROFILE_TX_OUTCOME_UNCERTAIN');
-      if (phase==='action' && error.code === 'ER_LOCK_DEADLOCK' && attempt < 1) continue;
+      if (retryDeadlock && phase==='action' && error.code === 'ER_LOCK_DEADLOCK' && attempt < 1) continue;
       throw error;
     } finally {
       if(discard){

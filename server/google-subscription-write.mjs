@@ -18,7 +18,7 @@ export async function requireGoogleSubscriptionSchema(db){
  const groups=new Map();for(const row of indexes.rows){if(!groups.has(row.name))groups.set(row.name,[]);groups.get(row.name).push(row);}
  if(![...groups.values()].some(rows=>rows.length===1&&Number(rows[0].non_unique)===0&&rows[0].column_name==='purchase_token_hash'))throw fail('GOOGLE_TOKEN_SCHEMA_UNAVAILABLE',503);
 }
-async function apply(client,record){
+async function apply(client,record,assertCurrent=()=>{}){
  const {email,expectedPublicId,tokenHash,plan,productId,status,active,periodEnd,cancelAtPeriodEnd,providerRef,metadataJson,existingOnly}=record;
   const profile=(await client.query('SELECT email,public_id,plan FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE',[email])).rows[0];
   if(!profile||profile.public_id!==expectedPublicId)throw fail('GOOGLE_ACCOUNT_MISMATCH');
@@ -34,18 +34,20 @@ async function apply(client,record){
   // It is not a provider sequence, purchase token, key or timestamp.
   const nextMetadata=JSON.stringify({...parsed,googleStateFence:randomBytes(32).toString('hex')});
   const values=[email,plan,status,productId,providerRef,tokenHash,periodEnd,cancelAtPeriodEnd,nextMetadata];
+  assertCurrent();
   if(previous)await client.query("UPDATE crewcheck_platform_subscriptions SET plan=$2,status=$3,product_id=$4,provider_ref=$5,current_period_end=$7,cancel_at_period_end=$8,metadata=$9,updated_at=CURRENT_TIMESTAMP(3) WHERE email=$1 AND provider='google_play' AND purchase_token_hash=$6",values);
   else await client.query("INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,purchase_token_hash,current_period_end,cancel_at_period_end,metadata) VALUES($1,$2,$3,'google_play',$4,$5,$6,$7,$8,$9)",values);
   if(profile.plan!=='premium_unlimited')await client.query('UPDATE crewcheck_platform_profiles SET plan=$2,updated_at=NOW() WHERE email=$1',[email,active?plan:'free']);
+  assertCurrent();
   return {plan,status,active,cancelAtPeriodEnd};
 }
 // Internal shared-client composition only. Pool/escaped clients cannot bypass the boundary.
 export async function writeVerifiedGoogleSubscriptionInTransaction(client,input){
  assertTransactionClient(client);return apply(client,prepare(input));
 }
-export async function writeVerifiedGoogleSubscription(db,input){
+export async function writeVerifiedGoogleSubscription(db,input,{assertCurrent}={}){
  const record=prepare(input);await requireGoogleSubscriptionSchema(db);
- try{return await withProfileLocks(db,[record.email],client=>apply(client,record),{repeatableRead:true});}catch(error){if(error?.code==='ER_DUP_ENTRY')throw fail('PURCHASE_ALREADY_LINKED');
+ try{return await withProfileLocks(db,[record.email],client=>apply(client,record,assertCurrent),{repeatableRead:true});}catch(error){if(error?.code==='ER_DUP_ENTRY')throw fail('PURCHASE_ALREADY_LINKED');
   // Shared transaction helper exhausted its single safe retry after confirmed rollback.
   // Contention alone does not prove this purchase belongs to another account.
   if(error?.code==='ER_LOCK_DEADLOCK')throw Object.assign(fail('GOOGLE_RECONCILIATION_BUSY',503),{message:'A conciliação está ocupada. O acesso ainda não foi confirmado; confira o status antes de tentar novamente.'});

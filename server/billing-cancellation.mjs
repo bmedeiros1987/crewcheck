@@ -44,6 +44,7 @@ export async function applyAcknowledgedAsaasCancellation(client,input,{now=Date.
  assertCurrent();
  await client.query("UPDATE crewcheck_platform_subscriptions SET status=$3,cancel_at_period_end=TRUE,updated_at=NOW(3) WHERE email=$1 AND provider='asaas' AND provider_ref=$2",[input.email,input.providerRef,status]);
  if(!current.keepsPaidAccess&&snapshot.profile.plan!=='premium_unlimited')await client.query("UPDATE crewcheck_platform_profiles SET plan='free',updated_at=NOW(3) WHERE email=$1",[input.email]);
+ assertCurrent();
  return {canceled:true,currentPeriodEnd:current.currentPeriodEnd,keepsPaidAccess:current.keepsPaidAccess};
 }
 export async function readBillingCancellation(db,owner,options={}){

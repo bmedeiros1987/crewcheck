@@ -135,7 +135,11 @@ const platform = readFileSync(new URL('../server/platform.mjs',import.meta.url),
 const rosterDelete = platform.slice(platform.indexOf('async function handleLegacyDatabase'),platform.indexOf('async function handleAccountDeletion'));
 assert(!rosterDelete.includes('financialLedgerErasureStatements'), 'roster removal cannot erase financial history');
 const accountDelete = platform.slice(platform.indexOf('async function handleAccountDeletion'),platform.indexOf('export function accountHealthDeletionStatements'));
-assert(accountDelete.indexOf('SELECT email FROM crewcheck_platform_profiles') < accountDelete.indexOf('financialLedgerErasureStatements(context.identity.email)'));
+const lockedErase = /withCurrentAccount\(db, principal, async client => \{([\s\S]+?)\}, \{ forUpdate: true, retryDeadlock: false \}\)/.exec(accountDelete);
+assert(lockedErase?.[1].includes('financialLedgerErasureStatements(context.identity.email)'), 'ledger erasure must run under the account-generation write lock');
+const accountTransaction = platform.slice(platform.indexOf('async function withCurrentAccount'),platform.indexOf('function accountBillingProfile'));
+assert.match(accountTransaction, /readAccountSessionProfile\(client, principal, \{ lock: forUpdate \? 'write'/);
+assert(accountTransaction.indexOf('readAccountSessionProfile') < accountTransaction.indexOf('await action(client, profile)'));
 // Reviewed synthetic producer uses the same SQL adapter and idempotency path.
 const producerDb=database(),producerStore=createFinancialSqlStore(producerDb);
 const producerSource={kind:'reviewed_financial_forecast',ownerId:A.ownerId,scopeId:'synthetic-stable-income',reviewReference:'synthetic-reviewed-snapshot',ruleVersion:'synthetic-v1',fingerprint:'b'.repeat(64),items:[{key:'meal-logical-1',expectedRevision:0,record:{periodStart:'2032-02-01',periodEnd:'2032-02-01',currency:'USD',timezone:'America/Sao_Paulo',amountMinor:1234,category:'allowance',aggregationLevel:'item'}}]};

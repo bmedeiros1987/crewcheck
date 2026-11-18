@@ -22,8 +22,23 @@ try{
  // Failed rollback must remain uncertain, discarded and never retried/mapped to busy.
  attempts=rollbacks=releases=discards=0;const badRollback={query:(...a)=>db.query(...a),connect:async()=>{attempts++;const c=await db.connect();return {...c,query:async(sql,p)=>{if(sql.includes('WHERE purchase_token_hash=$1 FOR UPDATE'))throw Object.assign(Error('SYNTHETIC_DEADLOCK'),{code:'ER_LOCK_DEADLOCK'});if(sql==='ROLLBACK'){rollbacks++;throw Error('SYNTHETIC_ROLLBACK_FAILURE');}return c.query(sql,p);},release(){releases++;c.release();},discard(){discards++;c.discard();}};}};
  await assert.rejects(write(badRollback,request(60)),{code:'PROFILE_TX_OUTCOME_UNCERTAIN',status:503});assert.equal(attempts,1);assert.equal(rollbacks,1);assert.equal(releases,0);assert.equal(discards,1);assert.deepEqual(await state(60),beforeBusy);count++;}
+ // The same failed authority check before the write and after the write must leave identical state.
+ await seed(59);
+ for (const stopAt of [1,2]) {
+   let checks=0;
+   const beforeRevocation=await state(59);
+   await assert.rejects(write(db,request(59),{assertCurrent() {
+     if (++checks===stopAt) throw Object.assign(Error('SYNTHETIC_AUTHORITY_LOST'),{code:'AUTH_REQUIRED'});
+   }}),{code:'AUTH_REQUIRED'});
+   assert.equal(checks,stopAt);
+   assert.deepEqual(await state(59),beforeRevocation);
+   count++;
+ }
+ assert.equal((await write(db,request(59))).active,true);
+ assert.equal((await state(59)).subscription.length,1);
+ count++;
  // Execute the actual checkout persistence SQL, without any provider transport.
- const source=fs.readFileSync('server/platform.mjs','utf8');const checkout=source.slice(source.indexOf('async function handleAsaasCheckout('),source.indexOf('async function handleBillingCancel('));const insert=checkout.match(/await context\.db\.query\(`(INSERT INTO crewcheck_platform_subscriptions[\s\S]*?)`, \[context\.identity\.email/)[1];assert(!insert.includes('ON DUPLICATE'));
+ const source=fs.readFileSync('server/platform.mjs','utf8');const checkout=source.slice(source.indexOf('async function handleAsaasCheckout('),source.indexOf('async function handleBillingCancel('));const insert=checkout.match(/client\.query\(`(INSERT INTO crewcheck_platform_subscriptions[\s\S]*?)`, \[principal\.email/)[1];assert(!insert.includes('ON DUPLICATE'));
  await seed(50);await write(db,request(50));const googleBefore=await state(50);await assert.rejects(db.query(insert,[email(50),'premium_monthly','sub_SYNTHETIC_RACE','{}']),{code:'ER_DUP_ENTRY'});assert.deepEqual(await state(50),googleBefore);count++;
  await seed(51);const race=await Promise.allSettled([write(db,request(51)),db.query(insert,[email(51),'premium_monthly','sub_SYNTHETIC_RACE_51','{}'])]);assert.equal(race.filter(x=>x.status==='fulfilled').length,1);const final=(await state(51)).subscription;assert.equal(final.length,1);if(final[0].provider==='asaas')assert.equal((await state(51)).profile[0].plan,'free');else assert.equal(final[0].purchase_token_hash,request(51).tokenHash);count++;
  await seed(52);const failing={query:(...args)=>db.query(...args),connect:async()=>{const c=await db.connect();return{...c,query:async(sql,p)=>{if(sql.startsWith('UPDATE crewcheck_platform_profiles'))throw Error('SYNTHETIC_PROFILE_WRITE_FAILURE');return c.query(sql,p);}};}};await assert.rejects(write(failing,request(52)),/SYNTHETIC_PROFILE_WRITE_FAILURE/);assert.equal((await state(52)).subscription.length,0);assert.equal((await state(52)).profile[0].plan,'free');count++;

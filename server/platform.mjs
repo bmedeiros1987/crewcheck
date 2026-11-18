@@ -574,48 +574,76 @@ async function subscriptionStatus(db, profile) {
   };
 }
 
+// A refund is an internal continuation of the exact committed reservation.
+const quotaReservations = new WeakMap();
+
 export async function consumePlatformUsage(reqOrIdentity, kind = 'wakeup_call', amount = 1) {
-  const identity = reqOrIdentity?.headers ? mainIdentity(reqOrIdentity) : reqOrIdentity;
+  const httpRequest = Boolean(reqOrIdentity?.headers);
+  const identity = httpRequest ? platformAccountSession(reqOrIdentity) : reqOrIdentity;
   if (!identity?.email) return { allowed: false, status: 401, message: 'Faça login para usar ligações.' };
-  if (identity.admin) return { allowed: true, admin: true, used: 0, limit: null, remaining: null };
+
+  if (!httpRequest && identity.admin) return { allowed: true, admin: true, used: 0, limit: null, remaining: null };
   const db = await pool();
   if (!db) return { allowed: false, status: 503, message: 'O controle de custos está aguardando o banco. Nenhuma ligação foi cobrada.' };
-  const profile = await ensureProfile(db, identity);
-  const status = await subscriptionStatus(db, profile);
-  const monthKey = currentMonthKey(profile.timezone);
-  const limit = planLimit(status.plan, kind);
-  if (amount <= 0 || amount > limit) return { allowed: false, status: 429, used: 0, limit, remaining: limit, message: `Limite mensal de ${limit} ligações atingido.` };
-
-  const client = await db.connect();
+  // The Telegram callback has its own identity. Snapshot its existing profile
+  // before the same lock-based write so a concurrent replacement cannot consume it.
+  const principal = httpRequest ? identity : {
+    ...identity, publicId: (await ensureProfile(db, identity)).public_id, isCurrent: () => true,
+  };
   try {
-    await client.query('BEGIN');
-    const current = await client.query(
-      'SELECT used FROM crewcheck_platform_usage WHERE email=$1 AND month_key=$2 AND usage_kind=$3 FOR UPDATE',
-      [identity.email, monthKey, kind],
-    );
-    const usedBefore = Number(current.rows[0]?.used || 0);
-    const used = usedBefore + amount;
-    if (used > limit) {
-      await client.query('ROLLBACK');
-      return { allowed: false, status: 429, used: usedBefore, limit, remaining: Math.max(0, limit - usedBefore), message: `Limite mensal de ${limit} ligações atingido. Mensagens Telegram e lembrete local continuam disponíveis.` };
+    const result = await withCurrentAccount(db, principal, async (client, profile) => {
+      if (identity.admin) return { allowed: true, admin: true, used: 0, limit: null, remaining: null };
+      const status = await subscriptionStatus(client, accountBillingProfile(profile, principal));
+      const monthKey = currentMonthKey(profile.timezone);
+      const limit = planLimit(status.plan, kind);
+      if (amount <= 0 || amount > limit) return { allowed: false, status: 429, used: 0, limit, remaining: limit, message: `Limite mensal de ${limit} ligações atingido.` };
+      const current = await client.query(
+        'SELECT used FROM crewcheck_platform_usage WHERE email=$1 AND month_key=$2 AND usage_kind=$3 FOR UPDATE',
+        [principal.email, monthKey, kind],
+      );
+      const usedBefore = Number(current.rows[0]?.used || 0);
+      const used = usedBefore + amount;
+      if (used > limit) {
+        return { allowed: false, status: 429, used: usedBefore, limit, remaining: Math.max(0, limit - usedBefore), message: `Limite mensal de ${limit} ligações atingido. Mensagens Telegram e lembrete local continuam disponíveis.` };
+      }
+      await client.query(`
+        INSERT INTO crewcheck_platform_usage(email,month_key,usage_kind,used,limit_value)
+        VALUES($1,$2,$3,$4,$5)
+        ON DUPLICATE KEY UPDATE used=VALUES(used),limit_value=VALUES(limit_value),updated_at=CURRENT_TIMESTAMP(3)`,
+      [principal.email, monthKey, kind, used, limit]);
+      return { allowed: true, used, limit, remaining: Math.max(0, limit - used), monthKey };
+    }, { forUpdate: true });
+    if (httpRequest && result.allowed && !result.admin) {
+      quotaReservations.set(reqOrIdentity, { email: principal.email, publicId: principal.publicId, monthKey: result.monthKey, kind, amount });
     }
-    await client.query(`
-      INSERT INTO crewcheck_platform_usage(email,month_key,usage_kind,used,limit_value)
-      VALUES($1,$2,$3,$4,$5)
-      ON DUPLICATE KEY UPDATE used=VALUES(used),limit_value=VALUES(limit_value),updated_at=CURRENT_TIMESTAMP(3)`,
-    [identity.email, monthKey, kind, used, limit]);
-    await client.query('COMMIT');
-    return { allowed: true, used, limit, remaining: Math.max(0, limit - used), monthKey };
+    return result;
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (error?.code === 'AUTH_REQUIRED') return { allowed: false, status: 401, message: 'Entre novamente para usar ligações.' };
     throw error;
-  } finally {
-    client.release();
   }
 }
 
 export async function refundPlatformUsage(reqOrIdentity, kind = 'wakeup_call', amount = 1) {
-  const identity = reqOrIdentity?.headers ? mainIdentity(reqOrIdentity) : reqOrIdentity;
+  if (!reqOrIdentity?.headers) return refundTelegramQuota(reqOrIdentity, kind, amount);
+  const original = quotaReservations.get(reqOrIdentity);
+  if (!original || original.kind !== kind || original.amount !== amount) return { refunded: false };
+  // Consume the process-local capability once. An uncertain refund must never
+  // be automatically reapplied and subtract someone else's later reservation.
+  quotaReservations.delete(reqOrIdentity);
+  const db = await pool();
+  if (!db) return { refunded: false };
+  const { email, publicId, monthKey } = original;
+  return withTransaction(db, async client => {
+    if (!await readAccountSessionProfile(client, { email, publicId }, { lock: 'write' })) return { refunded: false };
+    await client.query(
+      'UPDATE crewcheck_platform_usage SET used=GREATEST(0,used-$4),updated_at=CURRENT_TIMESTAMP(3) WHERE email=$1 AND month_key=$2 AND usage_kind=$3',
+      [email, monthKey, kind, amount],
+    );
+    return { refunded: true, monthKey };
+  });
+}
+
+async function refundTelegramQuota(identity, kind = 'wakeup_call', amount = 1) {
   if (!identity?.email || amount <= 0) return { refunded: false };
   if (identity.admin) return { refunded: true, admin: true };
   const db = await pool();
@@ -824,7 +852,7 @@ function normalizedGoogleStatus(payload, expiry) {
   return googleSubscriptionStatus(normalizeText(payload?.subscriptionState, 90), expiry);
 }
 
-async function saveGoogleSubscription(db, email, purchaseToken, verified, expectedPublicId, existingOnly = false) {
+async function saveGoogleSubscription(db, email, purchaseToken, verified, expectedPublicId, existingOnly = false, assertCurrent) {
   const productId = normalizeText(verified.item?.productId, 100);
   const plan = GOOGLE_PLAY_PRODUCTS.get(productId);
   if (!plan) throw Object.assign(new Error('Produto Google Play não reconhecido.'), { status: 400 });
@@ -836,7 +864,7 @@ async function saveGoogleSubscription(db, email, purchaseToken, verified, expect
     providerRef: normalizeText(verified.payload.latestOrderId, 180),
     periodEnd: verified.expiry?.toISOString().slice(0, 23).replace('T', ' ') || null,
     metadata: { subscriptionState: verified.payload.subscriptionState, acknowledgementState: verified.payload.acknowledgementState },
-  });
+  }, { assertCurrent });
 }
 
 async function verifyGooglePubSubIdentity(req) {
@@ -1168,14 +1196,18 @@ async function handleAdminTerms(req, res) {
 
 async function handleAdminUnlimited(req, res) {
   const body = await readBody(req, 100_000);
-  const context = await requireMain(req, res, body);
+  const context = await requireBillingAccount(req, res);
   if (!context) return;
   if (!context.identity.admin) return sendJson(res, 403, { ok: false, message: 'Acesso administrativo necessário.' });
   const email = safeEmail(body.email);
   if (!email) return sendJson(res, 400, { ok: false, message: 'Informe um e-mail válido.' });
   const targetIdentity = { email, name: normalizeText(body.name || email.split('@')[0], 120), role: 'user', plan: 'free', locale: 'pt-BR', timezone: DEFAULT_TIMEZONE, admin: false };
-  const profile = await ensureProfile(context.db, targetIdentity, { apply: true, displayName: targetIdentity.name });
-  await context.db.query("UPDATE crewcheck_platform_profiles SET plan='premium_unlimited',updated_at=NOW() WHERE email=$1", [email]);
+  const profile = await withCurrentAccount(context.db, context.identity, async client => {
+    await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [email]);
+    const target = await ensureProfile(client, targetIdentity, { apply: true, displayName: targetIdentity.name });
+    await client.query("UPDATE crewcheck_platform_profiles SET plan='premium_unlimited',updated_at=NOW() WHERE email=$1 AND public_id=$2", [email, target.public_id]);
+    return target;
+  }, { forUpdate: true });
   return sendJson(res, 200, { ok: true, profile: { ...publicProfile(profile), plan: 'premium_unlimited' }, message: 'Premium Unlimited concedido. Obrigado por fazer parte do CrewCheck.' });
 }
 
@@ -1331,28 +1363,51 @@ async function handleAmilSearch(req, res, url) {
   } finally { clearTimeout(timer); }
 }
 
+function assertCurrentAccount(principal) {
+  if (!principal?.isCurrent()) {
+    throw Object.assign(new Error('Sessão da conta não é mais válida. Faça login novamente.'), { status: 401, code: 'AUTH_REQUIRED' });
+  }
+}
+
+async function withCurrentAccount(db, principal, action, { forUpdate = false, lockRead = false, retryDeadlock = true } = {}) {
+  assertCurrentAccount(principal);
+  const result = await withTransaction(db, async client => {
+    const profile = await readAccountSessionProfile(client, principal, { lock: forUpdate ? 'write' : lockRead ? 'read' : undefined });
+    if (!profile) assertCurrentAccount(null);
+    assertCurrentAccount(principal);
+    const payload = await action(client, profile);
+    // Snapshot reads must confirm the profile generation against current storage.
+    if (!forUpdate && !lockRead && !await readAccountSessionProfile(client, principal, { lock: 'read' })) assertCurrentAccount(null);
+    assertCurrentAccount(principal);
+    return payload;
+  }, { repeatableRead: true, retryDeadlock });
+  assertCurrentAccount(principal);
+  return result;
+}
+
+function accountBillingProfile(profile, principal) {
+  return principal.admin || unlimitedEmails().includes(profile.email)
+    ? { ...profile, plan: 'premium_unlimited' }
+    : profile;
+}
+
+async function requireBillingAccount(req, res) {
+  const db = await pool();
+  if (!db) {
+    sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível.' });
+    return null;
+  }
+  const principal = platformAccountSession(req);
+  const profile = await withCurrentAccount(db, principal, (_client, row) => accountBillingProfile(row, principal), { lockRead: true });
+  return { db, profile, identity: principal };
+}
+
 async function withAccountProfile(req, res, read, { forUpdate = false } = {}) {
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível. Seus dados locais continuam protegidos.' });
   const principal = platformAccountSession(req);
-  const invalid = () => Object.assign(new Error('Sessão da conta não é mais válida. Faça login novamente.'), { status: 401, code: 'AUTH_REQUIRED' });
-  if (!principal) throw invalid();
-
-  // All reads share one snapshot. Deleting and recreating the email cannot
-  // combine the original profile with the replacement's billing or quota.
-  const result = await withTransaction(db, async client => {
-    const profile = await readAccountSessionProfile(client, principal, { lock: forUpdate ? 'write' : undefined });
-    if (!profile || !principal.isCurrent()) throw invalid();
-    const effectiveProfile = principal.admin || unlimitedEmails().includes(profile.email)
-      ? { ...profile, plan: 'premium_unlimited' }
-      : profile;
-    const payload = await read(client, effectiveProfile, principal);
-    // The final locking read sees a recreation committed after the snapshot.
-    if (!forUpdate && !await readAccountSessionProfile(client, principal, { lock: 'read' })) throw invalid();
-    if (!principal.isCurrent()) throw invalid();
-    return payload;
-  }, { repeatableRead: true });
-  if (!principal.isCurrent()) throw invalid();
+  const result = await withCurrentAccount(db, principal, (client, profile) =>
+    read(client, accountBillingProfile(profile, principal), principal), { forUpdate });
   return sendJson(res, 200, result);
 }
 
@@ -1383,21 +1438,27 @@ async function handleBillingStatus(req, res) {
 
 async function handleGooglePurchase(req, res) {
   const body = await readBody(req, 500_000);
-  const context = await requireMain(req, res, body);
+  const context = await requireBillingAccount(req, res);
   if (!context) return;
+  const { db, identity: principal } = context;
+  const assertCurrent = () => assertCurrentAccount(principal);
   const productId = normalizeText(body.productId, 100);
   const purchaseToken = normalizeText(body.purchaseToken, 5000);
   const plan = GOOGLE_PLAY_PRODUCTS.get(productId);
   if (!plan || !purchaseToken) return sendJson(res, 400, { ok: false, message: 'Produto ou comprovante Google Play inválido.' });
+  assertCurrent();
   const verified = await verifyGooglePlaySubscription(purchaseToken, productId);
   const obfuscatedAccountId = normalizeText(verified.payload?.externalAccountIdentifiers?.obfuscatedExternalAccountId, 64).toUpperCase();
   if (obfuscatedAccountId && obfuscatedAccountId !== String(context.profile.public_id || '').toUpperCase()) {
     return sendJson(res, 409, { ok: false, code: 'GOOGLE_ACCOUNT_MISMATCH', message: 'Esta compra foi iniciada para outra conta CrewCheck.' });
   }
-  const saved = await saveGoogleSubscription(context.db, context.identity.email, purchaseToken, verified, context.profile.public_id);
-  const profile = context.profile.plan === 'premium_unlimited' ? context.profile : { ...context.profile, plan: saved.active ? plan : 'free' };
-  const billing = await subscriptionStatus(context.db, profile);
-  // A completed write is not permission to confirm a conflicting current receipt.
+  assertCurrent();
+  const saved = await saveGoogleSubscription(db, principal.email, purchaseToken, verified, principal.publicId, false, assertCurrent);
+  const billing = await withCurrentAccount(db, principal, async (client, profile) => {
+    const { rows } = await client.query("SELECT email,purchase_token_hash FROM crewcheck_platform_subscriptions WHERE email=$1 AND provider='google_play'", [principal.email]);
+    if (rows.length !== 1 || rows[0].email !== principal.email || rows[0].purchase_token_hash !== sha256(purchaseToken)) return null;
+    return subscriptionStatus(client, accountBillingProfile(profile, principal));
+  }, { lockRead: true });
   const samePurchase = billing?.provider === 'google_play' && billing.productId === productId;
   const coherentActive = samePurchase && billing.premiumAccess === true && billing.plan === plan && ['active', 'grace_period'].includes(billing.status);
   const coherentInactive = samePurchase && billing.premiumAccess === false && billing.plan === 'free' && ['pending', 'past_due', 'paused', 'expired'].includes(billing.status);
@@ -1414,59 +1475,103 @@ async function handleGooglePurchase(req, res) {
 
 async function handleAsaasCheckout(req, res) {
   const body = await readBody(req, 500_000);
-  const context = await requireMain(req, res, body);
+  const context = await requireBillingAccount(req, res);
   if (!context) return;
+  const { db, identity: principal } = context;
+  const ownedRead = action => withCurrentAccount(db, principal, action, { lockRead: true });
   const platform = normalizeText(body.platform || req.headers['x-crewcheck-platform'], 30).toLowerCase();
   if (platform === 'android' || body.googlePlay === true) return sendJson(res, 409, { ok: false, code: 'USE_GOOGLE_PLAY', message: 'No aplicativo Android, conclua a assinatura pela Google Play.' });
   const plan = normalizeText(body.plan, 40);
   if (!['premium_monthly', 'premium_annual'].includes(plan)) return sendJson(res, 400, { ok: false, message: 'Escolha um plano recorrente válido.' });
-  const currentBilling = await subscriptionStatus(context.db, context.profile);
+  const { currentBilling, subscription: existingSubscription } = await ownedRead(async (client, profile) => ({
+    currentBilling: await subscriptionStatus(client, accountBillingProfile(profile, principal)),
+    subscription: (await client.query('SELECT provider,provider_ref,metadata,plan,status FROM crewcheck_platform_subscriptions WHERE email=$1', [principal.email])).rows[0],
+  }));
   if (currentBilling.premiumAccess) return sendJson(res, 409, { ok: false, code: 'SUBSCRIPTION_ALREADY_ACTIVE', billing: currentBilling, message: 'Esta conta já possui uma assinatura ativa. Gerencie o plano atual antes de iniciar outra cobrança.' });
   const cpfCnpj = String(body.cpfCnpj || '').replace(/\D/g, '');
   if (![11, 14].includes(cpfCnpj.length)) return sendJson(res, 400, { ok: false, code: 'CPF_REQUIRED', message: 'Informe CPF ou CNPJ válido para a cobrança web.' });
   const price = planCatalog().find((item) => item.id === plan)?.value;
-  const pendingResult = await context.db.query("SELECT provider_ref,metadata FROM crewcheck_platform_subscriptions WHERE email=$1 AND provider='asaas' AND plan=$2 AND status='pending' LIMIT 1", [context.identity.email, plan]);
-  const pending = pendingResult.rows[0];
+  const pending = existingSubscription?.provider === 'asaas' && existingSubscription.plan === plan && existingSubscription.status === 'pending'
+    ? existingSubscription
+    : null;
+  const conflict = () => sendJson(res, 409, { ok: false, code: 'BILLING_PROVIDER_RECONCILIATION_REQUIRED', message: 'Confira a assinatura atual antes de contratar outro plano.' });
+  if (existingSubscription && !pending) return conflict();
   if (pending?.provider_ref) {
     let existingPayments;
     try { existingPayments = await asaasRequest(`/subscriptions/${encodeURIComponent(pending.provider_ref)}/payments?limit=1`); }
-    catch { return sendJson(res, 503, { ok: false, code: 'CHECKOUT_LINK_UNAVAILABLE', provider: 'asaas', plan, reused: true, checkoutState: 'unavailable', checkoutUrl: null, message: 'Sua assinatura pendente foi preservada. Não foi possível consultar o link de pagamento agora.' }); }
+    catch {
+      await ownedRead(() => null);
+      return sendJson(res, 503, { ok: false, code: 'CHECKOUT_LINK_UNAVAILABLE', provider: 'asaas', plan, reused: true, checkoutState: 'unavailable', checkoutUrl: null, message: 'Sua assinatura pendente foi preservada. Não foi possível consultar o link de pagamento agora.' });
+    }
+    const stillPending = await ownedRead(async client => {
+      const { rows } = await client.query("SELECT provider_ref FROM crewcheck_platform_subscriptions WHERE email=$1 AND provider='asaas' AND plan=$2 AND status='pending'", [principal.email, plan]);
+      return rows.length === 1 && rows[0].provider_ref === pending.provider_ref;
+    });
+    if (!stillPending) return conflict();
     const existing = existingPayments?.data?.[0] || null;
     const checkoutUrl = existing?.invoiceUrl || existing?.bankSlipUrl || null;
     if (!checkoutUrl) return sendJson(res, 202, { ok: true, code: 'CHECKOUT_LINK_PENDING', provider: 'asaas', plan, reused: true, firstDueDate: pending.metadata?.firstDue || null, checkoutState: 'pending', checkoutUrl: null, message: 'Sua assinatura continua pendente. O link de pagamento ainda não está disponível.' });
     return sendJson(res, 200, { ok: true, provider: 'asaas', plan, reused: true, firstDueDate: pending.metadata?.firstDue || null, checkoutState: 'ready', checkoutUrl, message: 'Link de pagamento disponível. O acesso depende da confirmação do pagamento.' });
   }
-  const customers = await asaasRequest(`/customers?email=${encodeURIComponent(context.identity.email)}&limit=1`);
-  let customerId = customers?.data?.[0]?.id;
+  const customers = await asaasRequest(`/customers?email=${encodeURIComponent(principal.email)}&externalReference=${encodeURIComponent(principal.publicId)}&limit=2`);
+  if (!Array.isArray(customers?.data) || customers.data.length > 1 || customers.hasMore === true) return conflict();
+  const existingCustomer = customers.data[0];
+  if (existingCustomer && (existingCustomer.externalReference !== principal.publicId || !existingCustomer.id)) return conflict();
+  let customerId = existingCustomer?.id;
   if (!customerId) {
-    const customer = await asaasRequest('/customers', { method: 'POST', headers: { 'asaas-request-id': sha256(`customer:${context.profile.public_id}`).slice(0, 36) }, body: JSON.stringify({ name: context.profile.display_name, email: context.identity.email, cpfCnpj, externalReference: context.profile.public_id }) });
+    // A legacy record at this email needs reconciliation. Never adopt it or
+    // create a second payer when the existing one's ownership is unknown.
+    const legacy = await asaasRequest(`/customers?email=${encodeURIComponent(principal.email)}&limit=1`);
+    if (!Array.isArray(legacy?.data) || legacy.data.length || legacy.hasMore === true) return conflict();
+    await ownedRead(() => null);
+    assertCurrentAccount(principal);
+    const customer = await asaasRequest('/customers', { method: 'POST', headers: { 'asaas-request-id': sha256(`customer:${principal.publicId}`).slice(0, 36) }, body: JSON.stringify({ name: context.profile.display_name, email: principal.email, cpfCnpj, externalReference: principal.publicId }) });
+    if (customer?.externalReference !== principal.publicId || !customer.id) {
+      return sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', checkoutUrl: null, message: 'Não foi possível confirmar o cadastro da cobrança.' });
+    }
     customerId = customer.id;
   }
   const firstDue = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-  const subscription = await asaasRequest('/subscriptions', { method: 'POST', headers: { 'asaas-request-id': sha256(`subscription:${context.profile.public_id}:${plan}:${firstDue}`).slice(0, 36) }, body: JSON.stringify({ customer: customerId, billingType: normalizeText(body.billingType || 'UNDEFINED', 30), value: price, nextDueDate: firstDue, cycle: plan === 'premium_annual' ? 'YEARLY' : 'MONTHLY', description: plan === 'premium_annual' ? 'CrewCheck Premium Anual' : 'CrewCheck Premium Mensal', externalReference: `${context.profile.public_id}:${plan}` }) });
+  const allowed = await ownedRead(async (client, profile) => {
+    const { rows } = await client.query('SELECT provider FROM crewcheck_platform_subscriptions WHERE email=$1', [principal.email]);
+    return !rows.length && !(await subscriptionStatus(client, accountBillingProfile(profile, principal))).premiumAccess;
+  });
+  if (!allowed) return conflict();
+  assertCurrentAccount(principal);
+  const subscription = await asaasRequest('/subscriptions', { method: 'POST', headers: { 'asaas-request-id': sha256(`subscription:${principal.publicId}:${plan}:${firstDue}`).slice(0, 36) }, body: JSON.stringify({ customer: customerId, billingType: normalizeText(body.billingType || 'UNDEFINED', 30), value: price, nextDueDate: firstDue, cycle: plan === 'premium_annual' ? 'YEARLY' : 'MONTHLY', description: plan === 'premium_annual' ? 'CrewCheck Premium Anual' : 'CrewCheck Premium Mensal', externalReference: `${principal.publicId}:${plan}` }) });
+  if (typeof subscription?.id !== 'string' || !/^sub_[A-Za-z0-9_:-]{1,170}$/.test(subscription.id)) {
+    return sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', checkoutUrl: null, message: 'O provedor ainda não confirmou a referência da assinatura.' });
+  }
+  try {
+    // Protect the local write even if dispatch completed after the account changed.
+    // The external result remains uncertain until reconciled if this commit fails.
+    await withCurrentAccount(db, principal, client => client.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
+      VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)`, [principal.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]), { forUpdate: true });
+  } catch (error) {
+    if (error?.code === 'AUTH_REQUIRED') throw error;
+    return sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', provider: 'asaas', plan, checkoutState: 'unconfirmed', checkoutUrl: null, message: 'Não foi possível confirmar o registro da assinatura. Confira o status antes de tentar novamente.' });
+  }
   let paymentLookupAvailable = true;
   const paymentPage = await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.id)}/payments?limit=1`).catch(() => { paymentLookupAvailable = false; return null; });
   const firstPayment = paymentPage?.data?.[0] || null;
-  try {
-    // Never replace an existing provider, including a concurrent Google write.
-    // A duplicate after provider creation remains uncertain; do not create again.
-    await context.db.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
-      VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)`, [context.identity.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]);
-  } catch {
-    // The provider may already have accepted creation, and a lost DB ACK does
-    // not prove rollback. Never create again or claim an unrecorded success.
-    return sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', provider: 'asaas', plan, checkoutState: 'unconfirmed', checkoutUrl: null, message: 'Não foi possível confirmar o registro da assinatura. Confira o status antes de tentar novamente.' });
-  }
+  const stillOwned = await ownedRead(async client => {
+    const { rows } = await client.query("SELECT provider_ref FROM crewcheck_platform_subscriptions WHERE email=$1 AND provider='asaas' AND plan=$2 AND status='pending'", [principal.email, plan]);
+    return rows.length === 1 && rows[0].provider_ref === subscription.id;
+  });
+  if (!stillOwned) return conflict();
   const checkoutUrl = firstPayment?.invoiceUrl || firstPayment?.bankSlipUrl || subscription.invoiceUrl || subscription.paymentLink || null;
   if (!checkoutUrl) return sendJson(res, 202, { ok: true, code: paymentLookupAvailable ? 'CHECKOUT_LINK_PENDING' : 'CHECKOUT_LINK_UNAVAILABLE', provider: 'asaas', plan, firstDueDate: firstDue, checkoutState: paymentLookupAvailable ? 'pending' : 'unavailable', checkoutUrl: null, message: 'Sua assinatura foi registrada como pendente. O link de pagamento ainda não está disponível; nenhum pagamento foi confirmado.' });
   return sendJson(res, 200, { ok: true, provider: 'asaas', plan, firstDueDate: firstDue, checkoutState: 'ready', checkoutUrl, message: 'Link de pagamento disponível. O acesso depende da confirmação do pagamento.' });
 }
 
 async function handleBillingCancel(req, res) {
-  const context = await requireMain(req, res);
+  const context = await requireBillingAccount(req, res);
   if (!context) return;
-  const owner = { email: context.identity.email, expectedPublicId: context.profile.public_id };
-  const subscription = await readBillingCancellation(context.db, owner);
+  const { db, identity: principal } = context;
+  const owner = { email: principal.email, expectedPublicId: principal.publicId };
+  const assertCurrent = () => assertCurrentAccount(principal);
+  const subscription = await readBillingCancellation(db, owner);
+  assertCurrent();
   if (subscription.provider === 'google_play') {
     const product = encodeURIComponent(subscription.productId);
     const manageUrl = `https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`;
@@ -1476,8 +1581,10 @@ async function handleBillingCancel(req, res) {
   let saved;
   try {
     await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.providerRef)}`, { method: 'DELETE' });
-    saved = await commitAcknowledgedAsaasCancellation(context.db, { ...owner, providerRef: subscription.providerRef });
-  } catch {
+    saved = await commitAcknowledgedAsaasCancellation(db, { ...owner, providerRef: subscription.providerRef }, { assertCurrent });
+    assertCurrent();
+  } catch (error) {
+    if (error?.code === 'AUTH_REQUIRED') throw error;
     // A timeout or changed owner/provider cannot certify failure or a safe retry.
     return sendJson(res, 503, { ok: false, code: 'BILLING_CANCELLATION_OUTCOME_UNCERTAIN', message: 'Não foi possível confirmar o cancelamento. Confira o status antes de tentar novamente.' });
   }
@@ -2542,44 +2649,46 @@ async function handleLegacyDatabase(req, res, url) {
   return sendJson(res, 404, { ok: false, message: 'Recurso de banco não localizado.' });
 }
 
+async function accountDeletionSubscription(client, email, { lock = false } = {}) {
+  const { rows } = await client.query(`SELECT provider,provider_ref,status FROM crewcheck_platform_subscriptions WHERE email=$1${lock ? ' FOR UPDATE' : ''}`, [email]);
+  if (rows.length > 1) throw Object.assign(new Error('Confira a assinatura antes de solicitar a exclusão.'), { status: 409, code: 'BILLING_PROVIDER_RECONCILIATION_REQUIRED' });
+  return rows[0] || null;
+}
+
 async function handleAccountDeletion(req, res) {
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
   const body = await readBody(req, 100_000);
-  const context = await requireMain(req, res, body);
+  const context = await requireBillingAccount(req, res);
   if (!context) return;
   if (normalizeText(body.confirmation, 30).toUpperCase() !== 'EXCLUIR') return sendJson(res, 400, { ok: false, message: 'Digite EXCLUIR para confirmar a remoção permanente.' });
-  const subscriptionResult = await context.db.query('SELECT provider,provider_ref,status FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
-  const subscription = subscriptionResult.rows[0] || null;
+  const { db, identity: principal } = context;
+  const subscription = await withCurrentAccount(db, principal, client => accountDeletionSubscription(client, context.identity.email), { lockRead: true });
+  const inactiveStatuses = ['canceled', 'expired', 'refunded'];
+  const asaasWasInactive = subscription?.provider === 'asaas' && inactiveStatuses.includes(subscription.status);
   let externalCancellation = null;
   if (subscription?.provider === 'asaas' && subscription.provider_ref) {
-    const alreadyInactive = ['canceled', 'expired', 'refunded'].includes(subscription.status);
-    if (alreadyInactive) {
-      externalCancellation = true;
-    } else {
+    if (!asaasWasInactive) {
+      assertCurrentAccount(principal);
       try {
         await asaasRequest(`/subscriptions/${encodeURIComponent(subscription.provider_ref)}`, { method: 'DELETE' });
-        externalCancellation = true;
-      } catch (error) {
-        if (error?.providerStatus === 404) {
-          externalCancellation = true;
-        } else {
-          console.error('[CrewCheck] Falha ao cancelar a assinatura Asaas antes da exclusão:', error?.message || error);
-          return sendJson(res, error?.status === 503 ? 503 : 502, {
-            ok: false,
-            deleted: false,
-            retryable: true,
-            code: 'ASAAS_CANCELLATION_REQUIRED',
-            message: 'Não foi possível confirmar o cancelamento da cobrança no Asaas. Nenhum dado foi excluído; tente novamente em alguns minutos.',
-          });
-        }
+      } catch {
+        return sendJson(res, 503, {
+          ok: false,
+          deleted: false,
+          code: 'ASAAS_CANCELLATION_REQUIRED',
+          message: 'O cancelamento da cobrança ainda não foi confirmado. Confira a assinatura antes de solicitar a exclusão novamente.',
+        });
       }
     }
+    externalCancellation = true;
   }
-  const client = await context.db.connect();
-  try {
-    await client.query('BEGIN');
+  await withCurrentAccount(db, principal, async client => {
     // Same first lock as financial append: erasure cannot race new history.
-    await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);
+    const current = await accountDeletionSubscription(client, context.identity.email, { lock: true });
+    if (current?.provider !== subscription?.provider || current?.provider_ref !== subscription?.provider_ref
+      || (asaasWasInactive && !inactiveStatuses.includes(current.status))) {
+      throw Object.assign(new Error('A assinatura mudou. Confira a conta antes de solicitar a exclusão novamente.'), { status: 409, code: 'BILLING_PROVIDER_RECONCILIATION_REQUIRED' });
+    }
     await eraseWhatsAppAccountState(context.identity.email, {client});
     const visitorRows = await client.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1', [context.identity.email]);
     const visitorKeys = new Set(visitorRows.rows.map((row) => `visitor:${row.id}`));
@@ -2626,13 +2735,7 @@ async function handleAccountDeletion(req, res) {
     for (const [sql, params] of accountHealthDeletionStatements(context.identity.email)) {
       await deleteIfTableExists(client, sql, params);
     }
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  }, { forUpdate: true, retryDeadlock: false });
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `crewcheck_auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
   return sendJson(res, 200, {

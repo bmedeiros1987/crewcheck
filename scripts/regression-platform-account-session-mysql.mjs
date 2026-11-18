@@ -42,18 +42,35 @@ function loadFunctions(file, names, constants, dependencies, entry) {
   return new Function(...Object.keys(dependencies), `${source}\nreturn ${entry};`)(...Object.values(dependencies));
 }
 
-function platformRoute(databaseProvider = async () => db) {
+function quotaRoute(currentMonthKey) {
+  return loadFunctions('server/platform.mjs', [
+    'env','authSecret','verifyJwt','requestToken','safeEmail','platformAdmin','platformAccountSession','assertCurrentAccount',
+    'withCurrentAccount','accountBillingProfile','subscriptionStatus','consumePlatformUsage','refundPlatformUsage','refundTelegramQuota',
+  ], ['quotaReservations'], {
+    pool: async()=>db, crypto, accountSessionClaims, readAccountSessionProfile, withTransaction, readPlatformEntitlement,
+    currentMonthKey, planLimit:()=>1, unlimitedEmails:()=>[],
+    ensureProfile: () => assert.fail('HTTP quota must use the signed generation without creating a profile'),
+  }, '{consumePlatformUsage,refundPlatformUsage}');
+}
+
+function platformRoute(databaseProvider = async () => db, effects = {}) {
   return loadFunctions('server/platform.mjs', [
     'env','authSecret','verifyJwt','requestToken','safeEmail','platformAdmin','platformAccountSession','normalizeText',
     'readBody','ensureProfile','publicProfile','subscriptionStatus','withAccountProfile','handleProfile','handleBillingStatus',
+    'assertCurrentAccount','withCurrentAccount','accountBillingProfile','requireBillingAccount','handleGooglePurchase','handleAsaasCheckout',
+    'handleBillingCancel','accountDeletionSubscription','handleAccountDeletion','handleAdminUnlimited','sha256',
     'enforcePlatformMethod','handlePlatformRoute',
   ], ['PLATFORM_METHOD_POLICIES'], {
     pool:databaseProvider, crypto, accountSessionClaims, readAccountSessionProfile, withTransaction, sendJson,
     PLAN_IDS:PLATFORM_PLAN_IDS, readPlatformEntitlement, normalizeTimezone: value => value || 'UTC',
     normalizeLocale: value => value || 'pt-BR', DEFAULT_TIMEZONE:'UTC', unlimitedEmails:() => [],
-    currentMonthKey: () => '2032-11', planLimit:plan => plan === 'free' ? 1 : 60, planCatalog:() => [{id:'free'}],
+    currentMonthKey: () => '2032-11', planLimit:plan => plan === 'free' ? 1 : 60, planCatalog:() => [{id:'free'},{id:'premium_monthly',value:19.90}],
     RELEASE_JOURNAL_PATH:null, FINANCIAL_FX_PATH:null, FINANCIAL_LEDGER_PATH:null, FINANCIAL_UPCOMING_PATH:null, FINANCIAL_CAPTURE_PATH:null,
-    publicId: () => assert.fail('Account reads must not generate a profile ID'),
+    publicId: () => assert.fail('Protected routes must not generate an unexpected profile ID'),
+    GOOGLE_PLAY_PRODUCTS: new Map([['synthetic.monthly','premium_monthly']]),
+    verifyGooglePlaySubscription: () => assert.fail('Unexpected mock Google verification'),
+    asaasRequest: () => assert.fail('Unexpected mock Asaas request'),
+    ...effects,
   }, 'handlePlatformRoute');
 }
 
@@ -212,6 +229,97 @@ try {
     assert.equal(latest.profile.publicId,`CC-RACE-${i}`);
     assert.equal(latest.billing.plan,'premium_annual');
   }
+  // Exercise the mounted dispatcher with an authenticated canonical current ID and synthetic stale authority.
+  const routeCases = [
+    ['/api/platform/billing/google-play/verify',{productId:'synthetic.monthly',purchaseToken:'QA_ONLY'}],
+    ['/api/platform/billing/asaas/checkout',{plan:'premium_monthly',cpfCnpj:'00000000000'}],
+    ['/api/platform/billing/cancel',{}],
+    ['/api/platform/admin/unlimited',{email:other}],
+    ['/api/platform/account/delete',{confirmation:'EXCLUIR'}],
+  ];
+  for (const [url,body] of routeCases) {
+    for (const old of [original,obsolete,tokenFor('CC-RACE-2',other),null]) {
+      rejected(await call(platform,url,old,{method:'POST',body:{...body,email:other},headers:{'x-crewcheck-email':owner}}));
+    }
+  }
+  const ownerPlan = async () => (await native.execute('SELECT plan FROM crewcheck_platform_profiles WHERE email=?',[owner]))[0][0].plan;
+  assert.equal(await ownerPlan(),'premium_annual');
+  const replaced = tokenFor('CC-RACE-2');
+  const verifyExpired = platformRoute(async()=>db,{verifyGooglePlaySubscription:async () => {
+    // Replacing the profile while the simulated provider read is in flight
+    // must disqualify its old owner from obtaining any purchase response.
+    await erase(owner);
+    await seed(owner,'CC-FINAL-QA','New synthetic generation');
+    return {payload:{externalAccountIdentifiers:{obfuscatedExternalAccountId:'CC-RACE-2'}}};
+  }, saveGoogleSubscription: async (store,email,_token,_verified,expectedId) => {
+    const profile = await readAccountSessionProfile(store,{email,publicId:expectedId});
+    if (!profile) throw Object.assign(Error('Synthetic identity removed'),{code:'GOOGLE_ACCOUNT_MISMATCH',status:409});
+    assert.fail('No write for a profile generation that no longer exists');
+  }});
+  const late = await call(verifyExpired,routeCases[0][0],replaced,{method:'POST',body:routeCases[0][1]});
+  assert.equal(late.status,409);
+  assert.equal(late.body.needsAcknowledgement,undefined);
+  assert.equal(await ownerPlan(),'free');
+  const finalToken = tokenFor('CC-FINAL-QA');
+  assert.equal(authenticated(await call(platform,billing,finalToken)).plan,'free');
+  assert.equal((await call(platform,routeCases[3][0],finalToken,{method:'POST',body:{email:other}})).status,403);
+  const quotaMonth = '2032-12';
+  let month = quotaMonth;
+  const quota = quotaRoute(() => month);
+  const quotaRequest = token => ({headers:{authorization:'Bearer '+token}});
+  const liveQuotaRequest = quotaRequest(finalToken);
+  const usedFor = async monthKey => Number((await native.execute('SELECT used FROM crewcheck_platform_usage WHERE email=? AND month_key=? AND usage_kind=?',[owner,monthKey,'wakeup_call']))[0][0]?.used || 0);
+  const staleReservation = await quota.consumePlatformUsage(quotaRequest(replaced));
+  assert.equal(staleReservation.status,401);
+  assert.equal(await usedFor(quotaMonth),0);
+  assert.equal((await quota.consumePlatformUsage(liveQuotaRequest)).allowed,true);
+  assert.equal(await usedFor(quotaMonth),1);
+  assert.equal((await quota.refundPlatformUsage(quotaRequest(finalToken))).refunded,false);
+  assert.equal((await quota.consumePlatformUsage(quotaRequest(finalToken))).status,429);
+  month = '2033-01';
+  assert.equal((await quota.refundPlatformUsage(liveQuotaRequest)).monthKey,quotaMonth);
+  assert.equal((await quota.refundPlatformUsage(liveQuotaRequest)).refunded,false);
+  assert.equal(await usedFor(quotaMonth),0);
+  assert.equal((await quota.consumePlatformUsage(liveQuotaRequest)).allowed,true);
+  await erase(owner);
+  await seed(owner,'CC-QUOTA-NEW','Replacement quota');
+  const replacementQuota = quotaRequest(tokenFor('CC-QUOTA-NEW'));
+  assert.equal((await quota.consumePlatformUsage(replacementQuota)).allowed,true);
+  assert.equal((await quota.refundPlatformUsage(liveQuotaRequest)).refunded,false);
+  assert.equal(await usedFor(month),1);
+  assert.equal((await quota.refundPlatformUsage(replacementQuota)).refunded,true);
+  assert.equal(await usedFor(month),0);
+  console.log('PASS HTTP quota rejects stale admission, compensates the original month once and leaves replacement quota intact.');
+  console.log('PASS 20 mounted billing write authority cases, provider-read replacement, and legitimate recovery on current generation.');
+  await native.execute(
+    "INSERT INTO crewcheck_platform_subscriptions(email,provider,plan,status,provider_ref) VALUES(?,'asaas','premium_monthly','canceled','sub_QA_SAME')",
+    [owner],
+  );
+  const reactivatedDuringDeletion = {
+    ...db,
+    connect:async() => {
+      const client=await db.connect();
+      let capturedSubscription = false;
+      return {...client, async query(sql, params) {
+        const result = await client.query(sql, params);
+        if (sql.startsWith('SELECT provider,provider_ref,status') && !sql.endsWith('FOR UPDATE')) capturedSubscription=true;
+        if (capturedSubscription && sql==='COMMIT') {
+          await native.execute("UPDATE crewcheck_platform_subscriptions SET status='active' WHERE email=?",[owner]);
+          capturedSubscription=false;
+        }
+        return result;
+      }};
+    },
+  };
+  const deletionRoute = platformRoute(async()=>reactivatedDuringDeletion, {
+    eraseWhatsAppAccountState: () => assert.fail('State must survive a changed cancellation precondition'),
+  });
+  const refused = await call(deletionRoute,routeCases[4][0],tokenFor('CC-QUOTA-NEW'),{method:'POST',body:routeCases[4][1]});
+  assert.equal(refused.status,409);
+  assert.equal(refused.body.code,'BILLING_PROVIDER_RECONCILIATION_REQUIRED');
+  assert.equal((await native.execute('SELECT status FROM crewcheck_platform_subscriptions WHERE email=?',[owner]))[0][0].status,'active');
+  assert.equal(await ownerPlan(),'free');
+  console.log('PASS account deletion stops before cleanup when its cancellation precondition changes on the same contract.');
   assert.equal(attemptedNetwork,0);
   console.log('PASS replacement committed during each in-flight billing, profile or me read: no replacement data from old session; local MySQL only.');
 } finally {

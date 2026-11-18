@@ -311,7 +311,9 @@ console.log('PASS Infobip OFF: canonical engine, existing authenticated consent,
   const count=s.queries.length;
   assert.equal((await runtime.dispatch(eventKey)).status,'closed');assert.equal((await runtime.expire(eventKey)).status,'closed');assert.equal(s.queries.length,count);
   const platform=fs.readFileSync('server/platform.mjs','utf8'),deletion=platform.slice(platform.indexOf('async function handleAccountDeletion'));
-  assert(deletion.indexOf('await eraseWhatsAppAccountState(context.identity.email, {client})')>deletion.indexOf("await client.query('BEGIN')"));
+  const hook = deletion.indexOf('await eraseWhatsAppAccountState(context.identity.email, {client})');
+  const start = deletion.indexOf('await withCurrentAccount(db, principal, async client =>');
+  assert(start >= 0 && hook > start && hook < deletion.indexOf('}, { forUpdate: true, retryDeadlock: false });', start));
   assert(deletion.indexOf('await eraseWhatsAppAccountState(context.identity.email, {client})')<deletion.indexOf('DELETE FROM crewcheck_platform_profiles'));
 }
 {
