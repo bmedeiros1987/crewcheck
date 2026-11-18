@@ -29,6 +29,19 @@ public final class ComplicationTextTest {
         assertEquals(snapshot.complicationTitle(NOW), rendering.title);
     }
 
+    @Test
+    public void nextStepHidesExpiredDetailFromAccessibility() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(WatchContextSnapshot.demo(NOW)
+                .toJson().put("detail", "Van do hotel às 07:30"));
+        long deadline = snapshot.validUntilEpochMs;
+        assertTrue(ComplicationText.nextStep(snapshot, deadline).description.contains("Van do hotel às 07:30"));
+
+        ComplicationRendering expired = ComplicationText.nextStep(snapshot, deadline + 1L);
+        assertEquals("ABRIR", expired.shortText);
+        assertEquals("Abra no celular", expired.longText);
+        assertEquals("CrewCheck. Abra no celular", expired.description);
+    }
+
     // --- portão --------------------------------------------------------------------------
 
     @Test

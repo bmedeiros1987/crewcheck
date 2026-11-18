@@ -449,7 +449,7 @@ public final class WatchContextSnapshot {
     public String accessibilityDescription(long nowEpochMs) {
         StringBuilder value = new StringBuilder("CrewCheck. ");
         value.append(complicationLongText(nowEpochMs));
-        if (!detail.isBlank()) value.append(". ").append(detail);
+        if (!isStale(nowEpochMs) && !detail.isBlank()) value.append(". ").append(detail);
         return truncate(value.toString(), 120);
     }
 
