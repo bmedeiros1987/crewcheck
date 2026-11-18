@@ -1,0 +1,27 @@
+name: Calendar event provenance
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/v1405/**'
+      - 'scripts/regression-calendar-event-provenance.mjs'
+      - 'scripts/v139/**'
+      - 'scripts/v1405/**'
+      - '.github/workflows/calendar-event-provenance.yml'
+permissions:
+  contents: read
+jobs:
+  mock-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Route tests on raw source (synthetic store, fetch mocked)
+        run: node scripts/regression-calendar-event-provenance.mjs
+      - name: Canonical preparation without credentials or database
+        run: env -i PATH="$PATH" HOME="$HOME" node scripts/v139/apply.mjs
+      - name: Route tests after canonical preparation
+        run: node scripts/regression-calendar-event-provenance.mjs
