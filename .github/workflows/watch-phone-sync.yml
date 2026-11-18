@@ -5,7 +5,12 @@ on:
     paths:
       - 'android-wrapper/app/**'
       - 'client/src/lib/watchContext.ts'
+      - 'client/src/lib/scheduleActivityClassification.ts'
       - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-watch-base-rest.mjs'
+      - 'scripts/regression-watch-overnight.mjs'
+      - 'scripts/regression-watch-temporal.mjs'
+      - 'scripts/regression-mobile-watch-publish-cadence.mjs'
       - '.github/workflows/watch-phone-sync.yml'
       - '.github/workflows/mobile-only-internal.yml'
       - 'scripts/android-play/**'
@@ -42,8 +47,24 @@ jobs:
       - name: Install web dependencies
         run: npm ci
 
+      - name: Verify raw Watch rest and overnight projections
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/regression-watch-base-rest.mjs
+            TZ="$zone" node scripts/regression-watch-overnight.mjs
+            TZ="$zone" node scripts/regression-watch-temporal.mjs
+          done
+
       - name: Prepare CrewCheck sources
         run: node scripts/v139/apply.mjs
+
+      - name: Verify prepared Watch rest and overnight projections
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/regression-watch-base-rest.mjs
+            TZ="$zone" node scripts/regression-watch-overnight.mjs
+            TZ="$zone" node scripts/regression-watch-temporal.mjs
+          done
 
       - name: TypeScript check
         run: npx tsc --noEmit

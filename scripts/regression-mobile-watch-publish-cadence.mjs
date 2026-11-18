@@ -46,7 +46,8 @@ function actualModule(name, imports = {}) {
   return vm.runInNewContext(executable.replace(/^export /gm, '') + `\n({${exported.join(',')}})`,
     { Date: FixtureDate, localStorage, dependencies: imports }, { filename });
 }
-const snapshotModule = actualModule('watchContext', { '../../../shared/airport-timezones.mjs': airportTimeZones, '../../../shared/stay-edit-plan.mjs':stayEditPlan });
+const classification = actualModule('scheduleActivityClassification');
+const snapshotModule = actualModule('watchContext', { '../../../shared/airport-timezones.mjs': airportTimeZones, '../../../shared/stay-edit-plan.mjs':stayEditPlan, './scheduleActivityClassification': classification });
 const gateBindings = {};
 if (source.includes("from '@/lib/nextFlightGate'")) {
   const display = actualModule('rosterDisplayDate');

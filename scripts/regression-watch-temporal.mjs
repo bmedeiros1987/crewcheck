@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
-const src = fs.readFileSync('client/src/lib/watchContext.ts','utf8');
-// Preserve the real producer and its existing shared imports; only transpile TS.
+import { build as bundle } from 'esbuild';
+// Execute the real producer with its existing classification/shared dependencies.
 const file = new URL('../client/src/lib/.watch-temporal-test.mjs', import.meta.url);
-fs.writeFileSync(file, ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
+await bundle({entryPoints:['client/src/lib/watchContext.ts'],outfile:file.pathname,bundle:true,platform:'node',format:'esm',target:'es2022',logLevel:'silent'});
 try {
  const {buildCrewCheckWatchSnapshot:build} = await import(file.href);
  const f = {id:'synthetic-flight',kind:'flight',origin:'GRU',destination:'REC',flightNumber:'TEST1',presentation:'18:20',departure:'19:05',arrival:'22:10',canonical:{legIndex:0,showPresentation:true,leg:{departureTime:'19:05',presentationTime:'18:20'},startDateTime:'2032-10-18T22:05:00Z',endDateTime:'2032-10-19T01:10:00Z',journeyId:'j',journeyBoundary:'start'}};
