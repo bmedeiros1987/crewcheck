@@ -1,6 +1,7 @@
 import {googleSubscriptionStatus} from './google-subscription-status.mjs';
 import {readBillingCancellation,commitAcknowledgedAsaasCancellation} from './billing-cancellation.mjs';
 import {createCancellationAdmission} from './billing-cancellation-admission.mjs';
+import {createBillingAdmission} from './billing-admission.mjs';
 import {accountSessionClaims,readAccountSessionProfile} from './account-session.mjs';
 import {withTransaction} from './profile-locks.mjs';
 import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
@@ -1523,28 +1524,54 @@ async function handleAsaasCheckout(req, res) {
     // create a second payer when the existing one's ownership is unknown.
     const legacy = await asaasRequest(`/customers?email=${encodeURIComponent(principal.email)}&limit=1`);
     if (!Array.isArray(legacy?.data) || legacy.data.length || legacy.hasMore === true) return conflict();
-    await ownedRead(() => null);
-    assertCurrentAccount(principal);
-    const customer = await asaasRequest('/customers', { method: 'POST', headers: { 'asaas-request-id': sha256(`customer:${principal.publicId}`).slice(0, 36) }, body: JSON.stringify({ name: context.profile.display_name, email: principal.email, cpfCnpj, externalReference: principal.publicId }) });
-    if (customer?.externalReference !== principal.publicId || !customer.id) {
-      return sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', checkoutUrl: null, message: 'Não foi possível confirmar o cadastro da cobrança.' });
-    }
-    customerId = customer.id;
   }
   const firstDue = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-  const allowed = await ownedRead(async (client, profile) => {
-    const { rows } = await client.query('SELECT provider FROM crewcheck_platform_subscriptions WHERE email=$1', [principal.email]);
-    return !rows.length && !(await subscriptionStatus(client, accountBillingProfile(profile, principal))).premiumAccess;
+  const unconfirmed = () => sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', provider: 'asaas', plan, checkoutState: 'unconfirmed', checkoutUrl: null, message: 'Não foi possível confirmar a assinatura. Confira o status antes de tentar novamente.' });
+  const requireNewCheckout = async () => {
+    const allowed = await ownedRead(async (client, profile) => {
+      const { rows } = await client.query('SELECT provider FROM crewcheck_platform_subscriptions WHERE email=$1', [principal.email]);
+      return !rows.length && !(await subscriptionStatus(client, accountBillingProfile(profile, principal))).premiumAccess;
+    });
+    if (!allowed) throw Object.assign(new Error('Checkout requires reconciliation'), { code: 'BILLING_PROVIDER_RECONCILIATION_REQUIRED' });
+    assertCurrentAccount(principal);
+  };
+  let subscription;
+  const admit = createBillingAdmission({
+    db,
+    resolvePrincipal: async () => principal,
+    transports: {
+      asaas: async ({ operationId }) => {
+        // All provider writes follow the committed, account-bound claim.
+        await requireNewCheckout();
+        if (!customerId) {
+          const customer = await asaasRequest('/customers', { method: 'POST', headers: { 'asaas-request-id': sha256(`customer:${principal.publicId}`).slice(0, 36) }, body: JSON.stringify({ name: context.profile.display_name, email: principal.email, cpfCnpj, externalReference: principal.publicId }) });
+          if (customer?.externalReference !== principal.publicId || !customer.id) return null;
+          customerId = customer.id;
+          await requireNewCheckout();
+        }
+        subscription = await asaasRequest('/subscriptions', { method: 'POST', headers: { 'asaas-request-id': sha256(`subscription:${principal.publicId}:${plan}:${firstDue}`).slice(0, 36) }, body: JSON.stringify({ customer: customerId, billingType: normalizeText(body.billingType || 'UNDEFINED', 30), value: price, nextDueDate: firstDue, cycle: plan === 'premium_annual' ? 'YEARLY' : 'MONTHLY', description: plan === 'premium_annual' ? 'CrewCheck Premium Anual' : 'CrewCheck Premium Mensal', externalReference: `${principal.publicId}:${plan}` }) });
+        if (typeof subscription?.id !== 'string' || !/^sub_[A-Za-z0-9_:-]{1,170}$/.test(subscription.id)) return null;
+        return { providerRef: subscription.id, evidenceHash: sha256(JSON.stringify(['asaas_checkout_created', operationId, subscription.id])) };
+      },
+    },
   });
-  if (!allowed) return conflict();
-  assertCurrentAccount(principal);
-  const subscription = await asaasRequest('/subscriptions', { method: 'POST', headers: { 'asaas-request-id': sha256(`subscription:${principal.publicId}:${plan}:${firstDue}`).slice(0, 36) }, body: JSON.stringify({ customer: customerId, billingType: normalizeText(body.billingType || 'UNDEFINED', 30), value: price, nextDueDate: firstDue, cycle: plan === 'premium_annual' ? 'YEARLY' : 'MONTHLY', description: plan === 'premium_annual' ? 'CrewCheck Premium Anual' : 'CrewCheck Premium Mensal', externalReference: `${principal.publicId}:${plan}` }) });
-  if (typeof subscription?.id !== 'string' || !/^sub_[A-Za-z0-9_:-]{1,170}$/.test(subscription.id)) {
-    return sendJson(res, 503, { ok: false, code: 'CHECKOUT_CONFIRMATION_UNCERTAIN', checkoutUrl: null, message: 'O provedor ainda não confirmou a referência da assinatura.' });
-  }
+  let outcome;
   try {
-    // Protect the local write even if dispatch completed after the account changed.
-    // The external result remains uncertain until reconciled if this commit fails.
+    outcome = await admit(null, {
+      provider: 'asaas', plan, operationId: sha256(JSON.stringify(['asaas_checkout', principal.email, principal.publicId, plan])),
+    });
+  } catch (error) {
+    if (error?.code === 'BILLING_PROVIDER_RECONCILIATION_REQUIRED') return conflict();
+    if (['AUTH_REQUIRED', 'ENTITLEMENT_OWNER_MISMATCH', 'BILLING_ADMISSION_AUTHORITY_REQUIRED'].includes(error?.code)) assertCurrentAccount(null);
+    return unconfirmed();
+  }
+  await ownedRead(() => null);
+  if (outcome?.state === 'dispatching' && !outcome.effectPerformed) {
+    return sendJson(res, 202, { ok: true, code: 'CHECKOUT_IN_PROGRESS', provider: 'asaas', plan, reused: true, checkoutState: 'pending', checkoutUrl: null, message: 'A solicitação aguarda confirmação. Confira o status da assinatura.' });
+  }
+  if (outcome?.state !== 'created' || !outcome.effectPerformed || !subscription) return unconfirmed();
+  try {
+    // Evidence already exists. A failed local insert never permits another dispatch.
     await withCurrentAccount(db, principal, client => client.query(`INSERT INTO crewcheck_platform_subscriptions(email,plan,status,provider,product_id,provider_ref,current_period_end,metadata)
       VALUES($1,$2,'pending','asaas',$2,$3,NULL,$4)`, [principal.email, plan, subscription.id, JSON.stringify({ customerId, firstDue })]), { forUpdate: true });
   } catch (error) {

@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import mysql from 'mysql2/promise';
 import ts from 'typescript';
 import { accountSessionClaims, readAccountSessionProfile } from '../server/account-session.mjs';
+import { createBillingAdmission } from '../server/billing-admission.mjs';
 import { mysqlAdapter } from '../server/mysql-platform-adapter.mjs';
 import { PLATFORM_PLAN_IDS, readPlatformEntitlement } from '../server/platform-entitlement.mjs';
 import { withTransaction } from '../server/profile-locks.mjs';
@@ -61,10 +62,11 @@ function platformRoute(databaseProvider = async () => db, effects = {}) {
     'handleBillingCancel','accountDeletionSubscription','handleAccountDeletion','handleAdminUnlimited','sha256',
     'enforcePlatformMethod','handlePlatformRoute',
   ], ['PLATFORM_METHOD_POLICIES'], {
-    pool:databaseProvider, crypto, accountSessionClaims, readAccountSessionProfile, withTransaction, sendJson,
+    pool:databaseProvider, crypto, accountSessionClaims, readAccountSessionProfile, withTransaction, sendJson, createBillingAdmission,
     PLAN_IDS:PLATFORM_PLAN_IDS, readPlatformEntitlement, normalizeTimezone: value => value || 'UTC',
     normalizeLocale: value => value || 'pt-BR', DEFAULT_TIMEZONE:'UTC', unlimitedEmails:() => [],
-    currentMonthKey: () => '2032-11', planLimit:plan => plan === 'free' ? 1 : 60, planCatalog:() => [{id:'free'},{id:'premium_monthly',value:19.90}],
+    currentMonthKey: () => '2032-11', planLimit:plan => plan === 'free' ? 1 : 60,
+    planCatalog:() => [{id:'free'},{id:'premium_monthly',value:19.90},{id:'premium_annual',value:179.90}],
     RELEASE_JOURNAL_PATH:null, FINANCIAL_FX_PATH:null, FINANCIAL_LEDGER_PATH:null, FINANCIAL_UPCOMING_PATH:null, FINANCIAL_CAPTURE_PATH:null,
     publicId: () => assert.fail('Protected routes must not generate an unexpected profile ID'),
     GOOGLE_PLAY_PRODUCTS: new Map([['synthetic.monthly','premium_monthly']]),
@@ -320,6 +322,154 @@ try {
   assert.equal((await native.execute('SELECT status FROM crewcheck_platform_subscriptions WHERE email=?',[owner]))[0][0].status,'active');
   assert.equal(await ownerPlan(),'free');
   console.log('PASS account deletion stops before cleanup when its cancellation precondition changes on the same contract.');
+
+  const checkout = '/api/platform/billing/asaas/checkout';
+  const monthly = { plan:'premium_monthly', cpfCnpj:'00000000000' };
+  const submitCheckout = (route, token, body = monthly) => call(route, checkout, token, { method:'POST', body });
+  const intentFor = async email => (await native.execute(
+    'SELECT operation_id,state,provider_ref FROM crewcheck_billing_contracting_intents WHERE owner_email=?', [email],
+  ))[0][0];
+  const subscriptionFor = async email => (await native.execute(
+    'SELECT plan,status,provider_ref FROM crewcheck_platform_subscriptions WHERE email=?', [email],
+  ))[0][0];
+  const checkoutAccount = async label => {
+    const email = `checkout-${label.toLowerCase()}@example.invalid`;
+    const publicId = `CC-CHECKOUT-${label}`;
+    await seed(email,publicId,'Synthetic Checkout');
+    return { email, publicId, token:tokenFor(publicId,email) };
+  };
+  const missing = await checkoutAccount('MISSING');
+  const missingSchemaCheckout = platformRoute(async () => db, {
+    asaasRequest: async (url, options) => {
+      if (options?.method === 'POST') attemptedNetwork++;
+      assert.ok(url.startsWith('/customers?'));
+      return { data:[] };
+    },
+  });
+  assert.equal((await submitCheckout(missingSchemaCheckout,missing.token)).body.code,'CHECKOUT_CONFIRMATION_UNCERTAIN');
+  assert.equal(await subscriptionFor(missing.email),undefined);
+  assert.equal(attemptedNetwork,0,'missing schema must block every provider write');
+  const checkoutDdl = fs.readFileSync('migrations/20261115_022_billing_contracting_intents_mysql.sql','utf8');
+  const intentStatements = checkoutDdl.match(/CREATE TABLE IF NOT EXISTS [\s\S]*?;/g);
+  assert.equal(intentStatements.length,2);
+  for (const statement of intentStatements) await native.query(statement);
+
+  const racingCheckout = await checkoutAccount('PARALLEL');
+  let enteredCustomerWrite, releaseCustomerWrite;
+  const customerWriteStarted = new Promise(resolve => { enteredCustomerWrite=resolve; });
+  const waitForContenders = new Promise(resolve => { releaseCustomerWrite=resolve; });
+  const dispatched = [];
+  const parallelRoute = platformRoute(async () => db, {
+    asaasRequest: async (url, options) => {
+      if (options?.method !== 'POST') {
+        assert.ok(url.startsWith('/customers?') || url.startsWith('/subscriptions/sub_QA_CHECKOUT'));
+        return { data:[] };
+      }
+      dispatched.push(url);
+      assert.equal((await intentFor(racingCheckout.email)).state,'dispatching','claim is visible on another connection before the provider write');
+      if (url === '/customers') {
+        enteredCustomerWrite();
+        await waitForContenders;
+        return { id:'cus_QA_CHECKOUT',externalReference:racingCheckout.publicId };
+      }
+      assert.equal(url,'/subscriptions');
+      assert.equal(JSON.parse(options.body).cycle,'MONTHLY');
+      return { id:'sub_QA_CHECKOUT' };
+    },
+  });
+  const firstCheckout = submitCheckout(parallelRoute,racingCheckout.token);
+  await Promise.race([customerWriteStarted,firstCheckout.then(() => assert.fail('First checkout should reach the held customer write'))]);
+  try {
+    const samePlan = await submitCheckout(parallelRoute,racingCheckout.token);
+    assert.equal(samePlan.status,202);
+    assert.equal(samePlan.body.code,'CHECKOUT_IN_PROGRESS');
+    assert.equal(samePlan.body.checkoutUrl,null);
+    const otherPlan = await submitCheckout(parallelRoute,racingCheckout.token,{ ...monthly,plan:'premium_annual' });
+    assert.equal(otherPlan.status,409);
+    assert.equal(otherPlan.body.code,'BILLING_PROVIDER_RECONCILIATION_REQUIRED');
+    assert.deepEqual(dispatched,['/customers']);
+  } finally {
+    releaseCustomerWrite();
+  }
+  assert.equal((await firstCheckout).body.checkoutState,'pending');
+  assert.deepEqual(dispatched,['/customers','/subscriptions']);
+  const finished = await intentFor(racingCheckout.email);
+  assert.equal(finished.state,'created');
+  assert.equal(finished.provider_ref,'sub_QA_CHECKOUT');
+  assert.equal((await subscriptionFor(racingCheckout.email)).status,'pending');
+  const reused = await submitCheckout(parallelRoute,racingCheckout.token);
+  assert.equal(reused.body.reused,true);
+  assert.deepEqual(dispatched,['/customers','/subscriptions']);
+  console.log('PASS mounted Asaas checkout commits admission before all provider writes, serializes competing plans and safely reuses pending checkout.');
+
+  for (const label of ['TIMEOUT','INSERT']) {
+    const account = await checkoutAccount(label);
+    const providerRef = `sub_QA_${label}`;
+    const faultDb = label === 'TIMEOUT' ? db : {
+      ...db,
+      async connect() {
+        const connection = await db.connect();
+        return { ...connection, async query(sql,params) {
+          if (sql.startsWith('INSERT INTO crewcheck_platform_subscriptions')) throw Error('Synthetic pending insert failure');
+          return connection.query(sql,params);
+        } };
+      },
+    };
+    let writes = 0;
+    const faultRoute = platformRoute(async () => faultDb, {
+      asaasRequest: async (url, options) => {
+        if (options?.method !== 'POST') {
+          assert.ok(url.startsWith('/customers?'));
+          return { data:[{ id:'cus_QA_EXISTING',externalReference:account.publicId }] };
+        }
+        writes++;
+        assert.equal(url,'/subscriptions');
+        assert.equal((await intentFor(account.email)).state,'dispatching');
+        if (label === 'TIMEOUT') throw Error('Synthetic provider response lost after dispatch');
+        return { id:providerRef };
+      },
+    });
+    for (let attempt=0;attempt<2;attempt++) {
+      const result = await submitCheckout(faultRoute,account.token);
+      assert.equal(result.status,503);
+      assert.equal(result.body.code,'CHECKOUT_CONFIRMATION_UNCERTAIN');
+      assert.equal(result.body.checkoutUrl,null);
+    }
+    assert.equal(writes,1,'retry must not repeat an uncertain or recorded provider write');
+    assert.equal(await subscriptionFor(account.email),undefined);
+    const evidence = await intentFor(account.email);
+    assert.equal(evidence.state,label === 'TIMEOUT' ? 'uncertain' : 'created');
+    assert.equal(evidence.provider_ref,label === 'TIMEOUT' ? null : providerRef);
+    const [[entries]] = await native.execute(
+      'SELECT COUNT(*) AS count FROM crewcheck_billing_intent_evidence WHERE operation_id=?', [evidence.operation_id],
+    );
+    assert.equal(Number(entries.count),1);
+    const billingAfterError = authenticated(await call(platform,billing,account.token));
+    assert.equal(billingAfterError.premiumAccess,false);
+  }
+  console.log('PASS timeout and failed local insert retain evidence, never repeat provider dispatch and never grant Premium.');
+
+  const replacedDuringCheckout = await checkoutAccount('REPLACED');
+  const replacementId = 'CC-CHECKOUT-NEW';
+  const replacementWrites = [];
+  const replacementRoute = platformRoute(async () => db, {
+    asaasRequest: async (url, options) => {
+      if (options?.method !== 'POST') return { data:[] };
+      replacementWrites.push(url);
+      assert.equal(url,'/customers');
+      assert.equal((await intentFor(replacedDuringCheckout.email)).state,'dispatching');
+      await erase(replacedDuringCheckout.email);
+      await seed(replacedDuringCheckout.email,replacementId,'Recreated synthetic account');
+      return { id:'cus_QA_OLD_GENERATION',externalReference:replacedDuringCheckout.publicId };
+    },
+  });
+  rejected(await submitCheckout(replacementRoute,replacedDuringCheckout.token));
+  const replacementToken = tokenFor(replacementId,replacedDuringCheckout.email);
+  assert.equal((await submitCheckout(replacementRoute,replacementToken)).body.code,'CHECKOUT_CONFIRMATION_UNCERTAIN');
+  assert.deepEqual(replacementWrites,['/customers']);
+  assert.equal(await subscriptionFor(replacedDuringCheckout.email),undefined);
+  assert.equal((await intentFor(replacedDuringCheckout.email)).state,'uncertain');
+  console.log('PASS replacement between provider writes stops subscription dispatch and keeps old evidence isolated.');
   assert.equal(attemptedNetwork,0);
   console.log('PASS replacement committed during each in-flight billing, profile or me read: no replacement data from old session; local MySQL only.');
 } finally {
