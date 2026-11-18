@@ -1,6 +1,7 @@
 import '../../server/telegram-fast-ack.mjs';
 import { handleAuthRoute } from './auth.mjs';
 import { handleCrewCheckPush } from '../web-push/api.mjs';
+import { createNativeRegistryExistingIdentityHandler } from '../native-push/protocol-adapter.mjs';
 import { handleBidsDefaultWindow } from './bidsDefaultWindow.mjs';
 import { handleBidsCore } from './bidsCore.mjs';
 import { handleBidsAlertPreferences } from './bidsAlertPreferences.mjs';
@@ -17,6 +18,10 @@ import { handleEmailHealthRoute } from '../v1412/emailHealth.mjs';
 import { handleMailerSendWebhook } from '../v1412/mailersendWebhook.mjs';
 import { handleAiswebHealthRoute } from '../v1412/aiswebHealth.mjs';
 import { handleCiriumHealthRoute } from '../v1412/ciriumHealth.mjs';
+
+// This registration route responds fail-closed. No runtime adapters or flag
+// enabling enrollment are supplied, and the dispatch worker is not an API route.
+const handleNativePushRegistration = createNativeRegistryExistingIdentityHandler();
 
 function normalizeTelegramIntentText(value = '') {
   return String(value || '')
@@ -46,6 +51,7 @@ export async function handleV139Route(req, res, url) {
     if (await handleNotificationCycle(req, res, url)) return true;
     if (await handleBidsCalendar(req, res, url)) return true;
     if (await handleCrewCheckPush(req, res, url)) return true;
+    if (await handleNativePushRegistration(req, res, url)) return true;
     if (await handleBidsAlertPreferences(req, res, url)) return true;
     if (await handleBidsDefaultWindow(req, res, url)) return true;
     if (await handleBidsCore(req, res, url)) return true;

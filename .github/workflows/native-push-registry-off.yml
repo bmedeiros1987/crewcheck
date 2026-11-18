@@ -7,6 +7,7 @@ on:
       - 'server/platform.mjs'
       - 'server/v139/common.mjs'
       - 'scripts/regression-native-push-registry*.mjs'
+      - 'scripts/regression-native-push-dispatch.mjs'
       - '.github/workflows/native-push-registry-off.yml'
 permissions:
   contents: read
@@ -77,6 +78,7 @@ jobs:
           fi
       - name: Raw native registry and actual disposable SQL
         run: |
+          env -i PATH="$PATH" node --import ./scripts/ci/experiment-loopback-only.mjs --test scripts/regression-native-push-dispatch.mjs
           node scripts/regression-native-push-registry.mjs
           node scripts/regression-native-push-registry-protocol.mjs
           node scripts/regression-native-push-registry-sql.mjs
@@ -84,6 +86,7 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Prepared native registry and actual disposable SQL
         run: |
+          env -i PATH="$PATH" node --import ./scripts/ci/experiment-loopback-only.mjs --test scripts/regression-native-push-dispatch.mjs
           node scripts/regression-native-push-registry.mjs
           node scripts/regression-native-push-registry-protocol.mjs
           node scripts/regression-native-push-registry-sql.mjs
