@@ -2940,8 +2940,23 @@ async function handleTelegramRosterSync(req, res, url) {
   }
   const roster = body.roster;
   if (!roster || !Array.isArray(roster.days) || !roster.days.length) return sendJson(res, 400, { ok: false, message: 'Escala sem dias válidos.' });
-  const snapshot = await conciergeSaveSnapshotAsync(profile, roster, { source: String(body.source || 'app'), fileName: String(body.fileName || ''), diagnostics: body.diagnostics || null });
-  return sendJson(res, 200, { ok: true, linked: profile.linked, diagnostics: snapshot?.diagnostics, updatedAt: snapshot?.updatedAt, message: profile.linked ? 'Escala sincronizada com o Concierge Telegram.' : 'Escala preparada. Vincule o Telegram para consultar pelo bot.' });
+  // This receipt belongs only to app roster-sync. Other writer/loader contracts
+  // remain unchanged. A failed ACK does not prove the durable write was absent.
+  let snapshot = null;
+  let cache = 'unconfirmed', persistence = 'unconfirmed';
+  try {
+    snapshot = conciergeSaveSnapshot(profile, roster, { source: String(body.source || 'app'), fileName: String(body.fileName || ''), diagnostics: body.diagnostics || null, premiumAccess: user.premiumAccess, subscriptionPlan: user.subscriptionPlan, subscriptionStatus: user.subscriptionStatus, preferences: { premiumAccess: user.premiumAccess, subscriptionPlan: user.subscriptionPlan, subscriptionStatus: user.subscriptionStatus, userRole: user.role || body.rank || body.role || '', conciergeName: existingSnapshot?.preferences?.conciergeName || DEFAULT_CONCIERGE_NAME } });
+    if (snapshot) {
+      try {
+        if (JSON.stringify(conciergeSnapshotForProfile(profile)) === JSON.stringify(snapshot)) cache = 'updated';
+      } catch { /* Local readback is unconfirmed; still attempt durable persistence. */ }
+      if (await conciergeDbPut(`snapshot:${snapshot.key}`, snapshot) === true) persistence = 'confirmed';
+    }
+    if (cache !== 'updated' || persistence !== 'confirmed') throw Error('CONCIERGE_ROSTER_PERSISTENCE_UNCONFIRMED');
+  } catch {
+    return sendJson(res, 503, { ok: false, code: 'CONCIERGE_ROSTER_PERSISTENCE_UNCONFIRMED', cache, persistence, message: 'Sincronização do Concierge não confirmada. A escala continua no app.' });
+  }
+  return sendJson(res, 200, { ok: true, cache, persistence: 'confirmed', linked: profile.linked, diagnostics: snapshot.diagnostics, updatedAt: snapshot.updatedAt, message: 'Escala salva no Concierge.' });
 }
 async function handleTelegramConciergeAsk(req, res) {
   if (req.method !== 'POST') return sendJson(res, 200, { ok: true, commands: ['/hoje','/amanha','/proximo','/escala','/radar','/saida','/metar','/hoteis','/academias','/rotina','/diarias','/conformidade'], message: 'Concierge pronto.' });
