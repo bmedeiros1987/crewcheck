@@ -2,7 +2,7 @@ import {normalizeCiriumFlightStatus} from '../server/cirium-flight-adapter.mjs';
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import ts from 'typescript';import {build} from 'esbuild';import {createRequire} from 'node:module';
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const source=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',source,99,true,ts.ScriptKind.TSX);
-const names=['validatedRadarForEvent','radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','readRadarSnapshot','saveRadarSnapshot','browserRadarContextIsCurrent','fetchRadarSnapshot','browserRadarSignature','browserRadarGeneration','invalidateBrowserRadarResponse'];
+const names=['validatedRadarForEvent','radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','readRadarSnapshot','saveRadarSnapshot','browserRadarContextIsCurrent','fetchRadarSnapshot','browserRadarSignature','browserRadarGeneration','invalidateBrowserRadarResponse','watchEventsWithPublishedVacation'];
 const functions=names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,'Actual Home function missing: '+name);return fn.getText(ast);}).join('\n');
 const presentationGlobals=['browserRadarContext','browserRadarResponses','browserRadarInvalidations'].map(name=>{const n=ast.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)===name));assert(n,name);return n.getText(ast)}).join('\n');
 const marker='    const watchSession = captureAuthSession();',start=source.indexOf(marker),end=source.indexOf('\n  }, [',start);assert(start>=0&&end>start,'Actual Home watch effect required');const effect=source.slice(start,end);
@@ -10,6 +10,7 @@ const memoStart=source.indexOf('  const operationalArrival=useMemo('),memoEnd=so
 const entry=`import React,{useMemo} from 'react';import {createRoot} from 'react-dom/client';import View from './client/src/components/regulation/RegulationScenarioView';import {buildCanonicalRosterEvents} from './client/src/lib/canonicalRoster';import {regulationProgramDay} from './shared/regulationScenarioPrefill.mjs';
 import * as auth from './client/src/lib/authClient';import * as admission from './client/src/lib/operationalRadarAdmission';
 import {readStayOperationalProjection} from './client/src/lib/stayOperationalProjection';
+import {careStateForScheduleActivity} from './client/src/lib/scheduleActivityClassification';
 import * as gate from './client/src/lib/nextFlightGate';import {applyNextFlightToWatchSnapshot} from './client/src/lib/nextFlightWatch';import {buildCrewCheckWatchSnapshot} from './client/src/lib/watchContext';
 import * as stayStore from './client/src/lib/stayEditorStore';import {emptyStayEditor,stayEditorKey} from './shared/stay-editor-store.mjs';import {alertRosterOwned} from './client/src/lib/alertRosterOwnership';import {startupKey,startupOwner} from './client/src/lib/rosterStartup';
 import {gateQueryDay,gateQuerySuppressed,originFlightDate,radarResultDecision,radarSourceEpoch} from './shared/gate-query-day.mjs';import {radarFailurePayload} from './client/src/lib/radarAvailability';
