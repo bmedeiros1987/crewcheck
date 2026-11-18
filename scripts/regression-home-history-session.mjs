@@ -22,6 +22,7 @@ function harness(list,detail){
   getLocalRosterSummaries:()=>{localReads.push('local');return summaries;},
   newestDisplaySummaryByCompetence:items=>items.map(summary=>({summary,ordinal:summary.month})),
   openSavedRoster:async id=>{requests.push(id);return detail(id);},
+  nominalRosterDisplayDateKeys:()=>new Set(),
   mergeRosterDisplayAdjacent:(a,b)=>({...a,days:[...a.days,...b.days]})});
  vm.runInContext(code,context);
  return {run:()=>exports.openRosterDisplayWindow(primary),change:()=>{current=false;},requests,localReads};
