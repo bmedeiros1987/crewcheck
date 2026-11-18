@@ -48,6 +48,8 @@ docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.so
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-cancellation-intent-mysql.mjs > "$output_dir/cancellation-intent.log" 2>&1
 docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_cancel_auth_qa;'
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-cancellation-admission-mysql.mjs > "$output_dir/cancellation-auth.log" 2>&1
+docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_cancel_route_qa;'
+CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-billing-cancellation-route-mysql.mjs > "$output_dir/cancellation-route.log" 2>&1
 docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_google_event_qa;'
 CREWCHECK_BILLING_INTENT_QA=isolated-mysql CREWCHECK_BILLING_INTENT_QA_ROOT="$qa_billing_root" node scripts/regression-google-event-transaction-mysql.mjs > "$output_dir/google-event-transaction.log" 2>&1
 docker exec "$container" mysql --no-defaults --socket="$qa_billing_root/mysql.sock" --user=root --execute='CREATE DATABASE crewcheck_google_observation_qa;'

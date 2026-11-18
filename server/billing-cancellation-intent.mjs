@@ -1,4 +1,4 @@
-// Unwired proposal. No provider client, secret, timer, automatic retry or schema installation.
+// Durable cancellation records. No provider calls, retry timer or schema installation.
 import {createHash} from 'node:crypto';
 import {withTransaction} from './profile-locks.mjs';
 import {withPlatformEntitlements} from './platform-entitlement.mjs';
@@ -29,7 +29,7 @@ const wrap=async action=>{try{return await action();}catch(e){if(e?.code?.starts
 async function boundary(db,input,action){await schema(db,input);return wrap(()=>withPlatformEntitlements(db,[input],client=>action(client)));}
 export async function reserveCancellation(db,input){return boundary(db,input,async client=>{
  const current=await readOwnedBillingCancellation(client,input);
- if(current.provider!=='asaas')throw fail('CANCELLATION_CONTRACT_MISMATCH');
+ if(current.provider!=='asaas'||(input.providerRef!==undefined&&current.providerRef!==input.providerRef))throw fail('CANCELLATION_CONTRACT_MISMATCH');
  const contract=cancellationContractHash(current.providerRef),byId=(await client.query(`SELECT * FROM ${I} WHERE operation_id=$1 FOR UPDATE`,[input.operationId])).rows[0];
  if(byId){owned(byId,{...input,providerRef:current.providerRef});return {...view(byId),providerRef:current.providerRef};}
  const existing=(await client.query(`SELECT * FROM ${I} WHERE contract_hash=$1 FOR UPDATE`,[contract])).rows;

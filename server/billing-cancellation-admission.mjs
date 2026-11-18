@@ -1,4 +1,4 @@
-// Isolated preparation: trusted injected adapters only; no HTTP route or real provider.
+// Cancellation coordinates durable storage and trusted, injected provider evidence.
 import {createHash} from 'node:crypto';
 import {requireBillingPrincipal,billingAuthorityCurrent} from './billing-admission.mjs';
 import {reserveCancellation,claimCancellation,readCancellationOperation,recordCancellationOutcome,applyCancellationOutcome,cancellationContractHash} from './billing-cancellation-intent.mjs';
@@ -13,7 +13,7 @@ function evidence(value,ref){
  const {acknowledged,contractHash,evidenceHash}=value;
  return acknowledged===true&&contractHash===cancellationContractHash(ref)&&digest(evidenceHash)?evidenceHash:null;
 }
-export function createCancellationAdmission({db,resolvePrincipal,transport,probe}){
+export function createCancellationAdmission({db,resolvePrincipal,transport,probe=async()=>null,expectedProviderRef}){
  if(!db||typeof resolvePrincipal!=='function'||typeof transport!=='function'||typeof probe!=='function')throw fail('CANCELLATION_ADMISSION_CONFIGURATION_REQUIRED');
  async function principalInput(context,request){
   const principal=await requireBillingPrincipal(resolvePrincipal,context),operationId=request?.operationId;
@@ -35,11 +35,17 @@ export function createCancellationAdmission({db,resolvePrincipal,transport,probe
  return {
   async cancel(context,request){
    const {principal,input}=await principalInput(context,request);
-   const reserved=await reserveCancellation(db,input);current(principal);
+   // An HTTP caller's prior read binds this operation to the same contract under lock.
+   // The expected reference comes from the trusted adapter, never the request body.
+   const reserved=await reserveCancellation(db,{...input,providerRef:expectedProviderRef});current(principal);
    if(reserved.alreadyRecorded)return {state:'already_recorded'};
    input.operationId=reserved.operationId;input.providerRef=reserved.providerRef;
    const admission=await claimCancellation(db,input);current(principal);
-   if(!admission.admitted){if(admission.state==='acknowledged')return finish(principal,input);return publicView(admission);}
+   if(!admission.admitted){
+    if(admission.state==='acknowledged')return finish(principal,input);
+    if(admission.state==='applied')return {...publicView(admission),state:'already_recorded'};
+    return publicView(admission);
+   }
    let proof=null;try{proof=evidence(await transport(Object.freeze({...input})),input.providerRef);}catch{}
    // Preserve immutable evidence even after revocation; never apply access changes for it.
    const recorded=await save(input,proof,'http_ack');current(principal);

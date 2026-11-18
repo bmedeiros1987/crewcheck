@@ -1,5 +1,6 @@
 import {googleSubscriptionStatus} from './google-subscription-status.mjs';
 import {readBillingCancellation,commitAcknowledgedAsaasCancellation} from './billing-cancellation.mjs';
+import {createCancellationAdmission} from './billing-cancellation-admission.mjs';
 import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
 import {createGoogleCurrentReadAdapter} from './billing-current-read-adapters.mjs';
 import {createGoogleEventObserver} from './google-event-observation.mjs';
@@ -1453,6 +1454,82 @@ async function handleBillingCancel(req, res) {
     return sendJson(res, 503, { ok: false, code: 'BILLING_CANCELLATION_OUTCOME_UNCERTAIN', message: 'Não foi possível confirmar o cancelamento. Confira o status antes de tentar novamente.' });
   }
   return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: saved.currentPeriodEnd, message: saved.keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período vigente.' : 'Renovação web cancelada. Isso não confirma pagamento ou quitação de cobranças.' });
+}
+
+function billingCancellationIdentity(req) {
+  let credential;
+  try { credential = requestToken(req); }
+  catch { return null; }
+  const read = () => {
+    const claims = verifyJwt(credential);
+    const email = safeEmail(claims?.email);
+    if (!email || claims.iss !== 'crewcheck' || claims.aud !== 'crewcheck-web' || claims.role === 'visitor' ||
+        !Number.isInteger(claims.exp) || claims.exp <= Math.floor(Date.now() / 1000) ||
+        typeof claims.sub !== 'string' || !claims.sub) return null;
+    return { email, publicId: claims.sub };
+  };
+  const initial = read();
+  if (!initial) return null;
+  return {
+    ...initial,
+    kind: 'main',
+    isCurrent() {
+      const current = read();
+      return current?.email === initial.email && current.publicId === initial.publicId;
+    },
+  };
+}
+
+// Staged replacement. The mounted route still uses its existing handler until
+// the effect on pending/overdue charges and provider reconciliation are approved.
+export function createCoordinatedBillingCancelHandler({ poolProvider, sendAsaasCancellation }) {
+  return (req, res) => handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaasCancellation });
+}
+
+async function handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaasCancellation }) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return sendJson(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Método não permitido.' });
+  }
+  const db = await poolProvider();
+  if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível.' });
+  const principal = billingCancellationIdentity(req);
+  const loginRequired = () => sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Entre novamente para gerenciar a assinatura.' });
+  if (!principal) return loginRequired();
+  const { email, publicId } = principal;
+  // A cancel request never creates a profile or accepts a previous incarnation.
+  const profile = (await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [email])).rows[0];
+  if (!principal.isCurrent()) return loginRequired();
+  if (profile?.public_id !== publicId) return sendJson(res, 403, { ok: false, code: 'BILLING_ACCOUNT_SESSION_REQUIRED', message: 'Entre novamente nesta conta para gerenciar a assinatura.' });
+  const owner = { email, expectedPublicId: publicId };
+  const subscription = await readBillingCancellation(db, owner);
+  if (!principal.isCurrent()) return loginRequired();
+  if (subscription.provider === 'google_play') {
+    const product = encodeURIComponent(subscription.productId);
+    const manageUrl = `https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`;
+    return sendJson(res, 200, { ok: true, actionRequired: true, manageUrl, message: 'Conclua o cancelamento na Google Play. O acesso permanece até o fim do período vigente.' });
+  }
+  const alreadyRecorded = saved => sendJson(res, 200, { ok: true, canceled: true, alreadyRecorded: true, currentPeriodEnd: saved.currentPeriodEnd, message: 'O cancelamento da renovação já está registrado.' });
+  if (subscription.cancelAtPeriodEnd) return alreadyRecorded(subscription);
+  if (typeof sendAsaasCancellation !== 'function') return sendJson(res, 503, { ok: false, code: 'BILLING_CANCELLATION_UNAVAILABLE', message: 'O cancelamento web está temporariamente indisponível.' });
+
+  const uncertain = () => sendJson(res, 503, { ok: false, code: 'BILLING_CANCELLATION_OUTCOME_UNCERTAIN', message: 'O cancelamento ainda não foi confirmado. Confira o status da assinatura.' });
+  try {
+    const admission = createCancellationAdmission({
+      db,
+      resolvePrincipal: () => principal,
+      expectedProviderRef: subscription.providerRef,
+      transport: ({ providerRef }) => sendAsaasCancellation(providerRef),
+    });
+    const outcome = await admission.cancel(req, { operationId: crypto.randomBytes(32).toString('hex') });
+    if (!['already_recorded', 'applied'].includes(outcome.state)) return uncertain();
+    const saved = await readBillingCancellation(db, owner);
+    if (!principal.isCurrent() || saved.provider !== 'asaas' || saved.providerRef !== subscription.providerRef || !saved.cancelAtPeriodEnd) return uncertain();
+    if (outcome.state === 'already_recorded') return alreadyRecorded(saved);
+    return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: saved.currentPeriodEnd, message: saved.keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período vigente.' : 'Renovação web cancelada. Isso não confirma pagamento ou quitação de cobranças.' });
+  } catch {
+    return uncertain();
+  }
 }
 
 async function handleAsaasWebhook(req, res) {
