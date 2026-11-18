@@ -45,8 +45,8 @@ function response() {
   };
 }
 
-async function request(n, { transport, pool = db, headers = { authorization: `Bearer ${token(n)}` }, method = 'POST', body } = {}) {
-  const handle = createCoordinatedBillingCancelHandler({ poolProvider: async () => pool, sendAsaasCancellation: transport });
+async function request(n, { transport, readAsaasSubscription, pool = db, headers = { authorization: `Bearer ${token(n)}` }, method = 'POST', body } = {}) {
+  const handle = createCoordinatedBillingCancelHandler({ poolProvider: async () => pool, sendAsaasCancellation: transport, readAsaasSubscription });
   const res = response();
   await handle({ method, headers, body }, res);
   return res;
@@ -251,6 +251,103 @@ try {
   assert.equal(unlimited.body.currentPeriodEnd, null);
   const [[profile]] = await native.execute('SELECT plan FROM crewcheck_platform_profiles WHERE email=?', [email(13)]);
   assert.equal(profile.plan, 'premium_unlimited');
+  // A retry with read access must reconcile the occupied slot without another DELETE.
+  await seed(14);
+  let mutations = 0;
+  let reads = 0;
+  const timedOutAfterSend = async () => {
+    mutations++;
+    throw new Error('synthetic timeout after dispatch');
+  };
+  const readCanceled = async (address, options) => {
+    reads++;
+    assert.equal(address, '/subscriptions/' + ref(14));
+    assert.deepEqual(options, { method: 'GET' });
+    return { status: 200, body: { object: 'subscription', id: ref(14), status: 'INACTIVE', deleted: true } };
+  };
+  assertUncertain(await request(14, { transport: timedOutAfterSend, readAsaasSubscription: readCanceled }));
+  assert.equal(reads, 0, 'do not query on the initial write attempt');
+  assert.equal((await request(14, { transport: rejectTransport, readAsaasSubscription: readCanceled })).body.canceled, true);
+  assert.deepEqual(await journal(14), { state: 'applied', receipts: 2 });
+  assert.equal((await request(14, { transport: rejectTransport, readAsaasSubscription: readCanceled })).body.alreadyRecorded, true);
+  assert.equal(mutations, 1);
+  assert.equal(reads, 1);
+
+  await seed(15);
+  assertUncertain(await request(15, { transport: timedOutAfterSend }));
+  for (const result of [
+    { status: 404, body: null },
+    { status: 403, body: null },
+    { status: 200, body: { object: 'subscription', id: ref(16), status: 'INACTIVE', deleted: true } },
+    { status: 200, body: { object: 'subscription', id: ref(15), status: 'INACTIVE', deleted: false } },
+    { status: 200, body: { object: 'subscription', id: ref(15), status: 'ACTIVE', deleted: true } },
+    { status: 200, body: { object: 'subscription', id: ref(15), status: 'INACTIVE' } },
+  ]) {
+    assertUncertain(await request(15, {
+      transport: rejectTransport,
+      readAsaasSubscription: async () => result,
+    }));
+    assert.deepEqual(await journal(15), { state: 'uncertain', receipts: 1 });
+    assert.equal((await subscription(15)).canceled, 0);
+  }
+  assert.equal(mutations, 2);
+
+  await seed(16);
+  assertUncertain(await request(16, { pool: rejectReceipt, transport: ack }));
+  assert.deepEqual(await journal(16), { state: 'dispatching', receipts: 0 });
+  assert.equal((await request(16, {
+    transport: rejectTransport,
+    readAsaasSubscription: async () => ({ status: 200, body: { object: 'subscription', id: ref(16), status: 'EXPIRED', deleted: true } }),
+  })).body.canceled, true);
+  assert.deepEqual(await journal(16), { state: 'applied', receipts: 1 });
+
+  // An expiring session can leave immutable evidence, but it cannot apply
+  // changes or receive a success receipt. A current session uses that receipt.
+  await seed(17);
+  assertUncertain(await request(17, { transport: timedOutAfterSend }));
+  assertUncertain(await request(17, {
+    transport: rejectTransport,
+    readAsaasSubscription: async () => {
+      clock += 61_000;
+      return { status: 200, body: { object: 'subscription', id: ref(17), status: 'INACTIVE', deleted: true } };
+    },
+  }));
+  assert.deepEqual(await journal(17), { state: 'acknowledged', receipts: 2 });
+  assert.equal((await subscription(17)).canceled, 0);
+  assert.equal((await request(17, { transport: rejectTransport, readAsaasSubscription: rejectTransport })).body.canceled, true);
+  assert.deepEqual(await journal(17), { state: 'applied', receipts: 2 });
+  // Two concurrent confirmations for the same operation must persist one proof.
+  await seed(18);
+  assertUncertain(await request(18, { transport: timedOutAfterSend }));
+  const ready = Promise.withResolvers();
+  let parallelReads = 0;
+  const concurrentRead = async () => {
+    if (++parallelReads === 2) ready.resolve();
+    await ready.promise;
+    return { status: 200, body: { object: 'subscription', id: ref(18), status: 'INACTIVE', deleted: true } };
+  };
+  const race = [
+    request(18, { transport: rejectTransport, readAsaasSubscription: concurrentRead }),
+    request(18, { transport: rejectTransport, readAsaasSubscription: concurrentRead }),
+  ];
+  await Promise.race([ready.promise, ...race.map(pending => pending.then(() => assert.fail('Request ended before both concurrent reads')))]);
+  const recoveredTogether = await Promise.all(race);
+  assert(recoveredTogether.every(res => res.status === 200 && res.body.canceled === true));
+  assert.deepEqual(await journal(18), { state: 'applied', receipts: 2 });
+
+  await seed(19);
+  assertUncertain(await request(19, { transport: timedOutAfterSend }));
+  const changedDuringRead = await request(19, {
+    transport: rejectTransport,
+    readAsaasSubscription: async () => {
+      await native.execute("UPDATE crewcheck_platform_subscriptions SET provider='google_play',provider_ref=? WHERE email=?", [ref(119),email(19)]);
+      return { status: 200, body: { object: 'subscription', id: ref(19), status: 'INACTIVE', deleted: true } };
+    },
+  });
+  assertUncertain(changedDuringRead);
+  assert.deepEqual(await subscription(19), { canceled: 0, ref: ref(119) });
+  assert.deepEqual(await journal(19), { state: 'reconciliation_required', receipts: 2 });
+  console.log('PASS HTTP retry reconciles positive same-contract evidence, including lost receipt and session expiry, without resending; ambiguous evidence stays pending');
   assert.equal(unexpectedCalls, 0);
   console.log('PASS staged cancellation HTTP handler with signed JWT, isolated MySQL, and mock transport: method/auth, concurrent retry, evidence and rollback, pre/post-COMMIT expiry, contract replacement, Play and Unlimited');
 } finally {

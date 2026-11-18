@@ -4,7 +4,7 @@ import {createCancellationAdmission} from './billing-cancellation-admission.mjs'
 import {accountSessionClaims,readAccountSessionProfile} from './account-session.mjs';
 import {withTransaction} from './profile-locks.mjs';
 import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
-import {createGoogleCurrentReadAdapter} from './billing-current-read-adapters.mjs';
+import {createAsaasRemovedSubscriptionProbe,createGoogleCurrentReadAdapter} from './billing-current-read-adapters.mjs';
 import {createGoogleEventObserver} from './google-event-observation.mjs';
 import {hasGoogleEventReceipt} from './google-event-transaction.mjs';
 import {resolveOwnedGatePublication} from './radar-publication-authority.mjs';
@@ -1614,11 +1614,14 @@ function platformAccountSession(req) {
 
 // Staged replacement. The mounted route still uses its existing handler until
 // the effect on pending/overdue charges and provider reconciliation are approved.
-export function createCoordinatedBillingCancelHandler({ poolProvider, sendAsaasCancellation }) {
-  return (req, res) => handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaasCancellation });
+export function createCoordinatedBillingCancelHandler({ poolProvider, sendAsaasCancellation, readAsaasSubscription }) {
+  const probe = readAsaasSubscription
+    ? createAsaasRemovedSubscriptionProbe({ readJson: readAsaasSubscription })
+    : undefined;
+  return (req, res) => handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaasCancellation, probe });
 }
 
-async function handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaasCancellation }) {
+async function handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaasCancellation, probe }) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return sendJson(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', message: 'Método não permitido.' });
@@ -1652,6 +1655,8 @@ async function handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaa
       resolvePrincipal: () => principal,
       expectedProviderRef: subscription.providerRef,
       transport: ({ providerRef }) => sendAsaasCancellation(providerRef),
+      probe,
+      reconcileOnRetry: Boolean(probe),
     });
     const outcome = await admission.cancel(req, { operationId: crypto.randomBytes(32).toString('hex') });
     if (!['already_recorded', 'applied'].includes(outcome.state)) return uncertain();

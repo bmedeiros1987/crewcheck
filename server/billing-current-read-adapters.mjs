@@ -1,6 +1,7 @@
 // Unwired read adapters. Only injected authenticated readJson transport; no defaults,
 // env/secrets, raw response persistence, retries, timers or entitlement side effects.
 import {createHash} from 'node:crypto';
+import {cancellationContractHash} from './billing-cancellation-intent.mjs';
 import {googleSubscriptionStatus} from './google-subscription-status.mjs';
 import {validateVerifiedGoogleSubscriptionRecord} from './google-subscription-write.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex'),digest=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x),object=x=>x&&typeof x==='object'&&!Array.isArray(x),opaque=(x,max=180)=>typeof x==='string'&&new RegExp('^[\\x21-\\x7e]{1,'+max+'}$').test(x),fail=code=>Object.assign(new Error(code),{code,status:503});
@@ -52,5 +53,26 @@ export function createAsaasCurrentReadAdapter({readJson}){
    // Two independent current reads are not an atomic provider snapshot or a funded period.
    return {source:'asaas_payment_and_subscription',paymentRefHash:hash(paymentRef),subscriptionRefHash:hash(subscriptionRef),paymentStatus:status,paymentDeleted:deleted,subscriptionStatus:subStatus,subscriptionDeleted:subDeleted,paymentDate:paidCivil,clientPaymentDate:clientCivil,orderingEstablished:false,atomicProviderSnapshot:false,entitlementDecision:'not_made'};
   }catch{throw fail('ASAAS_CURRENT_READ_UNCONFIRMED');}
+ };
+}
+
+// Isolated positive-only probe for an already dispatched removal. No default
+// credentials or transport. The injected reader must perform an authenticated,
+// current GET without using a cache. Absence, suspension or inaccessibility
+// leaves the earlier write uncertain.
+export function createAsaasRemovedSubscriptionProbe({readJson}){
+ if(typeof readJson!=='function')throw fail('ASAAS_CURRENT_READ_CONFIGURATION_REQUIRED');
+ return async function probe({providerRef}={}){
+  if(typeof providerRef!=='string'||!/^sub_[A-Za-z0-9_:-]{1,250}$/.test(providerRef))return null;
+  const {status,body}=await readJson('/subscriptions/'+encodeURIComponent(providerRef),{method:'GET'})||{};
+  if(status!==200||!object(body))return null;
+  const {object:kind,id,deleted,status:subscriptionStatus}=body;
+  if(kind!=='subscription'||id!==providerRef||deleted!==true||!['INACTIVE','EXPIRED'].includes(subscriptionStatus))return null;
+  const contractHash=cancellationContractHash(providerRef);
+  return {
+   acknowledged:true,
+   contractHash,
+   evidenceHash:hash(JSON.stringify(['asaas_subscription_removal',contractHash,true])),
+  };
  };
 }

@@ -13,7 +13,7 @@ function evidence(value,ref){
  const {acknowledged,contractHash,evidenceHash}=value;
  return acknowledged===true&&contractHash===cancellationContractHash(ref)&&digest(evidenceHash)?evidenceHash:null;
 }
-export function createCancellationAdmission({db,resolvePrincipal,transport,probe=async()=>null,expectedProviderRef}){
+export function createCancellationAdmission({db,resolvePrincipal,transport,probe=async()=>null,expectedProviderRef,reconcileOnRetry=false}){
  if(!db||typeof resolvePrincipal!=='function'||typeof transport!=='function'||typeof probe!=='function')throw fail('CANCELLATION_ADMISSION_CONFIGURATION_REQUIRED');
  async function principalInput(context,request){
   const principal=await requireBillingPrincipal(resolvePrincipal,context),operationId=request?.operationId;
@@ -32,6 +32,21 @@ export function createCancellationAdmission({db,resolvePrincipal,transport,probe
   assertCurrent();
   return publicView(applied);
  }
+ async function reconcileOperation(principal,input){
+  const operation=await readCancellationOperation(db,input);current(principal);
+  const bound={...input,providerRef:operation.providerRef};
+  if(operation.state==='acknowledged')return finish(principal,bound);
+  if(!['dispatching','uncertain'].includes(operation.state))return publicView(operation);
+  let proof=null;try{proof=evidence(await probe(Object.freeze(bound)),bound.providerRef);}catch{}
+  // A negative/unknown probe never establishes that the earlier write had no effect.
+  if(!proof){
+   current(principal);
+   const latest=await readCancellationOperation(db,bound);current(principal);
+   return latest.state==='acknowledged'?finish(principal,bound):publicView(latest);
+  }
+  // Store evidence for the immutable owner. Only a current principal can apply it.
+  await save(bound,proof,'provider_probe');current(principal);return finish(principal,bound);
+ }
  return {
   async cancel(context,request){
    const {principal,input}=await principalInput(context,request);
@@ -44,6 +59,7 @@ export function createCancellationAdmission({db,resolvePrincipal,transport,probe
    if(!admission.admitted){
     if(admission.state==='acknowledged')return finish(principal,input);
     if(admission.state==='applied')return {...publicView(admission),state:'already_recorded'};
+    if(reconcileOnRetry&&['dispatching','uncertain'].includes(admission.state))return reconcileOperation(principal,input);
     return publicView(admission);
    }
    let proof=null;try{proof=evidence(await transport(Object.freeze({...input})),input.providerRef);}catch{}
@@ -53,15 +69,7 @@ export function createCancellationAdmission({db,resolvePrincipal,transport,probe
   },
   async reconcile(context,request){
    const {principal,input}=await principalInput(context,request);
-   const operation=await readCancellationOperation(db,input);current(principal);input.providerRef=operation.providerRef;
-   if(operation.state==='acknowledged')return finish(principal,input);
-   if(!['dispatching','uncertain'].includes(operation.state))return publicView(operation);
-   let proof=null;try{proof=evidence(await probe(Object.freeze({...input})),input.providerRef);}catch{}
-   // A negative/unknown probe never establishes that the earlier DELETE had no effect.
-   if(!proof){current(principal);const latest=await readCancellationOperation(db,input);current(principal);return publicView(latest);}
-   // As with transport ACK, keep verified evidence for the original immutable owner,
-   // but a revoked caller cannot apply or receive a successful result.
-   await save(input,proof,'provider_probe');current(principal);return finish(principal,input);
+   return reconcileOperation(principal,{...input,providerRef:expectedProviderRef});
   },
  };
 }
