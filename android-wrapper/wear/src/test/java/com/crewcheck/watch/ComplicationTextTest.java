@@ -1,6 +1,7 @@
 package com.crewcheck.watch;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -40,6 +41,27 @@ public final class ComplicationTextTest {
         assertEquals("ABRIR", expired.shortText);
         assertEquals("Abra no celular", expired.longText);
         assertEquals("CrewCheck. Abra no celular", expired.description);
+    }
+
+    @Test
+    public void connectionComplicationDisambiguatesUpcomingAndFollowingFlights() throws Exception {
+        JSONObject raw = WatchContextSnapshot.demo(NOW).toJson()
+                .put("state", "CONNECTION").put("headline", "CONEXÃO").put("changed", false)
+                .put("currentFlight", "QA102").put("nextFlight", "QA103")
+                .put("connection", "20 MIN").put("gate", "B24").put("gateSource", "manual");
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(raw);
+        ComplicationRendering nextStep = ComplicationText.nextStep(snapshot, NOW);
+        ComplicationRendering gate = ComplicationText.gate(snapshot, NOW);
+        assertEquals("QA102 • 20 MIN", nextStep.longText);
+        assertEquals("QA103", snapshot.nextFlight);
+        assertTrue(gate.longText.contains("PORTÃO B24 · QA102"));
+        assertFalse(gate.longText.contains("QA103"));
+
+        WatchContextSnapshot unbound = WatchContextSnapshot.fromJson(raw.put("currentFlight", "").put("remoteStand", true));
+        ComplicationRendering withoutIdentity = ComplicationText.nextStep(unbound, NOW);
+        assertEquals("CREW", withoutIdentity.shortText);
+        assertEquals("CONEXÃO • 20 MIN", withoutIdentity.longText);
+        assertEquals("--", ComplicationText.gate(unbound, NOW).shortText);
     }
 
     // --- portão --------------------------------------------------------------------------

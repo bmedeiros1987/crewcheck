@@ -360,6 +360,7 @@ public final class WatchContextSnapshot {
     }
 
     public String displayedGate() {
+        if ("CONNECTION".equals(state) && currentFlight.isBlank()) return "";
         if (remoteStand) return "REMOTA";
         if (!gate.isBlank()) return gate;
         ScheduleItem item = nextGateItem();
@@ -393,6 +394,7 @@ public final class WatchContextSnapshot {
         if (isStale(nowEpochMs)) return "ABRIR";
         if (changed) return "MUDOU";
         if ("OVERNIGHT".equals(state)) return "PERNOIT";
+        if ("CONNECTION".equals(state) && currentFlight.isBlank()) return "CREW";
         if (remoteStand) return "REMOTA";
 
         String normalized = headline.toUpperCase(Locale.ROOT);
@@ -438,7 +440,7 @@ public final class WatchContextSnapshot {
             case "IN_FLIGHT" -> firstNonBlank(currentFlight, headline)
                     + (currentRoute.isBlank() ? "" : " • " + currentRoute)
                     + (eta.isBlank() ? "" : " • ETA " + eta);
-            case "CONNECTION" -> firstNonBlank(nextFlight, headline)
+            case "CONNECTION" -> firstNonBlank(currentFlight, headline)
                     + (connection.isBlank() ? "" : " • " + connection);
             case "OVERNIGHT" -> "Pernoite"
                     + (hotelPickup.isBlank() ? " • APZ hotel não informada" : " • " + hotelPickup);

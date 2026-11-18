@@ -973,9 +973,10 @@ public final class MainActivity extends FragmentActivity
             );
             case "CONNECTION" -> new Primary(
                     "CONEXÃO",
-                    firstNonBlank(s.connection, s.nextFlight, s.headline),
-                    join(" · ", s.nextFlight, s.gateLabel()),
-                    s.boardingTime.isBlank() ? s.nextDetail : "Embarque previsto " + s.boardingTime,
+                    firstNonBlank(s.connection, s.currentFlight, s.headline),
+                    join(" · ", s.currentFlight, s.gateLabel()),
+                    s.currentFlight.isBlank() ? ""
+                            : s.boardingTime.isBlank() ? s.currentRoute : "Embarque previsto " + s.boardingTime,
                     VIOLET
             );
             case "OVERNIGHT" -> new Primary(
@@ -1197,7 +1198,7 @@ public final class MainActivity extends FragmentActivity
         if ("CONNECTION".equals(s.state)) {
             items.add(new NotificationItem(
                     "Conexão",
-                    join(" · ", s.connection, s.nextFlight, s.gateLabel()),
+                    join(" · ", s.connection, s.currentFlight, s.gateLabel()),
                     "próximo", CYAN
             ));
         }

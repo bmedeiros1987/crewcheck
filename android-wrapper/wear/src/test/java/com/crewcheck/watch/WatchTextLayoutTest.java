@@ -343,6 +343,26 @@ public class WatchTextLayoutTest {
         return result;
     }
 
+    @Test public void connectionCardShowsCurrentUpcomingFlightWithItsOwnGate() throws Exception {
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
+            MainActivity activity = controller.get();
+            JSONObject json = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson()
+                    .put("state", "CONNECTION").put("headline", "CONEXÃO").put("changed", false)
+                    .put("currentFlight", "QA102").put("currentRoute", "CGH → CNF")
+                    .put("nextFlight", "QA103").put("nextDetail", "CNF → BSB")
+                    .put("connection", "20 MIN").put("gate", "B24").put("gateSource", "manual")
+                    .put("boardingTime", "");
+            Object primary = call(activity, "primaryFor", new Class[]{WatchContextSnapshot.class}, WatchContextSnapshot.fromJson(json));
+            assertEquals("QA102 · PORTÃO B24", field(primary, "detail", String.class));
+            assertEquals("CGH → CNF", field(primary, "secondary", String.class));
+
+            json.put("currentFlight", "").put("remoteStand", true);
+            primary = call(activity, "primaryFor", new Class[]{WatchContextSnapshot.class}, WatchContextSnapshot.fromJson(json));
+            assertEquals("", field(primary, "detail", String.class));
+            assertEquals("", field(primary, "secondary", String.class));
+        }
+    }
+
     @Test public void reportingKeepsDateAndEstimatedBoardingVisible() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
             MainActivity activity = controller.get();

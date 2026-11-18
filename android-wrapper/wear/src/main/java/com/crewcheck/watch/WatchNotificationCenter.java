@@ -133,9 +133,9 @@ public final class WatchNotificationCenter {
                     "Conexão",
                     join(" · ",
                             s.connection,
-                            s.nextFlight,
+                            s.currentFlight,
                             confirmedGate(s),
-                            s.boardingTime.isBlank() ? "" : "embarque " + s.boardingTime)
+                            s.currentFlight.isBlank() || s.boardingTime.isBlank() ? "" : "embarque previsto " + s.boardingTime)
             );
             case "OVERNIGHT" -> new Notice(
                     "Pernoite " + firstNonBlank(s.overnight, ""),
@@ -159,15 +159,16 @@ public final class WatchNotificationCenter {
     }
 
     private static String fingerprint(WatchContextSnapshot s, Notice notice) {
+        boolean connection = "CONNECTION".equals(s.state);
         return String.join("|",
                 s.state,
                 s.headline,
                 s.primaryTime,
                 s.leaveTime,
                 s.currentFlight,
-                s.nextFlight,
-                s.gateReported() ? "" : s.gate,
-                s.boardingTime,
+                connection ? "" : s.nextFlight,
+                connection || s.gateReported() ? "" : s.gate,
+                connection ? "" : s.boardingTime,
                 s.overnight,
                 Boolean.toString(s.changed),
                 notice.title,
