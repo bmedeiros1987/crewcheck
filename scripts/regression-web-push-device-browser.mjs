@@ -14,5 +14,56 @@ await page.evaluate(()=>{window.renewal=true;window.registered=true;window.fixtu
 await page.getByRole('button',{name:'Renovar cadastro',exact:true}).waitFor();await page.getByText('A renovação pode exigir o app aberto',{exact:false}).waitFor();await page.getByRole('button',{name:'Renovar cadastro',exact:true}).click();await page.getByText('Ativação não confirmada.',{exact:false}).waitFor();assert.equal(await page.getByText('Aparelho cadastrado.',{exact:false}).count(),0,'failed renewal cannot show registered success');
 await page.evaluate(()=>{window.fixtureActivate=async()=>{window.renewal=false;return{status:'registered',received:null};};});await page.getByRole('button',{name:'Renovar cadastro',exact:true}).click();await page.getByText('Aparelho cadastrado. Isso não confirma entrega ou leitura.').waitFor();assert.equal(await page.getByRole('button',{name:'Renovar cadastro',exact:true}).count(),0);await page.getByRole('button',{name:'Desativar neste aparelho',exact:true}).waitFor();
 await page.evaluate(()=>{window.fixtureCancel=async()=>{window.registered=false;return{status:'inactive',serverRevocationConfirmed:true};};});await page.getByRole('button',{name:'Desativar neste aparelho',exact:true}).click();await page.getByText('Avisos desativados para este aparelho.').waitFor();
+for(const pending of ['server-registration','renewal-required']){
+ const before=await page.evaluate(()=>window.calls);
+ await page.evaluate(pending=>{
+  window.permissionState='granted';window.retryCalls=0;window.retryPending=true;
+  window.fixtureRead=async()=>({enabled:true,registered:false,needsRenewal:false,revision:3,publicKey:null,ownerId:window.owner,
+    serverRegistered:window.retryPending&&pending==='server-registration',renewalRequired:window.retryPending&&pending==='renewal-required',
+    subscriptionStatus:window.retryPending?'locally_cancelled':'not_registered',events:[]});
+  window.fixtureActivate=async()=>{window.calls++;throw Error('cancel retry must never activate');};
+  window.fixtureCancel=async()=>{
+   if(++window.retryCalls===1)return{status:'local_cancellation_unconfirmed',serverRevocationConfirmed:false};
+   window.retryPending=false;return{status:'inactive',serverRevocationConfirmed:true};
+  };
+  window.dispatchEvent(new Event('focus'));
+ },pending);
+ const retry=page.getByRole('button',{name:'Concluir desativação',exact:true});
+ await retry.waitFor({timeout:5000});
+ assert.equal(await page.getByRole('button',{name:/Ativar neste aparelho|Renovar cadastro|Autorizar no navegador/}).count(),0);
+ await page.evaluate(()=>{window.permissionState='denied';window.dispatchEvent(new Event('focus'));});
+ await page.getByText('Bloqueado no navegador.',{exact:false}).waitFor();
+ await retry.click();
+ await page.getByText('Não foi possível concluir a desativação. Tente novamente.',{exact:true}).waitFor();
+ assert.equal(await page.getByText('Avisos desativados para este aparelho.',{exact:true}).count(),0);
+ await retry.click();
+ await page.getByText('Avisos desativados para este aparelho.',{exact:true}).waitFor();
+ assert.equal(await retry.count(),0);
+ assert.equal(await page.evaluate(()=>window.retryCalls),2);
+ assert.equal(await page.evaluate(()=>window.calls),before);
+ assert.equal(await page.evaluate(()=>window.permissionPrompts),0);
+}
+await page.evaluate(()=>{
+ window.cancelStarted=false;window.cancelFinished=false;window.ownerCReads=0;
+ window.fixtureRead=async()=>{
+  if(window.owner==='C')window.ownerCReads++;
+  return{enabled:true,registered:false,needsRenewal:false,revision:3,publicKey:null,ownerId:window.owner,
+    serverRegistered:window.owner==='B',subscriptionStatus:window.owner==='B'?'locally_cancelled':'not_registered',events:[]};
+ };
+ window.fixtureCancel=async()=>{
+  await new Promise(resolve=>{window.releaseCancel=resolve;window.cancelStarted=true;});
+  window.cancelFinished=true;
+  return{status:'inactive',serverRevocationConfirmed:true};
+ };
+ window.dispatchEvent(new Event('crewcheck:auth-changed'));
+});
+await page.getByRole('button',{name:'Concluir desativação',exact:true}).click();
+await page.waitForFunction(()=>window.cancelStarted);
+await page.evaluate(()=>{window.owner='C';localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'C'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));window.releaseCancel();});
+await page.waitForFunction(()=>window.cancelFinished&&window.ownerCReads>=1);
+assert.equal(await page.evaluate(()=>window.ownerCReads),1,'only the account-change refresh may read the new account');
+await page.getByText('Disponibilidade neste aparelho ainda não verificada.').waitFor();
+assert.equal(await page.getByRole('button',{name:'Concluir desativação',exact:true}).count(),0,'old account retry is not restored');
+assert.equal(await page.getByText('Avisos desativados para este aparelho.',{exact:true}).count(),0,'old account confirmation is discarded');
 await page.evaluate(()=>{delete window.PushManager;window.dispatchEvent(new Event('focus'));});await page.getByText('Push não suportado neste navegador.').waitFor();assert.equal(await page.getByRole('button').count(),0,'unsupported browser never offers activation');
-await context.close();console.log('PASS actual CrewCheck device UI: disabled no action, default explicit authorization button, denied guidance/no prompt, granted distinct from enrollment, unsupported no activation, account-switch late response ignored, provider/device reports never received/read; mocked runtime, no grant or notification.');}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
+await context.close();console.log('PASS actual CrewCheck device UI: authorization, renewal, explicit pending deactivation with denied permission, retry and current-account confirmation, late activation/cancellation ignored, provider/device reports never received/read; mocked runtime, no grant or notification.');}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
