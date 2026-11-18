@@ -346,20 +346,27 @@ public class WatchTextLayoutTest {
     @Test public void connectionCardShowsCurrentUpcomingFlightWithItsOwnGate() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
             MainActivity activity = controller.get();
-            JSONObject json = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson()
+            LinearLayout content = field(activity, "content", LinearLayout.class);
+            long now = System.currentTimeMillis();
+            JSONObject json = WatchContextSnapshot.demo(now).toJson()
                     .put("state", "CONNECTION").put("headline", "CONEXÃO").put("changed", false)
                     .put("currentFlight", "QA102").put("currentRoute", "CGH → CNF")
                     .put("nextFlight", "QA103").put("nextDetail", "CNF → BSB")
                     .put("connection", "20 MIN").put("gate", "B24").put("gateSource", "manual")
                     .put("boardingTime", "");
-            Object primary = call(activity, "primaryFor", new Class[]{WatchContextSnapshot.class}, WatchContextSnapshot.fromJson(json));
-            assertEquals("QA102 · PORTÃO B24", field(primary, "detail", String.class));
-            assertEquals("CGH → CNF", field(primary, "secondary", String.class));
+            content.removeAllViews();
+            call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json), now);
+            String shown = allText(content);
+            assertTrue(shown, shown.contains("QA102 · PORTÃO B24"));
+            assertTrue(shown, shown.contains("CGH → CNF"));
+            assertFalse(shown, shown.contains("QA103"));
 
             json.put("currentFlight", "").put("remoteStand", true);
-            primary = call(activity, "primaryFor", new Class[]{WatchContextSnapshot.class}, WatchContextSnapshot.fromJson(json));
-            assertEquals("", field(primary, "detail", String.class));
-            assertEquals("", field(primary, "secondary", String.class));
+            content.removeAllViews();
+            call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json), now);
+            String withoutIdentity = allText(content);
+            assertFalse(withoutIdentity, withoutIdentity.contains("B24") || withoutIdentity.contains("REMOTA"));
+            assertFalse(withoutIdentity, withoutIdentity.contains("QA103") || withoutIdentity.contains("CGH → CNF"));
         }
     }
 

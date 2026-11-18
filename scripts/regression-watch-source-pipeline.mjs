@@ -18,7 +18,7 @@ try {
  class FixtureDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
  const source=fs.readFileSync('client/src/pages/Home.tsx','utf8');
  const ast=ts.createSourceFile('Home.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- const names=['buildLegs','applyPresentationManagement','managedPresentationForEvent','parseTimeStrict','presentationLearningKey','presentationOverrideKey','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','eventIsNow','noFutureLeg','nextFlight','chronologicalNextRosterLeg'];
+ const names=['buildLegs','watchEventsWithPublishedVacation','applyPresentationManagement','managedPresentationForEvent','parseTimeStrict','presentationLearningKey','presentationOverrideKey','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','eventIsNow','noFutureLeg','nextFlight','chronologicalNextRosterLeg'];
  const functions=names.map(name=>{const node=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(node,`Real Home function ${name}`);return node.getText(ast);}).join('\n');
  let overrides={};
  const ctx=vm.createContext({...lib,Date:FixtureDate,
@@ -29,9 +29,9 @@ try {
    loadPresentationOverrides:()=>overrides,loadPresentationRules:()=>({}),dateChip:d=>d.toISOString().slice(0,10),
    placeholderLeg:()=>({id:'empty',placeholder:true}),
  });
- vm.runInContext(ts.transpileModule(functions+'\n globalThis.project=buildLegs;globalThis.choose=nextFlight;', {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText,ctx);
+ vm.runInContext(ts.transpileModule(functions+'\n globalThis.project=buildLegs;globalThis.projectWatch=watchEventsWithPublishedVacation;globalThis.choose=nextFlight;', {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText,ctx);
  const roster=(leg,extra={})=>({month:10,year:2032,base:'GRU',rawText:'SYNTHETIC ONLY',days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'VOO',pairingCode:'QA',base:'GRU',rawText:'SYNTHETIC ONLY',legs:[{flightNumber:'QA123',origin:'GRU',destination:'REC',arrivalTime:'22:10',...leg}],...extra}]});
- const snapshot=r=>{const events=ctx.project(r);return {events,selected:ctx.choose(events),out:lib.buildCrewCheckWatchSnapshot(events,ctx.choose(events),null,now)};};
+ const snapshot=r=>{const events=ctx.project(r);return {events,selected:ctx.choose(events),out:lib.buildCrewCheckWatchSnapshot(ctx.projectWatch(events),ctx.choose(events),null,now)};};
  // Missing APZ becomes STD in canonical compatibility fields, but MUST NOT become watch APZ.
  const absent=snapshot(roster({departureTime:'19:05'}));
  assert.equal(absent.events[0].presentation,'19:05','Reproduce actual upstream fallback');

@@ -185,7 +185,6 @@ type ZeroView =
   | 'currency' | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
-  publishedVacation?: boolean;
   stayWakeup?: { plannedAt: string | null; hotelName: string; apzAt: string | null; timeZone: string };
   id: string;
   salaryClockKnown?: boolean;
@@ -1123,6 +1122,12 @@ function reviewableCompliance(compliance: ComplianceResult, roster: CrewRoster) 
 }
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
+function watchEventsWithPublishedVacation(events: readonly ZeroLeg[]) {
+  return events.map(event => event.canonical?.kind === 'rest' && careStateForScheduleActivity(event) === 'FERIAS'
+    ? { ...event, publishedVacation: true }
+    : event);
+}
+
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
   // Capture salary clock evidence before canonical midnight/arrival fallbacks.
   // This financial-only annotation never changes regulatory normalization.
@@ -1219,9 +1224,6 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       id: event.id,
       day,
       kind,
-      ...(event.kind === 'rest' && careStateForScheduleActivity({ day, canonical: event }) === 'FERIAS'
-        ? { publishedVacation: true }
-        : {}),
       date: d,
       title: kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação'),
       subtitle: kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional'),
@@ -5758,7 +5760,8 @@ export default function Home() {
         const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now,events):null;
         const projectedEvents=localStay?.isCurrent()&&localStay.hotelName?events.map(item=>item===stay?{...item,hotel:localStay.hotelName}:item):events;
         const projectedEvent=projectedEvents.find(item=>item.id===event.id)||event;
-        const base = buildCrewCheckWatchSnapshot(projectedEvents, projectedEvent, null, now, hotelReport);
+        const watchEvents = watchEventsWithPublishedVacation(projectedEvents);
+        const base = buildCrewCheckWatchSnapshot(watchEvents, projectedEvent, null, now, hotelReport);
         // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
         const nextFlightEvent = selectNextFlight(events);
         const gateInfo = nextFlightEvent ? resolveNextFlightGate({
