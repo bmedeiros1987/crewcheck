@@ -9,7 +9,8 @@ import {createInfobipReportReceiver} from './infobip-whatsapp-delivery.mjs';
 import {createInfobipProductionStore} from './infobip-whatsapp-store.mjs';
 import {createInfobipProductionTextTransport} from './infobip-whatsapp-transport.mjs';
 import {createInfobipSendAdmission} from './infobip-whatsapp-admission.mjs';
-import {preflightInfobipWhatsAppStorage} from './infobip-whatsapp-preflight.mjs';
+import {preflightInfobipWhatsAppStorage,assertPaidCohortStorage} from './infobip-whatsapp-preflight.mjs';
+import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
 import {invokeConfiguredWhatsAppConcierge,isWhatsAppConciergeConfigured,withWhatsAppConciergeQuiesced} from './whatsapp.mjs';
 import {createOperationalPilotScope} from './infobip-whatsapp-operational-pilot.mjs';
 import {createInfobipPilotRenewalAdmission} from './infobip-whatsapp-pilot-renewal.mjs';
@@ -78,7 +79,10 @@ export async function createInfobipWhatsAppProduction(options={}) {
     if(input.promotionalBeta!==undefined&&typeof input.promotionalBeta!=='boolean')fail();
     if(input.finiteBeta!==undefined&&typeof input.finiteBeta!=='boolean')fail();
     const promotional=input.promotionalBeta===true?createInfobipPromotionalBetaScope(input,options.admission,{now}):null;
-    const finite=input.finiteBeta===true?createInfobipFiniteBetaScope(input,options.admission,{now}):null;
+    const finite=input.finiteBeta===true?createInfobipFiniteBetaScope(input,options.admission,{now,trustLegacyPremiumProfile:options.trustLegacyPremiumProfile===true}):null;
+    // Capture the mandatory mode from the frozen scope before any await.
+    // Later mutation of the caller's options must never disable its fence.
+    const paidCohort=finite?.requiresPaidEntitlement===true;
     const restricted=finite||promotional;
     const originalQuantity=restricted?null:createInfobipSendAdmission(options.admission,{sender,now});
     const scheduler=options.scheduler;
@@ -105,7 +109,8 @@ export async function createInfobipWhatsAppProduction(options={}) {
       encryptionKey:Buffer.isBuffer(credentials.encryptionKey)?Buffer.from(credentials.encryptionKey):null,
       linkHashKey:credentials.linkHashKey,webhookAuthentication:Object.freeze({mode:'hmac-sha256',secretKey:credentials.webhookSecret})});
     const auth=createInfobipWebhookAuthenticator(configuration.webhookAuthentication);
-    const transport=createInfobipProductionTextTransport({...configuration,request});
+    if(paidCohort&&admission.requiresPaidEntitlement!==true)fail();
+    const transport=createInfobipProductionTextTransport({...configuration,request,requirePaidEntitlement:paidCohort});
     // Neutral transport smoke test uses the same binding/consent, durable
     // reservation, lifecycle and send locks, without invoking account tools.
     const concierge=restricted?async input=>{
@@ -121,6 +126,7 @@ export async function createInfobipWhatsAppProduction(options={}) {
       send:restricted?(proposal,context)=>restricted.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'}):pilot?(proposal,context)=>pilot.allowsProposal(proposal)?transport.send(proposal,context):Promise.resolve({status:'blocked'})
         :singleTest?(proposal,context)=>!linkOnly&&proposal.text===singleTestReply?transport.send(proposal,context):Promise.resolve({status:'blocked'}):transport.send,admission});
     await preflightInfobipWhatsAppStorage(db,sqlBudget); // SELECT only; never create or repair tables.
+    if(paidCohort)await createInfobipSqlBudget(db,{...sqlBudget,repeatableRead:true})(assertPaidCohortStorage);
     const receive=createInfobipInboundReceiver({sender,authentication:configuration.webhookAuthentication,store,now,
       ...(restricted?{queueLinkConfirmation:false,acceptEvent:restricted.acceptEvent}:pilot?{queueLinkConfirmation:false,acceptEvent:event=>admission.allows(event)}:singleTest?{queueLinkConfirmation:!linkHandshake,acceptEvent:event=>(event.text===singleTestInput&&admission.allows(event)) ||
         (linkHandshake&&/^\d{6}$/.test(event.text)&&event.receivedAt>=testFrom&&quantity.allows(event))}:{})});

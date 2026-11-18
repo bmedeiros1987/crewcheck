@@ -1,3 +1,4 @@
+import {runFiniteCohortSqlScenarios} from './concierge-finite-cohort-sql-scenarios.mjs';
 import {runFiniteReserveSqlScenarios} from './concierge-finite-reserve-sql-scenarios.mjs';
 import {runFiniteCallerSqlScenarios} from './concierge-finite-caller-sql-scenarios.mjs';
 // Disposable socket only. No provider, app bootstrap, credentials or real account.
@@ -114,6 +115,6 @@ try{
   if(mode==='restart'){assert.equal(await transaction(c=>promo().reserve(c,promoJob(1))),false);assert.equal(await transaction(c=>promo().reserve(c,promoJob(2))),true);assert.equal(await transaction(c=>promo().reserve(c,promoJob(3))),false);assert.equal((await read(key('account',['promotional',account]))).reservedMicroUsd,24000);passed.push('promotional limit survives actual restart and spends only remaining credit');}
   passed.push(mode==='restart'?'actual MySQL restart preserves normal and uncertain reservation':'separate process retains idempotency');
  }
- if(mode!=='worker'){passed.push(...await runPromotionalGrantSqlScenarios({db,transaction,mode,epoch}));passed.push(...await runFiniteReserveSqlScenarios({db,transaction,mode,epoch}));passed.push(...await runFiniteCallerSqlScenarios({db,transaction,mode,epoch}));}
+ if(mode!=='worker'){passed.push(...await runPromotionalGrantSqlScenarios({db,transaction,mode,epoch}));passed.push(...await runFiniteReserveSqlScenarios({db,transaction,mode,epoch}));passed.push(...await runFiniteCallerSqlScenarios({db,transaction,mode,epoch}));passed.push(...await runFiniteCohortSqlScenarios({db,transaction,mode}));}
  console.log(JSON.stringify({head,phase:mode,mysql:identity.version,passed,shipping:false,externalCalls:0,providerCalls:0}));
 }finally{await db.end();}
