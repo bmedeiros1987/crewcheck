@@ -1,5 +1,8 @@
 import { verifiedStayLease } from '../../shared/stay-alarm-lease-policy.mjs';
 import crypto from 'node:crypto';
+import { accountSessionClaims, readAccountSessionProfile } from '../account-session.mjs';
+import { mysqlAdapter } from '../mysql-platform-adapter.mjs';
+import { withTransaction } from '../profile-locks.mjs';
 import {
   authSecret,
   cleanText,
@@ -17,6 +20,7 @@ import {
   sendJson,
   setAuthCookie,
   userFromAccount,
+  userFromProfile,
   verifyJwt,
 } from './common.mjs';
 import {
@@ -368,21 +372,33 @@ async function me(req, res, db) {
   } catch (error) {
     return sendJson(res, Number(error?.status || 503), { ok: false, authenticated: false, message: error?.message });
   }
-  const email = safeEmail(payload?.email);
-  if (!email) return sendJson(res, 401, { ok: false, authenticated: false, message: 'Sessão expirada.' });
-  // A valid token means the session itself is fine - a query failure here is a transient
-  // backend problem (connection drop, deadlock, restart mid-request), not proof the
-  // session is invalid. Without this, an unhandled rejection here reaches only the
-  // process-level uncaughtException logger (no HTTP response ever gets sent), so the
-  // client's request hangs indefinitely instead of failing fast with a status the client
-  // can classify as "backend unavailable" rather than "log out".
+  const principal = accountSessionClaims(payload);
+  const invalid = () => sendJson(res, 401, { ok: false, authenticated: false, code: 'AUTH_REQUIRED', message: 'Sessão da conta não é mais válida. Faça login novamente.' });
+  if (!principal) return invalid();
   try {
-    const [accounts] = await db.query('SELECT must_change_password FROM crewcheck_platform_accounts WHERE email=? LIMIT 1', [email]);
+    // Observational session validation must not call userFromAccount (which
+    // can create a profile), or run DDL while taking this account snapshot.
+    const user = await withTransaction(mysqlAdapter(db), async client => {
+      const profile = await readAccountSessionProfile(client, principal);
+      if (!profile) return null;
+      const { email } = principal;
+      const { rows: accounts } = await client.query('SELECT must_change_password FROM crewcheck_platform_accounts WHERE email=$1 LIMIT 1', [email]);
+      let rank = null;
+      try {
+        const { rows } = await client.query('SELECT crew_function FROM crewcheck_platform_profile_functions WHERE email=$1 LIMIT 1', [email]);
+        rank = normalizeCrewFunction(rows[0]?.crew_function) || null;
+      } catch (error) {
+        if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+      }
+      if (!await readAccountSessionProfile(client, principal, { lock: 'read' })) return null;
+      return { ...userFromProfile(profile, email, Boolean(accounts[0]?.must_change_password)), rank };
+    }, { repeatableRead: true });
+    if (!user || !accountSessionClaims(payload)) return invalid();
     return sendJson(res, 200, {
       ok: true,
       authenticated: true,
       stayAlarmLease: verifiedStayLease({ exp: payload.exp }),
-      user: await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password))),
+      user,
     });
   } catch (error) {
     console.error('[crewcheck:auth:me]', String(error?.code || error?.message || 'ME_QUERY_FAILED'));

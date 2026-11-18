@@ -1,6 +1,8 @@
 import {googleSubscriptionStatus} from './google-subscription-status.mjs';
 import {readBillingCancellation,commitAcknowledgedAsaasCancellation} from './billing-cancellation.mjs';
 import {createCancellationAdmission} from './billing-cancellation-admission.mjs';
+import {accountSessionClaims,readAccountSessionProfile} from './account-session.mjs';
+import {withTransaction} from './profile-locks.mjs';
 import {writeVerifiedGoogleSubscription} from './google-subscription-write.mjs';
 import {createGoogleCurrentReadAdapter} from './billing-current-read-adapters.mjs';
 import {createGoogleEventObserver} from './google-event-observation.mjs';
@@ -247,13 +249,17 @@ function requestToken(req, cookieName = 'crewcheck_auth_token') {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
+function platformAdmin(email, token) {
+  const emails = env('CREWCHECK_ADMIN_EMAILS', env('CREWCHECK_ADMIN_EMAIL', 'bmedeiros1987@gmail.com'))
+    .split(',').map(safeEmail).filter(Boolean);
+  return Boolean(token?.admin || emails.includes(email));
+}
+
 function mainIdentity(req, body = {}) {
   const token = verifyJwt(requestToken(req));
   const authRequired = env('CREWCHECK_AUTH_REQUIRED', 'true').toLowerCase() !== 'false';
   const fallbackEmail = !authRequired ? safeEmail(req.headers['x-crewcheck-email'] || body.email) : '';
   const email = safeEmail(token?.email) || fallbackEmail;
-  const adminEmails = env('CREWCHECK_ADMIN_EMAILS', env('CREWCHECK_ADMIN_EMAIL', 'bmedeiros1987@gmail.com'))
-    .split(',').map(safeEmail).filter(Boolean);
   return {
     token,
     email,
@@ -262,7 +268,7 @@ function mainIdentity(req, body = {}) {
     plan: normalizeText(token?.plan || '', 40).toLowerCase(),
     locale: normalizeLocale(req.headers['x-crewcheck-locale'] || 'pt-BR'),
     timezone: normalizeTimezone(req.headers['x-crewcheck-timezone'] || DEFAULT_TIMEZONE),
-    admin: Boolean(token?.admin || adminEmails.includes(email)),
+    admin: platformAdmin(email, token),
     authenticated: Boolean(email),
   };
 }
@@ -1325,6 +1331,31 @@ async function handleAmilSearch(req, res, url) {
   } finally { clearTimeout(timer); }
 }
 
+async function withAccountProfile(req, res, read, { forUpdate = false } = {}) {
+  const db = await pool();
+  if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível. Seus dados locais continuam protegidos.' });
+  const principal = platformAccountSession(req);
+  const invalid = () => Object.assign(new Error('Sessão da conta não é mais válida. Faça login novamente.'), { status: 401, code: 'AUTH_REQUIRED' });
+  if (!principal) throw invalid();
+
+  // All reads share one snapshot. Deleting and recreating the email cannot
+  // combine the original profile with the replacement's billing or quota.
+  const result = await withTransaction(db, async client => {
+    const profile = await readAccountSessionProfile(client, principal, { lock: forUpdate ? 'write' : undefined });
+    if (!profile || !principal.isCurrent()) throw invalid();
+    const effectiveProfile = principal.admin || unlimitedEmails().includes(profile.email)
+      ? { ...profile, plan: 'premium_unlimited' }
+      : profile;
+    const payload = await read(client, effectiveProfile, principal);
+    // The final locking read sees a recreation committed after the snapshot.
+    if (!forUpdate && !await readAccountSessionProfile(client, principal, { lock: 'read' })) throw invalid();
+    if (!principal.isCurrent()) throw invalid();
+    return payload;
+  }, { repeatableRead: true });
+  if (!principal.isCurrent()) throw invalid();
+  return sendJson(res, 200, result);
+}
+
 async function handleProfile(req, res) {
   const body = req.method === 'PATCH' || req.method === 'POST' ? await readBody(req) : {};
   if (req.method !== 'GET' && Object.keys(body).some((key) => !['displayName', 'locale', 'timezone', 'sharePresence'].includes(key))) {
@@ -1333,24 +1364,21 @@ async function handleProfile(req, res) {
   if (Object.hasOwn(body, 'displayName') && (typeof body.displayName !== 'string' || !normalizeText(body.displayName, 120) || body.displayName.normalize('NFC').trim().length > 120)) {
     return sendJson(res, 400, { ok: false, message: 'Informe um nome de até 120 caracteres.' });
   }
-  const context = await requireMain(req, res, body);
-  if (!context) return;
-  let profile = context.profile;
-  if (req.method !== 'GET') profile = await ensureProfile(context.db, context.identity, {
-    apply: true,
-    ...(Object.hasOwn(body, 'displayName') ? { displayName: body.displayName } : {}),
-    ...(Object.hasOwn(body, 'locale') ? { locale: normalizeLocale(body.locale) } : {}),
-    ...(Object.hasOwn(body, 'timezone') ? { timezone: normalizeTimezone(body.timezone) } : {}),
-    ...(Object.hasOwn(body, 'sharePresence') ? { sharePresence: Boolean(body.sharePresence) } : {}),
-  });
-  const billing = await subscriptionStatus(context.db, profile);
-  return sendJson(res, 200, { ok: true, profile: publicProfile(profile), billing, encoding: 'UTF-8' });
+  const forUpdate = req.method !== 'GET';
+  return withAccountProfile(req, res, async (client, existing, principal) => {
+    const profile = forUpdate ? await ensureProfile(client, principal, {
+      apply: true,
+      ...(Object.hasOwn(body, 'displayName') ? { displayName: body.displayName } : {}),
+      ...(Object.hasOwn(body, 'locale') ? { locale: normalizeLocale(body.locale) } : {}),
+      ...(Object.hasOwn(body, 'timezone') ? { timezone: normalizeTimezone(body.timezone) } : {}),
+      ...(Object.hasOwn(body, 'sharePresence') ? { sharePresence: Boolean(body.sharePresence) } : {}),
+    }) : existing;
+    return { ok: true, profile: publicProfile(profile), billing: await subscriptionStatus(client, profile), encoding: 'UTF-8' };
+  }, { forUpdate });
 }
 
 async function handleBillingStatus(req, res) {
-  const context = await requireMain(req, res);
-  if (!context) return;
-  return sendJson(res, 200, { ok: true, ...(await subscriptionStatus(context.db, context.profile)), plans: planCatalog() });
+  return withAccountProfile(req, res, async (client, profile) => ({ ok: true, ...(await subscriptionStatus(client, profile)), plans: planCatalog() }));
 }
 
 async function handleGooglePurchase(req, res) {
@@ -1456,17 +1484,14 @@ async function handleBillingCancel(req, res) {
   return sendJson(res, 200, { ok: true, canceled: true, currentPeriodEnd: saved.currentPeriodEnd, message: saved.keepsPaidAccess ? 'Renovação web cancelada. O acesso permanece até o fim do período vigente.' : 'Renovação web cancelada. Isso não confirma pagamento ou quitação de cobranças.' });
 }
 
-function billingCancellationIdentity(req) {
+function platformAccountSession(req) {
   let credential;
   try { credential = requestToken(req); }
   catch { return null; }
   const read = () => {
     const claims = verifyJwt(credential);
-    const email = safeEmail(claims?.email);
-    if (!email || claims.iss !== 'crewcheck' || claims.aud !== 'crewcheck-web' || claims.role === 'visitor' ||
-        !Number.isInteger(claims.exp) || claims.exp <= Math.floor(Date.now() / 1000) ||
-        typeof claims.sub !== 'string' || !claims.sub) return null;
-    return { email, publicId: claims.sub };
+    const owner = accountSessionClaims(claims);
+    return owner ? { ...owner, admin: platformAdmin(owner.email, claims) } : null;
   };
   const initial = read();
   if (!initial) return null;
@@ -1493,7 +1518,7 @@ async function handleCoordinatedBillingCancel(req, res, { poolProvider, sendAsaa
   }
   const db = await poolProvider();
   if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE', message: 'Sincronização temporariamente indisponível.' });
-  const principal = billingCancellationIdentity(req);
+  const principal = platformAccountSession(req);
   const loginRequired = () => sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Entre novamente para gerenciar a assinatura.' });
   if (!principal) return loginRequired();
   const { email, publicId } = principal;
