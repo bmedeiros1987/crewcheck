@@ -12,6 +12,7 @@ on:
       - 'client/src/lib/aimsParser.ts'
       - 'client/src/lib/pdfParser.ts'
       - 'scripts/regression-roster-crew-*.mjs'
+      - 'scripts/regression-crewtopia-crew-table-layout.mjs'
       - 'client/src/components/v1391/aims-vertical.css'
       - 'client/src/components/v1391/roster-layout.css'
       - 'client/src/lib/rosterPublication*.ts'
@@ -43,6 +44,7 @@ jobs:
       - name: Raw source contracts and TypeScript
         run: |
           node scripts/regression-roster-crew-occurrence.mjs
+          for tz in UTC America/Sao_Paulo Pacific/Auckland; do TZ="$tz" node scripts/regression-crewtopia-crew-table-layout.mjs; done
           node scripts/regression-roster-layout-preference.mjs
           npx tsc --noEmit
           sha256sum client/src/components/v1391/AimsRosterTable.tsx client/src/components/v1391/aims-vertical.css > "$RUNNER_TEMP/aims.sha256"
@@ -51,6 +53,7 @@ jobs:
           npm run check
           sha256sum -c "$RUNNER_TEMP/aims.sha256"
           node scripts/regression-roster-crew-occurrence.mjs
+          for tz in UTC America/Sao_Paulo Pacific/Auckland; do TZ="$tz" node scripts/regression-crewtopia-crew-table-layout.mjs; done
           node scripts/regression-roster-layout-preference.mjs
           node scripts/regression-roster-publication-review.mjs
           npx vite build
@@ -74,6 +77,8 @@ jobs:
           node scripts/regression-aims-vertical-browser.mjs
           node scripts/regression-roster-crew-browser.mjs
           node scripts/regression-roster-crew-app-browser.mjs
+          node scripts/regression-roster-crew-browser.mjs --crewtopia-table
+          CREW_PDF_PATH=artifacts/SYNTHETIC-roster-crewtopia/SYNTHETIC-crew-three-pages.pdf CREW_APP_EVIDENCE_DIR=artifacts/SYNTHETIC-roster-crewtopia-app node scripts/regression-roster-crew-app-browser.mjs
       - name: Full app import to AIMS history regression
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
@@ -85,6 +90,8 @@ jobs:
           path: |
             artifacts/SYNTHETIC-roster-crew
             artifacts/SYNTHETIC-roster-crew-app
+            artifacts/SYNTHETIC-roster-crewtopia
+            artifacts/SYNTHETIC-roster-crewtopia-app
             artifacts/aims-vertical
             artifacts/publication-import-flow
           if-no-files-found: warn
