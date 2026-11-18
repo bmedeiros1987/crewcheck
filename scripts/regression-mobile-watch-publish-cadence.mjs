@@ -61,7 +61,13 @@ const flight = (id, flightNumber, date, gate) => ({ id, kind: 'flight', flightNu
 const event = flight('active-2032-10-13', 'LA100', '2032-10-13', '12');
 const otherFlight = flight('other-2032-10-13', 'LA200', '2032-10-13', '99');
 const otherDate = flight('same-flight-2032-10-14', 'LA100', '2032-10-14', '88');
-const events = [otherFlight, event, otherDate];
+const vacation = {
+  id: 'vacation-2032-10-14', kind: 'duty',
+  day: { type: 'DO', pairingCode: 'VC' },
+  canonical: { id: 'vacation-2032-10-14', kind: 'rest', date: '14/10/2032',
+    startDateTime: '2032-10-14T03:00:00Z', endDateTime: '2032-10-15T03:00:00Z' }
+};
+const events = [otherFlight, event, otherDate, vacation];
 let calls = 0;
 const window = {
   dispatchEvent(e) { published.push(e); if(e.detail?.contextId!=='session-invalidated')calls++; },
@@ -72,12 +78,40 @@ const window = {
 };
 const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings, stayEditorKey, bundle:{roster:{days:[]}},
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
-  buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at, report) { if (!actualEvent.placeholder) assert.equal(actualEvents, events); return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at ?? now, report); },
+  careStateForScheduleActivity: actualModule('scheduleActivityClassification').careStateForScheduleActivity,
+  buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at, report) {
+    if (!actualEvent.placeholder) {
+      assert.equal(actualEvents.length, events.length);
+      for (const [index, candidate] of actualEvents.entries()) {
+        if (candidate.id === vacation.id) {
+          assert.equal(candidate.day, vacation.day);
+          assert.equal(candidate.canonical, vacation.canonical);
+        } else {
+          assert.equal(candidate, events[index]);
+        }
+      }
+    }
+    return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at ?? now, report);
+  },
 });
+const projectionMarker = 'function watchEventsWithPublishedVacation(';
+const projectionStart = source.indexOf(projectionMarker);
+assert(projectionStart >= 0, 'The actual Wear vacation source adapter is required');
+const projectionEnd = source.indexOf('\n}', projectionStart);
+assert(projectionEnd > projectionStart);
+vm.runInContext(stripTypeScriptTypes(source.slice(projectionStart, projectionEnd + 2)), context);
 const effect = stripTypeScriptTypes(`(() => {\n${source.slice(start, end)}\n})()`);
 const cleanup = vm.runInContext(effect, context);
 assert.equal(calls, 1); // Immediate publication, not a minute-long first-sync wait.
 assert.equal(published[0].type, 'crewcheck:watch-snapshot');
+const vacationRow = published[0].detail.schedule.find(item => item.id === vacation.canonical.id);
+assert(vacationRow, 'The actual effect publishes explicit vacation while a flight is selected');
+assert.equal(vacationRow.title, 'Férias');
+assert.equal(vacationRow.detail, '14/10');
+assert.equal(vacationRow.time, '');
+assert.equal(vacationRow.presentation, '');
+assert.equal(vacationRow.gate, '');
+assert.equal(Object.hasOwn(vacation, 'publishedVacation'), false, 'Wear projection does not mutate the source');
 function assertPublished(selected, gate, remoteStand = false) {
   const snapshot = published.at(-1).detail;
   assert.equal(snapshot.contextId, selected.canonical.id);
