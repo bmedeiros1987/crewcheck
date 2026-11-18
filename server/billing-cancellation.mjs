@@ -36,11 +36,12 @@ export async function readOwnedBillingCancellation(client,owner,{now=Date.now()}
  const snapshot=await readLockedPlatformEntitlement(client,owner);
  return ownedSnapshot(client,snapshot,owner.email,now);
 }
-export async function applyAcknowledgedAsaasCancellation(client,input,{now=Date.now()}={}){
+export async function applyAcknowledgedAsaasCancellation(client,input,{now=Date.now(),assertCurrent=()=>{}}={}){
  assertTransactionClient(client);
  const snapshot=await readLockedPlatformEntitlement(client,input),current=await ownedSnapshot(client,snapshot,input.email,now);
  if(current.provider!=='asaas'||current.providerRef!==input.providerRef)throw fail('BILLING_CANCELLATION_RECONCILIATION_REQUIRED');
  const status=paidStatuses.has(snapshot.subscription.status)&&!current.keepsPaidAccess?'expired':snapshot.subscription.status;
+ assertCurrent();
  await client.query("UPDATE crewcheck_platform_subscriptions SET status=$3,cancel_at_period_end=TRUE,updated_at=NOW(3) WHERE email=$1 AND provider='asaas' AND provider_ref=$2",[input.email,input.providerRef,status]);
  if(!current.keepsPaidAccess&&snapshot.profile.plan!=='premium_unlimited')await client.query("UPDATE crewcheck_platform_profiles SET plan='free',updated_at=NOW(3) WHERE email=$1",[input.email]);
  return {canceled:true,currentPeriodEnd:current.currentPeriodEnd,keepsPaidAccess:current.keepsPaidAccess};

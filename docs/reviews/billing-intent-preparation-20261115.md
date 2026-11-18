@@ -205,3 +205,9 @@ The same event ID and payload hash return a duplicate acknowledgement. A reused 
 The previous route could commit access before its receipt insert failed. The regression injects that failure after the access update and checks rollback and successful retry. The local SQL suite also exercises overlapping duplicates, competing observations, account and provider changes, conflict detection and duplicate readback. A legacy subscription with no observation fence can still get the fence metadata before the transaction. The token stays transient.
 
 HOLD remains for rollout and validation against real Google data, unknown-owner retention, durable admission of new purchases across Asaas and Google, reconciliation of conflicting subscriptions, cancellation and provider-specific rights. The strict existing current-read adapter fails closed for unsupported plan and response shapes. The synthetic fixtures do not activate transport or prove these other paths.
+
+## Authority during application of a cancellation receipt
+
+The isolated Asaas cancellation coordinator rechecks the caller inside the existing owner transaction. If revocation is observed before a local write or after the last awaited write, the transaction rolls back. The previously recorded provider acknowledgement remains available to a later authorized request without a second provider call. The checks apply to both local application and marking a replaced contract for reconciliation.
+
+The disposable MySQL regression revokes authority after reading the acknowledged receipt and again in a separate case after the last local write. This covers revocations observed before commit. It does not reverse a provider action or establish atomic revocation after commit. The admission coordinator remains isolated from the production cancellation handler, and its schema and provider rollout remain on HOLD.

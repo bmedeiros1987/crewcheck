@@ -63,13 +63,22 @@ export async function recordCancellationOutcome(db,input){
   await client.query(`UPDATE ${I} SET state=$2 WHERE operation_id=$1`,[input.operationId,state]);return {...view(row),state};
  },{repeatableRead:true}));
 }
-export async function applyCancellationOutcome(db,input){return boundary(db,input,async client=>{
+export async function applyCancellationOutcome(db,input,{assertCurrent=()=>{}}={}){return boundary(db,input,async client=>{
  const row=owned((await client.query(`SELECT * FROM ${I} WHERE operation_id=$1 FOR UPDATE`,[input.operationId])).rows[0],input);
+ assertCurrent();
  if(row.state==='applied')return {...view(row),alreadyApplied:true};
  if(row.state!=='acknowledged')return {...view(row),localApplied:false};
  const proof=(await client.query(`SELECT receipt_id FROM ${E} WHERE operation_id=$1 AND kind='acknowledged' LIMIT 1`,[input.operationId])).rows;if(!proof.length)throw fail('CANCELLATION_EVIDENCE_INVALID');
  const current=await readOwnedBillingCancellation(client,input);
- if(current.provider!=='asaas'||cancellationContractHash(current.providerRef)!==row.contract_hash){await client.query(`UPDATE ${I} SET state='reconciliation_required' WHERE operation_id=$1`,[input.operationId]);return {...view(row),state:'reconciliation_required',localApplied:false};}
- const applied=await applyAcknowledgedAsaasCancellation(client,{...input,providerRef:current.providerRef});
- await client.query(`UPDATE ${I} SET state='applied' WHERE operation_id=$1`,[input.operationId]);return {...view(row),state:'applied',localApplied:true,...applied};
+ assertCurrent();
+ if(current.provider!=='asaas'||cancellationContractHash(current.providerRef)!==row.contract_hash){
+  await client.query(`UPDATE ${I} SET state='reconciliation_required' WHERE operation_id=$1`,[input.operationId]);
+  assertCurrent();
+  return {...view(row),state:'reconciliation_required',localApplied:false};
+ }
+ const applied=await applyAcknowledgedAsaasCancellation(client,{...input,providerRef:current.providerRef},{assertCurrent});
+ await client.query(`UPDATE ${I} SET state='applied' WHERE operation_id=$1`,[input.operationId]);
+ // An observed revocation rolls back these local changes and retains the earlier receipt.
+ assertCurrent();
+ return {...view(row),state:'applied',localApplied:true,...applied};
 });}

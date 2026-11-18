@@ -25,7 +25,13 @@ export function createCancellationAdmission({db,resolvePrincipal,transport,probe
   try{return await recordCancellationOutcome(db,{...input,kind,source:proof?source:'transport_uncertain',evidenceHash,receiptId:hash([input.operationId,kind,source,evidenceHash])});}
   catch{throw fail('CANCELLATION_ADMISSION_OUTCOME_UNCONFIRMED');}
  }
- async function finish(principal,input){current(principal);const applied=await applyCancellationOutcome(db,input);current(principal);return publicView(applied);}
+ async function finish(principal,input){
+  const assertCurrent=()=>current(principal);
+  assertCurrent();
+  const applied=await applyCancellationOutcome(db,input,{assertCurrent});
+  assertCurrent();
+  return publicView(applied);
+ }
  return {
   async cancel(context,request){
    const {principal,input}=await principalInput(context,request);

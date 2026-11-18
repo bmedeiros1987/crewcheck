@@ -29,6 +29,48 @@ try{
  await seed(8);await assert.rejects(factory(8).reconcile({},request(8)),{code:'CANCELLATION_OWNER_MISMATCH'});assert.equal((await rows()).intents.some(x=>x.operation_id===request(8).operationId),false);const beforeCrossOwner=deletes;await assert.rejects(factory(8).cancel({},request(3)),{code:'CANCELLATION_OWNER_MISMATCH'});assert.equal(deletes,beforeCrossOwner);assert.equal(await canceled(8),0);cases++;
  await seed(9);await factory(9,{transport:async()=>{deletes++;return null;}}).cancel({},request(9));let probeAuthority=true;const revokedProbe=factory(9,{isCurrent:()=>probeAuthority,probe:async x=>{probes++;probeAuthority=false;return confirmed(x);}});await assert.rejects(revokedProbe.reconcile({},request(9)),{code:'BILLING_ADMISSION_AUTHORITY_REQUIRED'});assert.equal((await rows()).intents.find(x=>x.operation_id===request(9).operationId).state,'acknowledged');assert.equal(await canceled(9),0);const beforeLateApply=deletes;assert.equal((await factory(9).reconcile({},request(9))).state,'applied');assert.equal(deletes,beforeLateApply);cases++;
  await seed(10);await factory(10,{transport:async()=>{deletes++;return null;}}).cancel({},request(10));const staleProbe=factory(10,{probe:async()=>{probes++;assert.equal((await factory(10).reconcile({},request(10))).state,'applied');return {acknowledged:false};}});assert.equal((await staleProbe.reconcile({},request(10))).state,'applied');assert.equal(await canceled(10),1);cases++;
+ for (const [n, revokeAfter, attemptedWrites] of [
+  [11, 'SELECT receipt_id FROM crewcheck_billing_cancellation_evidence', 0],
+  [12, "UPDATE crewcheck_billing_cancellation_intents SET state='applied'", 1],
+ ]) {
+  await seed(n);
+  let authorized = true, revoked = false, writes = 0, rollbacks = 0;
+  const before = deletes;
+  const revokingDb = {
+   query: (...args) => db.query(...args),
+   connect: async () => {
+    const client = await db.connect();
+    return { ...client, query: async (sql, params) => {
+     if (sql.startsWith('UPDATE crewcheck_platform_subscriptions')) writes++;
+     if (sql === 'ROLLBACK') rollbacks++;
+     const result = await client.query(sql, params);
+     if (sql.startsWith(revokeAfter)) { authorized = false; revoked = true; }
+     return result;
+    } };
+   },
+  };
+  const candidate = createCancellationAdmission({
+   db: revokingDb,
+   resolvePrincipal: async () => ({ ...owner(n), isCurrent: () => authorized }),
+   transport: async input => { deletes++; return confirmed(input); },
+   probe: async () => assert.fail('a cancel retry must not poll the provider'),
+  });
+  await assert.rejects(candidate.cancel({}, request(n)), { code: 'BILLING_ADMISSION_AUTHORITY_REQUIRED' });
+  assert.equal(revoked, true, 'the fixture must revoke authority inside the application transaction');
+  assert.equal(await canceled(n), 0, 'in-transaction revocation must leave the subscription unchanged');
+  assert.equal(writes, attemptedWrites);
+  assert.equal(rollbacks, 1, 'the application transaction must roll back');
+  assert.equal((await native.query('SELECT plan FROM crewcheck_platform_profiles WHERE email=?', [owner(n).email]))[0][0].plan, 'premium_monthly');
+  const afterRevocation = await rows();
+  const operation = afterRevocation.intents.find(x => x.operation_id === request(n).operationId);
+  assert.equal(operation.state, 'acknowledged', 'provider evidence committed before revocation must remain available');
+  assert.equal(afterRevocation.evidence.filter(x => x.operation_id === operation.operation_id && x.kind === 'acknowledged').length, 1);
+  assert.equal(deletes, before + 1);
+  assert.equal((await factory(n).cancel({}, request(n))).state, 'applied');
+  assert.equal(deletes, before + 1, 'authorized recovery uses durable evidence without a second transport');
+  assert.equal(await canceled(n), 1);
+  cases++;
+ }
  fs.writeFileSync(path.join(root,'cancel-auth-snapshot.json'),JSON.stringify(await rows()));console.log('PASS authenticated cancellation proposal: '+cases+' isolated SQL/mock scenarios; no real auth/provider/network');
  }
 }finally{await native.end();}
