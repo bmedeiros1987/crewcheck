@@ -121,7 +121,7 @@ import { DATABASE_STATUS_MESSAGES } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
-import { isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';
+import { careStateForScheduleActivity, isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import { SalaryCalculationStatus } from '@/components/finance/SalaryCalculationStatus';
 import { salaryCalculationDiagnostic } from '@/lib/salaryCalculationDiagnostic';
@@ -185,6 +185,7 @@ type ZeroView =
   | 'currency' | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
+  publishedVacation?: boolean;
   stayWakeup?: { plannedAt: string | null; hotelName: string; apzAt: string | null; timeZone: string };
   id: string;
   salaryClockKnown?: boolean;
@@ -1218,6 +1219,9 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
       id: event.id,
       day,
       kind,
+      ...(event.kind === 'rest' && careStateForScheduleActivity({ day, canonical: event }) === 'FERIAS'
+        ? { publishedVacation: true }
+        : {}),
       date: d,
       title: kind === 'stay' ? `Estadia diurna · ${base}` : safe((day as any).pairingCode || (day as any).type || event.flightNumber, 'Programação'),
       subtitle: kind === 'stay' ? `Hotel/pernoite em ${safe((day as any).hotel || city(base), city(base))}` : safe((day as any).description || (day as any).rawText, 'Programação operacional'),

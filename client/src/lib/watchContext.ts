@@ -60,6 +60,7 @@ export type WatchEventLike = {
   id: string;
   kind: string;
   placeholder?: boolean;
+  publishedVacation?: boolean;
   origin?: string;
   destination?: string;
   flightNumber?: string;
@@ -222,6 +223,65 @@ function validWindow(now: number, eventEndMs: number): number {
   return Math.max(now + 15 * 60 * 1000, Math.min(maxFresh, eventFresh));
 }
 
+function buildWatchSchedule(events: readonly WatchEventLike[], now: number): CrewCheckWatchScheduleItem[] {
+  return events
+    .filter((candidate) => !candidate.placeholder && (
+      (candidate.canonical?.kind === 'rest' && candidate.publishedVacation === true)
+      || (['flight', 'stay', 'duty'].includes(candidate.kind) && !['rest', 'journey-rest'].includes(candidate.canonical?.kind || ''))
+    ))
+    .filter((candidate) => {
+      const start = candidate.canonical?.startDateTime
+        ? instant(candidate.canonical.startDateTime)
+        : Number.POSITIVE_INFINITY;
+      const end = instant(candidate.canonical?.endDateTime);
+      return Number.isFinite(start) && Number.isFinite(end) && end >= now;
+    })
+    .slice(0, 8)
+    .map((candidate): CrewCheckWatchScheduleItem => {
+      if (candidate.publishedVacation === true && candidate.canonical?.kind === 'rest') {
+        return {
+          id: clean(candidate.canonical.id) || candidate.id,
+          kind: 'duty',
+          title: 'Férias',
+          time: '',
+          route: '',
+          presentation: '',
+          gate: '',
+          detail: dayLabel(clockOnEventDate(candidate, '00:00')),
+        };
+      }
+      const candidatePresentation = publishedPresentation(candidate);
+      const candidatePresentationMs = presentationInstant(candidate, candidatePresentation);
+      const start = candidate.kind === 'duty' ? candidatePresentationMs : instant(candidate.canonical?.startDateTime);
+      const date = Number.isFinite(start) ? start : clockOnEventDate(candidate, '00:00');
+      const kind: CrewCheckWatchScheduleItem['kind'] =
+        candidate.kind === 'flight' || candidate.kind === 'stay' ? candidate.kind : 'duty';
+      const title = kind === 'flight'
+        ? clean(candidate.flightNumber) || 'Voo'
+        : kind === 'stay'
+          ? 'Pernoite'
+          : clean(candidate.flightNumber) || 'Programação';
+      const route = kind === 'flight'
+        ? [clean(candidate.origin), clean(candidate.destination)].filter(Boolean).join(' → ')
+        : clean(candidate.destination) || clean(candidate.origin);
+      const rawGate = ''; // Filled only by the confirmed occurrence projection.
+      const remote = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
+      return {
+        id: clean(candidate.canonical?.id) || candidate.id,
+        kind,
+        time: candidate.kind === 'flight' ? (publishedDeparture(candidate) ? clockLabel(start) : '')
+          : candidate.kind === 'duty' ? (publishedPresentation(candidate) ? clockLabel(start) : '') : clockLabel(start),
+        title,
+        route,
+        presentation: Number.isFinite(candidatePresentationMs) && (candidate.kind !== 'flight' || publishedDeparture(candidate))
+          ? `${dayLabel(candidatePresentationMs)} ${candidatePresentation}`
+          : '',
+        gate: remote ? 'REMOTA' : rawGate,
+        detail: [dayLabel(date), 'BRT', kind === 'stay' ? clean(candidate.hotel) : kind === 'flight' ? (publishedDeparture(candidate) ? 'Decolagem prevista' : 'Decolagem a confirmar') : ''].filter(Boolean).join(' • '),
+      };
+    });
+}
+
 export function buildCrewCheckWatchSnapshot(
   events: readonly WatchEventLike[],
   event: WatchEventLike,
@@ -229,6 +289,7 @@ export function buildCrewCheckWatchSnapshot(
   now = Date.now(),
   hotelReportRecord: WatchHotelReport | null = null,
 ): CrewCheckWatchSnapshot {
+  const schedule = buildWatchSchedule(events, now);
   const activeWindow = (candidate: WatchEventLike) => !candidate.placeholder
     && instant(candidate.canonical?.startDateTime) <= now && now < instant(candidate.canonical?.endDateTime);
   const currentStays = events.filter(candidate => candidate.kind === 'stay' && activeWindow(candidate));
@@ -267,7 +328,7 @@ export function buildCrewCheckWatchSnapshot(
       hotelPickup: '',
       changed: false,
       source: 'canonical-roster',
-      schedule: [],
+      schedule,
     };
   }
 
@@ -365,47 +426,6 @@ export function buildCrewCheckWatchSnapshot(
     ? [clean(event.origin), clean(event.destination)].filter(Boolean).join(' → ')
     : '';
 
-  const schedule = events
-    .filter((candidate) => !candidate.placeholder && ['flight', 'stay', 'duty'].includes(candidate.kind) && !['rest', 'journey-rest'].includes(candidate.canonical?.kind || ''))
-    .filter((candidate) => {
-      const start = candidate.canonical?.startDateTime
-        ? instant(candidate.canonical.startDateTime)
-        : Number.POSITIVE_INFINITY;
-      const end = instant(candidate.canonical?.endDateTime);
-      return Number.isFinite(start) && Number.isFinite(end) && end >= now;
-    })
-    .slice(0, 8)
-    .map((candidate): CrewCheckWatchScheduleItem => {
-      const candidatePresentation = publishedPresentation(candidate);
-      const candidatePresentationMs = presentationInstant(candidate, candidatePresentation);
-      const start = candidate.kind === 'duty' ? candidatePresentationMs : instant(candidate.canonical?.startDateTime);
-      const date = Number.isFinite(start) ? start : clockOnEventDate(candidate, '00:00');
-      const kind: CrewCheckWatchScheduleItem['kind'] =
-        candidate.kind === 'flight' || candidate.kind === 'stay' ? candidate.kind : 'duty';
-      const title = kind === 'flight'
-        ? clean(candidate.flightNumber) || 'Voo'
-        : kind === 'stay'
-          ? 'Pernoite'
-          : clean(candidate.flightNumber) || 'Programação';
-      const route = kind === 'flight'
-        ? [clean(candidate.origin), clean(candidate.destination)].filter(Boolean).join(' → ')
-        : clean(candidate.destination) || clean(candidate.origin);
-      const rawGate = ''; // Filled only by the confirmed occurrence projection.
-      const remote = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
-      return {
-        id: clean(candidate.canonical?.id) || candidate.id,
-        kind,
-        time: candidate.kind === 'flight' ? (publishedDeparture(candidate) ? clockLabel(start) : '')
-          : candidate.kind === 'duty' ? (publishedPresentation(candidate) ? clockLabel(start) : '') : clockLabel(start),
-        title,
-        route,
-        presentation: Number.isFinite(candidatePresentationMs) && (candidate.kind !== 'flight' || publishedDeparture(candidate))
-          ? `${dayLabel(candidatePresentationMs)} ${candidatePresentation}`
-          : '',
-        gate: remote ? 'REMOTA' : rawGate,
-        detail: [dayLabel(date), 'BRT', kind === 'stay' ? clean(candidate.hotel) : kind === 'flight' ? (publishedDeparture(candidate) ? 'Decolagem prevista' : 'Decolagem a confirmar') : ''].filter(Boolean).join(' • '),
-      };
-    });
 
   // A canonical duty start may be an estimated/legacy report clock. Future
   // prose must use the same publication proof as APZ and schedule.time.
