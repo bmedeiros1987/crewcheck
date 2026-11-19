@@ -1216,9 +1216,26 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean setNotificationCancellationScope(final String accountHint) {
             NotificationLedger ledger = new NotificationLedgerAndroid(MainActivity.this).ledger();
-            if (accountHint != null && accountHint.length() > 512) { ledger.scope(""); return false; }
-            return ledger.scope(accountHint);
+            LocalAlarmAndroid localAlarms = new LocalAlarmAndroid(MainActivity.this);
+            if (accountHint != null && accountHint.length() > 512) { ledger.scope(""); localAlarms.fence(); return false; }
+            boolean scoped = ledger.scope(accountHint);
+            // Local alarms follow the same account fence, even while their feature is OFF. Best effort:
+            // an entry from another epoch can never be claimed, so the existing answer is unchanged.
+            localAlarms.fence();
+            return scoped;
         }
+
+        @JavascriptInterface
+        public String localAlarmCapabilities() { return new LocalAlarmAndroid(MainActivity.this).capabilities(); }
+
+        @JavascriptInterface
+        public String replaceLocalAlarms(final String payload) { return new LocalAlarmAndroid(MainActivity.this).replace(payload); }
+
+        @JavascriptInterface
+        public String cancelLocalAlarms(final String group) { return new LocalAlarmAndroid(MainActivity.this).cancelGroup(group); }
+
+        @JavascriptInterface
+        public String localAlarmGroup(final String group) { return new LocalAlarmAndroid(MainActivity.this).group(group); }
 
         @JavascriptInterface
         public boolean scheduleNotification(final String title, final String body, final String epochMillis) {
