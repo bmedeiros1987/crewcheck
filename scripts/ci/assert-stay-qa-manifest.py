@@ -10,6 +10,7 @@ PERMISSIONS = {
     'android.permission.RECEIVE_BOOT_COMPLETED',
 }
 RECOVERY_ACTIONS = {
+    'android.intent.action.LOCKED_BOOT_COMPLETED',
     'android.intent.action.BOOT_COMPLETED',
     'android.intent.action.MY_PACKAGE_REPLACED',
     'android.intent.action.TIME_SET',
@@ -39,7 +40,10 @@ def verify(root, package):
     if (
         app.get(ANDROID + 'name') is not None
         or app.get(ANDROID + 'backupAgent') is not None
+        or app.get(ANDROID + 'process') is not None
         or app.get(ANDROID + 'allowBackup') != 'false'
+        or app.get(ANDROID + 'directBootAware') not in {None, 'false'}
+        or app.get(ANDROID + 'defaultToDeviceProtectedStorage') not in {None, 'false'}
         or app.get(ANDROID + 'appComponentFactory') not in {None, 'androidx.core.app.CoreComponentFactory'}
     ):
         raise ValueError('Unexpected application initializer or backup configuration')
@@ -57,6 +61,9 @@ def verify(root, package):
             or nodes[0].get(ANDROID + 'name') != 'com.crewcheck.app.' + name
             or nodes[0].get(ANDROID + 'exported') != exported
             or nodes[0].get(ANDROID + 'enabled') == 'false'
+            or nodes[0].get(ANDROID + 'process') is not None
+            or (tag == 'receiver' and nodes[0].get(ANDROID + 'directBootAware') != 'true')
+            or (tag == 'activity' and nodes[0].get(ANDROID + 'directBootAware') not in {None, 'false'})
         ):
             raise ValueError(f'Unexpected fixture {tag}: {name}')
         filters = list(nodes[0])

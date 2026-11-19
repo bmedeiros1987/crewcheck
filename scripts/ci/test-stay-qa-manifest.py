@@ -68,6 +68,29 @@ class ManifestGateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify(root, PACKAGE)
 
+    def test_direct_boot_is_private_and_only_for_the_receiver(self):
+        for path, attr, value in (
+            ('application', 'directBootAware', 'true'),
+            ('application', 'defaultToDeviceProtectedStorage', 'true'),
+            ('application', 'process', ':untrusted_split'),
+            ('application/activity', 'process', ':untrusted_split'),
+            ('application/receiver', 'process', ':untrusted_split'),
+            ('application/activity', 'directBootAware', 'true'),
+            ('application/receiver', 'directBootAware', 'false'),
+        ):
+            with self.subTest(path=path, attribute=attr):
+                root = merged_manifest()
+                root.find(path).set(ANDROID + attr, value)
+                with self.assertRaises(ValueError):
+                    verify(root, PACKAGE)
+        root = merged_manifest()
+        filters = root.find('application/receiver/intent-filter')
+        for action in list(filters):
+            if action.get(ANDROID + 'name') == 'android.intent.action.LOCKED_BOOT_COMPLETED':
+                filters.remove(action)
+        with self.assertRaises(ValueError):
+            verify(root, PACKAGE)
+
 
 if __name__ == '__main__':
     unittest.main()

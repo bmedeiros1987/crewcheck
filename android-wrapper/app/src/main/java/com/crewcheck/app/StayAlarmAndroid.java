@@ -26,9 +26,13 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     private final Context context;
     private final SharedPreferences journal;
     private final StayAlarmDurableAuthority durable;
+    private final boolean qaBoot;
     public StayAlarmAndroid(Context context) {
         this.context=context.getApplicationContext();
-        journal=this.context.getSharedPreferences(StayAlarmPhysicalFixture.journalName(this.context),Context.MODE_PRIVATE);
+        qaBoot=StayAlarmQaAlerts.enabled(this.context);
+        journal=qaBoot
+            ? this.context.createDeviceProtectedStorageContext().getSharedPreferences(StayAlarmQaBoot.JOURNAL,Context.MODE_PRIVATE)
+            : this.context.getSharedPreferences(StayAlarmPhysicalFixture.journalName(this.context),Context.MODE_PRIVATE);
         durable=StayAlarmDurableAuthorityAndroid.open(this.context);
     }
     static String digest(String key) {
@@ -81,13 +85,19 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     @Override public void notify(StayAlarmEngine.Record r) {
         if(!permitted())throw new SecurityException("permission unavailable");
         NotificationManager notifications=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
-        Intent open=context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-        if(open==null)throw new IllegalStateException("app unavailable");
-        open.setData(Uri.parse("crewcheck-stay-alarm://open/"+digest(r.key)));
-        PendingIntent tap=PendingIntent.getActivity(context,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        Notification.Builder notification=new Notification.Builder(context,channelId()).setContentTitle("Despertador do pernoite")
-            .setContentText("Confira sua programação no CrewCheck.").setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setSmallIcon(android.R.drawable.ic_dialog_info).setContentIntent(tap).setAutoCancel(true);
+        Notification.Builder notification=new Notification.Builder(context,channelId())
+            .setContentTitle(qaBoot?"Despertador CrewCheck · QA":"Despertador do pernoite")
+            .setContentText(qaBoot?"Alarme local de teste.":"Confira sua programação no CrewCheck.")
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true);
+        if(!qaBoot||StayAlarmQaBoot.unlocked(context)) {
+            Intent open=context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+            if(open==null&&!qaBoot)throw new IllegalStateException("app unavailable");
+            if(open!=null) {
+                open.setData(Uri.parse("crewcheck-stay-alarm://open/"+digest(r.key)));
+                notification.setContentIntent(PendingIntent.getActivity(context,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE));
+            }
+        }
         StayAlarmQaAlerts.addActions(context,notification,r);
         notifications.notify(digest(r.key),0,notification.build());
     }
@@ -96,7 +106,7 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
         value.put("event",r.event);value.put("operation",r.operation);value.put("revision",r.revision);
         value.put("alarmAt",r.alarmAt);value.put("alarm",r.alarm);value.put("apz",r.apz);value.put("mode",r.mode);value.put("state",r.state);return value;
     }
-    private static long integer(JSONObject value,String name)throws Exception {
+    static long integer(JSONObject value,String name)throws Exception {
         Object raw=value.get(name);if(!(raw instanceof Integer)&&!(raw instanceof Long))throw new IllegalArgumentException(name);
         return ((Number)raw).longValue();
     }
@@ -107,16 +117,24 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     }
     @Override public StayAlarmEngine.Record read(String key)throws Exception {
         String raw=journal.getString("r:"+digest(key),null);if(raw==null)return null;
-        StayAlarmEngine.Record r=decode(raw);if(!key.equals(r.key))throw new SecurityException("journal identity");return r;
+        StayAlarmEngine.Record r=readRecord(raw);if(!key.equals(r.key))throw new SecurityException("journal identity");return r;
+    }
+    private StayAlarmEngine.Record readRecord(String raw)throws Exception {
+        return qaBoot?StayAlarmQaBoot.decode(raw):decode(raw);
     }
     @Override public void commit(StayAlarmEngine.Record r)throws Exception {
-        if(!journal.edit().putString("r:"+digest(r.key),encode(r).toString()).commit())throw new IllegalStateException("journal commit failed");
-        if("scheduled".equals(r.state)&&!durable.grant(r))throw new IllegalStateException("durable authority commit failed");
+        JSONObject value=qaBoot?StayAlarmQaBoot.encode(r):encode(r);
+        if(qaBoot&&"scheduled".equals(r.state)&&!durable.grant(r))throw new IllegalStateException("durable authority commit failed");
+        if(!journal.edit().putString("r:"+digest(r.key),value.toString()).commit()){
+            if(qaBoot)StayAlarmDurableAuthority.blockUncertain();
+            throw new IllegalStateException("journal commit failed");
+        }
+        if(!qaBoot&&"scheduled".equals(r.state)&&!durable.grant(r))throw new IllegalStateException("durable authority commit failed");
     }
     @Override public List<StayAlarmEngine.Record> all()throws Exception {
         List<StayAlarmEngine.Record> records=new ArrayList<>();
         for(String key:journal.getAll().keySet())if(key.startsWith("r:")) {
-            StayAlarmEngine.Record r=decode(journal.getString(key,""));
+            StayAlarmEngine.Record r=readRecord(journal.getString(key,""));
             if(!key.equals("r:"+digest(r.key)))throw new SecurityException("journal identity");records.add(r);
         }return records;
     }
