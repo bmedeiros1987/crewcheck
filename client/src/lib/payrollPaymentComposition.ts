@@ -14,7 +14,7 @@ export type PayrollSalary = {
   reserveAssessment:{pendingCount:number;knownCount?:number;knownAmount?:number};standbyAssessment:{pendingCount:number;knownCount?:number;knownAmount?:number};
 };
 export type PayrollSnapshot = {month:string;salary:PayrollSalary;publishedDays:string[];presetScope?:FinancialPresetScope|null};
-const inventoryPending='Inventário por rubrica e composição integral com DSR pendentes. Confirmar tarifas ou datas não comprova todas as parcelas; os valores conhecidos são um subtotal.';
+const inventoryPending='Falta confirmar todas as rubricas do salário bruto. Os valores disponíveis são parciais.';
 /** Consume the SAME canonical composition; a day list or a scalar total cannot
  * certify category completeness. No producer is manufactured by this adapter. */
 function componentSourceValid(item:SalaryProjection['components'][number]|undefined,owner:string,month:string){
@@ -112,10 +112,10 @@ export function composePayrollPayment(cycle:Cycle,snapshots:PayrollSnapshot[]):P
  const calculationTotals=canonical||opObserved||fixedObserved?knownCanonicalTotals(composedLines):knownPaymentTotals(composedLines);
  const issues=[
     ...(canonical&&!calculationTotals?['Soma salarial fora do limite seguro de centavos.']:[]),
-    ...(!canonical?[inventoryPending]:[]),
     ...(!coverage.complete?[`${month}: ${coverage.missing.length} dia(s) sem programação publicada. Importe ou confira a escala completa.`]:[]),
-    ...(!variable?['Importe a escala operacional de '+month+'.']:!ready?['As variáveis do ciclo estão incompletas. Os fixos conhecidos continuam na composição.']:[]),
     ...(!fixed?.config.baseConfigured?['Confira os fixos da folha '+cycle.fixedMonth+'; eles não foram repetidos do mês operacional.']:[]),
+    ...(!canonical?[inventoryPending]:[]),
+    ...(!variable?['Importe a escala operacional de '+month+'.']:!ready?['As variáveis do ciclo estão incompletas. Os fixos conhecidos continuam na composição.']:[]),
   ];
   return {creditMonth:cycle.expectedCreditMonth,operationalMonth:month,fixedMonth:cycle.fixedMonth,range:{start:month+'-01',end:payrollMonthBounds(cycle.fixedMonth)!.end,kind:'custom',valid:true},lines:composedLines,calculationTotals,issues};
 }
@@ -136,5 +136,16 @@ export function composeOperationalPayrollEstimate(snapshot:PayrollSnapshot):Next
  const complete=Boolean(projection)&&coverage.complete&&tariffReady&&s.config.baseConfigured&&Number.isFinite(lines.reduce((sum,line)=>sum+(line.value??NaN),0))&&lines.every(line=>line.value!==null&&Number.isFinite(line.value)&&line.value>=0)&&!s.reserveAssessment.pendingCount&&!s.standbyAssessment.pendingCount;
  const displayLines=projection?.lines||observedProjection(s,month)?.lines||lines;
  const known=projection||s.dsr?knownCanonicalTotals(displayLines):knownPaymentTotals(displayLines);
- return {kind:'payroll',estimationBasis:'operational_month',range:{start:month+'-01',end:payrollMonthBounds(month)!.end,valid:true,kind:'month'},timing:'Mês de crédito a confirmar',source:'Motor canônico da escala; competência operacional, sem vínculo presumido com crédito.',lines:displayLines,totals:complete&&known?known:null,calculationTotals:known,calculationPartial:!complete,issues:[...(!projection?[inventoryPending]:[]),'Ciclo de crédito não identificado. A estimativa da competência continua disponível; dia de pagamento, descontos e líquido não foram presumidos.',...(!s.config.baseConfigured?['Salário-base desta competência não informado. O subtotal não inclui essa parcela.']:[]),...(!s.config.fixedAdditionsConfigured?['Adicionais fixos desta competência não informados. O subtotal não inclui essa parcela.']:[]),...(!tariffReady?['Função ou tarifas salariais pendentes.']:[]),...(!coverage.complete?[`${coverage.missing.length} dia(s) sem cobertura publicada; subtotal parcial.`]:[]),...(s.rows.some(row=>!rowReady(row))?['Há parcelas de voo com distância, horários ou tarifa pendentes; apenas as parcelas conhecidas entram no subtotal.']:[]),...(s.reserveAssessment.pendingCount+s.standbyAssessment.pendingCount?[`${s.reserveAssessment.pendingCount+s.standbyAssessment.pendingCount} intervalo(s) de reserva/sobreaviso sem origem de horários comprovada.`]:[])],caption:complete?'Bruto estimado da competência · antes dos descontos':'Subtotal bruto estimado de parcelas conhecidas · antes dos descontos'};
+ // Give the salary card a specific blocker before general inventory or credit details.
+ const issues=[
+  ...(!s.config.baseConfigured?['Salário-base desta competência não informado. O subtotal não inclui essa parcela.']:[]),
+  ...(!s.config.fixedAdditionsConfigured?['Adicionais fixos desta competência não informados. O subtotal não inclui essa parcela.']:[]),
+  ...(!tariffReady?['Função ou tarifas salariais pendentes.']:[]),
+  ...(!coverage.complete?[`${coverage.missing.length} dia(s) sem cobertura publicada; subtotal parcial.`]:[]),
+  ...(s.rows.some(row=>!rowReady(row))?['Há parcelas de voo com distância, horários ou tarifa pendentes; apenas as parcelas conhecidas entram no subtotal.']:[]),
+  ...(s.reserveAssessment.pendingCount+s.standbyAssessment.pendingCount?[`${s.reserveAssessment.pendingCount+s.standbyAssessment.pendingCount} intervalo(s) de reserva/sobreaviso sem origem de horários comprovada.`]:[]),
+  ...(!projection?[inventoryPending]:[]),
+  'Ciclo de crédito não identificado. A estimativa da competência continua disponível; dia de pagamento, descontos e líquido não foram presumidos.',
+ ];
+ return {kind:'payroll',estimationBasis:'operational_month',range:{start:month+'-01',end:payrollMonthBounds(month)!.end,valid:true,kind:'month'},timing:'Mês de crédito a confirmar',source:'Motor canônico da escala; competência operacional, sem vínculo presumido com crédito.',lines:displayLines,totals:complete&&known?known:null,calculationTotals:known,calculationPartial:!complete,issues,caption:complete?'Bruto estimado da competência · antes dos descontos':'Subtotal bruto estimado de parcelas conhecidas · antes dos descontos'};
 }
