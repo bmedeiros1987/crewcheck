@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/authClient';
 import { financialRateOwner } from '@/lib/financialStatementLearning';
+import { isMonthlyFinancialSettingsKey } from '@/lib/financialMonthlySettings';
 import { listSavedRosters, openSavedRoster, financialRosterCrewIdentity, type SavedRosterSummary } from '@/lib/databaseClient';
 import type { CrewRoster } from '@/lib/pdfParser';
 import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, allowanceSourceRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
@@ -60,11 +61,12 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
       if(event.storageArea!==localStorage)return;
       const owner=financialRateOwner();if(!owner)return;
       const scope=encodeURIComponent(owner);
+      if(mode==='salary'&&isMonthlyFinancialSettingsKey(event.key,owner)){refresh();return;}
       if(event.key===`crewcheck_financial_learned_rates_v2:${scope}`||event.key===`crewcheck_personal_allowance_reference_v1:${scope}`||event.key?.startsWith(`crewcheck_financial_settings_v1:${scope}:`))refresh();
     };
     window.addEventListener('crewcheck:financial-config-changed',refresh);window.addEventListener('storage',storage);
     return()=>{window.removeEventListener('crewcheck:financial-config-changed',refresh);window.removeEventListener('storage',storage);};
-  },[]);
+  },[mode]);
   useEffect(()=>{
     const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setRecovery(value=>({...value,source:false,inventory:false}));setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
     window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);
