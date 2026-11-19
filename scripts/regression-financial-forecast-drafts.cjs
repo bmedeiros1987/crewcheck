@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const vm=require('node:vm');
 const fs=require('node:fs');
+const ts=require('typescript');
 const {build}=require('esbuild');
 const root=process.cwd();
 const cases=[];
@@ -22,7 +23,7 @@ function locksFixture(){
  const tails=new Map();
  return {names:[],before:null,after:null,request(name,options,callback){
   assert.equal(options.mode,'exclusive');this.names.push(name);
-  const result=(tails.get(name)||Promise.resolve()).then(async()=>{await this.before?.();return callback({name});});
+  const result=(tails.get(name)||Promise.resolve()).then(async()=>{await this.before?.(name);return callback({name});});
   tails.set(name,result.then(()=>undefined,()=>undefined));
   return result.then(value=>{this.after?.();return value;});
  }};
@@ -45,6 +46,25 @@ function fixture(bundle){
 }
 async function test(name,run){await run();cases.push(name);}
 function equalData(actual,expected){assert.deepEqual(JSON.parse(JSON.stringify(actual)),expected);}
+function deletionHandlers(){
+ const routes=[
+  ['settings','client/src/pages/Home.tsx',node=>ts.isFunctionDeclaration(node)&&node.name?.text==='deleteAccount'],
+  ['public page','client/src/pages/InfoPage.tsx',(node,ast)=>ts.isArrowFunction(node)&&ts.isJsxExpression(node.parent)&&node.getText(ast).includes("fetch('/api/platform/account/delete'")],
+ ];
+ return routes.map(([route,file,match])=>{
+  const source=fs.readFileSync(file,'utf8');
+  const ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const found=[];
+  function visit(node){
+   if(match(node,ast))found.push(node.getText(ast));
+   ts.forEachChild(node,visit);
+  }
+  visit(ast);
+  assert.equal(found.length,1,file);
+  const script=route==='settings'?found[0]+'\ndeleteAccount()':'('+found[0]+')()';
+  return [route,ts.transpileModule(script,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText];
+ });
+}
 async function main(){
  const result=await build({entryPoints:[path.join(root,'client/src/lib/financialForecastDrafts.ts')],bundle:true,write:false,platform:'node',format:'cjs',logLevel:'silent',plugins:[{name:'synthetic-auth-only',setup(builder){
   builder.onResolve({filter:/^\.\/(authClient|financialStatementLearning)$/},args=>({path:args.path,namespace:'synthetic-auth'}));
@@ -115,7 +135,7 @@ async function main(){
   assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth({amount:'stale'}),second,context)).status,'conflict');
   assert.equal((await f.api.removeForecastDraft('thirteenth','2026',second,context)).status,'conflict');
   assert.equal(f.api.readForecastDraft('thirteenth','2026',context).record.values.amount,'5');
-  assert.ok(f.locks.names.every(name=>name===slot('Account-A','thirteenth','2026')));
+  assert.ok(f.locks.names.every(name=>name===prefix+'Account-A:'));
  });
  await test('save captures caller input before queued lock and does not overwrite another plan',async()=>{
   const f=fixture(bundle),values=thirteenth(),context=f.context();let release;
@@ -247,6 +267,155 @@ async function main(){
   assert.equal(g.api.readForecastDraft('thirteenth','2026',current).record.values.amount,'');
   assert.equal(g.trace.fetch,0);assert.equal(g.trace.events,0);
  });
+ await test('confirmed erasure waits for in-flight writes of its owner and never blocks another owner',async()=>{
+  const f=fixture(bundle);
+  const ownerA=f.context();
+  const initial=await f.api.saveForecastDraft('thirteenth',thirteenth(),null,ownerA);
+  assert.equal(initial.status,'saved');
+  let release;
+  const hold=new Promise(resolve=>{release=resolve;});
+  f.locks.before=name=>name===prefix+'Account-A:'?hold:undefined;
+  const pending=f.api.saveForecastDraft('vacation',vacation(),null,ownerA);
+  f.switchTo('Account-B');
+  const erase=f.api.eraseDeletedOwnerForecastDrafts('Account-A');
+  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth({amount:'42'}),null,f.context())).status,'saved');
+  assert.ok(f.storage.data.has(slot('Account-A','thirteenth','2026')));
+  release();
+  assert.equal((await pending).status,'stale');
+  assert.equal(await erase,true);
+  assert.deepEqual([...f.storage.data.keys()],[slot('Account-B','thirteenth','2026')]);
+  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts('Account-A'),true);
+ });
+ await test('erasure handles unavailable storage and never infers an owner',async()=>{
+  const f=fixture(bundle),name=slot('Account-A','vacation','2025-11-01..2026-10-31');
+  f.storage.data.set(name,'malformed synthetic draft');
+  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts(null),false);
+  f.storage.removeFail=true;
+  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts('Account-A'),false);
+  assert.ok(f.storage.data.has(name));
+  f.storage.removeFail=false;f.sandbox.navigator={};
+  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts('Account-A'),true);
+  assert.equal(f.storage.data.has(name),false);
+ });
+ for(const [route,handler] of deletionHandlers()){
+  await test(route+' erases only the acknowledged owner across response and session changes',async()=>{
+   const scenarios=['success','network','unconfirmed','switch-before','late-success','late-failure','late-return','blocked-cleanup','switch-during-prompt','switch-during-erasure','blocked-auth-read','blocked-auth-after-response','blocked-auth-remove'];
+   if(route==='settings')scenarios.push('switch-during-legacy-cleanup','blocked-legacy-cleanup');
+   for(const scenario of scenarios){
+    const f=fixture(bundle),ownerA='Account-A',ownerB='Account-A:other';
+    const tokenKey='crewcheck_auth_token',userKey='crewcheck_auth_user';
+    const store=new Proxy(f.storage,{
+     ownKeys:()=>[...f.storage.data.keys()],
+     getOwnPropertyDescriptor:(_,name)=>f.storage.data.has(name)?{enumerable:true,configurable:true}:undefined,
+    });
+    const login=owner=>{f.switchTo(owner);store.setItem(tokenKey,'fixture-'+owner);store.setItem(userKey,JSON.stringify({id:owner}));};
+    for(const owner of [ownerA,ownerB]){
+     login(owner);
+     const ctx=f.context();
+     assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth(),null,ctx)).status,'saved');
+     assert.equal((await f.api.saveForecastDraft('vacation',vacation(),null,ctx)).status,'saved');
+    }
+    login(ownerA);
+    let logoutObserved;
+    const logout=new Promise(resolve=>{logoutObserved=resolve;});
+    f.storage.afterRemove=name=>{if(name===tokenKey){f.switchTo('', '');logoutObserved();}};
+    const originalDrafts=[...f.storage.data].filter(([name])=>name.startsWith(prefix));
+    const currentUser=()=>JSON.parse(store.getItem(userKey)||'null');
+    const getToken=()=>store.getItem(tokenKey);
+    const captureAuthSession=()=>{
+     const owner=currentUser()?.id,token=store.getItem(tokenKey),generation=f.state.generation;
+     return {token,isCurrent:()=>generation===f.state.generation&&currentUser()?.id===owner&&store.getItem(tokenKey)===token};
+    };
+    const messages=[];
+    const location={href:'',assign(url){this.href=url;}};
+    let requests=0,confirmations=0,resume;
+    const request=()=>{
+     requests++;assert.equal(currentUser()?.id,ownerA);
+     if(scenario==='network')return Promise.reject(Error('synthetic network failure'));
+     if(scenario.startsWith('late-'))return new Promise(resolve=>{resume=resolve;});
+     if(scenario==='blocked-auth-after-response')f.storage.onGet=name=>{if(name===tokenKey)throw Error('synthetic authentication storage failure');};
+     return Promise.resolve({ok:true,deleted:scenario!=='unconfirmed',...(scenario==='switch-during-prompt'?{manageGooglePlayUrl:'https://example.invalid/manage'}:{})});
+    };
+    const confirm=()=>{
+     confirmations++;
+     if(scenario==='switch-before'||scenario==='switch-during-prompt'&&confirmations===2)login(ownerB);
+     return true;
+    };
+    const prompt=()=>'EXCLUIR';
+    if(scenario==='blocked-cleanup')f.storage.onRemove=name=>{if(name.startsWith(prefix+ownerA+':'))throw Error('synthetic cleanup failure');};
+    if(scenario==='switch-during-erasure')f.locks.before=()=>login(ownerB);
+    if(scenario==='blocked-auth-read')f.storage.onGet=name=>{if(name===tokenKey)throw Error('synthetic authentication storage failure');};
+    if(scenario==='blocked-auth-remove')f.storage.onRemove=name=>{if(name===tokenKey)throw Error('synthetic authentication storage failure');};
+    if(scenario==='switch-during-legacy-cleanup'){
+     store.setItem('crewcheck_synthetic_legacy','synthetic');
+     f.storage.onRemove=name=>{if(name==='crewcheck_synthetic_legacy')login(ownerB);};
+    }
+    if(scenario==='blocked-legacy-cleanup'){
+     store.setItem('crewcheck_synthetic_legacy','synthetic');
+     f.storage.onRemove=name=>{if(name==='crewcheck_synthetic_legacy')throw Error('synthetic legacy cleanup failure');};
+    }
+    const execution=vm.runInNewContext(handler,{
+     captureAuthSession,financialRateOwner:()=>currentUser()?.id,getStoredUser:currentUser,getToken,
+     eraseDeletedOwnerForecastDrafts:f.api.eraseDeletedOwnerForecastDrafts,FORECAST_DRAFT_PREFIX:prefix,
+     eraseFinancialCalculationCache:()=>true,
+     window:{localStorage:store,location,confirm,prompt,open:()=>assert.fail('no external links')},localStorage:store,confirm,prompt,
+     alert:text=>messages.push(text),toast:{error:text=>messages.push(text)},
+     deleteCrewCheckAccount:request,
+     fetch:async(url,options)=>{
+      assert.equal(url,'/api/platform/account/delete');
+      assert.equal(options.headers.authorization,'Bearer fixture-'+ownerA);
+      const payload=await request();
+      return {status:payload.ok?200:503,ok:payload.ok,json:async()=>payload};
+     },
+    });
+    if(scenario.startsWith('late-')){
+     assert.equal(typeof resume,'function');
+     login(ownerB);
+     const confirmed=scenario!=='late-failure';
+     if(scenario==='late-return'){
+      login(ownerA);
+      let release;
+      const hold=new Promise(resolve=>{release=resolve;});
+      f.locks.before=()=>hold;
+      const pending=f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,f.context());
+      resume({ok:true,deleted:true});
+      let timer;
+      const expired=new Promise(resolve=>{timer=setTimeout(()=>resolve(false),1000);});
+      const closed=await Promise.race([logout.then(()=>true),expired]);
+      clearTimeout(timer);
+      release();
+      assert.equal(closed,true,'also close a new session of the deleted owner before waiting for the lock');
+      assert.equal((await pending).status,'stale');
+      assert.equal(store.getItem(slot(ownerA,'thirteenth','2027')),null);
+     }else resume({ok:confirmed,deleted:confirmed,manageGooglePlayUrl:'https://example.invalid/manage'});
+    }
+    await execution;
+    if(scenario.startsWith('blocked-auth-'))f.storage.onGet=null;
+    const deletesOwn=['success','late-success','late-return','switch-during-prompt','switch-during-erasure','switch-during-legacy-cleanup','blocked-legacy-cleanup','blocked-auth-after-response','blocked-auth-remove'].includes(scenario);
+    for(const [name,value] of originalDrafts)assert.equal(store.getItem(name),deletesOwn&&name.startsWith(prefix+ownerA+':')?null:value,scenario);
+    assert.equal(requests,['switch-before','blocked-auth-read'].includes(scenario)?0:1);
+    if(['switch-before','late-success','late-failure','switch-during-prompt','switch-during-erasure','switch-during-legacy-cleanup'].includes(scenario)){
+     assert.equal(store.getItem(tokenKey),'fixture-'+ownerB);
+     assert.equal(location.href,'');
+     assert.deepEqual(messages,[]);
+    }
+    if(['network','unconfirmed','blocked-auth-read'].includes(scenario)){
+     assert.equal(store.getItem(tokenKey),'fixture-'+ownerA);
+     assert.equal(location.href,'');
+     assert.equal(messages.length,1);
+    }
+    if(['success','blocked-cleanup','late-return','blocked-legacy-cleanup'].includes(scenario)){
+     assert.equal(store.getItem(tokenKey),null);
+     assert.equal(location.href,'/login');
+    }
+    if(['blocked-auth-after-response','blocked-auth-remove'].includes(scenario)){
+     assert.equal(store.getItem(tokenKey),'fixture-'+ownerA);
+     assert.equal(location.href,'');assert.deepEqual(messages,[]);
+    }
+    if(scenario==='blocked-cleanup')assert(messages.some(text=>/limpeza.*pendente/.test(text)));
+   }
+  });
+ }
  const source=fs.readFileSync(path.join(root,'client/src/lib/financialForecastDrafts.ts'),'utf8');
  assert.doesNotMatch(source,/\bfetch\s*\(|dispatchEvent\s*\(|crewcheck:financial-config-changed|crewcheck_financial_month_settings/);
  console.log(JSON.stringify({scope:'Synthetic auth/storage/Web Locks; actual helper bundled with existing esbuild',passed:cases.length,cases,realData:false,network:false,payrollWrites:false,financialEvents:false},null,2));

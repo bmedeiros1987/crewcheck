@@ -83,7 +83,8 @@ export function deriveForecastPlan(kind:ForecastKind, values:unknown):string|nul
   return typeof start==='string'&&typeof end==='string'&&civil(start)&&civil(end)&&start<=end?start+'..'+end:null;
  } catch {return null;}
 }
-const prefix = (owner:string,kind:ForecastKind) => FORECAST_DRAFT_PREFIX+encodeURIComponent(owner)+':'+kind+':';
+const ownerPrefix = (owner:string) => FORECAST_DRAFT_PREFIX+encodeURIComponent(owner)+':';
+const prefix = (owner:string,kind:ForecastKind) => ownerPrefix(owner)+kind+':';
 const key = (owner:string,kind:ForecastKind,planId:string) => prefix(owner,kind)+encodeURIComponent(planId);
 
 function live(bound:Bound):boolean {
@@ -171,7 +172,32 @@ export function readLatestForecastDraft<K extends ForecastKind>(kind:K,context:F
  return !live(bound)?{status:'stale'}:records.length?{status:'found',record:records[0]}:{status:'missing'};
 }
 
-async function locked<T>(bound:Bound,name:string,operation:()=>T):Promise<T|Failure> {
+/** Call only after confirmed account deletion, using the owner of the request. */
+export async function eraseDeletedOwnerForecastDrafts(owner:string|null|undefined):Promise<boolean> {
+ if(typeof owner!=='string'||!owner.trim())return false;
+ try {
+  const store=globalThis.localStorage;
+  const vacationPrefix=prefix(owner,'vacation'),thirteenthPrefix=prefix(owner,'thirteenth');
+  const ownNames=()=>{
+   const names:string[]=[];
+   const count=store.length;
+   for(let i=0;i<count;i++){
+    const name=store.key(i);
+    if(name&&(name.startsWith(vacationPrefix)||name.startsWith(thirteenthPrefix)))names.push(name);
+   }
+   return names;
+  };
+  const erase=()=>{
+   for(const name of ownNames())store.removeItem(name);
+   return ownNames().length===0;
+  };
+  const locks=globalThis.navigator?.locks;
+  // Draft writers also use the owner lock. Readers and other accounts remain independent.
+  return typeof locks?.request==='function'?await locks.request(ownerPrefix(owner),{mode:'exclusive'},erase):erase();
+ } catch {return false;}
+}
+
+async function locked<T>(bound:Bound,operation:()=>T):Promise<T|Failure> {
  try {
   if(!live(bound))return {status:'stale'};
   const locks=globalThis.navigator?.locks;
@@ -179,7 +205,7 @@ async function locked<T>(bound:Bound,name:string,operation:()=>T):Promise<T|Fail
   const randomUUID=globalThis.crypto?.randomUUID;
   if(!live(bound))return {status:'stale'};
   if(!locks||typeof locks.request!=='function'||typeof randomUUID!=='function')return {status:'unavailable'};
-  const result=await locks.request(name,{mode:'exclusive'},()=>live(bound)?operation():{status:'stale' as const});
+  const result=await locks.request(ownerPrefix(bound.ownerId),{mode:'exclusive'},()=>live(bound)?operation():{status:'stale' as const});
   return live(bound)?result:{status:'stale'};
  } catch {return {status:live(bound)?'unavailable':'stale'};}
 }
@@ -189,7 +215,7 @@ export async function saveForecastDraft<K extends ForecastKind>(kind:K,values:un
  const copied=copyValues(kind,values);
  if(!live(bound))return {status:'stale'};
  const planId=copied?planFrom(kind,copied):null;if(!copied||!planId)return {status:'invalid'};
- return locked(bound,key(bound.ownerId,kind,planId),()=>{
+ return locked(bound,()=>{
   const storage=storageFor(bound);if(storage.status!=='available')return storage;
   const current=readBound(kind,planId,bound,storage.store);
   if(!['found','missing'].includes(current.status))return current as Failure;
@@ -216,7 +242,7 @@ export async function saveForecastDraft<K extends ForecastKind>(kind:K,values:un
 export async function removeForecastDraft(kind:ForecastKind,planId:string,expectedRevision:string|null,context:ForecastContext):Promise<ForecastDraftRemove> {
  const bound=bind(context);if(!bound)return {status:'stale'};
  if(!isKind(kind)||!validPlan(kind,planId)||!revision(expectedRevision))return {status:'invalid'};
- return locked(bound,key(bound.ownerId,kind,planId),()=>{
+ return locked(bound,()=>{
   const storage=storageFor(bound);if(storage.status!=='available')return storage;
   const current=readBound(kind,planId,bound,storage.store);
   if(current.status!=='found')return current;

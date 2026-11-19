@@ -1,5 +1,6 @@
-import {captureAuthSession,getStoredUser} from '@/lib/authClient';
+import {captureAuthSession,getStoredUser,getToken} from '@/lib/authClient';
 import {eraseFinancialCalculationCache} from '@/lib/financialCalculationCache';
+import {eraseDeletedOwnerForecastDrafts} from '@/lib/financialForecastDrafts';
 import { ArrowLeft, BarChart3, Download, FileText, Plane, Shield, Trash2 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
@@ -236,27 +237,50 @@ export default function InfoPage({ page }: { page: PageKey }) {
                 <div className="mt-4 flex flex-wrap gap-3">
                   <a href="mailto:suporte@crewcheck.app?subject=Exclus%C3%A3o%20de%20conta%20CrewCheck&body=Solicito%20a%20exclus%C3%A3o%20da%20minha%20conta%20CrewCheck%20e%20dos%20dados%20associados.%0A%0AE-mail%20cadastrado%3A%20%0ANome%3A%20%0A" className="inline-flex rounded-2xl bg-rose-100 px-5 py-3 text-sm font-black text-rose-950 hover:bg-white">Solicitar exclusão por e-mail</a>
                   <button type="button" onClick={async () => {
-                    const deletionSession=captureAuthSession(),deletingOwner=getStoredUser()?.id;
+                    let deletionSession:ReturnType<typeof captureAuthSession>,deletingOwner:string|undefined;
+                    try {
+                      deletionSession=captureAuthSession();
+                      deletingOwner=getStoredUser()?.id??undefined;
+                    } catch {
+                      alert('Não foi possível identificar a sessão para confirmar a exclusão.');
+                      return;
+                    }
+                    const isCurrent=(session=deletionSession)=>{
+                      try {return session.isCurrent();} catch {return false;}
+                    };
                     const ok = window.confirm('Tem certeza que deseja excluir sua conta CrewCheck e os dados associados? Esta ação não poderá ser desfeita.');
-                    if (!ok||!deletionSession.isCurrent()) return;
+                    if (!ok||!isCurrent()) return;
                     const confirmation = window.prompt('Para confirmar, digite EXCLUIR') || '';
-                    if (confirmation.trim().toUpperCase() !== 'EXCLUIR'||!deletionSession.isCurrent()) return;
+                    if (confirmation.trim().toUpperCase() !== 'EXCLUIR'||!isCurrent()) return;
                     const token = deletionSession.token || '';
-                    const response = await fetch('/api/platform/account/delete', { method: 'POST', credentials: 'include', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' }, body: JSON.stringify({ confirmation }) });
+                    let response:Response;
+                    try {
+                      response=await fetch('/api/platform/account/delete', { method: 'POST', credentials: 'include', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' }, body: JSON.stringify({ confirmation }) });
+                    } catch {
+                      if(isCurrent())alert('Não foi possível confirmar a exclusão agora.');
+                      return;
+                    }
                     const payload = await response.json().catch(() => null);
-                    if (response.status === 401) { if(deletionSession.isCurrent())window.location.href = '/login'; return; }
-                    if (!response.ok||payload?.ok!==true||payload?.deleted!==true) { if(deletionSession.isCurrent())alert(payload?.message || 'Não foi possível confirmar a exclusão. Tente novamente.'); return; }
+                    if (response.status === 401) { if(isCurrent())window.location.href = '/login'; return; }
+                    if (!response.ok||payload?.ok!==true||payload?.deleted!==true) { if(isCurrent())alert(payload?.message || 'Não foi possível confirmar a exclusão. Tente novamente.'); return; }
                     // The successful response belongs to the initiating account, even after a switch.
                     let localFinancialCleared=false;
                     try { localFinancialCleared=typeof deletingOwner==='string'&&eraseFinancialCalculationCache(deletingOwner,window.localStorage); } catch {}
-                    if(!deletionSession.isCurrent())return;
-                    if(payload.manageGooglePlayUrl){const manage=window.confirm('Os dados foram excluídos. Abrir a Play Store para cancelar a assinatura separadamente?');if(!deletionSession.isCurrent())return;if(manage)window.open(payload.manageGooglePlayUrl,'_blank','noopener,noreferrer');}
-                    if(!deletionSession.isCurrent())return;
-                    alert((payload.message || 'Conta e dados removidos com sucesso.')+(!localFinancialCleared?' Limpe os dados deste navegador para remover a memória financeira local.':''));
-                    if(!deletionSession.isCurrent())return;
-                    window.localStorage.removeItem('crewcheck_auth_token');
-                    window.localStorage.removeItem('crewcheck_auth_user');
-                    window.location.href = '/login';
+                    let signedOut:ReturnType<typeof captureAuthSession>|undefined;
+                    try {
+                      const current=captureAuthSession();
+                      if((isCurrent()||(token&&deletingOwner&&getStoredUser()?.id===deletingOwner))&&isCurrent(current)){
+                        window.localStorage.removeItem('crewcheck_auth_token');
+                        if(!getToken())window.localStorage.removeItem('crewcheck_auth_user');
+                        signedOut=captureAuthSession();
+                      }
+                    } catch {}
+                    const localDraftsCleared=await eraseDeletedOwnerForecastDrafts(token?deletingOwner:null);
+                    if(!signedOut||signedOut.token||!isCurrent(signedOut))return;
+                    if(payload.manageGooglePlayUrl&&window.confirm('Os dados foram excluídos. Abrir a Play Store para cancelar a assinatura separadamente?')&&isCurrent(signedOut))window.open(payload.manageGooglePlayUrl,'_blank','noopener,noreferrer');
+                    if(!isCurrent(signedOut))return;
+                    alert((payload.message || 'Conta excluída.')+(!localFinancialCleared||!localDraftsCleared?' A limpeza dos dados financeiros ficou pendente neste dispositivo.':''));
+                    if(isCurrent(signedOut))window.location.href='/login';
                   }} className="inline-flex rounded-2xl border border-rose-200/30 bg-rose-500/20 px-5 py-3 text-sm font-black text-rose-50 hover:bg-rose-500/30">Excluir agora no app</button>
                 </div>
               </div>
