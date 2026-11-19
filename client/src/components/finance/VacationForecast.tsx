@@ -1,6 +1,8 @@
 import {useEffect,useState} from 'react';
 import {captureAuthSession} from '@/lib/authClient';
 import {financialRateOwner,financialRateSession} from '@/lib/financialStatementLearning';
+import type {FinancialRange} from '@/lib/financialHistoryPeriods';
+import {vacationRosterWindows,type VacationRosterSource} from '@/lib/vacationRosterWindows';
 import {vacationForecast,type VacationEvidence} from '../../../../shared/financialVacationForecast.mjs';
 import {useFinancialPrivacy} from './FinancialPrivacy';
 import './vacation-forecast.css';
@@ -9,7 +11,9 @@ import ForecastDraftControls from './ForecastDraftControls';
 const empty=()=>({acquisitionStart:'',acquisitionEnd:'',split:false,starts:['',''],basis:'monthly_average' as 'monthly_average'|'period_amount',amounts:['',''],source:'',reviewed:false,earningsComplete:false,deductionsComplete:false,lawApplicable:false,retentions:['',''],consigned:['',''],advances:['','']});
 // Editable scenario inputs may be saved explicitly per account and period.
 // Reuse never restores confirmations or writes a payroll/import/settlement.
-export default function VacationForecast(){
+export default function VacationForecast({rosterSources=[],rosterRange}:{
+ rosterSources?:readonly VacationRosterSource[];rosterRange?:FinancialRange;
+}={}){
  const session=financialRateSession(),owner=financialRateOwner(),privacy=useFinancialPrivacy();
  const guard=owner?captureAuthSession():null;
  const [state,setState]=useState(()=>({session,guard,revision:1,draft:empty()}));
@@ -31,6 +35,8 @@ export default function VacationForecast(){
  const change=(patch:Partial<ReturnType<typeof empty>>)=>{if(!guard?.isCurrent())return;setState(current=>!guard.isCurrent()?current:({session,guard,revision:current.revision+1,draft:{...(current.session===session&&current.guard?.isCurrent()?current.draft:empty()),...(Object.keys(patch).some(key=>!['reviewed','earningsComplete','deductionsComplete'].includes(key))?{reviewed:false,earningsComplete:false,deductionsComplete:false}:{}),...patch}}));};
  const amount=(s:string)=>/^\d+(?:[.,]\d{1,2})?$/.test(s)?Math.round(Number(s.replace(',','.'))*100):null;
  const periods=Array.from({length:draft.split?2:1},(_,i)=>({id:String(i),startDate:draft.starts[i]||null,days:draft.split?15:30}));
+ const rosterHints=rosterRange&&periods.some(period=>!period.startDate)&&guard?.isCurrent()
+  ?vacationRosterWindows(rosterSources,rosterRange,owner):null;
  const source={kind:'manual_scenario' as const,id:draft.source.trim(),itemId:'remuneration',revision:state.revision,reviewed:draft.reviewed};
  const earnings:VacationEvidence['earnings']=periods.flatMap((p,i)=>amount(draft.amounts[i])===null?[]:[{id:'remuneration-'+i,component:'total',source:{...source,itemId:'remuneration-'+i},amountMinor:amount(draft.amounts[i])!,basis:draft.basis,periodId:p.id}]);
  const deductions:VacationEvidence['deductions']=periods.flatMap((p,i)=>(['retentions','consigned','advances'] as const).flatMap(key=>amount(draft[key][i])===null?[]:[{id:key+i,component:'total',source:{...source,itemId:key+i},periodId:p.id,kind:({retentions:'retention',consigned:'consigned',advances:'advance'} as const)[key],amountMinor:amount(draft[key][i])!}]));
@@ -44,6 +50,7 @@ export default function VacationForecast(){
  const indexed=(key:'starts'|'amounts'|'retentions'|'consigned'|'advances',index:number,value:string)=>change({[key]:draft[key].map((old,i)=>i===index?value:old)});
  const values={acquisitionStart:draft.acquisitionStart,acquisitionEnd:draft.acquisitionEnd,split:draft.split,starts:draft.starts,basis:draft.basis,amounts:draft.amounts,source:draft.source,retentions:draft.retentions,consigned:draft.consigned,advances:draft.advances};
  const civil=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)?value.split('-').reverse().join('/'):'a definir';
+ const monthLabel=(month:string)=>new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T12:00:00Z'));
  return <details className="cz-finance-table" style={{overflowWrap:'anywhere'}} data-vacation-forecast><summary>Previsão de férias · separada do salário</summary>
  <p>Previsão separada da folha. Recebimento não confirmado.</p>
  {!owner?<p>Entre na sua conta para simular.</p>:<>
@@ -55,6 +62,14 @@ export default function VacationForecast(){
  {dateField('Início do período aquisitivo',draft.acquisitionStart,v=>change({acquisitionStart:v}))}
  {dateField('Fim do período aquisitivo',draft.acquisitionEnd,v=>change({acquisitionEnd:v}))}
  <label><input type="checkbox" checked={draft.split} onChange={e=>change({split:e.target.checked,...(draft.basis==='period_amount'?{amounts:['','']}:{} )})}/> Dois períodos de 15 dias</label>
+ {rosterHints&&guard?.isCurrent()&&<aside aria-label="Quinzenas de férias na escala" data-vacation-roster-hints>
+  {rosterHints.windows.length ? <>
+   <p>Quinzenas com férias na escala disponível</p>
+   <ul>{rosterHints.windows.map(({month,half})=><li key={month+':'+half}>{half}ª quinzena de {monthLabel(month)}</li>)}</ul>
+   <p>A cobertura pode ser parcial. Informe o início de cada gozo quando a data estiver confirmada.</p>
+  </> : <p>Sem sugestão de quinzena nas escalas disponíveis.</p>}
+  {rosterHints.ambiguous&&<p>Há registros divergentes na seleção. Confira as datas na publicação.</p>}
+ </aside>}
  {periods.map((p,i)=><div key={p.id}>{dateField(`Início do gozo ${i+1} · ${p.days} dias`,draft.starts[i],v=>indexed('starts',i,v))}</div>)}
  <label style={{display:'block'}}><input type="checkbox" checked={draft.lawApplicable} onChange={e=>change({lawApplicable:e.target.checked})}/> Lei do Aeronauta aplicável; fracionamento previsto no meu ACT quando escolhido</label>
  </fieldset>
