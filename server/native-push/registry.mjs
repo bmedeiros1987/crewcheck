@@ -186,7 +186,7 @@ export async function withNativeDeliveryState(db, {identity, installationId, eve
     // row FOR UPDATE before inserting can deadlock concurrent InnoDB enqueues.
     const allowCreate = binding?.active === true && canEnqueue() === true;
     const job = allowCreate ? await lockState(connection,jobKey) : await readLockedState(connection,jobKey);
-    const result = await work({binding,job,allowCreate,async save(value) {
+    const result = await work({binding,job,allowCreate,readSourceState: key => readLockedState(connection,key),async save(value) {
       if (job === null && !allowCreate) fail('NATIVE_INVALID_DELIVERY_STATE',503);
       await write(connection,jobKey,value);
     },openToken(protection) {
