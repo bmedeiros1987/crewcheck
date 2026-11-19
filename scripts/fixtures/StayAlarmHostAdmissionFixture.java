@@ -1,4 +1,7 @@
 package com.crewcheck.app;
+
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 /** Executes production origin/frame admission with real Android Uri classes. */
 public final class StayAlarmHostAdmissionFixture {
  static int checks;static void check(boolean value){checks++;if(!value)throw new AssertionError("admission "+checks);}
@@ -27,6 +30,13 @@ public final class StayAlarmHostAdmissionFixture {
   }
   String cancellation()throws Exception{return new org.json.JSONObject().put("protocol",StayAlarmBridge.PROTOCOL).put("key",saved.key).put("accountId",saved.owner)
    .put("ownerEpoch",saved.ownerEpoch).put("eventId",saved.event).put("operationId","cancel-current").put("action","cancel").put("expectedRevision",saved.revision).toString();}
+  String replacement(String operation)throws Exception{
+   long alarm=saved.alarm+60_000;
+   return new org.json.JSONObject(cancellation()).put("action","replace").put("operationId",operation)
+    .put("alarmAt",java.time.Instant.ofEpochMilli(alarm).toString())
+    .put("hotelReportAt",java.time.Instant.ofEpochMilli(saved.apz).toString())
+    .put("mode","absolute").put("confirmed",true).put("apzConfirmed",true).toString();
+  }
   boolean receive(){now=Math.max(now,saved.alarm);return engine.receive(saved.key,saved.revision,saved.alarm);}
  }
  static void durableHostCounterproofs()throws Exception{
@@ -90,6 +100,41 @@ public final class StayAlarmHostAdmissionFixture {
   check(!f.snapshot.revoked&&!StayAlarmDurableAuthority.deliveryBlocked()&&f.cancelled==0&&f.replaced==1);
   check(f.receive()&&f.displayed==1);
  }
+ static void sameAccountGenerationCounterproofs()throws Exception{
+  for(String action:new String[]{"replace","cancel"}){
+   LocalFixture f=new LocalFixture();f.schedule("A");
+   StayAlarmEngine.Record original=f.saved;
+   long previous=f.session.generation();
+   String payload="replace".equals(action)?f.replacement("stale-replace"):f.cancellation();
+   StayAlarmBridge bridge=new StayAlarmBridge(f.engine,f.session);
+   FutureTask<String> queued=new FutureTask<>(()->StayAlarmHostAndroid.transactOrRevoke(bridge,f.session,f.durable,previous,payload));
+   Thread worker=new Thread(queued,"synthetic-stay-command");worker.setDaemon(true);
+   long[] renewed={0};
+   // Hold the mutation lock until the old worker reaches it, then begin the
+   // next session before releasing it. A pre-lock generation check is too early.
+   StayAlarmEngine.updateTrustedOwner(()->{
+    worker.start();
+    long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+    while(worker.getState()!=Thread.State.BLOCKED&&!queued.isDone()&&System.nanoTime()<deadline)Thread.yield();
+    check(worker.getState()==Thread.State.BLOCKED);
+    renewed[0]=f.session.begin();
+   });
+   check(queued.get(5,TimeUnit.SECONDS)==null);
+   check(f.saved==original&&f.replaced==1&&f.cancelled==0);
+   check(f.session.activeOwner()==null&&f.durable.matches("A",original.ownerEpoch));
+   check(StayAlarmHostAndroid.acceptVerified(f.session,f.durable,renewed[0],"A",f.now+300_000));
+   check(original.ownerEpoch.equals(f.session.epoch()));
+   check(StayAlarmHostAndroid.transactOrRevoke(bridge,f.session,f.durable,previous,payload)==null);
+   check(f.saved==original&&f.replaced==1&&f.cancelled==0&&!f.snapshot.revoked);
+   String fresh="replace".equals(action)?f.replacement("fresh-replace")
+    :new org.json.JSONObject(f.cancellation()).put("operationId","fresh-cancel").toString();
+   String receipt=StayAlarmHostAndroid.transactOrRevoke(bridge,f.session,f.durable,renewed[0],fresh);
+   String expected="replace".equals(action)?"scheduled":"cancelled";
+   check(expected.equals(new org.json.JSONObject(receipt).getString("state")));
+   check(expected.equals(f.saved.state)&&f.saved.revision==original.revision+1);
+   check(f.replaced==("replace".equals(action)?2:1)&&f.cancelled==("cancel".equals(action)?1:0));
+  }
+ }
  public static void main(String[] args)throws Exception{
   check(StayAlarmHostAndroid.admitted(true,"https://crewcheck.online","https://crewcheck.online?app=1"));
   check(!StayAlarmHostAndroid.admitted(false,"https://crewcheck.online","https://crewcheck.online"));
@@ -148,6 +193,7 @@ public final class StayAlarmHostAdmissionFixture {
    check(!StayAlarmHostAndroid.acceptancePackage(denied));
   durableHostCounterproofs();
   coldStartRevocationCounterproofs();
-  System.out.println("PASS host production admission: "+checks+" assertions; origin/frame/OFF plus durable logout/restart/reauth/cancel counterproofs; no WebView/device instantiated");
+  sameAccountGenerationCounterproofs();
+  System.out.println("PASS host production admission: "+checks+" assertions; origin/frame/OFF plus durable logout/restart and same-account generation counterproofs; no WebView/device instantiated");
  }
 }
