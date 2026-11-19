@@ -16,7 +16,11 @@ export function createAndroidStayAlarmAdapter({ native, enabled = false, activeA
   const nextOperation = operationId || (() => globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${++sequence}`);
   const tails = new Map();
   const serialize = (key, task) => {
-    const run = (tails.get(key) || Promise.resolve()).catch(() => undefined).then(task);
+    const session = activeSession();
+    const run = (tails.get(key) || Promise.resolve()).catch(() => undefined).then(() => {
+      if (!session || activeSession() !== session) return unknown(key);
+      return task();
+    });
     tails.set(key, run);
     run.finally(() => { if (tails.get(key) === run) tails.delete(key); }).catch(() => undefined);
     return run;
@@ -32,10 +36,14 @@ export function createAndroidStayAlarmAdapter({ native, enabled = false, activeA
     if (typeof session !== 'string' || !session) throw Error('session unavailable');
     return { accountId, eventId, session };
   }
+  function assertActiveSession(accountId, session) {
+    if (activeAccount() !== accountId || activeSession() !== session) throw Error('native alarm session changed');
+  }
   async function call(body) {
     const { session, ...payload } = body;
+    assertActiveSession(payload.accountId, session);
     const value = await native.transact(JSON.stringify({ protocol: STAY_ANDROID_PROTOCOL, ownerEpoch: capabilities.ownerEpoch, ...payload }));
-    if (activeAccount() !== body.accountId || activeSession() !== session) throw Error('owner changed while awaiting native acknowledgement');
+    assertActiveSession(payload.accountId, session);
     const response = JSON.parse(value);
     if (response?.protocol !== STAY_ANDROID_PROTOCOL || response.key !== body.key
       || response.operationId !== body.operationId || response.ownerEpoch !== capabilities.ownerEpoch || response.deliveryConfirmed !== false) throw Error('unmatched native receipt');

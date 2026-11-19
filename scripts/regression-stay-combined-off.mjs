@@ -33,10 +33,16 @@ let program, saveDisplay;
 function walk(node) { if(ts.isJsxAttribute(node)&&node.name.text==='onProgram')program=node.initializer.expression.getText(ast);if(ts.isFunctionDeclaration(node)&&node.name?.text==='saveDisplayPreference')saveDisplay=node.getText(ast);ts.forEachChild(node,walk); }
 walk(ast);assert.ok(program);
 function programHandler(context) { const m={exports:{}};vm.runInNewContext(compile('module.exports=('+program+');').outputText,{module:m,exports:m.exports,Date:Clock,...context});return m.exports; }
-function hostFixture() {
+function hostFixture({holdFirstInspect=false}={}) {
  let account='synthetic-account',token='synthetic-token',ready=false;const listeners=new Set(),jobs=new Map(),messages=[];let revision=0;
+ let noticeInspect;
+ const inspectPending=holdFirstInspect?new Promise(resolve=>{noticeInspect=resolve;}):null;
  const port={addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn),postMessage:raw=>{
-  const envelope=JSON.parse(raw);messages.push(envelope);queueMicrotask(()=>{
+  const envelope=JSON.parse(raw);messages.push(envelope);
+  if(noticeInspect&&envelope.action==='transact'&&JSON.parse(envelope.payload).action==='inspect'){
+   noticeInspect();noticeInspect=null;return;
+  }
+  queueMicrotask(()=>{
    let state,payload;
    if(envelope.action==='authenticate'){state='verified';payload=JSON.stringify({protocol:'crewcheck-stay-alarm-v1',featureEnabled:true,atomicReplace:true,acknowledgedCancel:true,deliveryConfirmed:false,ownerId:account,ownerEpoch:'synthetic-epoch',permissionGranted:true});}
    else if(envelope.action==='revoke'){state='revoked';}
@@ -45,7 +51,8 @@ function hostFixture() {
   });
  }};
  const runtime=createStayHostRuntime({port,readAccount:()=>account,readToken:()=>token,onState:v=>{ready=v;},setTimer:()=>1,clearTimer:()=>{}});
- return {runtime,jobs,messages,logout(){account=null;token=null;},ready:()=>ready};
+ return {runtime,jobs,messages,inspectPending,logout(){account=null;token=null;},
+  renewSameAccount(){token='synthetic-renewed-token';return runtime.authenticate();},ready:()=>ready};
 }
 test('actual preview keeps native instants while display timezone changes and uses explicit breakfast choice',()=>{
  for(const zone of ['UTC','Asia/Tokyo','America/Manaus']) {const p=preview({displayTimeZone:zone});assert.ok(p.button);assert.deepEqual(p.sent,[]);p.button.props.onClick();assert.deepEqual(p.sent,[['2030-10-11T07:00:00.000Z','2030-10-11T08:30:00.000Z']]);}
@@ -73,6 +80,26 @@ test('revoked session cannot program from an old preview and source pickup local
  const pickup=presentation.normalizePickupLocal({date:'2030-10-11',clock:'00:30',timeZone:'America/Manaus'}),original=JSON.stringify(pickup);
  for(const source of ['utc','base','manual','local']) {presentation.presentPickup(pickup,{source,manualZone:'Asia/Tokyo'},{localZone:'America/Fortaleza',baseZone:'America/Fortaleza'});assert.equal(JSON.stringify(pickup),original);}
  assert.equal(pickup.instant,'2030-10-11T04:30:00.000Z');
+});
+test('queued pernoite writes do not enter a renewed session of the same account',async()=>{
+ const f=hostFixture({holdFirstInspect:true});assert.equal(await f.runtime.authenticate(),true);
+ const controller=createStayAlarmController(f.runtime);
+ const identity={accountId:'synthetic-account',eventId:'synthetic-stay'};
+ const request={...identity,confirmed:true,apzConfirmed:true,permission:'granted',alarmAt:'2030-10-11T07:00:00Z',hotelReportAt:'2030-10-11T08:30:00Z',now};
+ const inFlight=controller.replace(request);
+ await f.inspectPending;
+ const staleReplace=controller.replace({...request,alarmAt:'2030-10-11T07:15:00Z'});
+ const staleCancel=controller.cancel(identity);
+ const initialCommands=f.messages.length;
+ assert.equal(await f.renewSameAccount(),true);
+ const [old,replace,cancel]=await Promise.all([inFlight,staleReplace,staleCancel]);
+ assert.equal(old.state,'unknown');
+ assert.equal(replace.state,'not-programmed');assert.equal(replace.reason,'session-changed');
+ assert.equal(cancel.state,'unknown');assert.equal(cancel.reason,'session-changed');
+ assert.deepEqual(f.messages.slice(initialCommands).map(message=>message.action),['authenticate']);
+ assert.equal(f.jobs.size,0);
+ assert.equal((await controller.replace(request)).state,'scheduled');
+ assert.equal((await controller.cancel(identity)).state,'cancelled');
 });
 test('combined editor retains operational invalidation dependencies while display preference remains separate; native flags stay OFF',()=>{
  const effects=[];function scan(n){if(ts.isCallExpression(n)&&n.expression.getText(ast)==='useEffect'&&n.arguments[0]?.getText(ast).includes('nativeHost.current?.invalidate()'))effects.push(n.arguments[1].elements.map(e=>e.getText(ast)));ts.forEachChild(n,scan);}scan(ast);

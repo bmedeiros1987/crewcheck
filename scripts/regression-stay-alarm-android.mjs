@@ -74,6 +74,41 @@ test('replace then cancel stays serialized through async bridge completion',asyn
  await Promise.all([adapter.replace({...input,key}),adapter.cancel({key})]);
  assert.deepEqual(f.calls.map(x=>x.action),['inspect','replace','inspect','cancel']);assert.equal(f.jobs.get(key).state,'cancelled');
 });
+test('internal adapter queue keeps the session captured before waiting',async()=>{
+ const f=fixture(),original=f.native.transact;
+ let observed,release;
+ const started=new Promise(resolve=>{observed=resolve;});
+ const held=new Promise(resolve=>{release=resolve;});
+ f.native.transact=async raw=>{
+  if(f.calls.length===0&&JSON.parse(raw).action==='inspect'){
+   const receipt=await original(raw);observed();await held;return receipt;
+  }
+  return original(raw);
+ };
+ const adapter=createAndroidStayAlarmAdapter(f.options);
+ const inFlight=adapter.replace({...input,key});
+ await started;
+ const queued=Promise.all([adapter.replace({...input,key}),adapter.cancel({key})]);
+ f.setSession('session-b');release();
+ assert.equal((await inFlight).state,'unknown');
+ assert((await queued).every(result=>result.state==='unknown'));
+ assert.deepEqual(f.calls.map(call=>call.action),['inspect']);
+ assert.equal((await adapter.replace({...input,key})).state,'scheduled');
+ assert.equal((await adapter.cancel({key})).state,'cancelled');
+});
+test('renewal between inspect and write must not send a replace or cancel',async()=>{
+ for(const command of ['replace','cancel']){
+  const f=fixture(),original=f.native.transact;
+  f.native.transact=async raw=>{
+   const response=await original(raw);
+   if(JSON.parse(raw).action==='inspect')queueMicrotask(()=>queueMicrotask(()=>f.setSession('session-b')));
+   return response;
+  };
+  const result=await createAndroidStayAlarmAdapter(f.options)[command]({...input,key});
+  assert.equal(result.state,'unknown');
+  assert.deepEqual(f.calls.map(call=>call.action),['inspect']);
+ }
+});
 test('prepared host is hard OFF and manifest requests no additional permission',()=>{
  const root='android-wrapper/app/src/main/',manifest=fs.readFileSync(root+'AndroidManifest.xml','utf8');
  const permissions=[...manifest.matchAll(/<uses-permission android:name="([^"]+)"/g)].map(x=>x[1]).sort();
