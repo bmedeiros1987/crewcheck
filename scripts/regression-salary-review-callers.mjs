@@ -142,6 +142,7 @@ try{
     ??html.match(/<div class="cc-salary-basis-amount"[^>]*>(.*?)<\/div>/s)?.[1];
  };
  const netAmount=renderPaymentAmount('net',[cardSnapshot]);
+ assert.match(netAmount,/class="cc-salary-basis-amount"[^>]*><strong>Não calculável<\/strong>/);
  assert.doesNotMatch(netAmount,/data-payroll-standard-net|data-payroll-individual-net/);
  assert.match(netAmount,/Falta confirmar todas as rubricas do salário bruto/);
  assert.doesNotMatch(netAmount,/Falta confirmar (INSS|IRRF|outros descontos)/);
@@ -190,7 +191,8 @@ try{
  assert.match(reused,/Descontos pessoais: R\$ ••• \(referência\)/);
  assert.match(reused,/Líquido padrão estimado: R\$ •••/);
  assert.match(reused,/Líquido individual a confirmar/);
- assert.doesNotMatch(reused,/data-payroll-individual-net|135,00|21,00|4\.844,00|sha256:/);
+ assert.equal([...reused.matchAll(/data-payroll-standard-net/g)].length,1);
+ assert.doesNotMatch(reused,/Não calculável|data-payroll-individual-net|135,00|21,00|4\.844,00|sha256:/);
  const reloaded=forecastViews.readMonthlyFinancialSettings(deductionMonth);
  assert.equal(reloaded.revision,2);
  assert.equal(c.salaryDisplaySummary('net',5000,true,[deductionMonth],[reloaded]).amount,4844);
@@ -201,6 +203,7 @@ try{
  const {inss,other_deductions}=savedValues;
  saveFixture(ownerId,deductionMonth,{...savedRecord,revision:3,values:{inss,other_deductions}});
  const absent=renderEstimate();
+ assert.match(absent,/class="cc-salary-basis-amount"[^>]*><strong>Não calculável<\/strong>/);
  assert.match(absent,/IRRF: pendente/);
  assert.match(absent,/Descontos pessoais: R\$ ••• \(referência\)/);
  assert.doesNotMatch(absent,/data-payroll-standard-net|data-payroll-individual-net|888,00/,'the next credit month must not supply reviewed IRRF');

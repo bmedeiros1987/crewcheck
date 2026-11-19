@@ -5,6 +5,7 @@ import {readMonthlyFinancialSettings, type MonthlyFinancialValue} from '@/lib/fi
 import {FINANCIAL_SOURCES} from '@/lib/financialReferenceCatalog';
 import {employeeTaxReference,estimateEmployeeInss,estimateMonthlyIrrf} from '@/lib/financialTaxReferences';
 import {useFinancialPrivacy} from './FinancialPrivacy';
+import {SalaryBasisAmount} from './SalaryDisplayBasis';
 
 type AuthFence=ReturnType<typeof captureAuthSession>;
 const fenceCurrent=(fence:AuthFence|null|undefined)=>{try{return fence?.isCurrent()===true;}catch{return false;}};
@@ -72,7 +73,9 @@ export default function PayrollNetEstimate({gross,complete,month,paymentMonth,co
  const balance=individual??afterTaxes;
  if(valid&&taxes!==null&&afterTaxes===null)pending.push('Tributos fora da faixa segura');
  return <section className="cc-payroll-net-preview" aria-label="Previsão líquida individual">
- {complete&&afterTaxes!==null&&<p data-payroll-standard-net>Líquido padrão estimado: {money(Math.max(0,afterTaxes))}. Após INSS e IRRF, antes dos descontos pessoais.</p>}
+ {complete&&afterTaxes!==null
+  ? <p data-payroll-standard-net>Líquido padrão estimado: {money(Math.max(0,afterTaxes))}. Após INSS e IRRF, antes dos descontos pessoais.</p>
+  : <SalaryBasisAmount summary={{basis:'net',amount:null,complete:false,reason:null}}/>}
  {complete&&individual!==null&&<p data-payroll-individual-net>Líquido individual estimado: {money(Math.max(0,individual))}. Inclui os descontos pessoais do holerite revisado.</p>}
  {!complete&&balance!==null&&<p>Saldo parcial após os descontos disponíveis: {money(Math.max(0,balance))}.</p>}
  {!privacy.hidden&&balance!==null&&balance<0&&<p>Saldo de ajuste negativo: {money(balance)}. Os descontos disponíveis excedem o bruto em {money(-balance)}.</p>}
