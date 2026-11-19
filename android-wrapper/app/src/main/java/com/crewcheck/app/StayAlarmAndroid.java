@@ -40,6 +40,7 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
         return new Intent(context,StayAlarmReceiver.class).setAction(ACTION)
             .setData(Uri.parse("crewcheck-stay-alarm://job/"+digest(key)));
     }
+    private String channelId() { return StayAlarmQaAlerts.enabled(context) ? StayAlarmQaAlerts.CHANNEL_ID : CHANNEL; }
     @Override public long now(){return System.currentTimeMillis();}
     @Override public boolean permitted() {
         return permissionState().ready();
@@ -53,7 +54,7 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
         try{notifications=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);notificationService=notifications==null?0:1;}catch(Exception ignored){}
         if(notifications!=null){
             try{enabled=notifications.areNotificationsEnabled()?1:0;}catch(Exception ignored){}
-            try{NotificationChannel value=notifications.getNotificationChannel(CHANNEL);
+            try{NotificationChannel value=notifications.getNotificationChannel(channelId());
                 channel=value!=null&&value.getImportance()!=NotificationManager.IMPORTANCE_NONE?1:0;}catch(Exception ignored){}
         }
         try{post=Build.VERSION.SDK_INT<33||context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED?1:0;}catch(Exception ignored){}
@@ -84,10 +85,11 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
         if(open==null)throw new IllegalStateException("app unavailable");
         open.setData(Uri.parse("crewcheck-stay-alarm://open/"+digest(r.key)));
         PendingIntent tap=PendingIntent.getActivity(context,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        Notification value=new Notification.Builder(context,CHANNEL).setContentTitle("Despertador do pernoite")
+        Notification.Builder notification=new Notification.Builder(context,channelId()).setContentTitle("Despertador do pernoite")
             .setContentText("Confira sua programação no CrewCheck.").setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setSmallIcon(android.R.drawable.ic_dialog_info).setContentIntent(tap).setAutoCancel(true).build();
-        notifications.notify(digest(r.key),0,value);
+            .setSmallIcon(android.R.drawable.ic_dialog_info).setContentIntent(tap).setAutoCancel(true);
+        StayAlarmQaAlerts.addActions(context,notification,r);
+        notifications.notify(digest(r.key),0,notification.build());
     }
     private static JSONObject encode(StayAlarmEngine.Record r)throws Exception {
         JSONObject value=new JSONObject();value.put("v",1);value.put("key",r.key);value.put("owner",r.owner);value.put("ownerEpoch",r.ownerEpoch);

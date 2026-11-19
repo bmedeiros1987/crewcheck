@@ -39,6 +39,123 @@ public final class StayAlarmEngineFixture {
         StayAlarmEngine.Result replace(String op,long revision,long delta,String mode){return engine.replace(request(op,delta,mode),revision,true,true);}
         StayAlarmEngine.Result cancel(String op,long revision){return engine.cancel(key,owner.account,"stay-1",op,revision,owner.epoch);}
     }
+    private static StayAlarmEngine.Record fireLocalAlert(Fixture f) throws Exception {
+        check(f.replace("alert",0,120_000,"relative").state.equals("scheduled"),"prepare synthetic local alert");
+        StayAlarmEngine.Record due=f.store.read(f.key);
+        f.device.clock=due.alarm;
+        check(f.engine.receive(f.key,due.revision,due.alarm),"claim synthetic local alert once");
+        return f.store.read(f.key);
+    }
+
+    private static void localAlertControls() throws Exception {
+        final StayAlarmEngine.LocalAlertAction snooze=StayAlarmEngine.LocalAlertAction.SNOOZE;
+        final StayAlarmEngine.LocalAlertAction dismiss=StayAlarmEngine.LocalAlertAction.DISMISS;
+
+        Fixture f=new Fixture();
+        check(f.replace("awaiting",0,120_000,"relative").state.equals("scheduled"),"scheduled fixture");
+        StayAlarmEngine.Record at=f.store.read(f.key);
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,dismiss,0).state.equals("not-programmed"),
+            "controls need a claimed alert, not a future schedule");
+
+        f=new Fixture();
+        at=fireLocalAlert(f);
+        long next=at.alarm+300_000;
+        check(f.engine.applyLocalAlertAction(false,f.key,at.revision,at.alarm,snooze,next).reason.equals("alert-controls-disabled"),
+            "explicit opt-in required");
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm-1,dismiss,0).state.equals("not-programmed"),
+            "stale alert instant cannot silence the current revision");
+        for(long invalid:new long[]{at.alarm,at.alarm+600_001,at.apz}) {
+            check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,invalid).state.equals("not-programmed"),
+                "invalid snooze leaves the alert unchanged");
+        }
+        f.owner.epoch="other-epoch";
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,dismiss,0).key.isEmpty(),
+            "stale owner epoch has no control or scope receipt");
+        f.owner.epoch=at.ownerEpoch;
+        f.device.allowed=false;
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,next).state.equals("not-programmed"),
+            "snooze does not silence if exact scheduling is unavailable");
+        f.device.allowed=true;
+        check(f.device.cancellations==0&&f.device.replacements==1,"rejected controls did not mutate the device");
+
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,next).state.equals("scheduled"),"snooze arms one new revision");
+        StayAlarmEngine.Record snoozed=f.store.read(f.key);
+        check(snoozed.revision==at.revision+1&&snoozed.alarm==next&&snoozed.apz==at.apz
+            &&snoozed.key.equals(at.key)&&f.device.jobs.size()==1,"snooze reuses identity and APZ");
+        check(f.device.cancellations==1&&f.device.notifications==1,"snooze clears only the earlier alert");
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,dismiss,0).state.equals("not-programmed"),
+            "old dismiss cannot stop the newly snoozed revision");
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,next).state.equals("not-programmed"),
+            "duplicate snooze cannot add another alarm");
+        f.device.clock=next;
+        check(!f.engine.receive(f.key,at.revision,at.alarm),"old delivery cannot ring again");
+        check(f.engine.receive(f.key,snoozed.revision,snoozed.alarm)&&f.device.notifications==2,"new revision can alert once");
+        check(f.engine.applyLocalAlertAction(true,f.key,snoozed.revision,snoozed.alarm,dismiss,0).state.equals("cancelled"),
+            "dismiss completes a local cancellation");
+        check(f.engine.applyLocalAlertAction(true,f.key,snoozed.revision,snoozed.alarm,snooze,next+300_000).state.equals("not-programmed"),
+            "dismiss wins over stale snooze");
+        f.engine.recover(false);
+        check(f.device.jobs.isEmpty()&&f.store.read(f.key).state.equals("cancelled"),"recovery preserves dismissal");
+
+        f=new Fixture();
+        at=fireLocalAlert(f);
+        f.device.clock=at.apz-70_000;
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,at.apz).state.equals("not-programmed"),
+            "snooze within ten minutes still may not reach APZ");
+        f.device.allowed=false;
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,dismiss,0).state.equals("cancelled"),
+            "stopping a current alert does not require permission to arm a new one");
+
+        f=new Fixture();
+        at=fireLocalAlert(f);
+        f.device.failCancel=true;
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,at.alarm+300_000).state.equals("unknown"),
+            "failed silence does not acknowledge snooze");
+        check(f.device.replacements==1&&f.store.read(f.key).state.equals("pending-snooze"),"snooze is durable but not acknowledged");
+        f.device.failCancel=false;
+        f.engine.recover(false);
+        check(f.device.jobs.size()==1&&f.store.read(f.key).revision==at.revision+1,"recovery finishes the same snooze");
+
+        f=new Fixture();
+        at=fireLocalAlert(f);
+        f.store.failCommit=f.store.commits+1;
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,at.alarm+300_000).state.equals("unknown"),
+            "a failed journal write cannot be acknowledged");
+        check(f.device.cancellations==0&&f.device.replacements==1&&f.store.read(f.key).state.equals("attempted"),
+            "journal failure leaves the current alert untouched");
+
+        f=new Fixture();
+        at=fireLocalAlert(f);
+        f.device.failReplace=true;
+        check(f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,at.alarm+300_000).state.equals("unknown"),
+            "failed OS rearm does not acknowledge snooze");
+        f.device.failReplace=false;
+        f.engine.recover(false);
+        check(f.device.jobs.size()==1&&f.store.read(f.key).revision==at.revision+1,
+            "journal recovers only the prepared snooze revision");
+        f=new Fixture();
+        at=fireLocalAlert(f);
+        f.device.failCancel=true;
+        f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,snooze,at.alarm+300_000);
+        f.device.failCancel=false;
+        check(f.replace("new-manual-edit",at.revision+1,240_000,"absolute").state.equals("scheduled"),
+            "an authorized newer edit can supersede a pending snooze");
+        check(f.device.cancellations==2&&f.device.jobs.size()==1,"the newer edit still clears the previous alert");
+
+        for(StayAlarmEngine.LocalAlertAction action:StayAlarmEngine.LocalAlertAction.values()) {
+            f=new Fixture();
+            check(f.replace("local-alert:1:"+action.name(),0,120_000,"relative").state.equals("scheduled"),
+                "caller operation may look like an internal action");
+            at=f.store.read(f.key);
+            f.device.clock=at.alarm;
+            check(f.engine.receive(f.key,at.revision,at.alarm),"deliver collision fixture");
+            StayAlarmEngine.Result result=f.engine.applyLocalAlertAction(true,f.key,at.revision,at.alarm,action,at.alarm+300_000);
+            check(result.state.equals(action==dismiss?"cancelled":"scheduled")&&result.revision==2,
+                "control cannot collide with the previous operation");
+        }
+        check(StayAlarmEngine.LocalAlertAction.values().length==2,"these controls cannot confirm awake");
+    }
+
     public static void main(String[] args)throws Exception {
         Fixture f=new Fixture();check(f.replace("one",0,7_200_000,"relative").state.equals("scheduled"),"native completion receipt");
         check(f.device.jobs.size()==1,"one OS identity");check(f.store.read(f.key).state.equals("scheduled"),"journal committed");
@@ -147,6 +264,7 @@ public final class StayAlarmEngineFixture {
         release.countDown();schedule.join();cancel.join();check(serial.device.jobs.isEmpty(),"cancel waits for in-flight replace across instances");
         check(serial.store.read(serial.key).state.equals("cancelled"),"serialized terminal cancellation");
         check(StayAlarmEngine.identity("a:b ü","hotel/1").equals("stay-hotel-apz:a%3Ab%20%C3%BC:hotel%2F1"),"identity matches JS encoding");
+        localAlertControls();
         System.out.println("PASS production native engine: "+checks+" assertions; durable replace/cancel/reboot/revocation/CAS/owner epochs/delivery races; fake device only");
     }
 }

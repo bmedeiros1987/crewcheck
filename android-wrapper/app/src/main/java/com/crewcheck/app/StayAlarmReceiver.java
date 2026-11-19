@@ -13,8 +13,12 @@ public final class StayAlarmReceiver extends BroadcastReceiver {
         final Context app=context.getApplicationContext();
         WORK.execute(()->{
         try {
-            StayAlarmEngine engine=StayAlarmAndroid.engine(app);
             String action=intent.getAction();
+            if (StayAlarmQaAlerts.isControl(action)) {
+                StayAlarmQaAlerts.handle(app,intent);
+                return;
+            }
+            StayAlarmEngine engine=StayAlarmAndroid.engine(app);
             if(StayAlarmAndroid.ACTION.equals(action)) {
                 engine.receive(intent.getStringExtra("stayKey"),intent.getLongExtra("revision",-1),intent.getLongExtra("scheduledAt",0));
             } else if(Intent.ACTION_BOOT_COMPLETED.equals(action)||Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
