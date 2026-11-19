@@ -29,6 +29,7 @@ on:
       - 'client/src/lib/financialLocalUpcoming.ts'
       - 'client/src/lib/financialIntervalEvidence.ts'
       - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/financialTaxReferences.ts'
       - 'client/src/lib/ownerPerDiemReview.ts'
       - 'client/src/lib/financialStatementLearning.ts'
       - 'client/src/lib/financialForecastDrafts.ts'
@@ -85,6 +86,7 @@ jobs:
           node scripts/regression-payroll-net-storage.mjs
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
+          node scripts/regression-financial-thirteenth-withholding.mjs
           node scripts/regression-financial-review-hardening.mjs
           node scripts/regression-financial-forecast-drafts.cjs
           TZ=UTC node scripts/regression-financial-known-values-dates.mjs
@@ -115,6 +117,7 @@ jobs:
           node scripts/regression-payroll-net-storage.mjs
           node scripts/regression-financial-vacation-forecast.mjs
           node scripts/regression-financial-thirteenth-forecast.mjs
+          node scripts/regression-financial-thirteenth-withholding.mjs
           node scripts/regression-financial-review-hardening.mjs
           node scripts/regression-financial-forecast-drafts.cjs
           node scripts/regression-financial-known-values-dates.mjs
