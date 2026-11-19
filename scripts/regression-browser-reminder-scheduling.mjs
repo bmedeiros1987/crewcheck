@@ -17,7 +17,11 @@ function sourceFunction(path, name) {
   return ts.transpileModule(match, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 }
 const runtimePath = 'client/src/lib/crewcheckPremiumRuntime.ts';
-const runtime = ['bridge', 'notify', 'scheduleNotification'].map(name => sourceFunction(runtimePath, name)).join('\n');
+// Stable authenticated fixture for boundary/feedback contracts. The owner suite
+// executes the complete runtime and actual auth-generation implementation.
+const runtime = `const pendingBrowserNotificationTimers = new Map();
+const captureAuthSession = () => ({ token: 'synthetic-runtime-token', owner: 'synthetic-runtime-owner', isCurrent: () => true });\n`
+  + ['bridge', 'notify', 'scheduleNotification'].map(name => sourceFunction(runtimePath, name)).join('\n');
 const feedback = sourceFunction('client/src/components/v14313/LifeConciergePanel.tsx', 'scheduleReminders');
 let cases = 0;
 function check(name, run) { run(); cases++; console.log(`PASS ${name}`); }

@@ -1,0 +1,13 @@
+# Browser reminder session fence
+
+A retained in-page timer in the main 0f8f89e1 runtime could still construct its notification after logout, session expiry or an account switch. The issue was reproduced against the complete raw and canonically prepared runtime using synthetic storage, timers and a Notification mock. The unchanged-session positive control constructed one mock notification; five revoked-session cases incorrectly did the same. No real notification, account or network request was used.
+
+Browser scheduling now captures the existing auth read fence and requires a nonempty owner/token. Every scheduled callback has a unique pending ticket. Auth transitions, relevant storage events and pagehide clear tickets before attempting timer cancellation. A retained callback cannot regain admission through a reused timer ID or A/B/A session change. The callback rechecks its session and notification permission, and stays in the browser transport instead of invoking a native bridge that appeared later. This read fence does not authenticate a server operation or grant account privileges.
+
+Native scheduling still uses its original strict boolean receipt and never falls back to a browser timer after a native error or refusal. The boundary/feedback tests use an explicit stable authenticated fixture; the separate owner regression executes the complete runtime and actual auth-generation implementation. Existing timestamp bounds, permission, native receipt and feedback assertions remain. The raw/prepared CI gate includes both suites.
+
+The Life #1350 caller check is complementary: it refuses an obsolete session before scheduling; this change fences a callback that has already been scheduled. The shared test hunks were composed without conflicts and the combined synthetic caller tests preserve both checks. Neither the blocked Life branch nor its PR state was changed.
+
+This remains an in-page browser timer. It is not background delivery, native alarm validation, remote PWA push or physical-device evidence. The change does not enable a channel, request permission, change sound/DND settings, migrate data, or send messages. Independent review and exact-head CI remain integration gates. Store inventory, Android runtime/signature gates and other existing HOLDs are separate.
+
+Cancellation is definitive for that admission: returning from pagehide or changing the session does not automatically rearm its old callback. A new explicit scheduling action is required. Switching tabs alone is not pagehide and does not cancel these timers. Same-page getMe refresh with the same owner does not emit auth-changed; an actual auth event or relevant cross-tab storage change revokes the captured admission.

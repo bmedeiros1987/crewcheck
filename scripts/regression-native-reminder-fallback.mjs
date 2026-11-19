@@ -16,6 +16,9 @@ function run(native, permission = 'granted') {
   Notification.permission = permission;
   const window = { ...(native ? { CrewCheckNative: native } : {}), setTimeout(callback, delay) { timers.push({ callback, delay }); return timers.length; } };
   const context = vm.createContext({ window, Notification, Date: { now: () => 1000 } });
+  // Stable authenticated browser fixture; real auth-generation transitions are
+  // exercised by regression-browser-reminder-owner.mjs.
+  Object.assign(context, { pendingBrowserNotificationTimers: new Map(), captureAuthSession: () => ({ token: 'synthetic-runtime-token', owner: 'synthetic-runtime-owner', isCurrent: () => true }) });
   vm.runInContext(code, context);
   return { accepted: context.scheduleNotification('Synthetic reminder', 'Synthetic body', 2000), timers };
 }

@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'client/src/lib/crewcheckPremiumRuntime.ts'
+      - 'client/src/lib/authClient.ts'
       - 'client/src/components/v14313/LifeConciergePanel.tsx'
       - 'scripts/**'
       - 'package.json'
@@ -29,6 +30,7 @@ jobs:
       - name: Test canonical raw reminder sources
         run: |
           node scripts/regression-browser-reminder-scheduling.mjs
+          node scripts/regression-browser-reminder-owner.mjs
           node scripts/regression-native-reminder-fallback.mjs
       - name: Test canonical raw concierge clocks
         run: node --test scripts/regression-concierge-clock-format.mjs
@@ -37,6 +39,7 @@ jobs:
       - name: Test prepared reminder sources
         run: |
           node scripts/regression-browser-reminder-scheduling.mjs
+          node scripts/regression-browser-reminder-owner.mjs
           node scripts/regression-native-reminder-fallback.mjs
       - name: Test prepared concierge clocks
         run: node --test scripts/regression-concierge-clock-format.mjs

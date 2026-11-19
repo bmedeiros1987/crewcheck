@@ -1,4 +1,25 @@
 // CrewCheck v14.3.43 — runtime premium para permissões explícitas, notificações locais e radar privado.
+import { captureAuthSession } from './authClient';
+
+// Browser timers belong to the session that admitted them. A ticket also fences
+// a callback retained after clearTimeout, including timer-ID reuse.
+const pendingBrowserNotificationTimers = new Map<object, number>();
+function cancelBrowserNotificationTimers() {
+  const timers = [...pendingBrowserNotificationTimers.values()];
+  pendingBrowserNotificationTimers.clear();
+  for (const timer of timers) {
+    try { window.clearTimeout(timer); } catch {}
+  }
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  for (const event of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'pagehide']) {
+    window.addEventListener(event, cancelBrowserNotificationTimers);
+  }
+  window.addEventListener('storage', event => {
+    if (event.key === null || ['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key)) cancelBrowserNotificationTimers();
+  });
+}
 
 declare global {
   interface Window {
@@ -95,7 +116,19 @@ function scheduleNotification(title: string, body: string, epochMillis: number):
   // This is only an in-page timer, not a background alarm or remote push.
   try {
     if (typeof Notification !== 'function' || Notification.permission !== 'granted') return false;
-    window.setTimeout(() => notify(title, body), delay);
+    const session = captureAuthSession();
+    if (!session.token || !session.owner || !session.isCurrent()) return false;
+    const ticket = {};
+    const timer = window.setTimeout(() => {
+      if (!pendingBrowserNotificationTimers.has(ticket)) return;
+      pendingBrowserNotificationTimers.delete(ticket);
+      try {
+        if (!session.isCurrent() || typeof Notification !== 'function' || Notification.permission !== 'granted') return;
+        // A browser admission must never be rerouted into a later native bridge.
+        new Notification(title, { body });
+      } catch {}
+    }, delay);
+    pendingBrowserNotificationTimers.set(ticket, timer);
     return true;
   } catch {
     return false;
