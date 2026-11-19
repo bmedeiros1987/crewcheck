@@ -159,12 +159,27 @@ export function calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaul
 /** Pure scheduling proposal. No IO; #951 is not mounted and integration defaults off. */
 export function planStayAlarm({ enabled = false, scope, stay, hotelApz, now, choice, defaultLeadMinutes, leadMinutes, breakfastPlan, defaultWithoutBreakfastMinutes,
   automaticConfigured = false, devicePermission = 'unknown', channelConfigured = false,
-  manualScheduleRequested = false, jobs = [] } = {}) {
+  manualScheduleRequested = false, automaticScheduleRequested = false, jobs = [] } = {}) {
   if (enabled !== true) return none('integration-disabled');
   const hotel = manualHotelApz(hotelApz, stay, scope);
   if (hotel.apz === undefined) return hotel;
-  if (manualScheduleRequested !== true) return none('manual-confirmation-required', { dataState: 'manual' });
-  const calculated = calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaultLeadMinutes: defaultLeadMinutes ?? leadMinutes, breakfastPlan, defaultWithoutBreakfastMinutes });
+  const automatic = manualScheduleRequested !== true && automaticScheduleRequested === true;
+  if (manualScheduleRequested !== true && !automatic) return none('manual-confirmation-required', { dataState: 'manual' });
+  if (automatic) {
+    if (stay.kind !== 'stay' || ![stay.id, stay.eventId].every(id => typeof id === 'string' && id.trim())) {
+      return none('stay-occurrence-unconfirmed');
+    }
+    const start = stayInstant(stay.startAt), end = stayInstant(stay.endAt);
+    if (start === null || end === null || hotel.apz <= start || hotel.apz > end) return none('hotel-apz-outside-stay');
+  }
+  // Auto uses saved breakfast preferences. The local APZ clock alone does
+  // not establish a breakfast choice or a cutoff; individual choices still win.
+  const calculated = calculateStayWakeup({
+    scope, stay, hotelApz, now, choice,
+    defaultLeadMinutes: automatic ? defaultLeadMinutes : defaultLeadMinutes ?? leadMinutes,
+    breakfastPlan: automatic ? breakfastPlan ?? 'unknown' : breakfastPlan,
+    defaultWithoutBreakfastMinutes,
+  });
   if (calculated.action !== 'calculated') return calculated;
   if (!calculated.eligible) return none(calculated.warnings.includes('alarm-past') ? 'trigger-expired' : 'absolute-time-incompatible', { calculated });
   if (automaticConfigured !== true || channelConfigured !== true) return none('capability-not-configured', { calculated });
@@ -179,7 +194,8 @@ export function planStayAlarm({ enabled = false, scope, stay, hotelApz, now, cho
   if (existing?.status === 'cancelled') return none('cancellation-preserved');
   if (existing && existing.status !== 'pending') return none('terminal-or-inflight-job');
   const scheduledAt = calculated.scheduledAt;
-  if (existing && stayInstant(existing.scheduledAt) === stayInstant(scheduledAt)) return none('already-pending', { jobKey, calculated });
+  if (existing && stayInstant(existing.scheduledAt) === stayInstant(scheduledAt)
+    && (!automatic || stayInstant(existing.hotelReportAt) === hotel.apz)) return none('already-pending', { jobKey, calculated });
   return Object.freeze({ action: existing ? 'update-pending' : 'prepare', reason: 'manual-hotel-apz-confirmed',
     targetKind: 'hotel-apz', jobKey, scheduledAt, hotelReportAt: calculated.hotelReportAt, calculated });
 }
