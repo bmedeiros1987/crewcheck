@@ -201,11 +201,19 @@ public final class StayAlarmEngine {
     /** Native host invokes on boot/package update/resume. No network is needed.
      * A permission-grant event quarantines previous jobs; it never re-arms them. */
     public void recover(boolean permissionGrant) throws Exception {
+        recover(permissionGrant,false);
+    }
+    /** QA boot consumes only confirmed records. An interrupted edit cannot
+     * turn into a confirmed alert at boot or on the following unlock. */
+    public void recoverConfirmedOnBoot() throws Exception {
+        recover(false,true);
+    }
+    private void recover(boolean permissionGrant,boolean confirmedOnly) throws Exception {
         synchronized(LOCK) {
             for(Record r:store.all()) {
                 if("pending-cancel".equals(r.state)) { finish(r);continue; }
                 if(!"scheduled".equals(r.state)&&!awaitingSchedule(r)) continue;
-                if(permissionGrant||!owned(r)||!device.permitted()) {
+                if(permissionGrant||(confirmedOnly&&awaitingSchedule(r))||!owned(r)||!device.permitted()) {
                     device.cancel(r.key);commit(r.state("blocked"));continue;
                 }
                 finish(awaitingSchedule(r)?r:r.state("pending-schedule"));

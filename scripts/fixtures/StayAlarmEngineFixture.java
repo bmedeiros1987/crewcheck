@@ -156,6 +156,92 @@ public final class StayAlarmEngineFixture {
         check(StayAlarmEngine.LocalAlertAction.values().length==2,"these controls cannot confirm awake");
     }
 
+    private static void reboot(Fixture fixture) throws Exception {
+        fixture.device.jobs.clear();
+        fixture.engine = new StayAlarmEngine(fixture.store, fixture.device, fixture.owner);
+        fixture.engine.recoverConfirmedOnBoot();
+    }
+
+    private static void directBootRecovery() throws Exception {
+        Fixture f = new Fixture();
+        f.replace("boot-alert", 0, 120_000, "absolute");
+        StayAlarmEngine.Record first = f.store.read(f.key);
+        reboot(f);
+        check(f.device.jobs.size() == 1 && f.device.jobs.get(f.key).alarm == first.alarm,
+            "locked boot restores the confirmed instant");
+        f.engine.recoverConfirmedOnBoot();
+        check(f.device.jobs.size() == 1, "repeated recovery replaces the same OS identity");
+        f.device.clock = first.alarm;
+        check(f.engine.receive(f.key, first.revision, first.alarm), "one on-time attempt after reboot");
+
+        check(f.engine.applyLocalAlertAction(true, f.key, first.revision, first.alarm,
+            StayAlarmEngine.LocalAlertAction.SNOOZE, first.alarm + 120_000).state.equals("scheduled"),
+            "new snooze revision confirmed");
+        StayAlarmEngine.Record snoozed = f.store.read(f.key);
+        reboot(f);
+        f.engine.recoverConfirmedOnBoot();
+        check(f.device.jobs.size() == 1 && f.device.jobs.get(f.key).revision == snoozed.revision,
+            "only confirmed snooze is restored by repeated recovery");
+        f.device.clock = snoozed.alarm;
+        check(!f.engine.receive(f.key, first.revision, first.alarm), "old revision remains silent");
+        check(f.engine.receive(f.key, snoozed.revision, snoozed.alarm) && f.device.notifications == 2,
+            "only the replacement can alert once");
+        f.engine.applyLocalAlertAction(true, f.key, snoozed.revision, snoozed.alarm,
+            StayAlarmEngine.LocalAlertAction.DISMISS, 0);
+        reboot(f);
+        check(f.device.jobs.isEmpty() && f.store.read(f.key).state.equals("cancelled"), "dismiss survives reboot");
+
+        f = new Fixture();
+        f.replace("cancel-before-reboot", 0, 120_000, "absolute");
+        first = f.store.read(f.key);
+        check(f.cancel("cancel", first.revision).state.equals("cancelled"), "cancel acknowledged");
+        reboot(f);
+        f.device.clock = first.alarm;
+        check(f.device.jobs.isEmpty() && !f.engine.receive(f.key, first.revision, first.alarm),
+            "confirmed cancellation suppresses old delivery");
+
+        f = new Fixture();
+        f.replace("owner-a", 0, 120_000, "absolute");
+        f.owner.enabled = false;
+        reboot(f);
+        check(f.device.jobs.isEmpty(), "revoked owner cannot rearm");
+        f.owner.enabled = true;
+        f.owner.epoch = "new-generation";
+        f.engine.recoverConfirmedOnBoot();
+        check(f.device.jobs.isEmpty(), "same account with new epoch cannot resurrect its alarm");
+
+        f = new Fixture();
+        f.replace("account-a", 0, 120_000, "absolute");
+        f.owner.account = "account-b";
+        reboot(f);
+        check(f.device.jobs.isEmpty(), "different account cannot recover old alarm");
+
+        f = new Fixture();
+        f.store.failCommit = 2;
+        check(f.replace("interrupted", 0, 120_000, "absolute").state.equals("unknown"), "final write failed");
+        reboot(f);
+        check(f.device.jobs.isEmpty() && f.store.read(f.key).state.equals("blocked"),
+            "an incomplete schedule is quarantined at boot");
+        f.engine.recoverConfirmedOnBoot();
+        check(f.device.jobs.isEmpty(), "unlock does not complete the interrupted schedule");
+
+        f = new Fixture();
+        StayAlarmEngine.Record attempted = fireLocalAlert(f);
+        f.device.failReplace = true;
+        f.engine.applyLocalAlertAction(true, f.key, attempted.revision, attempted.alarm,
+            StayAlarmEngine.LocalAlertAction.SNOOZE, attempted.alarm + 120_000);
+        f.device.failReplace = false;
+        reboot(f);
+        check(f.device.jobs.isEmpty() && f.store.read(f.key).state.equals("blocked"),
+            "a pending snooze does not become a confirmed alarm on boot");
+
+        f = new Fixture();
+        f.replace("expired", 0, 120_000, "absolute");
+        f.device.clock = f.store.read(f.key).alarm + 1;
+        reboot(f);
+        check(f.device.jobs.isEmpty() && f.store.read(f.key).state.equals("expired"), "past alarm never rearms");
+    }
+
     public static void main(String[] args)throws Exception {
         Fixture f=new Fixture();check(f.replace("one",0,7_200_000,"relative").state.equals("scheduled"),"native completion receipt");
         check(f.device.jobs.size()==1,"one OS identity");check(f.store.read(f.key).state.equals("scheduled"),"journal committed");
@@ -265,6 +351,7 @@ public final class StayAlarmEngineFixture {
         check(serial.store.read(serial.key).state.equals("cancelled"),"serialized terminal cancellation");
         check(StayAlarmEngine.identity("a:b ü","hotel/1").equals("stay-hotel-apz:a%3Ab%20%C3%BC:hotel%2F1"),"identity matches JS encoding");
         localAlertControls();
+        directBootRecovery();
         System.out.println("PASS production native engine: "+checks+" assertions; durable replace/cancel/reboot/revocation/CAS/owner epochs/delivery races; fake device only");
     }
 }
