@@ -9,13 +9,14 @@ if(!webkit)throw Error('STAY_WEBKIT_JAR required for actual origin/frame listene
 const classpath=api+path.delimiter+webkit;
 const output=mkdtempSync(path.join(os.tmpdir(),'crewcheck-stay-api-'));
 const root='android-wrapper/app/src/main/java/com/crewcheck/app/';
-const sources=['NotificationTiming','StayAlarmEngine','StayAlarmAndroid','StayAlarmPermissionState','StayAlarmBridge','StayAlarmReceiver','StayAlarmSessionHost','StayAlarmHostAndroid','StayAlarmDurableAuthority','StayAlarmDurableAuthorityAndroid','StayAlarmCompositeOwner','StayAlarmPhysicalFixture','StayAlarmPhysicalFixtureActivity'].map(name=>root+name+'.java')
- .concat(['scripts/fixtures/StayAlarmEngineFixture.java','scripts/fixtures/StayAlarmBridgeFixture.java','scripts/fixtures/StayAlarmHostAdmissionFixture.java']);
+const sources=['NotificationTiming','StayAlarmEngine','StayAlarmAndroid','StayAlarmPermissionState','StayAlarmBridge','StayAlarmReceiver','StayAlarmSessionHost','StayAlarmHostAndroid','StayAlarmDurableAuthority','StayAlarmDurableAuthorityAndroid','StayAlarmCompositeOwner','StayAlarmPhysicalFixture','StayAlarmPhysicalFixtureActivity','StayAlarmQaAlerts'].map(name=>root+name+'.java')
+ .concat(['scripts/fixtures/StayAlarmEngineFixture.java','scripts/fixtures/StayAlarmBridgeFixture.java','scripts/fixtures/StayAlarmHostAdmissionFixture.java','scripts/fixtures/StayAlarmQaActionFixture.java']);
 try {
  const args=['-source','8','-target','8','-cp',classpath,'-d',output,...sources];
  if(process.env.STAY_ECJ_JAR)execFileSync('java',['-jar',process.env.STAY_ECJ_JAR,...args],{stdio:'inherit'});
  else execFileSync('javac',args,{stdio:'inherit'});
  execFileSync('java',['-cp',output+path.delimiter+classpath,'StayAlarmBridgeFixture'],{stdio:'inherit',timeout:30000});
  execFileSync('java',['-cp',output+path.delimiter+classpath,'com.crewcheck.app.StayAlarmHostAdmissionFixture'],{stdio:'inherit',timeout:30000});
+ execFileSync('java',['-cp',output+path.delimiter+classpath,'com.crewcheck.app.StayAlarmQaActionFixture'],{stdio:'inherit',timeout:30000});
  console.log('PASS real Android driver/receiver/bridge compile against Android15/API35 classes; production JSON bridge ran on JVM with fake device, no APK/device/alarm');
 }finally{rmSync(output,{recursive:true,force:true});}

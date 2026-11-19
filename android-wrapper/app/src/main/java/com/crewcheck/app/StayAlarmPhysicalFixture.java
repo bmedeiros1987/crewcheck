@@ -110,6 +110,7 @@ public final class StayAlarmPhysicalFixture {
                 +"\nAndroid API: "+android.os.Build.VERSION.SDK_INT
                 +"\nPronto para tentar programar: "+(permissions.ready()?"sim (entrega ainda não comprovada)":"não")
                 +"\n"+permissions.describe(android.os.Build.VERSION.SDK_INT>=33,android.os.Build.VERSION.SDK_INT>=31)
+                +StayAlarmQaAlerts.describe(activity)
                 +"\nEste painel apenas consulta. Não solicita acessos nem altera Configurações."
                 +detail+"\n"+result+"\n");
         }

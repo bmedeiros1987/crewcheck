@@ -93,3 +93,21 @@ test('read-only diagnostic identifies individual missing capabilities without gr
  assert.ok(fixture.includes('button(box,"Atualizar diagnóstico",this::render)'));
  assert.ok(fixture.includes('permissions.describe(android.os.Build.VERSION.SDK_INT>=33,android.os.Build.VERSION.SDK_INT>=31)'));
 });
+
+test('QA notification controls use the private receiver and report independent channel settings',()=>{
+ const root='android-wrapper/app/src/main/java/com/crewcheck/app/';
+ const qa=readFileSync(root+'StayAlarmQaAlerts.java','utf8');
+ const driver=readFileSync(root+'StayAlarmAndroid.java','utf8');
+ const receiver=readFileSync(root+'StayAlarmReceiver.java','utf8');
+ assert.match(qa,/acceptancePackage\(context\.getPackageName\(\)\)\s*&& StayAlarmPhysicalFixture\.enabled\(context\)/);
+ assert.match(qa,/getNotificationChannel\(CHANNEL_ID\) != null\) return/);
+ assert.match(qa,/channel\.getSound\(\) == null/);
+ assert.match(qa,/channel\.shouldVibrate\(\)/);
+ assert.match(qa,/channel\.getImportance\(\) == NotificationManager\.IMPORTANCE_NONE/);
+ assert.match(qa,/new Intent\(context, StayAlarmReceiver\.class\)/);
+ assert.match(qa,/getBroadcast\(context, 0, intent, PendingIntent\.FLAG_IMMUTABLE\)/);
+ assert.match(receiver,/StayAlarmQaAlerts\.handle\(app,intent\)/);
+ assert.match(driver,/getNotificationChannel\(channelId\(\)\)/);
+ assert.match(driver,/new Notification\.Builder\(context,channelId\(\)\)/);
+ assert.doesNotMatch(qa,/requestPermissions|setInterruptionFilter|setBypassDnd|Vibrator|startForeground|startActivity|https?:|WAKE_ACK/i);
+});

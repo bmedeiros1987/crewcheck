@@ -3,6 +3,7 @@ package com.crewcheck.app;
 import java.net.URLEncoder;
 import java.util.List;
 import java.util.Objects;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 
 /** Native operation journal. No Android, network, timer or permission requests.
@@ -87,6 +88,9 @@ public final class StayAlarmEngine {
         store.commit(r);
         if (!r.same(store.read(r.key))) throw new IllegalStateException("journal readback failed");
     }
+    private static boolean awaitingSchedule(Record record) {
+        return "pending-schedule".equals(record.state)||"pending-snooze".equals(record.state);
+    }
     private Result finish(Record pending) throws Exception {
         if ("pending-cancel".equals(pending.state)) {
             device.cancel(pending.key);
@@ -102,6 +106,7 @@ public final class StayAlarmEngine {
             device.cancel(pending.key);Record expired=pending.state("expired");commit(expired);
             return result(expired,"not-programmed","expired");
         }
+        if ("pending-snooze".equals(pending.state)) device.cancel(pending.key);
         device.replace(pending);
         // Permission/owner may change while the OS call is in flight.
         if (!owned(pending)||!device.permitted()) {
@@ -113,6 +118,9 @@ public final class StayAlarmEngine {
     }
     public boolean permissionGranted(){synchronized(LOCK){return owner.enabled()&&device.permitted();}}
     public Result replace(Record request,long expectedRevision,boolean confirmed,boolean apzConfirmed) {
+        return replace(request,expectedRevision,confirmed,apzConfirmed,false);
+    }
+    private Result replace(Record request,long expectedRevision,boolean confirmed,boolean apzConfirmed,boolean snooze) {
         synchronized(LOCK) {
             if (!valid(request)||!owned(request)||!confirmed||!apzConfirmed||!device.permitted()
                 ||request.alarm<=device.now()) return result(request,"not-programmed","confirmation-owner-permission-or-time");
@@ -123,13 +131,15 @@ public final class StayAlarmEngine {
                     if (old.alarm!=request.alarm||old.apz!=request.apz||!old.mode.equals(request.mode)||!old.alarmAt.equals(request.alarmAt))
                         return result(old,"not-programmed","operation-id-conflict");
                     // Never resurrect terminal preferences through retries.
-                    if (!"scheduled".equals(old.state)&&!"pending-schedule".equals(old.state))
-                        return result(old,"not-programmed","terminal-requires-new-confirmation");
+                    if (awaitingSchedule(old)) return finish(old);
+                    if (!"scheduled".equals(old.state)) return result(old,"not-programmed","terminal-requires-new-confirmation");
                     return finish(old.state("pending-schedule"));
                 }
                 if (revision!=expectedRevision) return result(request,"not-programmed","stale-revision");
+                // Replacing an incomplete snooze still needs to clear the old alert.
+                boolean clearAlert=snooze||old!=null&&"pending-snooze".equals(old.state);
                 Record pending=new Record(request.key,request.owner,request.ownerEpoch,request.event,request.operation,revision+1,
-                    request.alarmAt,request.alarm,request.apz,request.mode,"pending-schedule");
+                    request.alarmAt,request.alarm,request.apz,request.mode,clearAlert?"pending-snooze":"pending-schedule");
                 commit(pending);return finish(pending);
             } catch(Exception error) { return result(request,"unknown","native-or-journal-incomplete"); }
         }
@@ -152,17 +162,53 @@ public final class StayAlarmEngine {
             } catch(Exception error) { return result(request,"unknown","native-or-journal-incomplete"); }
         }
     }
+    public enum LocalAlertAction { SNOOZE, DISMISS }
+
+    /** Prepared local controls. A private notification action must supply the
+     * exact alert revision and instant. There is no wake confirmation here. */
+    public Result applyLocalAlertAction(boolean enabled, String key, long revision, long scheduledAt,
+                                        LocalAlertAction action, long snoozeAt) {
+        if (!enabled) return result(null,"not-programmed","alert-controls-disabled");
+        synchronized(LOCK) {
+            try {
+                if (action==null || key==null) return result(null,"not-programmed","unmatched-local-alert");
+                Record alert=store.read(key);
+                if (!valid(alert) || !key.equals(alert.key) || !owned(alert) || !"attempted".equals(alert.state)
+                    || alert.revision!=revision || alert.alarm!=scheduledAt || revision>=Long.MAX_VALUE-1)
+                    return result(null,"not-programmed","unmatched-local-alert");
+
+                String operation="local-alert:"+revision+":"+action.name();
+                if (operation.equals(alert.operation)) operation+=":next";
+                if (action==LocalAlertAction.DISMISS)
+                    return cancel(key,alert.owner,alert.event,operation,revision,alert.ownerEpoch);
+
+                long now=device.now();
+                // Same upper bound as the prepared wake interaction protocol.
+                if (!device.permitted() || snoozeAt<=now || snoozeAt-now>600_000 || snoozeAt>=alert.apz)
+                    return result(alert,"not-programmed","snooze-time-or-permission");
+
+                // Commit the new revision before quieting the alert. Recovery
+                // can finish the same snooze after either OS operation fails.
+                Record next=new Record(key,alert.owner,alert.ownerEpoch,alert.event,operation,
+                    revision+1,Instant.ofEpochMilli(snoozeAt).toString(),snoozeAt,alert.apz,alert.mode,"pending-snooze");
+                return replace(next,revision,true,true,true);
+            } catch(Exception error) {
+                return result(null,"unknown","local-alert-action-incomplete");
+            }
+        }
+    }
+
     /** Native host invokes on boot/package update/resume. No network is needed.
      * A permission-grant event quarantines previous jobs; it never re-arms them. */
     public void recover(boolean permissionGrant) throws Exception {
         synchronized(LOCK) {
             for(Record r:store.all()) {
                 if("pending-cancel".equals(r.state)) { finish(r);continue; }
-                if(!"scheduled".equals(r.state)&&!"pending-schedule".equals(r.state)) continue;
+                if(!"scheduled".equals(r.state)&&!awaitingSchedule(r)) continue;
                 if(permissionGrant||!owned(r)||!device.permitted()) {
                     device.cancel(r.key);commit(r.state("blocked"));continue;
                 }
-                finish(r.state("pending-schedule"));
+                finish(awaitingSchedule(r)?r:r.state("pending-schedule"));
             }
         }
     }
@@ -171,7 +217,7 @@ public final class StayAlarmEngine {
     public Record inspect(String key,String account) throws Exception {
         synchronized(LOCK) { if(!owned(account)) throw new SecurityException("owner unavailable");
             Record r=store.read(key);if(r!=null&&!account.equals(r.owner))throw new SecurityException("foreign record");
-            if(r!=null&&("scheduled".equals(r.state)||"pending-schedule".equals(r.state))
+            if(r!=null&&("scheduled".equals(r.state)||awaitingSchedule(r))
                 &&(!owned(r)||!device.permitted()||r.alarm<=device.now())) {
                 device.cancel(r.key);commit(r.state(r.alarm<=device.now()?"expired":"blocked"));r=store.read(key);
             } return r;
