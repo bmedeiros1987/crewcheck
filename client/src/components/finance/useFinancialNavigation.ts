@@ -30,6 +30,7 @@ export default function useFinancialNavigation(mode: 'salary'|'allowance', month
   const scope=financialEntryScope(identity);
   const [context,setContext] = useState(() => read(mode,month));
   const current = useRef(context), restoring = useRef(history.state?.ccFinancialPosition?.scope===scope), previousIdentity = useRef({identity,month});
+  const enteredScope = useRef<string|null>(null);
   const [restoreRevision,setRestoreRevision]=useState(0),stopRestoration=useRef<(()=>void)|null>(null);
   const backFilters=useRef<Context|null>(null);
   current.current = context;
@@ -115,7 +116,11 @@ export default function useFinancialNavigation(mode: 'salary'|'allowance', month
       const target = (position?.focusKey ? Array.from(root.querySelectorAll<HTMLElement>('button,select,input,summary')).find(element=>element.getClientRects().length>0&&focusKey(element)===position.focusKey) : null) || root.querySelector<HTMLElement>('[data-financial-screen-heading]');
       target?.focus({preventScroll:true});
       if (position) window.scrollTo({left:position.x,top,behavior:'instant'});
+      // Fresh entries include the normal-flow page header. Internal screens
+      // still align their content, and valid saved positions take priority.
+      else if (enteredScope.current !== scope) window.scrollTo({left:0,top:0,behavior:'instant'});
       else root.scrollIntoView({block:'start',behavior:'instant'});
+      enteredScope.current = scope;
       cancel();
     };
     const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>apply());};
