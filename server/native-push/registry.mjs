@@ -58,7 +58,10 @@ const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,160}$/.test(v
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const bindingPrefix = identity => PREFIX + 'binding:' + digest(identity.ownerId) + ':';
+const deliveryPrefix = identity => PREFIX + 'outbox:' + digest(identity.ownerId) + ':';
 export const nativeBindingKey = (identity, installationId) => bindingPrefix(identity) + digest(installationId);
+export const validNativeDeliveryId = value => typeof value === 'string'
+  && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 const tokenKey = tokenHash => PREFIX + 'token:' + tokenHash;
 function identityChecked(identity) {
   if (!id(identity?.ownerId) || typeof identity.email !== 'string' || identity.email.length > 254 || !identity.email.includes('@')) fail('NATIVE_IDENTITY_REQUIRED', 401);
@@ -135,6 +138,9 @@ function parse(value) {
 }
 async function lockState(connection, key) {
   await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',[key,'null']);
+  return readLockedState(connection,key);
+}
+async function readLockedState(connection, key) {
   const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key]);
   return parse(rows[0]?.payload);
 }
@@ -157,6 +163,43 @@ async function verifyActiveClaim(connection, bindingKey, record) {
   const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[tokenKey(record.tokenHash)]);
   const claim = parse(rows[0]?.payload); claimChecked(claim);
   if (!claim?.active || claim.bindingKey !== bindingKey || claim.revision !== record.revision) fail('NATIVE_TOKEN_CLAIM_CHANGED');
+}
+function tokenContext(record) {
+  return JSON.stringify([NATIVE_PROJECT,NATIVE_PACKAGE,record.ownerId,record.installationId,record.revision,record.generation,record.tokenRevision,record.consentRevision]);
+}
+
+// Trusted queue callers only. Keep the same profile, binding and token-claim
+// locks as registration/revocation, followed by the scoped outbox row.
+export async function withNativeDeliveryState(db, {identity, installationId, eventKey}, work, canEnqueue = () => false) {
+  identityChecked(identity);
+  if (!id(installationId) || !id(eventKey)) fail('NATIVE_INVALID_DELIVERY',400);
+  const bindingKey = nativeBindingKey(identity,installationId);
+  const jobKey = deliveryPrefix(identity) + digest(JSON.stringify([installationId,eventKey]));
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await lockIdentity(connection,identity);
+    const binding = await readLockedState(connection,bindingKey);
+    storedBindingChecked(binding,{identity,installationId});
+    await verifyActiveClaim(connection,bindingKey,binding);
+    // Upsert before locking a missing key during enqueue. Reading a missing
+    // row FOR UPDATE before inserting can deadlock concurrent InnoDB enqueues.
+    const allowCreate = binding?.active === true && canEnqueue() === true;
+    const job = allowCreate ? await lockState(connection,jobKey) : await readLockedState(connection,jobKey);
+    const result = await work({binding,job,allowCreate,async save(value) {
+      if (job === null && !allowCreate) fail('NATIVE_INVALID_DELIVERY_STATE',503);
+      await write(connection,jobKey,value);
+    },openToken(protection) {
+      if (!binding?.active || typeof protection?.open !== 'function') fail('NATIVE_PROTECTION_REQUIRED',503);
+      try {
+        const token = protection.open(binding.sealedToken,tokenContext(binding));
+        if (typeof token !== 'string' || digest(token) !== binding.tokenHash) fail('NATIVE_PROTECTION_FAILED',503);
+        return token;
+      } catch { fail('NATIVE_PROTECTION_FAILED',503); }
+    }});
+    await connection.commit();
+    return result;
+  } catch(error) { await connection.rollback(); throw error; } finally { connection.release(); }
 }
 // No table creation, ambient credential/key lookup, transport or retry after an
 // uncertain commit. The caller must reconcile by mutationId after an unknown ACK.
@@ -186,10 +229,9 @@ export async function mutateNativeInstallation(db, raw, { protection, now = Date
       if (previous.tokenHash !== input.tokenHash) await connection.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[key]);
     }
     if (plan.next.active) {
-      const context = JSON.stringify([NATIVE_PROJECT,NATIVE_PACKAGE,plan.next.ownerId,plan.next.installationId,plan.next.revision,plan.next.generation,plan.next.tokenRevision,plan.next.consentRevision]);
       // Trusted, explicitly authorized protection adapter only. No fallback to
       // Web Push key or platform room helper (which truncates input to80 chars).
-      try { plan.next.sealedToken = envelopeChecked(protection.seal(input.token,context)); }
+      try { plan.next.sealedToken = envelopeChecked(protection.seal(input.token,tokenContext(plan.next))); }
       catch { fail('NATIVE_PROTECTION_FAILED',503); }
       await write(connection,tokenKey(input.tokenHash),{schema:1,bindingKey,active:true,revision:plan.next.revision});
     }
@@ -235,6 +277,13 @@ export async function deleteNativeAccountWithRegistry(db, identity, deleteCanoni
       await connection.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[key]);
     }
     for (const {key} of records) await connection.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[key]);
+    const outbox = deliveryPrefix(identity);
+    const [deliveries] = await connection.query('SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key LIKE ? ORDER BY state_key FOR UPDATE',[outbox+'%']);
+    for (const {state_key} of deliveries) {
+      if (typeof state_key !== 'string' || !state_key.startsWith(outbox)
+        || !/^[a-f0-9]{64}$/.test(state_key.slice(outbox.length))) fail('NATIVE_REGISTRY_STATE_INVALID',503);
+      await connection.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[state_key]);
+    }
     await deleteCanonicalAccount(connection);
     const [remaining] = await connection.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[identity.email]);
     if (remaining.length) fail('NATIVE_ACCOUNT_DELETION_NOT_CONFIRMED',503);
