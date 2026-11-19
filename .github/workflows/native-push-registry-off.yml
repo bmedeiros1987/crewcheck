@@ -8,6 +8,7 @@ on:
       - 'server/v139/common.mjs'
       - 'scripts/regression-native-push-registry*.mjs'
       - 'scripts/regression-native-push-dispatch.mjs'
+      - 'scripts/regression-native-push-delivery-sql.mjs'
       - '.github/workflows/native-push-registry-off.yml'
 permissions:
   contents: read
@@ -82,6 +83,7 @@ jobs:
           node scripts/regression-native-push-registry.mjs
           node scripts/regression-native-push-registry-protocol.mjs
           node scripts/regression-native-push-registry-sql.mjs
+          node scripts/regression-native-push-delivery-sql.mjs
       - name: Preserve canonical preparation
         run: node scripts/v139/apply.mjs
       - name: Prepared native registry and actual disposable SQL
@@ -90,6 +92,7 @@ jobs:
           node scripts/regression-native-push-registry.mjs
           node scripts/regression-native-push-registry-protocol.mjs
           node scripts/regression-native-push-registry-sql.mjs
+          node scripts/regression-native-push-delivery-sql.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

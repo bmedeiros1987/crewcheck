@@ -1,11 +1,9 @@
-import { NATIVE_PACKAGE, NATIVE_PROJECT } from './registry.mjs';
+import { NATIVE_PACKAGE, NATIVE_PROJECT, validNativeDeliveryId } from './registry.mjs';
 
 export const NATIVE_SENDER_ENABLED = false;
 const FCM_SEND_URL = `https://fcm.googleapis.com/v1/projects/${NATIVE_PROJECT}/messages:send`;
 const MESSAGE_NAME_PREFIX = `projects/${NATIVE_PROJECT}/messages/`;
 const DEFINITE_REJECTIONS = new Set([400, 401, 403, 404]);
-const validDeliveryId = value => typeof value === 'string'
-  && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 const result = state => ({ enabled: state !== 'disabled', state, providerAccepted: state === 'accepted_unconfirmed', received: null });
 
 function validDelivery(delivery, id) {
@@ -45,7 +43,7 @@ export function createNativePushSender({ enabled = NATIVE_SENDER_ENABLED, withAu
     if (enabled !== true) return result('disabled');
     if ([withAuthorizedDelivery, getAccessToken, request, clock].some(fn => typeof fn !== 'function')
       || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) return result('unconfigured');
-    if (!validDeliveryId(deliveryId)) return result('blocked');
+    if (!validNativeDeliveryId(deliveryId)) return result('blocked');
 
     let entered = false, closed = false, attempted = false, outcome = result('blocked');
     try {
