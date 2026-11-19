@@ -297,6 +297,27 @@ async function main(){
   assert.equal(await f.api.eraseDeletedOwnerForecastDrafts('Account-A'),true);
   assert.equal(f.storage.data.has(name),false);
  });
+ await test('confirmed deletion stops same-document writes even when auth storage keeps the old session',async()=>{
+  const f=fixture(bundle),owner='Account-A',context=f.context();
+  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth(),null,context)).status,'saved');
+  assert.equal((await f.api.saveForecastDraft('vacation',vacation(),null,context)).status,'saved');
+  let release;
+  const hold=new Promise(resolve=>{release=resolve;});
+  f.locks.before=()=>hold;
+  const queued=f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,context);
+  f.storage.onRemove=name=>{if(name===slot(owner,'thirteenth','2026'))throw Error('synthetic partially unavailable storage');};
+  const erased=f.api.eraseDeletedOwnerForecastDrafts(owner);
+  release();
+  assert.equal((await queued).status,'stale');
+  assert.equal(await erased,false);
+  assert.equal(f.storage.data.size,1,'continue erasing other plans of the same owner');
+  assert.equal(f.api.readLatestForecastDraft('thirteenth',context).status,'stale');
+  f.storage.onRemove=null;
+  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,f.context())).status,'stale');
+  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts(owner),true);
+  f.switchTo('Account-B');
+  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth(),null,f.context())).status,'saved');
+ });
  for(const [route,handler] of deletionHandlers()){
   await test(route+' erases only the acknowledged owner across response and session changes',async()=>{
    const scenarios=['success','network','unconfirmed','switch-before','late-success','late-failure','late-return','blocked-cleanup','switch-during-prompt','switch-during-erasure','blocked-auth-read','blocked-auth-after-response','blocked-auth-remove'];
@@ -411,6 +432,10 @@ async function main(){
     if(['blocked-auth-after-response','blocked-auth-remove'].includes(scenario)){
      assert.equal(store.getItem(tokenKey),'fixture-'+ownerA);
      assert.equal(location.href,'');assert.deepEqual(messages,[]);
+     assert.equal(f.api.readLatestForecastDraft('thirteenth',f.context()).status,'stale');
+     assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,f.context())).status,'stale');
+     login(ownerB);
+     assert.equal(f.api.readForecastDraft('thirteenth','2026',f.context()).status,'found');
     }
     if(scenario==='blocked-cleanup')assert(messages.some(text=>/limpeza.*pendente/.test(text)));
    }

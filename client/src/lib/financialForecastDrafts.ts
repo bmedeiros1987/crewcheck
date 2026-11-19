@@ -17,6 +17,9 @@ export type ForecastDraftRemove = {status:'removed'|'missing'|'conflict'}|Failur
 // Explicit opt-in input drafts only. Never payroll, a reviewed source or a result.
 export const FORECAST_DRAFT_PREFIX = 'crewcheck:financial-forecast:draft:v1:';
 const MAX_RAW_LENGTH = 32_768;
+// The current document must stop using this owner's drafts even if browser
+// storage cannot clear its obsolete auth token. Do not persist this fence.
+const deletedOwners = new Set<string>();
 const rules:Record<ForecastKind,string> = {vacation:VACATION_FORECAST_RULE,thirteenth:THIRTEENTH_RULE};
 const fields = {
  thirteenth:['year','start','end','avos','amount','basis','source','tax','loan','advance'],
@@ -89,6 +92,7 @@ const key = (owner:string,kind:ForecastKind,planId:string) => prefix(owner,kind)
 
 function live(bound:Bound):boolean {
  try {
+  if(deletedOwners.has(bound.ownerId))return false;
   if(bound.context.guard!==bound.guard||bound.context.session!==bound.session||!bound.guard.token||!bound.guard.isCurrent())return false;
   const owner=financialRateOwner(),session=financialRateSession();
   return owner===bound.ownerId&&session===bound.session&&bound.guard.owner===bound.ownerId.trim().toLowerCase()
@@ -175,6 +179,7 @@ export function readLatestForecastDraft<K extends ForecastKind>(kind:K,context:F
 /** Call only after confirmed account deletion, using the owner of the request. */
 export async function eraseDeletedOwnerForecastDrafts(owner:string|null|undefined):Promise<boolean> {
  if(typeof owner!=='string'||!owner.trim())return false;
+ deletedOwners.add(owner);
  try {
   const store=globalThis.localStorage;
   const vacationPrefix=prefix(owner,'vacation'),thirteenthPrefix=prefix(owner,'thirteenth');
@@ -188,8 +193,11 @@ export async function eraseDeletedOwnerForecastDrafts(owner:string|null|undefine
    return names;
   };
   const erase=()=>{
-   for(const name of ownNames())store.removeItem(name);
-   return ownNames().length===0;
+   let removed=true;
+   for(const name of ownNames()){
+    try {store.removeItem(name);} catch {removed=false;}
+   }
+   return removed&&ownNames().length===0;
   };
   const locks=globalThis.navigator?.locks;
   // Draft writers also use the owner lock. Readers and other accounts remain independent.
