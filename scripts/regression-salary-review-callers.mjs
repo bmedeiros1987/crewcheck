@@ -16,6 +16,9 @@ const forecastFile=path.join(adapterDir,'forecasts.cjs'),runtimeRequire=createRe
 await build({stdin:{contents:`
 export {default as VacationForecast} from './client/src/components/finance/VacationForecast';
 export {default as ThirteenthForecast} from './client/src/components/finance/ThirteenthForecast';
+export {default as PayrollPaymentCard} from './client/src/components/finance/PayrollPaymentCard';
+export {SalaryBasisAmount} from './client/src/components/finance/SalaryDisplayBasis';
+export {readMonthlyFinancialSettings} from './client/src/lib/financialMonthlySettings';
 `.trim(),resolveDir:process.cwd(),loader:'tsx'},bundle:true,platform:'node',format:'cjs',jsx:'automatic',outfile:forecastFile,alias:{'@':path.resolve('client/src')},loader:{'.css':'empty'},plugins:[{name:'same-react-runtime',setup(b){b.onResolve({filter:/^react(?:\/.*)?$/},args=>({path:runtimeRequire.resolve(args.path),external:true}));}}]});
 const forecastViews=runtimeRequire(forecastFile);
 
@@ -77,6 +80,83 @@ const {composeOperationalPayrollEstimate}=createRequire(import.meta.url)(payment
 const projected=composeOperationalPayrollEstimate({month:'2032-02',salary:produced,publishedDays:fullDays.map(d=>d.date)});
 assert.equal(projected.totals,null);assert.equal(projected.calculationPartial,true);assert.equal(Math.round(projected.calculationTotals.BRL*100),produced.dsr.observedSubtotalMinor,'actual Home and summary share the exact observed component subtotal');assert.equal(projected.lines.find(line=>line.label==='Instrutoria').value,null);
 console.log('PASS real producer to payment: scalar inputs and global instructor flag never certify inventory or inflate observed canonical subtotal');
+
+// Fully observed components and modeled DSR still require evidence that the
+// inventory is exhaustive. Supply explicit deductions to the real payment UI.
+const month='2027-02',ownerId=monthlyRecord.ownerId;
+const source={ownerId,competence:month,sourceId:'synthetic-payroll',revision:1,effectiveFrom:month+'-01',effectiveTo:month+'-28'};
+const dsrContext={
+ profile:{...source,company:'TAM',role:'cabin',regime:'NB',review:'confirmed',sourceKind:'employer_document'},
+ basisReview:{...source,review:'confirmed'},
+ reportedDsr:{...source,amountMinor:8000,currency:'BRL',status:'confirmed'},
+ sourcePayrollMonth:'2027-03',sourceOperationalMonth:month,derivation:'reconciled_paid_dsr',
+};
+const fence={isCurrent:()=>true};
+const receipt=dsrAdapter.salaryDsrReceipt(ownerId,month,'synthetic-full-inventory-inputs',fence,'payment-card');
+const parts=['base','fixedAdditions','production','reserve','standby','chief','instructor']
+ .map(key=>{
+  const amount=({base:2400,production:220})[key]??0;
+  return {key,amount,knownAmount:amount,complete:true};
+ });
+const dsr=dsrAdapter.consumeSalaryDsr({ownerId,month,receipt,context:dsrContext,parts,isCurrent:fence.isCurrent});
+assert.equal(dsr.composition.state,'complete');
+assert.equal(dsr.composition.dsr.state,'complete');
+assert.equal(dsr.inventoryComplete,false);
+const cardSnapshot={month,salary:{...produced,dsr},
+ publishedDays:Array.from({length:28},(_,i)=>month+'-'+String(i+1).padStart(2,'0')),
+};
+assert.equal(c.payrollOperationalCoverage(month,cardSnapshot.publishedDays).complete,true);
+const cardPayment=composeOperationalPayrollEstimate(cardSnapshot);
+assert.equal(cardPayment.calculationTotals.BRL,2620);
+assert.equal(cardPayment.totals,null);
+assert.equal(cardPayment.calculationPartial,true);
+
+const browserStorage=new Map([
+ ['crewcheck_auth_user',JSON.stringify({id:ownerId,role:'user'})],
+ ['crewcheck_auth_token','synthetic-only'],
+ [`crewcheck_financial_month_settings_v1:${ownerId}:${month}`,JSON.stringify({...monthlyRecord,month})],
+]);
+Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{
+ getItem:key=>browserStorage.get(key)??null,
+}});
+try{
+ const deductions=forecastViews.readMonthlyFinancialSettings(month);
+ assert.equal(deductions.values.irrf.amountMinor,0,'explicit zero IRRF is available to the card');
+ const summary=c.salaryDisplaySummary('net',dsr.composition.grossMinor/100,true,[month],[deductions]);
+ assert.equal(summary.amount,2550,'deductions work independently with a complete gross supplied');
+ const renderPaymentAmount=(displayBasis,snapshots)=>renderToStaticMarkup(React.createElement(forecastViews.PayrollPaymentCard,{
+  basis:displayBasis,snapshots,chooseBasis:()=>{},requestRange:()=>{},
+ })).match(/<div class="cc-salary-basis-amount"[^>]*>(.*?)<\/div>/s)?.[1];
+ const netAmount=renderPaymentAmount('net',[cardSnapshot]);
+ assert.match(netAmount,/Não calculável/);
+ assert.match(netAmount,/Falta confirmar todas as rubricas do salário bruto/);
+ assert.doesNotMatch(netAmount,/Falta confirmar (INSS|IRRF|outros descontos)/);
+ assert.match(renderPaymentAmount('gross',[cardSnapshot]),/subtotal bruto estimado/);
+ assert.match(renderPaymentAmount('net',[]),/Não calculável/);
+ const missingBase={...cardSnapshot,salary:{...cardSnapshot.salary,dsr:undefined,
+  config:{...cardSnapshot.salary.config,baseConfigured:false},
+ }};
+ assert.match(renderPaymentAmount('net',[missingBase]),/Salário-base desta competência não informado/);
+ const missingDay={...cardSnapshot,publishedDays:cardSnapshot.publishedDays.slice(1)};
+ assert.match(renderPaymentAmount('net',[missingDay]),/1 dia\(s\) sem cobertura publicada/);
+
+ // Supplied proof tests presentation only. The real producer above cannot certify it.
+ const certified={...cardSnapshot,salary:{...cardSnapshot.salary,dsr:{...dsr,inventoryComplete:true}}};
+ const partial={...certified,publishedDays:certified.publishedDays.slice(1)};
+ assert.match(renderPaymentAmount('net',[partial]),/1 dia\(s\) sem cobertura publicada/);
+ assert.match(renderPaymentAmount('net',[certified]),/líquido estimado/);
+ const {irrf,...incompleteDeductions}=deductions.values;
+ browserStorage.set(`crewcheck_financial_month_settings_v1:${ownerId}:${month}`,JSON.stringify({...deductions,values:incompleteDeductions}));
+ assert.match(renderPaymentAmount('net',[certified]),/Falta confirmar IRRF/);
+ const privateReason=renderToStaticMarkup(React.createElement(forecastViews.SalaryBasisAmount,{
+  summary:{basis:'net',amount:null,complete:false,reason:'Valor de R$ 123,45 em 2027-02 a confirmar.'},
+ }));
+ assert.match(privateReason,/R\$ ••• em 2027-02/);
+ assert.doesNotMatch(privateReason,/123,45/);
+ console.log('PASS real payment card: full month, modeled DSR and known deductions still show inventory pending, with no invented net');
+}finally{
+ delete globalThis.localStorage;
+}
 
 const statementValue=(salary,items,selectedRange=range)=>{
  const html=renderToStaticMarkup(c.subject.SalaryReliableView({bundle:{roster}}).props.render({snapshots:items||[{roster,snapshot:{roster,salary},source:'synthetic'}],range:selectedRange,missing:[],controls:null,graph:null}));
