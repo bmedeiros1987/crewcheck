@@ -20,7 +20,10 @@ try{
   assert.equal(partial.lines.find(line=>line.label==='Reserva').value,null,'missing operational days do not become a zero variable');
   assert.equal(nextPayrollPayment([partial],new Date('2032-02-02T15:00:00Z')).totals,null,'one day with no activities must never imply a complete payment');
  }
- const complete=candidate(days);assert(complete.issues.some(issue=>issue.includes('Inventário')));assert.equal(nextPayrollPayment([complete],new Date('2032-02-02T15:00:00Z')).totals,null,'published calendar alone cannot certify zero by category');assert.deepEqual(nextPayrollPayment([complete],new Date('2032-02-02T15:00:00Z')).calculationTotals,{BRL:3000});
+ const complete=candidate(days);assert(complete.issues.some(issue=>issue.includes('Falta confirmar todas as rubricas do salário bruto')));assert.equal(nextPayrollPayment([complete],new Date('2032-02-02T15:00:00Z')).totals,null,'published calendar alone cannot certify zero by category');assert.deepEqual(nextPayrollPayment([complete],new Date('2032-02-02T15:00:00Z')).calculationTotals,{BRL:3000});
+ assert.match(candidate(days.slice(1)).issues[0],/1 dia\(s\) sem programação publicada/);
+ const missingFixed=composePayrollPayment(cycle,[{month:'2031-12',salary,publishedDays:days}]);
+ assert.match(missingFixed.issues[0],/Confira os fixos da folha 2032-01/);
  assert.equal(payrollOperationalCoverage('2032-02',Array.from({length:29},(_,i)=>String(i+1).padStart(2,'0')+'/02/2032')).complete,true);
  assert.equal(payrollOperationalCoverage('2032-02',['2032-02-30']).complete,false);
  const flight={iso:'2031-12-01',flight:'SYN1',route:'BSB-CNF',total:120,timeKnown:true,distanceKnown:true,source:'Synthetic flight'};
