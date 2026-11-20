@@ -44,6 +44,11 @@ class GateTests(unittest.TestCase):
                 xml = manifest('wear').replace('<application', f'<uses-feature android:name="android.hardware.screen.portrait"{required}/><application')
                 validate_manifest(xml, 'wear', POLICY)
 
+        for orientation in ('@integer/wear_orientation', '?attr/wear_orientation'):
+            with self.subTest(orientation=orientation), self.assertRaisesRegex(AssertionError, 'orientation reference'):
+                xml = manifest('wear').replace('</application>', f'<activity android:screenOrientation="{orientation}"/></application>')
+                validate_manifest(xml, 'wear', POLICY)
+
     def test_optional_wear_feature_and_mobile_orientation_are_allowed(self):
         optional = manifest('wear').replace('<application', '<uses-feature android:name="android.hardware.screen.portrait" android:required="false"/><application')
         validate_manifest(optional, 'wear', POLICY)

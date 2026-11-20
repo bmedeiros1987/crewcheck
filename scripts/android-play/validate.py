@@ -35,8 +35,10 @@ def validate_manifest(xml, module, policy):
     if module == 'wear':
         # AAPT2 infers portrait support from these activity enum values.
         portrait_orientations = {'portrait', 'sensorPortrait', 'reversePortrait', '1', '7', '9'}
-        assert all(a.get(ANDROID + 'screenOrientation') not in portrait_orientations
-                   for a in app.findall('activity')), 'Wear manifest implies portrait orientation'
+        for activity in app.findall('activity'):
+            orientation = activity.get(ANDROID + 'screenOrientation', '')
+            assert not orientation.startswith(('@', '?')), 'Wear manifest has an unresolved orientation reference'
+            assert orientation not in portrait_orientations, 'Wear manifest implies portrait orientation'
         assert not any(f.get(ANDROID + 'name') == 'android.hardware.screen.portrait'
                        and f.get(ANDROID + 'required', 'true') != 'false'
                        for f in root.findall('.//uses-feature')), 'Wear manifest requires portrait feature'
