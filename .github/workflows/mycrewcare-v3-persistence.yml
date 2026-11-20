@@ -103,7 +103,7 @@ jobs:
           node --test scripts/regression-mcc-comparison.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
-            TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-session-lab.mjs scripts/regression-mycrewcare-ownership-paths.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs scripts/regression-mycrewcare-debug-action.mjs
           done
       - name: Complete canonical preparation
@@ -114,7 +114,7 @@ jobs:
           node --test scripts/regression-mcc-comparison.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
-            TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-session-lab.mjs scripts/regression-mycrewcare-ownership-paths.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs scripts/regression-mycrewcare-debug-action.mjs
           done
           node scripts/regression-p0-525-stay-physical-association.mjs
@@ -134,3 +134,30 @@ jobs:
         run: gradle -p android-wrapper --no-daemon --console=plain :app:compileDebugJavaWithJavac :app:compileReleaseJavaWithJavac :app:processDebugManifest :app:processReleaseManifest
       - name: Verify debug action absent from compiled release
         run: node scripts/assert-mycrewcare-debug-release.mjs --compiled
+      - name: Compile isolated synthetic real-Profile lab (no APK or device execution)
+        run: gradle -p scripts/fixtures/mycrewcare-sso-contract --no-daemon --console=plain compileDebugJavaWithJavac processDebugManifest
+
+  synthetic-instrumentation:
+    name: Synthetic Android WebView (not real login)
+    needs: validate
+    # Standard public-repository runner only; no larger/self-hosted/paid device runner.
+    if: github.event_name == 'pull_request' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Existing isolation and KVM only (fail closed; no host changes)
+        run: bash scripts/fixtures/mycrewcare-sso-contract/run-instrumentation.sh preflight
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-disabled: true
+      - name: Disposable loopback-only real WebView and Profile assertions
+        run: bash scripts/fixtures/mycrewcare-sso-contract/run-instrumentation.sh run

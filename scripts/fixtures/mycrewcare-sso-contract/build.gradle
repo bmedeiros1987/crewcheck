@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application' version '8.11.1'
+}
+
+// Compile the ORIGINAL production source, not a fork/stub/copied implementation.
+def productionJava = file('../../../android-wrapper/app/src/main/java')
+def profileSource = new File(productionJava, 'com/crewcheck/app/CrewCheckMyCrewCareProfile.java')
+def expectedProfileSha256 = '312dafaa37429c5b509d5098e83ac331d2333530e6199f618fca9e3d01894ec6'
+tasks.register('verifyProductionProfile') {
+    inputs.file(profileSource)
+    doLast {
+        def actual = java.security.MessageDigest.getInstance('SHA-256').digest(profileSource.bytes).encodeHex().toString()
+        if (actual != expectedProfileSha256) throw new GradleException('Original Profile source hash mismatch; review required')
+        println "Verified unchanged production Profile SHA-256: ${actual}"
+    }
+}
+
+android {
+    namespace 'lab.mcc'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'lab.mcc.syntheticprofile'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName 'synthetic-only'
+        buildConfigField 'String', 'PROFILE_SOURCE_SHA256', '"' + expectedProfileSha256 + '"'
+    }
+    buildFeatures { buildConfig = true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.synthetic.xml'
+            java.srcDirs = [projectDir, productionJava]
+            // No other CrewCheck source, draft policy, credential store or host harness.
+            java.includes = ['RedirectInstrumentation.java', 'LabActivity.java', 'LabTerminalGate.java',
+                             'LoopbackFixture.java', 'com/crewcheck/app/CrewCheckMyCrewCareProfile.java']
+            res.srcDirs = ['res']
+        }
+    }
+    buildTypes { debug { debuggable true } }
+}
+// No release/store variant, signing credentials, deployment or publishing task.
+androidComponents {
+    beforeVariants(selector().withBuildType('release')) { variant -> variant.enable = false }
+}
+tasks.named('preBuild').configure { dependsOn 'verifyProductionProfile' }
+dependencies { implementation 'androidx.webkit:webkit:1.17.1' }
