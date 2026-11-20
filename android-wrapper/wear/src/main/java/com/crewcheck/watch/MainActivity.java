@@ -111,6 +111,7 @@ public final class MainActivity extends FragmentActivity
     private WellbeingStore wellbeingStore;
     private ScrollView scroll;
     private LinearLayout content;
+    private LinearLayout connectionInstructions;
     private int safeHorizontalInset;
     private TextView clockView;
     private TextView ambientClockView;
@@ -230,10 +231,11 @@ public final class MainActivity extends FragmentActivity
 
         content = new LinearLayout(this) {
             @Override protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
-                if (!usesRoundMenu() || child.getBackground() instanceof RoundMenuBackground) {
+                if (!usesRoundMenu() || child == connectionInstructions
+                        || child.getBackground() instanceof RoundMenuBackground) {
                     return super.drawChild(canvas, child, drawingTime);
                 }
-                // Only the navigation rows scroll through the wider circular viewport.
+                // Keep other rows in the original safe area while the menu scrolls.
                 int top = scroll.getScrollY() + scroll.getPaddingTop() - getTop();
                 int bottom = scroll.getScrollY() + scroll.getHeight() - scroll.getPaddingBottom() - getTop();
                 int saved = canvas.save();
@@ -372,6 +374,7 @@ public final class MainActivity extends FragmentActivity
 
     private void renderSnapshot(WatchContextSnapshot snapshot) {
         content.removeAllViews();
+        connectionInstructions = null;
         heroSyncShown = false;
         applySafePadding();
         content.getRootView().setBackgroundColor(BLACK);
@@ -589,21 +592,27 @@ public final class MainActivity extends FragmentActivity
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
         content.addView(logo, new LinearLayout.LayoutParams(dp(54), dp(54)));
 
+        // Keep the reading width, but let the onboarding copy scroll through
+        // the visible circle instead of disappearing at the square viewport.
+        connectionInstructions = new LinearLayout(this);
+        connectionInstructions.setOrientation(LinearLayout.VERTICAL);
+        content.addView(connectionInstructions);
+
         TextView title = text("SINCRONIZAR", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
         title.setPadding(0, dp(8), 0, dp(4));
-        content.addView(title);
+        connectionInstructions.addView(title);
 
         TextView value = text("Conecte ao CrewCheck", 23, WHITE, true, Gravity.CENTER);
         fitLongestWord(value, contentWidth());
-        content.addView(value);
+        connectionInstructions.addView(value);
 
         TextView detail = text(
                 "Abra o app no celular. Sua escala, próximos passos e alertas chegam automaticamente.",
                 10, MUTED, false, Gravity.CENTER
         );
         detail.setPadding(0, dp(8), 0, dp(8));
-        content.addView(detail);
+        connectionInstructions.addView(detail);
 
         TextView sync = heroAction("Sincronizar agora", CYAN);
         sync.setOnClickListener(view -> requestSync());

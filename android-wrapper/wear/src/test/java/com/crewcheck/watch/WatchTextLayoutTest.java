@@ -97,6 +97,111 @@ public class WatchTextLayoutTest {
         }
     }
 
+    @Test public void roundConnectionInstructionsUseTheCircleAndStayReadable() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, (Object) null);
+                    measure(scroll, size);
+                    LinearLayout instructions = field(activity, "connectionInstructions", LinearLayout.class);
+                    TextView heading = (TextView) instructions.getChildAt(1);
+                    TextView detail = (TextView) instructions.getChildAt(2);
+                    assertEquals("Conecte ao CrewCheck", heading.getText().toString());
+                    assertTrue(detail.getText().toString().startsWith("Abra o app no celular."));
+                    assertFits(content);
+                    for (TextView text : new TextView[]{heading, detail}) {
+                        Layout layout = text.getLayout();
+                        for (int line = 0; line < layout.getLineCount(); line++) {
+                            assertEquals("instruction line keeps every character", 0, layout.getEllipsisCount(line));
+                            int lineTop = content.getTop() + instructions.getTop() + text.getTop()
+                                    + text.getTotalPaddingTop() + layout.getLineTop(line);
+                            int lineHeight = layout.getLineBottom(line) - layout.getLineTop(line);
+                            scroll.scrollTo(0, lineTop + lineHeight / 2 - size / 2);
+                            int visibleLineTop = lineTop - scroll.getScrollY();
+                            assertTrue("the entire instruction line can pass through the readable band",
+                                    visibleLineTop >= scroll.getPaddingTop()
+                                            && visibleLineTop + lineHeight <= size - scroll.getPaddingBottom());
+                        }
+                        assertEquals(text.length(), layout.getLineEnd(layout.getLineCount() - 1));
+                    }
+
+                    String name = "sync-" + size + "dp-font-" + scale;
+                    scroll.scrollTo(0, 0);
+                    saveMenuFrame(drawRoundView(scroll, size), name + "-start");
+
+                    int oldBottom = size - scroll.getPaddingBottom();
+                    int headingTop = content.getTop() + instructions.getTop() + heading.getTop();
+                    int headingBottom = headingTop + heading.getHeight();
+                    scroll.scrollTo(0, Math.max(0, headingBottom - oldBottom - 16));
+                    int visibleTop = Math.max(oldBottom, headingTop - scroll.getScrollY());
+                    int visibleBottom = Math.min(size, headingBottom - scroll.getScrollY());
+                    assertTitlePassesOldCutoff(activity, scroll, instructions, size, visibleTop, visibleBottom, name);
+
+                    TextView sync = directText(content, "Sincronizar agora");
+                    assertTrue(sync.isClickable());
+                    scroll.scrollTo(0, content.getTop() + sync.getTop() + sync.getHeight() / 2 - size / 2);
+                    assertActionInSafeBand(scroll, content, sync, size);
+                    saveMenuFrame(drawRoundView(scroll, size), name + "-middle");
+
+                    TextView last = menuActions(content)[3];
+                    scroll.scrollTo(0, content.getTop() + last.getTop() + last.getHeight() / 2 - size / 2);
+                    assertActionInSafeBand(scroll, content, last, size);
+                    scroll.scrollTo(0, content.getHeight());
+                    assertTrue(scroll.isVerticalScrollBarEnabled());
+                    saveMenuFrame(drawRoundView(scroll, size), name + "-end");
+                }
+            }
+        }
+    }
+
+    private static TextView directText(LinearLayout content, String label) {
+        for (int i = 0; i < content.getChildCount(); i++) {
+            if (content.getChildAt(i) instanceof TextView text && label.contentEquals(text.getText())) return text;
+        }
+        throw new AssertionError("Missing action: " + label);
+    }
+
+    private static void assertTitlePassesOldCutoff(MainActivity activity, ScrollView scroll,
+                                                  LinearLayout instructions, int size,
+                                                  int top, int bottom, String name) throws Exception {
+        Bitmap candidate = drawRoundView(scroll, size);
+        Field group = MainActivity.class.getDeclaredField("connectionInstructions");
+        group.setAccessible(true);
+        group.set(activity, null);
+        Bitmap reference;
+        try {
+            reference = drawRoundView(scroll, size);
+        } finally {
+            group.set(activity, instructions);
+        }
+        try {
+            int addedPixels = 0;
+            for (int y = top; y < bottom; y++) {
+                for (int x = 0; x < size; x++) {
+                    if (candidate.getPixel(x, y) != reference.getPixel(x, y)) addedPixels++;
+                }
+            }
+            assertTrue("the physical circle exposes the heading that the square previously cut", addedPixels > 0);
+            writeMenuFrame(reference, name + "-edge-reference");
+            writeMenuFrame(candidate, name + "-edge");
+        } finally {
+            reference.recycle();
+            candidate.recycle();
+        }
+    }
+
+    private static void assertActionInSafeBand(ScrollView scroll, LinearLayout content, TextView action, int size) {
+        int top = content.getTop() + action.getTop() - scroll.getScrollY();
+        assertTrue("the action can be scrolled fully into view",
+                top >= scroll.getPaddingTop() && top + action.getHeight() <= size - scroll.getPaddingBottom());
+    }
+
     private static TextView[] menuActions(LinearLayout content) {
         String[] labels = {"Agora", "Alertas", "CrewLife", "Escala"};
         TextView[] actions = new TextView[labels.length];
@@ -162,10 +267,7 @@ public class WatchTextLayoutTest {
         }
         TextView last = actions[3];
         scroll.scrollTo(0, content.getTop() + last.getTop() + last.getHeight() / 2 - size / 2);
-        int lastBottom = content.getTop() + last.getBottom() - scroll.getScrollY();
-        assertTrue("the last menu action is fully accessible at the end",
-                lastBottom <= size - scroll.getPaddingBottom()
-                        && lastBottom - last.getHeight() >= scroll.getPaddingTop());
+        assertActionInSafeBand(scroll, content, last, size);
         scroll.scrollTo(0, content.getHeight());
         saveMenuFrame(drawRoundView(scroll, size), name + "-end");
     }
