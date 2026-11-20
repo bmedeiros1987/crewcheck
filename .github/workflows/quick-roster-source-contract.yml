@@ -16,6 +16,8 @@ on:
       - 'scripts/regression-roster-list-session.mjs'
       - 'client/src/lib/databaseClient.ts'
       - 'scripts/regression-home-crossmonth-continuity.cjs'
+      - 'client/src/lib/homeOperationalRoster.ts'
+      - 'scripts/regression-home-operational-authority*.mjs'
       - 'scripts/regression-home-owned-radar-browser.cjs'
       - 'scripts/lib/roster-format-controls.cjs'
       - 'scripts/lib/owned-radar-supervisor.cjs'
@@ -50,12 +52,14 @@ jobs:
           node scripts/regression-quick-roster-care-source.mjs --record "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-p1-303-schedule-classification-counts.mjs
           node scripts/regression-home-continuity-contract.mjs
+          node scripts/regression-home-operational-authority.mjs
       - run: SOURCE_VERSION=$(git rev-parse HEAD) npm run build
       - run: npm run check
       - name: Compare prepared contract and preserve formal authority
         run: |
           node scripts/regression-quick-roster-care-source.mjs --compare "$RUNNER_TEMP/care-raw.json"
           node scripts/regression-home-continuity-contract.mjs
+          node scripts/regression-home-operational-authority.mjs
           node scripts/regression-owned-radar-supervisor.cjs
           node scripts/regression-home-history-session.mjs
           node scripts/regression-saved-roster-retry-session.mjs
@@ -83,6 +87,10 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
           UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-quick-roster-cards-browser.mjs
+      - name: Verify HOME operational authority against historical navigation
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
+        run: node scripts/regression-home-operational-authority-browser.mjs
       - name: Verify authenticated cross-month HOME continuity
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
@@ -97,5 +105,6 @@ jobs:
           name: quick-roster-source-contract
           path: |
             artifacts/quick-roster-cards
+            artifacts/home-authority
             artifacts/home-crossmonth-continuity
             artifacts/home-owned-radar

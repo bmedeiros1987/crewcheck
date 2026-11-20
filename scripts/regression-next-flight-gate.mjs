@@ -265,7 +265,9 @@ const radarBase = observedFields({ ok: true, flight:'LA3377', gate: '9', termina
 {
   const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   const preview = read('client/src/components/v1391/HomeRosterPreview.tsx');
-  assert.match(preview, /<NextFlightGateCard events=\{events\}\/>/, 'card abaixo da Escala rápida');
+  assert.match(preview, /<NextFlightGateCard events=\{operationalEvents\}\/>/, 'card abaixo da Escala rápida usa projeção operacional separada');
+  assert.match(preview, /operationalEvents = events/, 'caller sem histórico mantém comportamento existente');
+  assert.match(preview, /const signature = rosterSourceSignature\(events\)/, 'consulta rápida preserva eventos de exibição e sua revisão');
   const card = read('client/src/components/nextflight/NextFlightGateCard.tsx');
   assert.doesNotMatch(card, /useMemo\(\(\) => selectNextFlight/, 'próximo voo é recalculado com o relógio, não memorizado');
   const home = read('client/src/pages/Home.tsx');
