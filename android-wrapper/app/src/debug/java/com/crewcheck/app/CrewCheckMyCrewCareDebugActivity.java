@@ -16,6 +16,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.ScrollView;
 import androidx.webkit.WebViewBuilder;
 import java.util.UUID;
 import static com.crewcheck.app.CrewCheckMyCrewCarePortalV3.*;
@@ -36,11 +37,31 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     private ObservedScope scope;
     private final CrewCheckMyCrewCareProfile profiles = new CrewCheckMyCrewCareProfile();
     private boolean preparing;
+    private enum PreparationFailure {
+        ROUTE("MCC-ROUTE", "destino fora do escopo ou URL principal não comprovada"),
+        ORIGIN("MCC-ORIGIN", "origem da navegação fora do escopo api2 comprovado"),
+        METHOD("MCC-METHOD", "método da navegação principal não permitido"),
+        RESOURCE_ORIGIN("MCC-RESOURCE-ORIGIN", "origem de um recurso da página fora do escopo api2 comprovado"),
+        RESOURCE_METHOD("MCC-RESOURCE-METHOD", "recurso api2 recusado por método não permitido"),
+        FRAME("MCC-FRAME", "navegação em frame não permitida"),
+        NETWORK("MCC-NETWORK", "falha de carregamento da página"),
+        HTTP("MCC-HTTP", "a página retornou erro HTTP"),
+        TLS("MCC-TLS", "a conexão segura da página foi recusada"),
+        RENDERER("MCC-RENDERER", "o processo da página foi encerrado"),
+        DOWNLOAD("MCC-DOWNLOAD", "a página tentou iniciar download não permitido");
+        final String code, description;
+        PreparationFailure(String code, String description) { this.code=code; this.description=description; }
+    }
     private static final String ENTRY = "https://api2.apicrewcare.com/LATAM/mytravel.aspx";
-    private TextView explanation, status;
+    private TextView explanation, status, employeeLabel, usernameLabel;
     private boolean foreground, cleaning, destroyed, stopFailed;
+    private boolean cleanupTerminalFailure;
     private volatile boolean running;
     private volatile long token;
+    // Separate presentation authority: revocation must not abandon pending cleanup.
+    private long previewEpoch;
+    private PreparationFailure preparationFailure;
+    private long preparationFailureAttempt;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -52,8 +73,10 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             + "Não captura formulário, senha ou cookies nem recebe a sessão do CrewCheck de produção. "
             + "O teste pode consultar as páginas MyCrewCare; não comprova datas, fusos ou uso operacional.");
         layout.addView(explanation);
-        employee = field(layout, "Matrícula esperada (somente números)");
-        username = field(layout, "Identidade esperada no perfil (não é senha)");
+        employeeLabel = identityLabel("Sua matrícula no MyCrewCare (somente números)");
+        employee = field(layout, "Digite sua matrícula");
+        usernameLabel = identityLabel("Seu usuário ou e-mail no MyCrewCare (não é senha)");
+        username = field(layout, "Digite o usuário ou e-mail, não o nome completo");
         consent = new CheckBox(this);
         consent.setText("Autorizo esta tentativa de teste e a consulta às páginas MyCrewCare. Login somente por mim na página visível, sem login automático.");
         consent.setSaveEnabled(false);
@@ -61,8 +84,11 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         prepare = new Button(this); prepare.setText("Preparar sessão na página visível"); layout.addView(prepare);
         start = new Button(this); start.setEnabled(false); start.setText("Verificar contrato observado"); layout.addView(start);
         Button cancel = new Button(this); cancel.setText("Cancelar e limpar perfil de teste"); layout.addView(cancel);
-        status = new TextView(this); status.setText("Não iniciado. Nenhuma página consultada."); layout.addView(status);
-        setContentView(layout);
+        status = new TextView(this); status.setTextSize(16); status.setFocusable(true);
+        status.setText("Não iniciado. Nenhuma página consultada.");
+        ScrollView results = new ScrollView(this); results.setFillViewport(true);
+        layout.addView(status); results.addView(layout);
+        setContentView(results);
         prepare.setOnClickListener(view -> prepareSession());
         start.setOnClickListener(view -> start());
         cancel.setOnClickListener(view -> cancel());
@@ -70,7 +96,11 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     private void attemptControls(boolean active) {
         int visibility = active ? View.GONE : View.VISIBLE;
         explanation.setVisibility(visibility); employee.setVisibility(visibility); username.setVisibility(visibility);
+        employeeLabel.setVisibility(visibility); usernameLabel.setVisibility(visibility);
         consent.setVisibility(visibility); prepare.setVisibility(visibility);
+    }
+    private TextView identityLabel(String text) {
+        TextView label = new TextView(this); label.setText(text); layout.addView(label); return label;
     }
     private EditText field(LinearLayout layout, String hint) {
         EditText field = new EditText(this);
@@ -88,6 +118,8 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 employee.getText().toString().trim(), username.getText().toString().trim(), 0);
         } catch (IllegalArgumentException error) { status.setText("Informe a matrícula e a identidade esperadas."); return; }
         final long attempt = ++token;
+        preparationFailure = null; preparationFailureAttempt = attempt;
+        ++previewEpoch;
         running = true; preparing = true; attemptControls(true); prepare.setEnabled(false); start.setEnabled(false);
         status.setText("Prepare a sessão somente na página visível. Ao retornar a My Travel, toque em verificar. A URL não prova autenticação.");
         try {
@@ -103,19 +135,19 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             settings.setJavaScriptCanOpenWindowsAutomatically(false); settings.setSupportMultipleWindows(false);
             settings.setJavaScriptEnabled(true); // Official page executes its own login UI; no native injection.
             page.setWebChromeClient(new WebChromeClient() { @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); } });
-            page.setDownloadListener((url, agent, disposition, type, length) -> loginFailed(attempt, page));
+            page.setDownloadListener((url, agent, disposition, type, length) -> loginFailed(attempt, page, PreparationFailure.DOWNLOAD));
             page.setWebViewClient(new WebViewClient() {
                 @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                     if (!loginCurrent(attempt, page) || v != page) return true;
                     boolean allowed = r.isForMainFrame() && loginTarget(r.getUrl().toString())
                         && (r.getMethod().equals("GET") || r.getMethod().equals("POST") && loginPage(r.getUrl().toString()));
-                    if (!allowed) loginFailed(attempt, page);
+                    if (!allowed) loginFailed(attempt, page, !r.isForMainFrame() ? PreparationFailure.FRAME : !loginTarget(r.getUrl().toString()) ? targetFailure(r.getUrl().toString()) : PreparationFailure.METHOD);
                     return !allowed;
                 }
                 @Override public boolean shouldOverrideUrlLoading(WebView v, String url) {
                     if (!loginCurrent(attempt, page) || v != page) return true;
                     if (loginTarget(url)) return false;
-                    loginFailed(attempt, page); return true;
+                    loginFailed(attempt, page, targetFailure(url)); return true;
                 }
                 @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                     boolean allowed = loginCurrent(attempt, page) && v == page &&
@@ -123,25 +155,25 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                             (r.getMethod().equals("GET") || r.getMethod().equals("POST") && loginPage(r.getUrl().toString()))
                             : portalOrigin(r.getUrl().toString()) && r.getMethod().equals("GET"));
                     if (allowed) return null;
-                    loginFailed(attempt, page);
+                    loginFailed(attempt, page, r.isForMainFrame() ? !loginTarget(r.getUrl().toString()) ? targetFailure(r.getUrl().toString()) : PreparationFailure.METHOD : portalOrigin(r.getUrl().toString()) ? PreparationFailure.RESOURCE_METHOD : PreparationFailure.RESOURCE_ORIGIN);
                     return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
                 }
                 @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                     if (v != page || !loginCurrent(attempt, page)) return;
                     start.setEnabled(false);
-                    if (!loginTarget(url)) loginFailed(attempt, page);
+                    if (!loginTarget(url)) loginFailed(attempt, page, targetFailure(url));
                 }
                 @Override public void onPageFinished(WebView v, String url) {
                     if (v != page || !loginCurrent(attempt, page)) return;
-                    if (!loginTarget(url) || !loginTarget(page.getUrl())) { loginFailed(attempt, page); return; }
+                    if (!loginTarget(url) || !loginTarget(page.getUrl())) { loginFailed(attempt, page, targetFailure(!loginTarget(url) ? url : page.getUrl())); return; }
                     start.setEnabled(ENTRY.equals(url) && ENTRY.equals(page.getUrl()));
                 }
-                @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError error) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page); }
-                @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse response) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page); }
-                @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) { handler.cancel(); if (v == page) loginFailed(attempt, page); }
-                @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) { if (v == page) loginFailed(attempt, page); return true; }
+                @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError error) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page, PreparationFailure.NETWORK); }
+                @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse response) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page, PreparationFailure.HTTP); }
+                @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) { handler.cancel(); if (v == page) loginFailed(attempt, page, PreparationFailure.TLS); }
+                @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) { if (v == page) loginFailed(attempt, page, PreparationFailure.RENDERER); return true; }
             });
-            layout.addView(page, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+            layout.addView(page, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Math.round(360 * getResources().getDisplayMetrics().density), 0));
             page.loadUrl(ENTRY);
         } catch (RuntimeException error) { finish(attempt, "Preparação indisponível. Sem fallback. Nada importado."); }
     }
@@ -160,7 +192,11 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         Login current = login;
         return current != null && current.token == attempt && current.page == page && !current.revoked && attempt == token && running;
     }
-    private void loginFailed(long attempt, WebView page) {
+    private static PreparationFailure targetFailure(String url) {
+        // Only a fixed classification is retained; URL/path/query never enter diagnostics.
+        return portalOrigin(url) ? PreparationFailure.ROUTE : PreparationFailure.ORIGIN;
+    }
+    private void loginFailed(long attempt, WebView page, PreparationFailure reason) {
         Login current = login;
         if (current == null) return;
         synchronized (current) {
@@ -168,8 +204,13 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             // Shares the handoff commit monitor; revoke only this exact preparation.
             current.revoked = true;
         }
-        main.post(() -> { if (login == current && attempt == token && running) finish(attempt,
-            "Preparação bloqueada: destino/SSO fora do escopo ou página não comprovada. Nada importado."); });
+        main.post(() -> { if (login == current && attempt == token && running) {
+            preparationFailure = reason; preparationFailureAttempt = attempt;
+            finish(attempt, "Preparação bloqueada [" + reason.code + "]: " + reason.description + ". Nada importado.");
+        } });
+    }
+    private String diagnosticSuffix() {
+        return preparationFailure != null && preparationFailureAttempt == token ? " [" + preparationFailure.code + "]" : "";
     }
     private boolean stopLogin() {
         WebView old = loginView; login = null; loginView = null; preparing = false; start.setEnabled(false);
@@ -197,7 +238,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         final long attempt = token;
         final Login expected = login;
         final ObservedScope captured = scope;
-        status.setText("Verificando identidade e contrato. Nenhum dado será importado ou exibido.");
+        status.setText("Verificando identidade e contrato. Leitura somente das reservas desta identidade; sem importação.");
         try {
             if (!handoff(expected)) { finish(attempt, "Preparação ou encerramento não confirmado. Nada importado."); return; }
             var source = CrewCheckMyCrewCareObservedWebViewSource.prepare(this, profiles, captured);
@@ -211,7 +252,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                     && account.equals(result.accountId) && captured.sessionId.equals(result.sessionId)
                     && captured.requestId.equals(result.requestId) && result.generation > 0;
                 String message = valid
-                    ? "Contrato observado válido (" + result.observations.size() + " registros). Datas/fusos e uso operacional não validados. Nada importado."
+                    ? reservationPreview(result)
                     : "Não validado: sessão, identidade, navegação ou conteúdo não comprovados. Nada importado.";
                 finish(attempt, message);
             });
@@ -220,8 +261,31 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             if (running) finish(attempt, "Teste indisponível ou não validado. Sem fallback. Nada importado.");
         }
     }
+    private String reservationPreview(ObservedResult result) {
+        StringBuilder text = new StringBuilder("Contrato observado válido. Leitura somente; datas/fusos e uso operacional não validados. Nada importado.");
+        // Only the owner's validated observations reach here; no HTML, profile or login data.
+        for (var row : result.observations) {
+            text.append("\n\nReserva — ").append(row.get("airport"));
+            String rawStatus = row.get("confirmationRaw");
+            text.append("\nEstado recebido: ").append(rawStatus);
+            if ("Cancelled".equalsIgnoreCase(rawStatus)) text.append("\nCANCELADA — hotel e pickup abaixo são dados do registro cancelado; não utilizar como reserva ativa.");
+            else if ("Planned".equalsIgnoreCase(rawStatus)) text.append("\nPLANEJADA — não equivale a reserva confirmada.");
+            else text.append("\nESTADO DESCONHECIDO — não tratar hotel ou pickup como confirmados.");
+            text.append("\nHotel: ").append(row.get("hotelName"));
+            text.append("\nEntrada (horário local informado): ").append(row.get("checkInWallDateTime"));
+            text.append("\nSaída (horário local informado): ").append(row.get("checkOutWallDateTime"));
+            text.append("\nPickup para hotel: ").append(row.get("toHotelProvider")).append(" — ").append(row.get("toHotelPickupWallTime"));
+            text.append("\nPickup para aeroporto: ").append(row.get("toAirportProvider")).append(" — ").append(row.get("toAirportPickupWallTime"));
+        }
+        if (result.observations.isEmpty()) text.append("\nNenhuma reserva observada nesta consulta.");
+        return text.toString();
+    }
     private void cancel() {
-        if (!running) return;
+        ++previewEpoch; // Includes completed reads whose profile cleanup is still pending.
+        if (!running) {
+            if (!destroyed && !cleanupTerminalFailure) status.setText(cleaning ? "Resultado revogado; limpeza do perfil ainda pendente." + diagnosticSuffix() : "Cancelado. Visualização apagada; nada importado.");
+            return;
+        }
         // Cancel can synchronously deliver completion; mark ownership first.
         long attempt = token; running = false; stopLogin();
         try { if (runtime != null) runtime.cancelMyCrewCareObservationV3ForReview(); }
@@ -234,6 +298,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         cleanup(attempt, message);
     }
     private void cleanup(long attempt, String message) {
+        final long publicationEpoch = previewEpoch; // Capture before any native cleanup callback.
         cleaning = true;
         String operation = UUID.randomUUID().toString();
         try {
@@ -241,23 +306,30 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 cleanupFailed(); return;
             }
         } catch (RuntimeException error) { cleanupFailed(); return; }
-        checkCleanup(attempt, operation, message, 0);
+        checkCleanup(attempt, publicationEpoch, operation, message, 0);
     }
-    private void checkCleanup(long attempt, String operation, String message, int polls) {
+    private void checkCleanup(long attempt, long publicationEpoch, String operation, String message, int polls) {
         if (attempt != token) return;
         String outcome = runtime.myCrewCareCleanupResultV3(account, operation);
         if (outcome.equals("pending") && polls < 300) {
-            if (!destroyed) status.setText("Limpando o perfil de teste; resultado ainda não concluído.");
-            main.postDelayed(() -> checkCleanup(attempt, operation, message, polls + 1), 100);
+            if (!destroyed) status.setText("Limpando o perfil de teste; resultado ainda não concluído." + diagnosticSuffix());
+            main.postDelayed(() -> checkCleanup(attempt, publicationEpoch, operation, message, polls + 1), 100);
             return;
         }
         if (!outcome.equals("ok") || stopFailed) { cleanupFailed(); return; }
         cleaning = false;
-        if (!destroyed) { status.setText(message + " Perfil de teste limpo."); attemptControls(false); prepare.setEnabled(true); }
+        if (!destroyed) {
+            // Commit only while the exact attempt still owns visible presentation.
+            // Never increment token to revoke preview: cleanup/error polling must settle.
+            boolean mayPublish = attempt == token && publicationEpoch == previewEpoch && foreground;
+            status.setText((mayPublish ? message : "Resultado revogado. Nada importado." + diagnosticSuffix()) + " Perfil de teste limpo.");
+            attemptControls(false); prepare.setEnabled(true);
+        }
     }
     private void cleanupFailed() {
+        cleanupTerminalFailure = true; // Terminal latch: cancel/stop cannot relabel it as pending.
         // Keep retry disabled: never announce cleanup success or reuse an unverified profile.
-        if (!destroyed) status.setText("Limpeza do perfil não confirmada ou encerramento incompleto. Teste bloqueado; nada importado.");
+        if (!destroyed) status.setText("Limpeza do perfil não confirmada ou encerramento incompleto. Teste bloqueado; nada importado." + diagnosticSuffix());
     }
     @Override protected void onStop() { foreground = false; cancel(); super.onStop(); }
     @Override protected void onDestroy() {
