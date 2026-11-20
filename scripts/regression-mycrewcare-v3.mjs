@@ -144,6 +144,112 @@ test('vetoed refresh preserves prior verified cache and watermark without new wr
   }
 });
 
+test('session freshness is revoked immediately on unverified refresh, including within the live age window', async () => {
+  const failures = [
+    ['unauthenticated', request => envelope(request, [record], { authenticated: false })],
+    ['wrong identity', request => envelope(request, [record], { providerSubject: 'other-subject' })],
+    ['unconfirmed empty', request => envelope(request, [], { emptyConfirmed: false })],
+    ['explicit veto', request => envelope(request, [record], { operationalImportAllowed: false })],
+    ['expired', () => { throw Object.assign(new Error('synthetic expiry'), { code: 'session-expired' }); }],
+    ['identity error', () => { throw Object.assign(new Error('synthetic identity mismatch'), { code: 'identity-mismatch' }); }],
+  ];
+  for (const [label, fail] of failures) {
+    const storage = new TrackedStorage();
+    let clock = NOW;
+    let read = request => envelope(request, [record], { observedAt: new Date(clock).toISOString() });
+    const session = createMyCrewCarePersistentSession({ adapter: { read: request => read(request) }, storage, now: () => clock });
+    session.setContext(context, [stay]); session.setAutomatic(true);
+    assert.equal(await session.sync(), true, label);
+    assert.equal(session.state().live, true, label);
+    const before = { raw: storage.read(context.accountId), writes: storage.writes,
+      hotel: session.hotel(stay.id), pickup: session.pickup(stay.id), sync: session.state().lastSuccessfulSyncAt };
+    clock += 1_000; // The old 20-minute regression missed recently verified data.
+    read = fail;
+    assert.equal(await session.sync(), false, label);
+    assert.equal(session.state().status, 'reconnect-required', label);
+    assert.equal(session.state().live, false, label);
+    assert.equal(session.state().connected, false, label);
+    assert.equal(session.state().lastSuccessfulSyncAt, before.sync, label);
+    assert.equal(storage.read(context.accountId), before.raw, label);
+    assert.equal(storage.writes, before.writes, label);
+    assert.equal(storage.clears, 0, label);
+    assert.deepEqual(session.hotel(stay.id), { ...before.hotel, dataState: 'cached' }, label);
+    assert.deepEqual(session.pickup(stay.id), { ...before.pickup, dataState: 'cached' }, label);
+    assert.equal(session.hotel(stay.id, { allowCached: false }), null, label);
+    assert.equal(session.pickup(stay.id, { allowCached: false }), null, label);
+
+    // Consent, a repeated binding, and local restoration cannot authenticate.
+    session.setAutomatic(false); session.setAutomatic(true);
+    session.setContext({ ...context }, [{ ...stay }]);
+    assert.equal(await session.restore(), true, label);
+    assert.equal(session.state().live, false, label);
+    assert.equal(session.hotel(stay.id).dataState, 'cached', label);
+    assert.equal(session.pickup(stay.id, { allowCached: false }), null, label);
+
+    read = request => envelope(request, [{ ...record, time: '05:20' }], { observedAt: new Date(clock).toISOString() });
+    assert.equal(await session.sync(), true, label);
+    assert.equal(session.state().live, true, label);
+    assert.equal(session.hotel(stay.id, { allowCached: false }).dataState, 'fresh', label);
+    assert.equal(session.pickup(stay.id, { allowCached: false }).pickupAt, '2026-10-10T08:20:00.000Z', label);
+  }
+});
+
+test('restored cache is available offline but cannot grant session freshness after process restart', async () => {
+  const storage = new TrackedStorage();
+  const first = createMyCrewCarePersistentSession({ adapter: { read: async request => envelope(request) }, storage, now: () => NOW });
+  first.setContext(context, [stay]); first.setAutomatic(true);
+  assert.equal(await first.sync(), true);
+  const restarted = createMyCrewCarePersistentSession({ adapter: { read: () => { throw new Error('must not call provider'); } }, storage, now: () => NOW });
+  restarted.setContext(context, [stay]); restarted.setAutomatic(true);
+  assert.equal(await restarted.restore(), true);
+  assert.equal(restarted.state().connected, false);
+  assert.equal(restarted.state().live, false);
+  assert.equal(restarted.state().dataAgeMs, 0);
+  assert.equal(restarted.state().hasCachedData, true);
+  assert.equal(restarted.hotel(stay.id).hotelName, record.hotelName);
+  assert.equal(restarted.hotel(stay.id).dataState, 'cached');
+  assert.equal(restarted.pickup(stay.id).dataState, 'cached');
+  assert.equal(restarted.hotel(stay.id, { allowCached: false }), null);
+  assert.equal(restarted.pickup(stay.id, { allowCached: false }), null);
+  assert.equal(storage.writes, 1);
+  assert.equal(storage.clears, 0);
+});
+
+test('session freshness stays withdrawn during refresh and temporary failure, and returns on verified success', async () => {
+  let release;
+  let pending = false;
+  let empty = false;
+  let clock = NOW;
+  const storage = new TrackedStorage();
+  const session = createMyCrewCarePersistentSession({
+    adapter: { read: request => pending ? new Promise((_resolve, reject) => { release = reject; })
+      : envelope(request, empty ? [] : [record], { observedAt: new Date(clock).toISOString() }) },
+    storage, now: () => clock,
+  });
+  session.setContext(context, [stay]); session.setAutomatic(true);
+  assert.equal(await session.sync(), true);
+  pending = true;
+  const refresh = session.sync();
+  try {
+    assert.equal(session.state().status, 'syncing');
+    assert.equal(session.state().live, false);
+    assert.equal(session.hotel(stay.id).dataState, 'cached');
+    assert.equal(session.pickup(stay.id, { allowCached: false }), null);
+  } finally { release(Object.assign(new Error('synthetic offline'), { code: 'temporary-error' })); }
+  assert.equal(await refresh, false);
+  assert.equal(session.state().status, 'offline-cache');
+  assert.equal(session.state().live, false);
+  assert.ok(session.hotel(stay.id));
+  assert.ok(session.pickup(stay.id));
+  assert.equal(storage.writes, 1);
+  pending = false; empty = true; clock += 1_000;
+  assert.equal(await session.sync(), true);
+  assert.equal(session.state().live, true);
+  assert.equal(session.hotel(stay.id), null);
+  assert.equal(session.pickup(stay.id), null);
+  assert.equal(storage.writes, 2);
+});
+
 test('an import-allowed boolean cannot substitute envelope authentication or valid records', async () => {
   const invalid = [
     { schemaVersion: 1 }, { requestId: 'unrelated-request' },
@@ -1000,7 +1106,7 @@ test('upgrade rejects disjoint reservation cache produced by the previous versio
       const upgraded = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
       upgraded.setContext(context, [stay]); upgraded.setAutomatic(true);
       assert.equal(await upgraded.restore(), valid);
-      if (valid) assert.equal(upgraded.hotel(stay.id).dataState, 'fresh');
+      if (valid) assert.equal(upgraded.hotel(stay.id).dataState, 'cached');
       else {
         assert.equal(upgraded.hotel(stay.id), null);
         assert.equal(upgraded.pickup(stay.id), null);
