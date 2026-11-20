@@ -7,6 +7,8 @@ export function stayAlarmIdentity(accountId, eventId) {
  * cancellation. The old native boolean/timeout bridge is never adapted here. */
 export function createStayAlarmController(adapter = null) {
   const tails = new Map();
+  const readSession = typeof adapter?.session === 'function' ? () => adapter.session() : null;
+  const sessionChanged = session => readSession !== null && (!session || readSession() !== session);
   const serialize = (key, operation) => {
     const task = (tails.get(key) || Promise.resolve()).catch(() => undefined).then(operation);
     tails.set(key, task);
@@ -16,7 +18,9 @@ export function createStayAlarmController(adapter = null) {
   return {
     replace(input) {
       const key = stayAlarmIdentity(input.accountId, input.eventId);
+      const session = readSession?.();
       return serialize(key, async () => {
+        if (sessionChanged(session)) return { state: 'not-programmed', reason: 'session-changed', key };
         if (!adapter?.atomicReplace || !adapter?.acknowledgedCancel) return { state: 'not-programmed', reason: 'capability-unavailable', key };
         if (!input.confirmed || !input.apzConfirmed || input.permission !== 'granted' || input.cancelled) return { state: 'not-programmed', reason: 'confirmation-or-permission-required', key };
         const alarm = stayInstant(input.alarmAt), apz = stayInstant(input.hotelReportAt);
@@ -31,7 +35,9 @@ export function createStayAlarmController(adapter = null) {
     },
     cancel({ accountId, eventId }) {
       const key = stayAlarmIdentity(accountId, eventId);
+      const session = readSession?.();
       return serialize(key, async () => {
+        if (sessionChanged(session)) return { state: 'unknown', reason: 'session-changed', key };
         if (!adapter?.atomicReplace || !adapter?.acknowledgedCancel) return { state: 'not-programmed', reason: 'capability-unavailable', key };
         try { const result = await adapter.cancel({ key }); return result?.key === key && result?.state === 'cancelled' ? { state: 'cancelled', key } : { state: 'unknown', reason: 'unacknowledged-cancellation', key }; }
         catch { return { state: 'unknown', reason: 'cancellation-failed', key }; }

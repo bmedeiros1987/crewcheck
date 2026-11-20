@@ -76,9 +76,13 @@ public final class StayAlarmHostAndroid {
                 long generation=session.generation();
                 if(!session.current(generation)) {reply.postMessage(response(id,"rejected",null));return;}
                 String payload=request.optString("payload","");
-                worker.execute(()->{String value=null;
-                    if(session.current(generation))value="capabilities".equals(action)?capabilities():"transact".equals(action)?transactOrRevoke(bridge,session,durable,payload):null;
-                    final String result=value;view.post(()->{if((session.current(generation)||(session.generation()==generation+1&&session.activeOwner()==null))&&allowed(view.getUrl()))reply.postMessage(response(id,result==null?"rejected":"ok",result));});});
+                worker.execute(()->{
+                    final String result;
+                    if("transact".equals(action))result=transactOrRevoke(bridge,session,durable,generation,payload);
+                    else if("capabilities".equals(action)&&session.current(generation))result=capabilities();
+                    else result=null;
+                    view.post(()->{if((session.current(generation)||(session.generation()==generation+1&&session.activeOwner()==null))&&allowed(view.getUrl()))reply.postMessage(response(id,result==null?"rejected":"ok",result));});
+                });
             }catch(Exception ignored){} // malformed packets never acquire authority
         });
     }
@@ -88,19 +92,26 @@ public final class StayAlarmHostAndroid {
         return transactOrRevoke(bridge,session,null,payload);
     }
     static String transactOrRevoke(StayAlarmBridge bridge,StayAlarmSessionHost session,StayAlarmDurableAuthority durable,String payload){
-        long generation=session.generation();String result=bridge.transact(payload);
-        try{JSONObject request=new JSONObject(payload);
-            if("cancel".equals(request.optString("action"))&&!"cancelled".equals(new JSONObject(result).optString("state"))){
-                String account=request.optString("accountId"),epoch=request.optString("ownerEpoch");
-                StayAlarmEngine.updateTrustedOwner(()->{
-                    if(session.generation()==generation&&account.equals(session.activeOwner())&&epoch.equals(session.epoch())){
+        return transactOrRevoke(bridge,session,durable,session.generation(),payload);
+    }
+    static String transactOrRevoke(StayAlarmBridge bridge,StayAlarmSessionHost session,StayAlarmDurableAuthority durable,long generation,String payload){
+        final String[] receipt={null};
+        // Renewal and command admission share the engine lock. The durable owner
+        // may recover confirmed alarms offline, even after this generation ends.
+        StayAlarmEngine.updateTrustedOwner(()->{
+            if(!session.current(generation))return;
+            receipt[0]=bridge.transact(payload);
+            try{JSONObject request=new JSONObject(payload);
+                if("cancel".equals(request.optString("action"))&&!"cancelled".equals(new JSONObject(receipt[0]).optString("state"))){
+                    String account=request.optString("accountId"),epoch=request.optString("ownerEpoch");
+                    if(session.current(generation)&&account.equals(session.activeOwner())&&epoch.equals(session.epoch())){
                         if(durable!=null&&!durable.revoke(account,epoch))StayAlarmDurableAuthority.blockUncertain();
                         session.revoke();
                     }
-                });
-            }
-        }catch(Exception ignored){/* malformed/stale packets do not revoke a newer owner */}
-        return result;
+                }
+            }catch(Exception ignored){/* malformed/stale packets do not revoke a newer owner */}
+        });
+        return receipt[0];
     }
     static boolean acceptVerified(StayAlarmSessionHost session,StayAlarmDurableAuthority durable,long generation,String account,long expiry){
         final boolean[] accepted={false};
