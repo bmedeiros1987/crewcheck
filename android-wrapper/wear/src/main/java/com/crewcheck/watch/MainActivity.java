@@ -220,7 +220,9 @@ public final class MainActivity extends FragmentActivity
             }
         });
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        scroll.setScrollbarFadingEnabled(true);
         enableRotaryScrolling(scroll);
 
         content = new LinearLayout(this);
