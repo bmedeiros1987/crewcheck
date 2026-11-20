@@ -21,7 +21,10 @@ export function financialPublishedFlightIntervalIssue(events: readonly EvidenceE
   }
   return null;
 }
-export function financialIntervalEvidenceIssue(events: readonly EvidenceEvent[]): string | null {
+export function financialIntervalEvidenceIssue(
+  events: readonly EvidenceEvent[],
+  { requireStayIntervalEvidence = false } = {},
+): string | null {
   if (!events.length) return 'Programação ausente.';
   const first = events[0], firstDay = first.day || first.canonical?.publishedDay || {}, day = firstDay.publishedClockEvidence || firstDay;
   if (first.kind === 'flight') {
@@ -42,7 +45,15 @@ export function financialIntervalEvidenceIssue(events: readonly EvidenceEvent[])
       // original published day must still block an apparently complete total.
       if ((published.records || [published]).some((record: any) => Array.isArray(record.legs) && record.legs.some((item: any) => !validClock(item.departureTime) || !validClock(item.arrivalTime)))) return 'Etapa intermediária publicada incompleta.';
     }
-  } else if (['duty','training'].includes(String(first.kind || '')) || /ASB|HSB|RES|CRM/.test(String(day.type || ''))) {
+  } else if (requireStayIntervalEvidence && first.kind === 'stay' && firstDay.continuityInferred) {
+    const { continuityStart, continuityEnd } = firstDay;
+    // The continuity producer emits UTC ISO strings. Exact canonical equality
+    // rejects missing, local-zone or replaced bounds that fall back to calendar clocks.
+    if (typeof continuityStart !== 'string' || typeof continuityEnd !== 'string'
+      || continuityStart !== first.canonical?.startDateTime || continuityEnd !== first.canonical?.endDateTime
+      || !(Date.parse(continuityEnd) > Date.parse(continuityStart))) return 'Limites da continuidade do pernoite incompletos.';
+  } else if ((requireStayIntervalEvidence && first.kind === 'stay')
+    || ['duty','training'].includes(String(first.kind || '')) || /ASB|HSB|RES|CRM/.test(String(day.type || ''))) {
     if ((day.records || [day]).some((record: any) => !validClock(record.dutyReport) || !validClock(record.dutyDebrief) || unresolvedOrigin(record.dutyReportSource) || unresolvedOrigin(record.dutyDebriefSource))) return 'Início/fim publicados ausentes ou estimados.';
   }
   return null;

@@ -58,6 +58,38 @@ try{
  reset();const journal={schema:1,ownerId:owner,revision:0,events:[]};const declaration=libs.planFinancialActChange(journal,0,{from:'2026-10-01',through:'2026-10-31',active:true,employer:'TAM_LINHAS_AEREAS_SA',role:'cabin',coverage:'clause_1_2_included'});assert(declaration);values.set(libs.financialActStorageKey(owner),JSON.stringify(declaration));r=await run();assert.equal(r.result.monthly,null);assert(r.result.rows.some(i=>i.iso.startsWith('2026-10')));assert(r.result.unclassifiedItems.some(i=>i.iso.startsWith('2026-11')&&i.actCause==='act_expired'));capture('ACT declaration ends at month boundary',r);
  reset();const rate=(from,to,value,fingerprint)=>({key:'per_diem.lunch',label:'SYNTHETIC ONLY',unit:'meal',value,currency:'BRL',sourceDocument:'synthetic.pdf',sourceFingerprint:fingerprint,confidence:'high',valueOrigin:'printed',confirmed:true,effectiveFrom:from,effectiveTo:to});assert.equal(libs.saveConfirmedFinancialRates(libs.mergeConfirmedRates([], [rate('2026-10-01','2026-10-31',42,'synthetic-oct'),rate('2026-11-01','2026-11-30',84,'synthetic-nov')])),true);r=await run();assert.equal(r.result.monthly,4*42+3*84);assert(r.result.rows.filter(i=>i.iso.startsWith('2026-10')).every(i=>i.value===42));assert(r.result.rows.filter(i=>i.iso.startsWith('2026-11')).every(i=>i.value===84));capture('reviewed account rates resolved by occurrence month, not active month',r);
  reset();assert.equal(libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42'),true);r=await run();assert.equal(r.result.monthly,7*42);assert.equal(r.result.rows.length,7);assert.equal(r.result.unclassifiedItems.length,0);capture('owned synthetic nonzero total',r);
+ const nationalStay={...day('2026-10-31'),type:'PERNOITE',pairingCode:'SYN-NATIONAL-STAY',base:'REC',dutyReport:null,dutyDebrief:null,dutyReportSource:'absent',dutyDebriefSource:'absent'};
+ for (const stay of [
+  nationalStay,
+  {...nationalStay,dutyReport:'18:00',dutyReportSource:'published'},
+  {...nationalStay,continuityInferred:true},
+ ]) {
+  reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
+  documents.oct={...oct,days:[...oct.days.slice(0,3),stay]};
+  const canonical=events(documents.oct).find(event=>event.kind==='stay'&&event.flightNumber===stay.pairingCode);
+  assert(canonical&&canonical.origin==='REC');
+  r=await run();
+  assert.equal(r.result.rows.filter(row=>row.eventId===canonical.id).length,0,'calendar fallback cannot establish a meal window');
+  assert(r.result.unclassifiedItems.some(item=>item.iso==='2026-10-31'&&item.pendingKind==='source_coverage'));
+  assert.equal(r.result.nativeSummary.complete,false);
+  assert.deepEqual(r.missing,[]);
+  assert(r.result.rows.some(row=>row.iso==='2026-11-01'),'preserves independently evidenced activity in the next month');
+ }
+ reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
+ const publishedStay={...nationalStay,dutyReport:'18:00',dutyDebrief:'08:00',dutyReportSource:'published',dutyDebriefSource:'published'};
+ documents.oct={...oct,days:[...oct.days.slice(0,3),publishedStay]};
+ const publishedStayId=events(documents.oct).find(event=>event.kind==='stay'&&event.flightNumber===publishedStay.pairingCode).id;
+ r=await run();
+ assert.deepEqual(Array.from(r.result.rows.filter(row=>row.eventId===publishedStayId),row=>[row.iso,row.label]),[['2026-10-31','Jantar']]);
+ assert(!r.result.unclassifiedItems.some(item=>item.iso==='2026-10-31'));
+ capture('national stay requires published clocks and preserves verified meals across months',r);
+ reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
+ const continuityStay={...nationalStay,continuityInferred:true,continuityStart:'2026-10-31T21:00:00.000Z',continuityEnd:'2026-11-01T11:00:00.000Z'};
+ documents.oct={...oct,days:[...oct.days.slice(0,3),continuityStay]};
+ const continuityStayId=events(documents.oct).find(event=>event.kind==='stay'&&event.flightNumber===continuityStay.pairingCode).id;
+ r=await run();
+ assert.deepEqual(Array.from(r.result.rows.filter(row=>row.eventId===continuityStayId),row=>[row.iso,row.label]),[['2026-10-31','Jantar']]);
+ capture('national continuity with exact canonical bounds preserves a supported meal',r);
  inventory=inventory.filter(i=>i.month===11);r=await run();assert.equal(r.result.monthly,null);assert.deepEqual(r.missing,['2026-10']);assert.equal(r.result.nativeSummary.complete,false);capture('historical month absent',r);
  reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');inventory.push(summary('oct-conflict',oct,'2026-10-26T12:00:00Z'));documents['oct-conflict']=oct;r=await run();assert.deepEqual(r.conflicts,['2026-10']);assert.equal(r.result.monthly,null);assert(!requests.includes('/api/rosters/oct-conflict'));capture('tied roster revisions remain unresolved',r);
  reset();libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');const changed={...oct,days:[...oct.days.slice(0,3),{...day('2026-10-31'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null}]};documents['oct-new']=changed;inventory.push(summary('oct-new',changed,'2026-10-28T12:00:00Z'));r=await run();assert.equal(r.result.rows.length,6);assert.equal(r.result.monthly,6*42);assert(!requests.includes('/api/rosters/oct'));capture('newest reimport with explicit non-working day, no sum of old revision',r);

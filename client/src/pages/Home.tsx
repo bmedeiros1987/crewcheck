@@ -4020,7 +4020,9 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       activityKind = 'training';
     }
 
-    const evidenceIssue = financialIntervalEvidenceIssue(dutyFlights);
+    // Calendar bounds keep a published stay visible, but cannot prove service
+    // or availability during a meal window outside the contractual base.
+    const evidenceIssue = financialIntervalEvidenceIssue(dutyFlights, { requireStayIntervalEvidence: activityKind === 'stay_external' });
     if (evidenceIssue || allowanceIntervalState(start, end) !== 'available') {
       const iso = rosterOperationalIso(eventStartDateTime(representative));
       unclassifiedItems.push({ iso, airport: String(representative.origin || ''), pendingKind:'source_coverage', reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
