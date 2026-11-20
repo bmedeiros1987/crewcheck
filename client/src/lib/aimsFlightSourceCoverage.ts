@@ -1,6 +1,7 @@
 import type { CrewRoster, FlightLeg } from './pdfParser';
-import { validFinancialDay } from './financialHistoryPeriods';
+import { financialDayCoverage, validFinancialDay, type FinancialRange } from './financialHistoryPeriods';
 import { nominalFinancialCompetencePrefix } from './financialJourneyGrouping';
+import { isNonPayableRosterCode } from './compensationPolicy';
 
 export type AimsSourceFlightOccurrence = { sourceDate: string; flightNumber: string; identity: string | null };
 export type AimsFlightSourceCoverage = {
@@ -10,6 +11,8 @@ export type AimsFlightSourceCoverage = {
   authorityPeriod: string;
   unresolvedSourceDates: boolean;
   sourceDates: string[];
+  sourceRestDates?: string[];
+  redactedRestChecksum?: string;
   occurrences: AimsSourceFlightOccurrence[];
   publishedFlights: Array<{ date: string; identity: string | null }>;
 };
@@ -20,6 +23,7 @@ export type AimsSourceCoveragePending = {
   pendingKind: 'source_coverage';
   sourceIssueId: string;
 };
+export const AIMS_REDACTED_REST_ONLY = 'aims-source-redacted-rest-only';
 type FlightLike = Pick<FlightLeg, 'flightNumber' | 'origin' | 'destination' | 'departureTime' | 'arrivalTime'> & { aimsSourceDate?: string };
 type EventLike = { kind: string; day?: { date?: string }; leg?: FlightLike; canonical?: { leg?: FlightLike } | null };
 
@@ -50,13 +54,29 @@ function publishedFlights(roster: CrewRoster) {
   return (roster.days || []).flatMap(day => (day.legs || []).map(leg => ({ date: aimsSourceDateIso(day.date), identity: aimsFlightSourceIdentity(leg.aimsSourceDate || '', leg) })));
 }
 function coverageChecksum(rawText: string, evidence: AimsFlightSourceCoverage): string {
-  return aimsSourceChecksum(JSON.stringify([rawText, evidence.authority, evidence.authorityPeriod, evidence.unresolvedSourceDates, evidence.sourceDates, evidence.occurrences, evidence.publishedFlights]));
+  const restEvidence = evidence.sourceRestDates === undefined ? [] : [evidence.sourceRestDates];
+  return aimsSourceChecksum(JSON.stringify([rawText, evidence.authority, evidence.authorityPeriod, evidence.unresolvedSourceDates, evidence.sourceDates, evidence.occurrences, evidence.publishedFlights, ...restEvidence]));
+}
+function redactedRestChecksum(evidence: AimsFlightSourceCoverage): string {
+  return aimsSourceChecksum(JSON.stringify([evidence.sourceChecksum, coverageChecksum('', evidence)]));
+}
+function hasRedactedRestProof(roster: CrewRoster, evidence: AimsFlightSourceCoverage): boolean {
+  // The saved copy deliberately strips the source text. Validate the dated
+  // rest witness separately; it cannot certify flights or eligible amounts.
+  if (roster.rawText !== '' || !evidence.sourceRestDates?.length || evidence.unresolvedSourceDates
+    || evidence.authorityPeriod !== nominalFinancialCompetencePrefix(roster)
+    || !roster.days.every(day=>day.rawText==='')
+    || evidence.redactedRestChecksum !== redactedRestChecksum(evidence)) return false;
+  const inventory = (flights: AimsFlightSourceCoverage['publishedFlights']) => flights.map(item=>JSON.stringify([item.date,item.identity])).sort();
+  return JSON.stringify(inventory(publishedFlights(roster))) === JSON.stringify(inventory(evidence.publishedFlights));
 }
 export function finalizeAimsFlightSourceCoverage(roster: CrewRoster): CrewRoster {
   const evidence = roster.aimsFlightSourceCoverage;
   if (!evidence) return roster;
   const finalized = { ...evidence, authorityPeriod: nominalFinancialCompetencePrefix(roster) || '', sourceDates: [...new Set(evidence.sourceDates)], publishedFlights: publishedFlights(roster) };
-  return { ...roster, aimsFlightSourceCoverage: { ...finalized, sourceChecksum: coverageChecksum(roster.rawText || '', finalized) } };
+  finalized.sourceChecksum = coverageChecksum(roster.rawText || '', finalized);
+  if (finalized.sourceRestDates?.length) finalized.redactedRestChecksum = redactedRestChecksum(finalized);
+  return { ...roster, aimsFlightSourceCoverage: finalized };
 }
 export function mergeAimsFlightSourceCoverage(primary: CrewRoster, secondary: CrewRoster): AimsFlightSourceCoverage | undefined {
   const a = primary.aimsFlightSourceCoverage, b = secondary.aimsFlightSourceCoverage;
@@ -84,11 +104,50 @@ function validWitness(value: unknown): value is AimsFlightSourceCoverage {
     && typeof v.authorityPeriod === 'string' && validFinancialDay(`${v.authorityPeriod}-01`)
     && Array.isArray(v.sourceDates) && v.sourceDates.length > 0 && v.sourceDates.every(validFinancialDay)
     && new Set(v.sourceDates).size === v.sourceDates.length
+    && (v.sourceRestDates === undefined || Array.isArray(v.sourceRestDates)
+      && v.sourceRestDates.every(date => v.sourceDates.includes(date))
+      && new Set(v.sourceRestDates).size === v.sourceRestDates.length)
     && Array.isArray(v.occurrences) && v.occurrences.every(item => item && validFinancialDay(item.sourceDate)
       && v.sourceDates.includes(item.sourceDate) && /^LA\d{3,4}$/.test(item.flightNumber)
       && (item.identity === null || validIdentity(item.identity) && JSON.parse(item.identity)[0] === item.sourceDate && JSON.parse(item.identity)[1] === item.flightNumber))
     && Array.isArray(v.publishedFlights) && v.publishedFlights.every(item => item && validFinancialDay(item.date) && (item.identity === null || validIdentity(item.identity)));
 }
+
+// An explicitly published rest marker is stronger than a nominal date with no
+// calculated rows. Require it for every day and reject competing programming.
+export function hasPublishedAimsRestCoverage(rosters: readonly CrewRoster[], range: FinancialRange): boolean {
+  const proved = new Set<string>();
+  const conflicting = new Set<string>();
+  for (const roster of rosters) {
+    const evidence = roster.aimsFlightSourceCoverage;
+    const month = nominalFinancialCompetencePrefix(roster);
+    const redacted = validWitness(evidence) && hasRedactedRestProof(roster, evidence);
+    const source = validWitness(evidence) && !evidence.unresolvedSourceDates && evidence.authorityPeriod === month
+      && (redacted || evidence.sourceChecksum === coverageChecksum(roster.rawText || '', evidence)) ? evidence : null;
+    const restDates = new Set(source?.sourceRestDates);
+    for (const iso of source?.sourceDates || []) {
+      if (iso >= range.start && iso <= range.end && !restDates.has(iso)) conflicting.add(iso);
+    }
+    const flightDates = new Set([...(source?.occurrences.map(item => item.sourceDate) || []),
+      ...(source?.publishedFlights.map(item => item.date) || [])]);
+    for (const day of roster.days || []) {
+      const iso = aimsSourceDateIso(day.date);
+      if (!iso || iso < range.start || iso > range.end) continue;
+      const code = String(day.pairingCode || day.type || '').trim().toUpperCase();
+      const rest = isNonPayableRosterCode(day.type) && isNonPayableRosterCode(code)
+        && (day.rawText?.trim().toUpperCase() === code || redacted && day.rawText === '')
+        && day.legs?.length === 0
+        && !day.dutyReport && !day.dutyDebrief && !day.freeDayStartEvidence?.clock
+        && !day.hotel && day.isNextDay === false
+        && !(day as { continuityInferred?: boolean }).continuityInferred;
+      if (!rest || flightDates.has(iso)) conflicting.add(iso);
+      else if (iso.slice(0, 7) === month && restDates.has(iso)) proved.add(iso);
+    }
+  }
+  const coverage = financialDayCoverage(range, [...proved].filter(iso => !conflicting.has(iso)));
+  return coverage.valid && coverage.missingDays.length === 0;
+}
+
 function counts(values: readonly string[]) {
   const result = new Map<string, number>();
   for (const value of values) result.set(value, (result.get(value) || 0) + 1);
@@ -107,11 +166,18 @@ export function aimsFlightSourceCoveragePending(roster: CrewRoster, events: read
   const issues: Array<{ date: string; id: string; reason: string; unscoped?: boolean }> = [];
   const add = (date: string, id: string, detail: string, unscoped = false) => issues.push({ date, id, unscoped, reason: `Cobertura da fonte AIMS não verificada: ${detail} Os valores conhecidos são apenas subtotal; não há diária ou duração presumida.` });
   const evidence = roster.aimsFlightSourceCoverage;
-  if (!prefix || validWitness(evidence) && evidence.authorityPeriod !== prefix) {
+  const valid = validWitness(evidence);
+  const rawMatches = valid && evidence.sourceChecksum === coverageChecksum(String(roster.rawText || ''), evidence);
+  const redacted = valid && hasRedactedRestProof(roster, evidence);
+  if (!prefix || valid && evidence.authorityPeriod !== prefix) {
     add('', 'aims-authority-unverified', 'a competência desta fonte está inválida ou mudou depois da leitura.', true);
-  } else if (!validWitness(evidence) || evidence.sourceChecksum !== coverageChecksum(String(roster.rawText || ''), evidence)) {
-    add('', 'aims-source-unverified', 'a evidência desta leitura está ausente, inválida ou não corresponde à fonte. Revise a origem; reimportar o PDF pode fornecer nova evidência.');
-  } else {
+  } else if (!rawMatches) {
+    const id = redacted ? AIMS_REDACTED_REST_ONLY : 'aims-source-unverified';
+    add('', id, 'a evidência desta leitura está ausente, inválida ou não corresponde à fonte. Revise a origem; reimportar o PDF pode fornecer nova evidência.');
+  }
+  // A redacted snapshot must still report every structural flight issue. The
+  // specialised rest-only warning never replaces an unresolved occurrence.
+  if (prefix && valid && evidence.authorityPeriod === prefix && (rawMatches || redacted)) {
     if (evidence.unresolvedSourceDates) add('', 'aims-source-date-unverified', 'há referência de voo ou marcador de data sem data legível na fonte selecionada.');
     evidence.publishedFlights.forEach((item, index) => { if (!item.identity) add(item.date, `aims-published-unverified:${index}`, 'há voo publicado cuja identidade de origem não pôde ser verificada.'); });
     // Detect real flight edits without invalidating benign hotel/crew annotations.

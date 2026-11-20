@@ -23,6 +23,10 @@ export default function ForecastCurrencyCarousel({payment}:{payment:NextPayment}
     return dates.length?`Dia do voo · ${dates.map(dateLabel).join(' · ')}${items.some(line=>!line.expectedPaymentDate)?' · parcial':''}`:'Data a confirmar';
   }
   const workPeriod=payment.kind==='allowance'&&payment.range?.valid?<p className="cc-payment-timing">Trabalho · {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)}</p>:null;
+  if(payment.noEligibleAllowance)return <div className="cc-forecast-currencies">
+    <div className="cc-payment-value" data-complete="true"><strong>{privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(0))}</strong></div>
+    {workPeriod}<p className="cc-payment-timing">Sem diárias previstas no ciclo.</p>
+  </div>;
   if(!currencies.length)return <div className="cc-forecast-currencies"><div className="cc-payment-value"><strong>Previsão incompleta</strong></div>{workPeriod}{!selectedStatement&&<p className="cc-payment-timing">{payment.kind==='allowance'&&payment.expectedPaymentDates?.BRL?`BRL · crédito previsto ${dateLabel(payment.expectedPaymentDates.BRL)}`:payment.timing}</p>}</div>;
   return <div className="cc-forecast-currencies">
     {workPeriod}

@@ -2459,7 +2459,7 @@ function homeAllowancePayment(roster: CrewRoster) {
   if(!roster.days?.length)return null;
   const snapshot=financeSnapshot(roster),month=String(roster.year)+'-'+String(roster.month).padStart(2,'0');
   const evidence=aggregateAllowanceEvidence([snapshot]);
-  return nextAllowancePayment(evidence.rows,evidence.unclassifiedItems,[month],new Date(),nominalFinancialDays([roster]));
+  return nextAllowancePayment(evidence.rows,evidence.unclassifiedItems,[month],new Date(),nominalFinancialDays([roster]),[roster]);
 }
 const FINANCIAL_CACHE_BUILD=import.meta.env.VITE_CREWCHECK_BUILD_COMMIT||'local';
 const financialCalculationCache=createFinancialCalculationCache();
@@ -4506,13 +4506,14 @@ function PerDiemView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDay
     render={({snapshots,range,missing,controls,graph,coverageReady,requestRange})=>{
       const forecast = scopedFinancialForecast(snapshots.map(item=>item.snapshot),range,missing,fx.quotes);
       const evidence = aggregateAllowanceEvidence(snapshots.map(item=>item.snapshot));
-      const coveredDays = nominalFinancialDays(snapshots.map(item=>item.roster));
+      const rosters = snapshots.map(item=>item.roster);
+      const coveredDays = nominalFinancialDays(rosters);
       // Capture identity and payload use native evidence only, never live FX projections.
       const captureRows = financialRowsInRange(evidence.rows,range).map(row=>({iso:row.iso,label:row.label,currency:row.currency,value:row.value,source:row.source,rateVersion:row.rateVersion}));
       const selected = snapshots.find(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===range.start.slice(0,7)) || {roster:bundle.roster,source:bundle.source};
       const knownPeriods = new Set(snapshots.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`));
       const auditRows = projectAllowanceFxRows(evidence.rows,fx.quotes,new Date().toISOString().slice(0,10));
-      const payment = nextAllowancePayment(auditRows, evidence.unclassifiedItems, coverageReady?[...knownPeriods]:[], new Date(), coveredDays);
+      const payment = nextAllowancePayment(auditRows, evidence.unclassifiedItems, coverageReady?[...knownPeriods]:[], new Date(), coveredDays, rosters);
       // The statement summarizes its selected scope, independently of today's next cycle.
       const statementPayment:NextPayment = {kind:'allowance',range,lines:forecast.monthlyRows,totals:forecast.nativeSummary.complete?forecast.nativeSummary.totalsByCurrency:null,calculationTotals:Object.keys(forecast.nativeSummary.knownTotalsByCurrency).length?forecast.nativeSummary.knownTotalsByCurrency:null,calculationPartial:!forecast.nativeSummary.complete,issues:forecast.monthlyUnclassifiedItems.map(item=>item.reason||'Dados do período pendentes.'),timing:'Crédito a confirmar para este período.',source:'Previsão da escala para o período selecionado; não confirma recebimento.',caption:'Diárias · período selecionado'};
       const captureFlights = [...new Map(snapshots.flatMap(item=>buildLegs(item.roster).filter(event=>event.kind==='flight'&&event.salaryClockKnown===true&&item.roster.days.some(day=>day.date===event.day.date&&(day.legs||[]).some(leg=>leg.flightNumber===event.flightNumber&&leg.origin===event.origin&&leg.destination===event.destination&&leg.departureTime===event.leg?.departureTime&&leg.arrivalTime===event.leg?.arrivalTime))&&/^\d{2}\/\d{2}\/\d{4}$/.test(event.day.date)).map(event=>({id:event.id,published:true,localDate:event.day.date.split('/').reverse().join('-'),timezone:'America/Sao_Paulo',airport:event.origin,label:`${event.day.date} · ${event.flightNumber} · ${event.origin} → ${event.destination} · ${event.departure} BRT`}))).map(flight=>[flight.id,flight])).values()];

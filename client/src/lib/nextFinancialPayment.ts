@@ -1,6 +1,8 @@
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeNativeForecastRows, allowancePendingInRange } from './financialForecastPeriods';
 import { rosterOperationalIso, observedStatementCycle, rosterOperationalDateAt } from './compensationPolicy';
 import { financialMonths, validFinancialDay, financialDayCoverage, allowanceSourceRange, type FinancialRange } from './financialHistoryPeriods';
+import type { CrewRoster } from './pdfParser';
+import { AIMS_REDACTED_REST_ONLY, hasPublishedAimsRestCoverage } from './aimsFlightSourceCoverage';
 import {spBankDay} from '../../../shared/spBankCalendar2026.mjs';
 
 export type PaymentLine = { iso: string; label: string; currency: string; value: number | null; source: string; partial?:boolean;pendingReason?:string;expectedPaymentDate?:string;expectedPaymentTimezone?:string };
@@ -8,6 +10,7 @@ export type NextPayment = {
   kind: 'allowance' | 'payroll'; range: FinancialRange | null; timing: string;
   currencyTiming?: Record<string,string>; expectedPaymentDates?:Record<string,string>; upcomingLines?:PaymentLine[]; source: string; lines: PaymentLine[]; totals: Record<string, number> | null;
   issues: string[]; caption: string; calculationTotals?:Record<string,number>|null; calculationPartial?:boolean; estimationBasis?:'operational_month';
+  noEligibleAllowance?: true;
 };
 type AllowanceRow = PaymentLine & { value: number; convertedBRL: number | null };
 export function observedBrlPaymentDate(thursday:string):string|null {
@@ -43,7 +46,7 @@ function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string;pendi
   const item=cycles.get(start)!;return {...row,expectedPaymentDate:item.date||undefined,expectedPaymentTimezone:item.date?'America/Sao_Paulo':undefined,partial:item.partial||row.partial===true};
  });
 }
-export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:string;airport:string;reason?:string;pendingKind?:string}>, covered: string[], now = new Date(), coveredDays?: string[]): NextPayment {
+export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:string;airport:string;reason?:string;pendingKind?:string;sourceIssueId?:string}>, covered: string[], now = new Date(), coveredDays?: string[], rosters: readonly CrewRoster[] = []): NextPayment {
   const today = rosterOperationalIso(now), periods = observedAllowancePeriods(now, 'roster_brt');
   // The previous closed week is still the next reference on Wednesday/Thursday.
   // Never substitute the accumulating or selected month for that week's rows.
@@ -52,15 +55,34 @@ export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:s
   const lines = rowsInObservedCycle(rows, cycle), unknown = allowancePendingInRange(pending,range);
   const missing = financialMonths(range).filter(month=>!covered.includes(month));
   const {missingDays:absentDays} = financialDayCoverage(allowanceSourceRange(range),coveredDays);
+  // A rest day alone cannot rule out earnings from a preceding duty. The
+  // extra evidence day is only for a zero; it never changes the credit cycle.
+  const zeroSourceRange = {...range, start:rosterOperationalIso(new Date(cycle.start.getTime()-1))};
+  const noEligibleAllowance = lines.length===0 && !missing.length && !absentDays.length
+    && rows.every(row=>validFinancialDay(row.iso))
+    // The saved copy's dated rest proof covers only an empty cycle. Its
+    // generic source warning still applies to every amount and other view.
+    && !allowancePendingInRange(pending,zeroSourceRange).some(item=>item.sourceIssueId!==AIMS_REDACTED_REST_ONLY)
+    && financialMonths(zeroSourceRange).every(month=>covered.includes(month))
+    && financialDayCoverage(zeroSourceRange,coveredDays).missingDays.length===0
+    && hasPublishedAimsRestCoverage(rosters,zeroSourceRange);
+  if (noEligibleAllowance) {
+    return {kind:'allowance',range,upcomingLines:datedAllowanceLines(rows,pending,covered,coveredDays),
+      timing:'Sem crédito previsto neste ciclo',expectedPaymentDates:{},
+      source:'A escala publicada cobre o ciclo e o dia anterior, sem atividade que gere diária.',
+      lines,totals:{BRL:0},calculationPartial:false,issues:[],caption:'Diárias · valores na moeda original',noEligibleAllowance:true};
+  }
   const summary = summarizeNativeForecastRows(lines, unknown);
   const issues = [
     ...(lines.some(line=>!validFinancialDay(line.iso)) ? ['Há datas inválidas na composição; confira a origem dos itens.'] : []),
     ...(absentDays.length ? [`Há ${absentDays.length} dia(s) sem programação publicada comprovada para conferir a origem deste ciclo. Confira a escala.`] : []),
     ...(missing.length ? [`Falta conferir a escala de ${missing.join(', ')} para completar este ciclo.`] : []),
     ...(unknown.length ? [...new Set(unknown.map(item=>`${validFinancialDay(item.iso)?item.iso:'Data de origem pendente'} · ${item.reason||('Classificação ou tarifa pendente'+(item.airport?' em '+item.airport:''))}`))] : []),
-    ...(!lines.length ? ['Nenhum item deste ciclo está disponível. Importe ou confira a escala correspondente.'] : []),
     ...(summary.state==='invalid_amount' ? ['Há valores inválidos neste ciclo; confira as tarifas.'] : []),
   ];
+  if (summary.state==='no_data' && !issues.length) {
+    issues.push('A escala ainda não comprova um ciclo sem diárias. Confira a programação e o dia anterior.');
+  }
   const brlDate=observedBrlPaymentDate(rosterOperationalIso(cycle.payment));
   const foreignTiming=Object.fromEntries([...new Set(lines.map(line=>line.currency))].filter(code=>code!=='BRL').map(code=>{
    const items=lines.filter(line=>line.currency===code),dates=[...new Set(items.map(line=>line.expectedPaymentDate).filter(date=>date&&validFinancialDay(date)))].sort();
