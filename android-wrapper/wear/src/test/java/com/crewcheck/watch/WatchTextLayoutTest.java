@@ -1,5 +1,9 @@
 package com.crewcheck.watch;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Path;
 import android.text.Layout;
 import android.view.View;
 import android.view.ViewGroup;
@@ -22,6 +26,8 @@ import org.robolectric.annotation.Implements;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import static org.junit.Assert.*;
 
@@ -40,6 +46,157 @@ public class WatchTextLayoutTest {
     }
     private static final String LONG_TEXT =
             "Apresentação São José dos Campos — conexão internacional alterada";
+
+    @Test public void roundHomeMenuUsesTheDisplayAndKeepsItsLastActionReachable() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, size);
+                    WatchContextSnapshot demo = WatchContextSnapshot.demo(System.currentTimeMillis());
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, demo);
+                    measure(scroll, size);
+                    TextView[] actions = menuActions(content);
+                    assertTrue(actions[1].getText().toString().startsWith("Alertas · "));
+                    assertTrue(actions[3].getText().toString().startsWith("Escala · "));
+                    int safeInset = WatchViewport.padding(size, size, true)[0];
+                    assertFits(content);
+                    for (TextView action : actions) {
+                        assertTrue("the menu action is reachable and at least 48 dp tall",
+                                action.isClickable() && action.getHeight() >= 48);
+                        assertEquals("the enlarged label is visible", 0,
+                                action.getLayout().getEllipsisCount(0));
+                    }
+                    String name = size + "dp-font-" + scale;
+                    renderMenuFrames(scroll, content, actions, size, safeInset, "menu-" + name, true);
+
+                    assertTrue("the last menu action opens Escala", actions[3].performClick());
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, demo);
+                    measure(scroll, size);
+                    scroll.scrollTo(0, 0);
+                    assertEquals("Escala keeps the original viewport", safeInset, scroll.getPaddingLeft());
+                    assertTrue(scroll.getClipToPadding());
+                    assertTrue(scroll.isVerticalScrollBarEnabled());
+                    assertFits(content);
+                    saveMenuFrame(drawRoundView(scroll, size), "escala-" + name);
+
+                    call(activity, "showScreen", new Class[]{int.class}, 0);
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, demo);
+                    measure(scroll, size);
+                    TextView[] previous = menuActions(content);
+                    restorePreviousMenuGeometry(activity, scroll, content, previous, safeInset);
+                    measure(scroll, size);
+                    renderMenuFrames(scroll, content, previous, size, safeInset, "reference-" + name, false);
+                }
+            }
+        }
+    }
+
+    private static TextView[] menuActions(LinearLayout content) {
+        String[] labels = {"Agora", "Alertas", "CrewLife", "Escala"};
+        TextView[] actions = new TextView[labels.length];
+        for (int i = 0; i < content.getChildCount(); i++) {
+            if (!(content.getChildAt(i) instanceof TextView text) || !text.isClickable()) continue;
+            for (int label = 0; label < labels.length; label++) {
+                String value = text.getText().toString();
+                if (value.equals(labels[label]) || value.startsWith(labels[label] + " · ")) {
+                    actions[label] = text;
+                }
+            }
+        }
+        for (TextView action : actions) assertNotNull("the action exists in the rendered menu", action);
+        return actions;
+    }
+
+    /** Reconstruct the previous inset and button style on the same synthetic content. */
+    private static void restorePreviousMenuGeometry(MainActivity activity, ScrollView scroll,
+                                                     LinearLayout content, TextView[] actions,
+                                                     int safeInset) throws Exception {
+        scroll.setPadding(safeInset, scroll.getPaddingTop(), safeInset, scroll.getPaddingBottom());
+        scroll.setClipToPadding(true);
+        for (int i = 0; i < content.getChildCount(); i++) {
+            View child = content.getChildAt(i);
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) child.getLayoutParams();
+            params.leftMargin -= safeInset;
+            params.rightMargin -= safeInset;
+            child.setLayoutParams(params);
+        }
+        for (int i = 0; i < actions.length; i++) {
+            TextView action = actions[i];
+            TextView previous = (TextView) call(activity, "actionChip",
+                    new Class[]{String.class, int.class, boolean.class},
+                    action.getText().toString(), Color.rgb(34, 211, 238), i == 0);
+            previous.setMaxLines(1);
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) action.getLayoutParams();
+            params.leftMargin = 0;
+            params.rightMargin = 0;
+            int index = content.indexOfChild(action);
+            content.removeViewAt(index);
+            content.addView(previous, index, params);
+            actions[i] = previous;
+        }
+    }
+
+    private static void renderMenuFrames(ScrollView scroll, LinearLayout content, TextView[] actions,
+                                         int size, int safeInset, String name, boolean expanded) throws Exception {
+        scroll.scrollTo(0, 0);
+        saveMenuFrame(drawRoundView(scroll, size), name + "-start");
+        TextView first = actions[0];
+        int center = content.getTop() + first.getTop() + first.getHeight() / 2;
+        scroll.scrollTo(0, center - size / 2);
+        Bitmap centered = drawRoundView(scroll, size);
+        try {
+            int y = center - scroll.getScrollY();
+            assertEquals("the menu action still has its selected fill", Color.rgb(34, 211, 238),
+                    centered.getPixel(safeInset + 4, y));
+            assertEquals("the fill extends into the usable circle only in the candidate", expanded,
+                    centered.getPixel(safeInset - 4, y) == Color.rgb(34, 211, 238));
+            writeMenuFrame(centered, name + "-middle");
+        } finally {
+            centered.recycle();
+        }
+        TextView last = actions[3];
+        scroll.scrollTo(0, content.getTop() + last.getTop() + last.getHeight() / 2 - size / 2);
+        int lastBottom = content.getTop() + last.getBottom() - scroll.getScrollY();
+        assertTrue("the last menu action is fully accessible at the end",
+                lastBottom <= size - scroll.getPaddingBottom()
+                        && lastBottom - last.getHeight() >= scroll.getPaddingTop());
+        scroll.scrollTo(0, content.getHeight());
+        saveMenuFrame(drawRoundView(scroll, size), name + "-end");
+    }
+
+    private static Bitmap drawRoundView(ScrollView scroll, int size) {
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Path display = new Path();
+        display.addCircle(size / 2f, size / 2f, size / 2f, Path.Direction.CW);
+        canvas.clipPath(display);
+        canvas.translate(0, -scroll.getScrollY());
+        scroll.draw(canvas);
+        return bitmap;
+    }
+
+    private static void saveMenuFrame(Bitmap bitmap, String name) throws Exception {
+        try {
+            writeMenuFrame(bitmap, name);
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
+    private static void writeMenuFrame(Bitmap bitmap, String name) throws Exception {
+        String directory = System.getenv("CREWCHECK_WEAR_CAPTURE_DIR");
+        if (directory == null || directory.isBlank()) return;
+        var target = Files.createDirectories(Paths.get(directory)).resolve(name + ".png");
+        try (var stream = Files.newOutputStream(target)) {
+            assertTrue("PNG saved", bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream));
+        }
+    }
 
     @Test public void scrollIndicatorIsEnabledWithoutReservingContentWidth() throws Exception {
         for (int size : new int[]{192, 227}) {

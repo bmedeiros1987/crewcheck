@@ -21,4 +21,12 @@ final class WatchViewport {
     static boolean stack(int availableWidth, float density, float fontScale) {
         return availableWidth / density < 150 || fontScale > 1.2f;
     }
+
+    static int menuRowInset(int width, int height, int top, int bottom, int edge, int safeInset) {
+        double radius = Math.max(0, Math.min(width, height) / 2.0 - edge);
+        double furthestY = Math.max(Math.abs(top - height / 2.0), Math.abs(bottom - height / 2.0));
+        double halfChord = Math.sqrt(Math.max(0, radius * radius - furthestY * furthestY));
+        // Keep the original reading width when a row is entering or leaving the viewport.
+        return Math.min(safeInset, (int) Math.ceil(width / 2.0 - halfChord));
+    }
 }

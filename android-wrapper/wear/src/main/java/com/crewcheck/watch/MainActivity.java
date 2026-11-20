@@ -6,7 +6,9 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.BatteryManager;
@@ -109,6 +111,7 @@ public final class MainActivity extends FragmentActivity
     private WellbeingStore wellbeingStore;
     private ScrollView scroll;
     private LinearLayout content;
+    private int safeHorizontalInset;
     private TextView clockView;
     private TextView ambientClockView;
     private TextView transientStatus;
@@ -225,9 +228,31 @@ public final class MainActivity extends FragmentActivity
         scroll.setScrollbarFadingEnabled(true);
         enableRotaryScrolling(scroll);
 
-        content = new LinearLayout(this);
+        content = new LinearLayout(this) {
+            @Override protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+                if (!usesRoundMenu() || child.getBackground() instanceof RoundMenuBackground) {
+                    return super.drawChild(canvas, child, drawingTime);
+                }
+                // Only the navigation rows scroll through the wider circular viewport.
+                int top = scroll.getScrollY() + scroll.getPaddingTop() - getTop();
+                int bottom = scroll.getScrollY() + scroll.getHeight() - scroll.getPaddingBottom() - getTop();
+                int saved = canvas.save();
+                canvas.clipRect(0, top, getWidth(), bottom);
+                boolean drawn = super.drawChild(canvas, child, drawingTime);
+                canvas.restoreToCount(saved);
+                return drawn;
+            }
+        };
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_HORIZONTAL);
+        scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
+            if (!usesRoundMenu()) return;
+            content.invalidate();
+            for (int i = 0; i < content.getChildCount(); i++) {
+                View child = content.getChildAt(i);
+                if (child.getBackground() instanceof RoundMenuBackground) child.invalidate();
+            }
+        });
         applySafePadding();
 
         scroll.addView(content, new ScrollView.LayoutParams(
@@ -316,14 +341,20 @@ public final class MainActivity extends FragmentActivity
         int height = scroll.getHeight() > 0 ? scroll.getHeight()
                 : getResources().getDisplayMetrics().heightPixels;
         int[] padding = WatchViewport.padding(width, height, isRoundScreen());
-        scroll.setPadding(padding[0], padding[1], padding[2], padding[3]);
+        safeHorizontalInset = padding[0];
+        boolean roundMenu = usesRoundMenu();
+        scroll.setClipToPadding(!roundMenu);
+        scroll.setPadding(roundMenu ? 0 : padding[0], padding[1],
+                roundMenu ? 0 : padding[2], padding[3]);
         content.setPadding(0, 0, 0, 0);
     }
 
+    private boolean usesRoundMenu() {
+        return !ambient && screenMode == MODE_NOW && isRoundScreen();
+    }
+
     private boolean stackColumns() {
-        int width = scroll.getWidth() > 0 ? scroll.getWidth()
-                : getResources().getDisplayMetrics().widthPixels;
-        return WatchViewport.stack(width - scroll.getPaddingLeft() - scroll.getPaddingRight(),
+        return WatchViewport.stack(contentWidth(),
                 getResources().getDisplayMetrics().density,
                 getResources().getConfiguration().fontScale);
     }
@@ -336,13 +367,15 @@ public final class MainActivity extends FragmentActivity
 
     private void renderSnapshot() {
         if (content == null) return;
+        renderSnapshot(store.load());
+    }
 
+    private void renderSnapshot(WatchContextSnapshot snapshot) {
         content.removeAllViews();
         heroSyncShown = false;
         applySafePadding();
         content.getRootView().setBackgroundColor(BLACK);
 
-        WatchContextSnapshot snapshot = store.load();
         long now = System.currentTimeMillis();
         renderedValidUntil = snapshot != null && !snapshot.isStale(now) ? snapshot.validUntilEpochMs : 0L;
 
@@ -385,6 +418,16 @@ public final class MainActivity extends FragmentActivity
             content.addView(demo);
         }
 
+        if (usesRoundMenu()) {
+            for (int i = 0; i < content.getChildCount(); i++) {
+                View child = content.getChildAt(i);
+                if (child.getBackground() instanceof RoundMenuBackground) continue;
+                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) child.getLayoutParams();
+                params.leftMargin += safeHorizontalInset;
+                params.rightMargin += safeHorizontalInset;
+                child.setLayoutParams(params);
+            }
+        }
         ensureRotaryFocus();
     }
 
@@ -909,11 +952,43 @@ public final class MainActivity extends FragmentActivity
     }
 
     private TextView navChip(String label, int accent, int mode) {
-        TextView chip = actionChip(label, accent, screenMode == mode);
+        boolean selected = screenMode == mode;
+        TextView chip = actionChip(label, accent, selected);
         chip.setMaxLines(1);
-        chip.setLayoutParams(listChipParams());
+        LinearLayout.LayoutParams params = listChipParams();
+        if (usesRoundMenu()) {
+            chip.setMinHeight(dp(48));
+            int textInset = safeHorizontalInset + dp(8);
+            chip.setPadding(textInset, chip.getPaddingTop(), textInset, chip.getPaddingBottom());
+            chip.setBackground(new RoundMenuBackground(chip, selected ? accent : SURFACE));
+        }
+        chip.setLayoutParams(params);
         chip.setOnClickListener(view -> showScreen(mode));
         return chip;
+    }
+
+    /** Changes the capsule width as it scrolls without moving or reflowing its label. */
+    private final class RoundMenuBackground extends GradientDrawable {
+        private final View row;
+
+        private RoundMenuBackground(View row, int color) {
+            this.row = row;
+            setColor(color);
+            setCornerRadius(dp(24));
+        }
+
+        @Override public void draw(Canvas canvas) {
+            Rect bounds = getBounds();
+            if (bounds.width() <= 0 || scroll.getWidth() == 0 || scroll.getHeight() == 0) return;
+            int top = row.getTop() + content.getTop() - scroll.getScrollY();
+            int inset = WatchViewport.menuRowInset(scroll.getWidth(), scroll.getHeight(),
+                    top, top + row.getHeight(), dp(8), safeHorizontalInset);
+            float scale = (bounds.width() - 2f * inset) / bounds.width();
+            int saved = canvas.save();
+            canvas.scale(scale, 1f, bounds.exactCenterX(), bounds.exactCenterY());
+            super.draw(canvas);
+            canvas.restoreToCount(saved);
+        }
     }
 
     private LinearLayout.LayoutParams listChipParams() {
@@ -1328,7 +1403,7 @@ public final class MainActivity extends FragmentActivity
     private int contentWidth() {
         int width = scroll.getWidth() > 0 ? scroll.getWidth()
                 : getResources().getDisplayMetrics().widthPixels;
-        return width - scroll.getPaddingLeft() - scroll.getPaddingRight();
+        return width - safeHorizontalInset * 2;
     }
 
     private TextView actionChip(String label, int accent, boolean selected) {
