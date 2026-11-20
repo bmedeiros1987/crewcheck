@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
-const modules = loadClientModules({ files: ['ownerPerDiemReview','financialSettingStore','financialStatementLearning','financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialForecastPeriods'].map(name=>'client/src/lib/'+name+'.ts') });
+const modules = loadClientModules({ files: ['ownerPerDiemReview','financialSettingStore','financialMonthlySettings','financialStatementLearning','financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialForecastPeriods'].map(name=>'client/src/lib/'+name+'.ts') });
 const previous = {localStorage:globalThis.localStorage,window:globalThis.window}, storage = new Map();
 let unavailable=false, failedRead=null, archiveReads=0, writes=0, geography='domestic';
 globalThis.localStorage = {getItem:key=>{
@@ -121,6 +121,7 @@ try {
  const effect=effects.find(n=>n.getText(explorerAst).includes('setCalculationRevision'));assert(effect);
  let revision=0,authRevision=0,recovery={revision:7,source:true,inventory:true};const cleanups=[];
  const effectContext=vm.createContext({window:globalThis.window,localStorage:globalThis.localStorage,financialRateOwner:learning.financialRateOwner,
+  mode:'allowance',isMonthlyFinancialSettingsKey:modules.load('financialMonthlySettings').isMonthlyFinancialSettingsKey,
   useEffect:fn=>cleanups.push(fn()),setCalculationRevision:fn=>{revision=fn(revision);},setAuthRevision:fn=>{authRevision=fn(authRevision);},setRecovery:fn=>{recovery=fn(recovery);},
   epoch:{current:0},fetching:{current:new Map()},setLoaded:()=>{},setInventory:()=>{},setConflicts:()=>{},setCoverageReady:()=>{},setNotice:()=>{}});
  const authEffect=effects.find(n=>n.getText(explorerAst).includes('setAuthRevision'));assert(authEffect);
@@ -128,11 +129,19 @@ try {
  const emit=(key,area=globalThis.localStorage)=>{const event=new Event('storage');Object.assign(event,{key,storageArea:area});window.dispatchEvent(event);};
  emit(key);assert.equal(revision,1);emit('crewcheck_financial_settings_v1:synthetic-a:crewcheck_perdiem_rate_domestic');assert.equal(revision,2);
  emit('crewcheck_financial_learned_rates_v2:synthetic-b');emit('crewcheck_financial_settings_v1:synthetic-b:crewcheck_perdiem_rate_domestic');emit(key,{});emit('unrelated');assert.equal(revision,2,'other owner, sessionStorage and unrelated events ignored');
+ emit('crewcheck_financial_month_settings_v1:synthetic-a:2032-08');assert.equal(revision,2,'monthly payroll updates do not invalidate allowances');
  window.dispatchEvent(new Event('crewcheck:financial-config-changed'));assert.equal(revision,3);
  login('synthetic-b');emit(key);assert.equal(revision,3,'listener rechecks current owner');emit('crewcheck_financial_learned_rates_v2:synthetic-b');assert.equal(revision,4);
  emit(null,{});assert.equal(authRevision,0,'sessionStorage clear is not an account reset');
  storage.clear();emit(null);assert.equal(authRevision,1,'clear event resets loaded account history');assert.equal(recovery.source,false,'account reset clears stale source recovery');assert.equal(recovery.inventory,false,'account reset clears stale inventory recovery');assert.equal(recovery.revision,7,'reset preserves monotonic recovery revision');
- for(const cleanup of cleanups)cleanup();login('synthetic-a');emit(key);window.dispatchEvent(new Event('crewcheck:financial-config-changed'));assert.equal(revision,4,'unmounted listeners removed');
+ for(const cleanup of cleanups.splice(0))cleanup();login('synthetic-a');emit(key);window.dispatchEvent(new Event('crewcheck:financial-config-changed'));assert.equal(revision,4,'unmounted listeners removed');
+ effectContext.mode='salary';
+ vm.runInContext(ts.transpileModule(effect.getText(explorerAst),{compilerOptions:{target:99}}).outputText,effectContext);
+ const monthlyKey='crewcheck_financial_month_settings_v1:synthetic-a:2032-08';
+ emit('crewcheck_financial_month_settings_v1:synthetic-b:2032-08');emit(monthlyKey,{});emit(monthlyKey+':extra');
+ assert.equal(revision,4,'foreign, sessionStorage and malformed monthly changes do not refresh salary');
+ emit(monthlyKey);assert.equal(revision,5,'own monthly adjustments refresh salary');
+ for(const cleanup of cleanups)cleanup();emit(monthlyKey);assert.equal(revision,5,'salary listener is removed on unmount');
  console.log('PASS rate archive: complete-total counterproof, one snapshot, corruption/owner/version/date/conflict/archive-and-auth-storage-unavailable states, immutable history, manual/international independence, expiry, cross-tab/account/clear/cleanup; synthetic only');
 } finally {modules.cleanup();Object.assign(globalThis,previous);}
 

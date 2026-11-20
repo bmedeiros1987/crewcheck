@@ -17,10 +17,22 @@ await build({stdin:{contents:`
 export {default as VacationForecast} from './client/src/components/finance/VacationForecast';
 export {default as ThirteenthForecast} from './client/src/components/finance/ThirteenthForecast';
 export {default as PayrollPaymentCard} from './client/src/components/finance/PayrollPaymentCard';
+export {default as PayrollNetEstimate} from './client/src/components/finance/PayrollNetEstimate';
 export {SalaryBasisAmount} from './client/src/components/finance/SalaryDisplayBasis';
-export {readMonthlyFinancialSettings} from './client/src/lib/financialMonthlySettings';
+export {isMonthlyFinancialSettingsKey,readMonthlyFinancialSettings} from './client/src/lib/financialMonthlySettings';
+export {extractPrivatePayroll} from './client/src/lib/privatePayrollExtraction';
+export {payrollDeductionRows,planReviewedPayrollDeductions} from './client/src/lib/reviewedPayrollDeductions';
 `.trim(),resolveDir:process.cwd(),loader:'tsx'},bundle:true,platform:'node',format:'cjs',jsx:'automatic',outfile:forecastFile,alias:{'@':path.resolve('client/src')},loader:{'.css':'empty'},plugins:[{name:'same-react-runtime',setup(b){b.onResolve({filter:/^react(?:\/.*)?$/},args=>({path:runtimeRequire.resolve(args.path),external:true}));}}]});
 const forecastViews=runtimeRequire(forecastFile);
+
+const monthlySettingsKey=(owner,month)=>`crewcheck_financial_month_settings_v1:${encodeURIComponent(owner)}:${month}`;
+const keyOwner='synthetic:owner/source';
+for(const month of ['2026-10','2026-11'])assert.equal(forecastViews.isMonthlyFinancialSettingsKey(monthlySettingsKey(keyOwner,month),keyOwner),true);
+for(const key of [null,monthlySettingsKey(`${keyOwner}:other`,'2026-10'),monthlySettingsKey('synthetic','2026-10'),
+ monthlySettingsKey(keyOwner,'2026-00'),monthlySettingsKey(keyOwner,'2026-13'),monthlySettingsKey(keyOwner,'2026-1'),
+ monthlySettingsKey(keyOwner,'2026-10:extra'),monthlySettingsKey(keyOwner,'2026-10').replace('_v1:','_v2:'),
+ `crewcheck_financial_month_settings_v1:${keyOwner}:2026-10`])assert.equal(forecastViews.isMonthlyFinancialSettingsKey(key,keyOwner),false);
+assert.equal(forecastViews.isMonthlyFinancialSettingsKey(monthlySettingsKey('','2026-10'),''),false);
 
 const modules=loadClientModules({files:['client/src/lib/payrollProjectionPeriods.ts','client/src/lib/financialActApplicability.ts','client/src/lib/financialPayrollPeriods.ts','client/src/lib/salaryDisplayBasis.ts','client/src/lib/salaryActivityEvidence.ts','client/src/lib/salaryCalculationDiagnostic.ts','client/src/lib/financialHistoryPeriods.ts','client/src/lib/rosterReferencePeriod.ts','client/src/lib/rosterDisplayDate.ts','client/src/lib/financialReserveCredits.ts','client/src/lib/financialJourneyGrouping.ts'],prefix:'salary-review-callers-'});
 const home=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',home,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
@@ -124,11 +136,14 @@ try{
  assert.equal(deductions.values.irrf.amountMinor,0,'explicit zero IRRF is available to the card');
  const summary=c.salaryDisplaySummary('net',dsr.composition.grossMinor/100,true,[month],[deductions]);
  assert.equal(summary.amount,2550,'deductions work independently with a complete gross supplied');
- const renderPaymentAmount=(displayBasis,snapshots)=>renderToStaticMarkup(React.createElement(forecastViews.PayrollPaymentCard,{
-  basis:displayBasis,snapshots,chooseBasis:()=>{},requestRange:()=>{},
- })).match(/<div class="cc-salary-basis-amount"[^>]*>(.*?)<\/div>/s)?.[1];
+ const renderPaymentAmount=(displayBasis,snapshots)=>{
+  const html=renderToStaticMarkup(React.createElement(forecastViews.PayrollPaymentCard,{basis:displayBasis,snapshots,chooseBasis:()=>{},requestRange:()=>{}}));
+  return html.match(/<section class="cc-payroll-net-preview"[^>]*>(.*?)<\/section>/s)?.[1]
+    ??html.match(/<div class="cc-salary-basis-amount"[^>]*>(.*?)<\/div>/s)?.[1];
+ };
  const netAmount=renderPaymentAmount('net',[cardSnapshot]);
- assert.match(netAmount,/Não calculável/);
+ assert.match(netAmount,/class="cc-salary-basis-amount"[^>]*><strong>Não calculável<\/strong>/);
+ assert.doesNotMatch(netAmount,/data-payroll-standard-net|data-payroll-individual-net/);
  assert.match(netAmount,/Falta confirmar todas as rubricas do salário bruto/);
  assert.doesNotMatch(netAmount,/Falta confirmar (INSS|IRRF|outros descontos)/);
  assert.match(renderPaymentAmount('gross',[cardSnapshot]),/subtotal bruto estimado/);
@@ -144,16 +159,110 @@ try{
  const certified={...cardSnapshot,salary:{...cardSnapshot.salary,dsr:{...dsr,inventoryComplete:true}}};
  const partial={...certified,publishedDays:certified.publishedDays.slice(1)};
  assert.match(renderPaymentAmount('net',[partial]),/1 dia\(s\) sem cobertura publicada/);
- assert.match(renderPaymentAmount('net',[certified]),/líquido estimado/);
+ assert.match(renderPaymentAmount('net',[certified]),/Líquido padrão estimado/);
  const {irrf,...incompleteDeductions}=deductions.values;
  browserStorage.set(`crewcheck_financial_month_settings_v1:${ownerId}:${month}`,JSON.stringify({...deductions,values:incompleteDeductions}));
- assert.match(renderPaymentAmount('net',[certified]),/Falta confirmar IRRF/);
+ assert.match(renderPaymentAmount('net',[certified]),/Pendente para calcular o líquido: IRRF/);
  const privateReason=renderToStaticMarkup(React.createElement(forecastViews.SalaryBasisAmount,{
   summary:{basis:'net',amount:null,complete:false,reason:'Valor de R$ 123,45 em 2027-02 a confirmar.'},
  }));
  assert.match(privateReason,/R\$ ••• em 2027-02/);
  assert.doesNotMatch(privateReason,/123,45/);
  console.log('PASS real payment card: full month, modeled DSR and known deductions still show inventory pending, with no invented net');
+
+ const deductionMonth='2026-10',creditMonth='2026-11',otherOwner=`${ownerId}:other`;
+ const savedValues={
+  inss:{...v(13500),source:'reviewed_statement',sourceId:`sha256:${'a'.repeat(64)}`},
+  irrf:v(0),
+  other_deductions:{...v(2100),source:'derived_reference'},
+ };
+ const savedRecord={...deductions,month:deductionMonth,revision:2,values:savedValues};
+ const saveFixture=(keyOwner,keyMonth,record)=>browserStorage.set(monthlySettingsKey(keyOwner,keyMonth),JSON.stringify(record));
+ saveFixture(ownerId,deductionMonth,savedRecord);
+ saveFixture(ownerId,creditMonth,{...savedRecord,month:creditMonth,values:{irrf:{...v(88800),source:'reviewed_statement'}}});
+ saveFixture(otherOwner,deductionMonth,{...savedRecord,ownerId:otherOwner,values:{inss:v(5500),other_deductions:v(0)}});
+ const renderEstimate=(overrides={})=>renderToStaticMarkup(React.createElement(forecastViews.PayrollNetEstimate,{
+  gross:5000,complete:true,month:deductionMonth,paymentMonth:creditMonth,compositionKey:'synthetic-composition',...overrides,
+ }));
+ const reused=renderEstimate();
+ assert.match(reused,/Competência dos descontos: 2026-10\. Crédito previsto: 2026-11/);
+ assert.match(reused,/INSS: R\$ ••• \(holerite revisado\)/);
+ assert.match(reused,/IRRF: R\$ ••• \(informado\)/);
+ assert.match(reused,/Descontos pessoais: R\$ ••• \(referência\)/);
+ assert.match(reused,/Líquido padrão estimado: R\$ •••/);
+ assert.match(reused,/Líquido individual a confirmar/);
+ assert.equal([...reused.matchAll(/data-payroll-standard-net/g)].length,1);
+ assert.doesNotMatch(reused,/Não calculável|data-payroll-individual-net|135,00|21,00|4\.844,00|sha256:/);
+ const reloaded=forecastViews.readMonthlyFinancialSettings(deductionMonth);
+ assert.equal(reloaded.revision,2);
+ assert.equal(c.salaryDisplaySummary('net',5000,true,[deductionMonth],[reloaded]).amount,4844);
+ const partialReviewed=renderEstimate({complete:false});
+ assert.match(partialReviewed,/Saldo parcial após os descontos disponíveis: R\$ •••/);
+ assert.doesNotMatch(partialReviewed,/data-payroll-standard-net|data-payroll-individual-net|\(estimado\)/);
+
+ const {inss,other_deductions}=savedValues;
+ saveFixture(ownerId,deductionMonth,{...savedRecord,revision:3,values:{inss,other_deductions}});
+ const absent=renderEstimate();
+ assert.match(absent,/class="cc-salary-basis-amount"[^>]*><strong>Não calculável<\/strong>/);
+ assert.match(absent,/IRRF: pendente/);
+ assert.match(absent,/Descontos pessoais: R\$ ••• \(referência\)/);
+ assert.doesNotMatch(absent,/data-payroll-standard-net|data-payroll-individual-net|888,00/,'the next credit month must not supply reviewed IRRF');
+ const partialGross=renderEstimate({complete:false});
+ assert.match(partialGross,/Ganhos e fixos incompletos/);
+ assert.doesNotMatch(partialGross,/data-payroll-standard-net|data-payroll-individual-net|\(estimado\)/);
+
+ for(const mismatch of [{month:creditMonth},{ownerId:otherOwner}]){
+  saveFixture(ownerId,deductionMonth,{...savedRecord,...mismatch});
+  assert.equal(forecastViews.readMonthlyFinancialSettings(deductionMonth),null);
+  const rejected=renderEstimate();
+  assert.match(rejected,/INSS: pendente\. IRRF: pendente\./);
+  assert.match(rejected,/Descontos pessoais: pendentes/);
+  assert.doesNotMatch(rejected,/holerite revisado|data-payroll-standard-net|data-payroll-individual-net/);
+ }
+ saveFixture(ownerId,deductionMonth,savedRecord);
+ browserStorage.set('crewcheck_auth_user',JSON.stringify({id:otherOwner,role:'user'}));
+ browserStorage.set('crewcheck_auth_token','synthetic-other');
+ const differentAccount=renderEstimate();
+ assert.match(differentAccount,/INSS: R\$ ••• \(informado\).*IRRF: pendente/);
+ assert.match(differentAccount,/Descontos pessoais: R\$ ••• \(informado\)/);
+ assert.doesNotMatch(differentAccount,/\(holerite revisado\)|\(referência\)|data-payroll-standard-net|data-payroll-individual-net/);
+
+ const {extractPrivatePayroll,payrollDeductionRows,planReviewedPayrollDeductions}=forecastViews;
+ const extraction=extractPrivatePayroll([
+  'Competência 10/2026','DESCONTOS','INSS 0,00','IRRF 0,00',
+  'Plano de saúde titular custeado pela empresa informativo 200,00',
+  'Plano dependente 45,00','Coparticipação 22,50','Empréstimo consignado MC 81,00',
+  'TOTAIS 5000,00 148,50','Líquido 4851,50',
+ ].join('\n'));
+ const rows=payrollDeductionRows(extraction);
+ const reviewContext={
+  ownerId,expectedSession:'synthetic-session',currentSession:'synthetic-session',
+  documentFingerprint:'sha256:'+'c'.repeat(64),documentKind:'monthly',month:deductionMonth,current:savedRecord,expectedRevision:2,
+  extraction,selection:rows.filter(row=>row.eligible).map(({rowId,bucket})=>({rowId,bucket})),
+  completeBuckets:['inss','irrf','other_deductions'],ownershipAndMonthConfirmed:true,
+ };
+ const usual=planReviewedPayrollDeductions(reviewContext);
+ assert.equal(usual.reviewable,true);
+ assert.equal(usual.changes.inss.amountMinor,0);
+ assert.equal(usual.changes.irrf.amountMinor,0);
+ assert.equal(usual.changes.other_deductions.amountMinor,14850);
+ assert.equal(rows.find(row=>row.label.includes('titular')).eligible,false);
+ const isolatedMc=extractPrivatePayroll('Competência 10/2026\nDESCONTOS\nINSS 0,00\nMC 20,00');
+ assert.equal(payrollDeductionRows(isolatedMc).find(row=>row.label==='MC')?.classification,'unknown');
+ assert.equal(planReviewedPayrollDeductions({...reviewContext,extraction:isolatedMc,selection:[{rowId:'row-0',bucket:'inss'}]}).reviewable,false);
+ assert.equal(planReviewedPayrollDeductions({...reviewContext,ownerId:otherOwner}).reviewable,false);
+ assert.equal(planReviewedPayrollDeductions({...reviewContext,month:creditMonth}).reviewable,false);
+ browserStorage.set('crewcheck_auth_user',JSON.stringify({id:ownerId,role:'user'}));
+ browserStorage.set('crewcheck_auth_token','synthetic-only');
+ saveFixture(ownerId,deductionMonth,{...savedRecord,values:{
+  ...usual.changes,rubric_dependente:{...usual.changes.other_deductions,amountMinor:4500},
+  rubric_coparticipacao:{...usual.changes.other_deductions,amountMinor:2250},
+  rubric_consignado:{...usual.changes.other_deductions,amountMinor:8100},
+ }});
+ const individual=renderEstimate();
+ assert.match(individual,/data-payroll-standard-net.*Líquido padrão estimado/);
+ assert.match(individual,/data-payroll-individual-net.*Líquido individual estimado/);
+ console.log('PASS monthly deduction keys and real net preview: scoped settings, origins, zero, unknowns, masked amounts and partial gross');
 }finally{
  delete globalThis.localStorage;
 }

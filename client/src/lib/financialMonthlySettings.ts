@@ -10,6 +10,11 @@ const validField=(key:string)=>/^(fixed_with_co|other_fixed|inss|irrf|other_dedu
 function validValue(value:MonthlyFinancialValue){return value&&value.currency==='BRL'&&(value.amountMinor===null||(Number.isSafeInteger(value.amountMinor)&&value.amountMinor>=0))&&['earning','deduction','informational'].includes(value.kind)&&['manual','reviewed_statement','derived_reference'].includes(value.source)&&typeof value.sourceId==='string'&&/^[a-zA-Z0-9:._-]{1,160}$/.test(value.sourceId)&&['once','monthly'].includes(value.recurrence);}
 function validEntry(field:string,value:MonthlyFinancialValue){return validField(field)&&validValue(value)&&(!['fixed_with_co','other_fixed'].includes(field)||value.kind==='earning')&&(!['inss','irrf','other_deductions'].includes(field)||value.kind==='deduction');}
 const key=(owner:string,month:string)=>prefix+encodeURIComponent(owner)+':'+month;
+export function isMonthlyFinancialSettingsKey(storageKey:string|null,owner:string):boolean {
+  if(!storageKey||!owner)return false;
+  const scope=key(owner,'');
+  return storageKey.startsWith(scope)&&payrollMonthBounds(storageKey.slice(scope.length))!==null;
+}
 
 /** A planning operation: only chosen fields change. Missing and explicit zero
  * remain distinct; resetting never erases other rubrics, history or documents. */

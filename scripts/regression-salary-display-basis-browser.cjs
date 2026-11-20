@@ -48,20 +48,28 @@ for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const 
  assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.400,00/);
  assert.equal(await page.getByRole('group',{name:'Valor salarial'}).count(),1);
  const controls=page.locator('.cc-payroll-controls'),hero=page.locator('.cc-payment-hero');const cb=await controls.boundingBox(),hb=await hero.boundingBox();assert(cb.height<240,'compact controls stay under240px at '+width);assert(cb.y+cb.height<=hb.y+2,'controls occupy their own row above hero');for(const label of await page.locator('.cc-salary-basis label').all()){const box=await label.boundingBox();assert(box.height<=60,'switch never stretches to hero height');assert.equal(await label.evaluate(el=>getComputedStyle(el).borderTopWidth),'0px','no rectangular selection border');}
+ const netPreview=hero.locator('.cc-payroll-net-preview');
+ const assertNetUnavailable=async reason=>{
+  assert.match(await netPreview.locator('.cc-salary-basis-amount').innerText(),/Não calculável/);
+  assert.match(await netPreview.innerText(),reason);
+  assert.equal(await netPreview.locator('[data-payroll-standard-net],[data-payroll-individual-net]').count(),0);
+ };
 
  if(!completeCoverage){
-  await page.getByRole('switch',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/Não calculável/);assert.equal(await page.locator('.cc-payroll-net-details').getAttribute('open'),null);assert.doesNotMatch(await hero.innerText(),/alternativa simplificada/);await page.keyboard.press('Tab');await page.getByRole('switch',{name:'Líquido',exact:true}).focus();assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).evaluate(el=>el.matches(':focus-visible')),true);await page.screenshot({path:path.join(out,`${width}-${theme}-compact-overview.png`),fullPage:false});
+  await page.getByRole('switch',{name:'Líquido',exact:true}).check();await assertNetUnavailable(/28 dia/);assert.equal(await page.locator('.cc-payroll-net-details').getAttribute('open'),null);assert.doesNotMatch(await hero.innerText(),/alternativa simplificada/);await page.keyboard.press('Tab');await page.getByRole('switch',{name:'Líquido',exact:true}).focus();assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).evaluate(el=>el.matches(':focus-visible')),true);await page.screenshot({path:path.join(out,`${width}-${theme}-compact-overview.png`),fullPage:false});
   await page.getByRole('button',{name:'Extrato',exact:true}).click();assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Líquido previsto no período[\s\S]*Não calculável/);assert.match(await page.locator('.cc-per-diem-summary').innerText(),/28 dia/);
   await page.getByRole('button',{name:'Gráficos',exact:true}).click();assert.equal(await page.locator('.cc-financial-bar-track').count(),0,'partial monthly net never produces complete graph bars');
   await page.screenshot({path:path.join(out,`${width}-${theme}-partial-net.png`),fullPage:false});results.push({width,theme,publishedDays:1,expectedDays:29,heroNetUnavailable:true,statementNetUnavailable:true,graphNetUnavailable:true});await context.close();continue;
  }
- await page.getByRole('switch',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/Não calculável/,'a full calendar plus scalar settings is not a complete category inventory');
+ await page.getByRole('switch',{name:'Líquido',exact:true}).check();await assertNetUnavailable(/Falta confirmar todas as rubricas do salário bruto/);
  await page.getByRole('switch',{name:'Líquido',exact:true}).focus();await page.keyboard.press('Space');assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).isChecked(),false);assert.match(await hero.locator('h2').innerText(),/bruto/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/subtotal bruto estimado/);
  await page.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).first().click();assert.doesNotMatch(await page.locator('.cc-salary-basis-amount').innerText(),/2.400/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/R\$ •••/);
  await page.getByRole('button',{name:'Mostrar valores financeiros',exact:true}).first().click();await page.getByRole('switch',{name:'Líquido',exact:true}).focus();await page.keyboard.press('Space');assert.match(await hero.locator('h2').innerText(),/líquido/);
  await open();assert.equal(await page.getByRole('switch',{name:'Líquido',exact:true}).isChecked(),true,'reload keeps account choice');
  await page.evaluate(()=>{const key='crewcheck_financial_month_settings_v1:financial-ui-qa:2032-02',r=JSON.parse(localStorage.getItem(key));delete r.values.irrf;localStorage.setItem(key,JSON.stringify(r));window.dispatchEvent(new Event('crewcheck:financial-config-changed'));});
- await page.waitForFunction(()=>document.querySelector('.cc-salary-basis-amount')?.textContent.includes('Não calculável'));await page.locator('.cc-payroll-net-details summary').click();assert.match(await page.locator('.cc-payroll-net-details').innerText(),/IRRF/);
+ await netPreview.getByText(/IRRF ou mês previsto de crédito/).waitFor();
+ await assertNetUnavailable(/IRRF ou mês previsto de crédito/);
+ await page.locator('.cc-payroll-net-details summary').click();assert.match(await page.locator('.cc-payroll-net-details').innerText(),/IRRF: pendente/);
  await page.evaluate(()=>{document.documentElement.style.setProperty('font-size','32px','important');});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
  await page.screenshot({path:path.join(out,`${width}-${theme}.png`),fullPage:false});
  // Existing per-owner store: switching owner cannot inherit this preference.
