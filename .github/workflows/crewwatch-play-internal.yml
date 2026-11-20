@@ -97,8 +97,17 @@ jobs:
           node scripts/regression-crewwatch-premium-consolidated.mjs
           node scripts/regression-watch-first-sync.mjs
       - name: Wear tests and lint
+        env:
+          CREWCHECK_WEAR_CAPTURE_DIR: ${{ github.event_name == 'pull_request' && format('{0}/crewwatch-menu-previews', runner.temp) || '' }}
         run: |
           gradle -p android-wrapper --no-daemon --console=plain             :wear:testDebugUnitTest :wear:lintDebug :wear:assembleDebug
+      - name: Upload synthetic Wear menu renders
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewwatch-menu-previews
+          path: ${{ runner.temp }}/crewwatch-menu-previews/*.png
+          if-no-files-found: error
 
   publish-wear-internal:
     needs: preflight

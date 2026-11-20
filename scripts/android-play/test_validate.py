@@ -34,6 +34,27 @@ class GateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate_manifest(manifest('wear').replace('required="true"', 'required="false"'), 'wear', POLICY)
 
+    def test_wear_rejects_portrait_filter(self):
+        for orientation in ('portrait', 'sensorPortrait', 'reversePortrait', '1', '7', '9'):
+            with self.subTest(orientation=orientation), self.assertRaisesRegex(AssertionError, 'portrait orientation'):
+                xml = manifest('wear').replace('</application>', f'<activity android:screenOrientation="{orientation}"/></application>')
+                validate_manifest(xml, 'wear', POLICY)
+        for required in ('', ' android:required="true"'):
+            with self.subTest(required=required), self.assertRaisesRegex(AssertionError, 'portrait feature'):
+                xml = manifest('wear').replace('<application', f'<uses-feature android:name="android.hardware.screen.portrait"{required}/><application')
+                validate_manifest(xml, 'wear', POLICY)
+
+        for orientation in ('@integer/wear_orientation', '?attr/wear_orientation'):
+            with self.subTest(orientation=orientation), self.assertRaisesRegex(AssertionError, 'orientation reference'):
+                xml = manifest('wear').replace('</application>', f'<activity android:screenOrientation="{orientation}"/></application>')
+                validate_manifest(xml, 'wear', POLICY)
+
+    def test_optional_wear_feature_and_mobile_orientation_are_allowed(self):
+        optional = manifest('wear').replace('<application', '<uses-feature android:name="android.hardware.screen.portrait" android:required="false"/><application')
+        validate_manifest(optional, 'wear', POLICY)
+        mobile = manifest().replace('</application>', '<activity android:screenOrientation="portrait"/></application>')
+        validate_manifest(mobile, 'app', POLICY)
+
     def test_track_and_existing_code(self):
         for change in ['track', 'floor']:
             p = copy.deepcopy(POLICY)

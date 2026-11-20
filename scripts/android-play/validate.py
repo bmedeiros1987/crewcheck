@@ -32,6 +32,16 @@ def validate_manifest(xml, module, policy):
     assert 'HEALTH_PERMISSIONS' not in xml and 'health.ACTION' not in xml and 'com.google.android.apps.healthdata' not in xml, 'Legacy Health Connect declaration'
     app = root.find('application')
     assert app is not None and app.get(ANDROID + 'debuggable', 'false') == 'false', 'Debuggable release'
+    if module == 'wear':
+        # AAPT2 infers portrait support from these activity enum values.
+        portrait_orientations = {'portrait', 'sensorPortrait', 'reversePortrait', '1', '7', '9'}
+        for activity in app.findall('activity'):
+            orientation = activity.get(ANDROID + 'screenOrientation', '')
+            assert not orientation.startswith(('@', '?')), 'Wear manifest has an unresolved orientation reference'
+            assert orientation not in portrait_orientations, 'Wear manifest implies portrait orientation'
+        assert not any(f.get(ANDROID + 'name') == 'android.hardware.screen.portrait'
+                       and f.get(ANDROID + 'required', 'true') != 'false'
+                       for f in root.findall('.//uses-feature')), 'Wear manifest requires portrait feature'
     if module == 'watchface':
         assert app.get(ANDROID + 'hasCode') == 'false', 'Watch face must be resource-only'
         props = {p.get(ANDROID + 'name'): p.get(ANDROID + 'value') for p in app.findall('property')}
@@ -75,9 +85,12 @@ def main():
         assert match and match[1].replace(':', '').lower() == expected_cert, 'Wrong upload certificate'
         name = f'CrewCheck-{module}-{spec["versionCode"]}.aab'
         data = aab.read_bytes()
+        sha256 = hashlib.sha256(data).hexdigest()
         (out / name).write_bytes(data)
         (out / (module + '-manifest.xml')).write_text(xml)
-        report.append(dict(module=module, file=name, sha256=hashlib.sha256(data).hexdigest(), certificateSha256=expected_cert, **spec))
+        report.append(dict(module=module, file=name, sha256=sha256, certificateSha256=expected_cert, **spec))
+        if module == 'wear':
+            print(f'PASS: signed {spec["package"]} {name} [{sha256}]; watch required, portrait not required.')
     (out / 'release-report.json').write_text(json.dumps(report, indent=2) + '\n')
     (out / 'resolved-release-policy.json').write_text(json.dumps(policy, indent=2) + '\n')
     (out / 'SHA256SUMS.txt').write_text(''.join(f'{r["sha256"]}  {r["file"]}\n' for r in report))

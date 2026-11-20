@@ -1,5 +1,9 @@
 package com.crewcheck.watch;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Path;
 import android.text.Layout;
 import android.view.View;
 import android.view.ViewGroup;
@@ -22,6 +26,8 @@ import org.robolectric.annotation.Implements;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import static org.junit.Assert.*;
 
@@ -40,6 +46,279 @@ public class WatchTextLayoutTest {
     }
     private static final String LONG_TEXT =
             "Apresentação São José dos Campos — conexão internacional alterada";
+
+    @Test public void roundHomeMenuUsesTheDisplayAndKeepsItsLastActionReachable() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, size);
+                    WatchContextSnapshot demo = WatchContextSnapshot.demo(System.currentTimeMillis());
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, demo);
+                    measure(scroll, size);
+                    TextView[] actions = menuActions(content);
+                    assertTrue(actions[1].getText().toString().startsWith("Alertas · "));
+                    assertTrue(actions[3].getText().toString().startsWith("Escala · "));
+                    int safeInset = WatchViewport.padding(size, size, true)[0];
+                    assertFits(content);
+                    for (TextView action : actions) {
+                        assertTrue("the menu action is reachable and at least 48 dp tall",
+                                action.isClickable() && action.getHeight() >= 48);
+                        assertEquals("the enlarged label is visible", 0,
+                                action.getLayout().getEllipsisCount(0));
+                    }
+                    String name = size + "dp-font-" + scale;
+                    renderMenuFrames(scroll, content, actions, size, safeInset, "menu-" + name, true);
+
+                    assertTrue("the last menu action opens Escala", actions[3].performClick());
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, demo);
+                    measure(scroll, size);
+                    scroll.scrollTo(0, 0);
+                    assertEquals("Escala keeps the original viewport", safeInset, scroll.getPaddingLeft());
+                    assertTrue(scroll.getClipToPadding());
+                    assertTrue(scroll.isVerticalScrollBarEnabled());
+                    assertFits(content);
+                    saveMenuFrame(drawRoundView(scroll, size), "escala-" + name);
+
+                    call(activity, "showScreen", new Class[]{int.class}, 0);
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, demo);
+                    measure(scroll, size);
+                    TextView[] previous = menuActions(content);
+                    restorePreviousMenuGeometry(activity, scroll, content, previous, safeInset);
+                    measure(scroll, size);
+                    renderMenuFrames(scroll, content, previous, size, safeInset, "reference-" + name, false);
+                }
+            }
+        }
+    }
+
+    @Test public void roundConnectionInstructionsUseTheCircleAndStayReadable() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, size);
+                    call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, (Object) null);
+                    measure(scroll, size);
+                    LinearLayout instructions = field(activity, "connectionInstructions", LinearLayout.class);
+                    TextView heading = (TextView) instructions.getChildAt(1);
+                    TextView detail = (TextView) instructions.getChildAt(2);
+                    assertEquals("Conecte ao CrewCheck", heading.getText().toString());
+                    assertTrue(detail.getText().toString().startsWith("Abra o app no celular."));
+                    for (TextView text : new TextView[]{heading, detail}) {
+                        assertFits(text);
+                        Layout layout = text.getLayout();
+                        for (int line = 0; line < layout.getLineCount(); line++) {
+                            assertEquals("instruction line keeps every character", 0, layout.getEllipsisCount(line));
+                            int lineTop = content.getTop() + instructions.getTop() + text.getTop()
+                                    + text.getTotalPaddingTop() + layout.getLineTop(line);
+                            int lineHeight = layout.getLineBottom(line) - layout.getLineTop(line);
+                            scroll.scrollTo(0, lineTop + lineHeight / 2 - size / 2);
+                            int visibleLineTop = lineTop - scroll.getScrollY();
+                            assertTrue("the entire instruction line can pass through the readable band",
+                                    visibleLineTop >= scroll.getPaddingTop()
+                                            && visibleLineTop + lineHeight <= size - scroll.getPaddingBottom());
+                        }
+                        assertEquals(text.length(), layout.getLineEnd(layout.getLineCount() - 1));
+                    }
+
+                    String name = "sync-" + size + "dp-font-" + scale;
+                    scroll.scrollTo(0, 0);
+                    saveMenuFrame(drawRoundView(scroll, size), name + "-start");
+
+                    int oldBottom = size - scroll.getPaddingBottom();
+                    int headingTop = content.getTop() + instructions.getTop() + heading.getTop();
+                    int headingBottom = headingTop + heading.getHeight();
+                    scroll.scrollTo(0, Math.max(0, headingBottom - oldBottom - 16));
+                    int visibleTop = Math.max(oldBottom, headingTop - scroll.getScrollY());
+                    int visibleBottom = Math.min(size, headingBottom - scroll.getScrollY());
+                    assertTitlePassesOldCutoff(activity, scroll, instructions, size, visibleTop, visibleBottom, name);
+
+                    TextView sync = directText(content, "Sincronizar agora");
+                    assertTrue(sync.isClickable());
+                    scroll.scrollTo(0, content.getTop() + sync.getTop() + sync.getHeight() / 2 - size / 2);
+                    assertActionInSafeBand(scroll, content, sync, size);
+                    saveMenuFrame(drawRoundView(scroll, size), name + "-middle");
+
+                    TextView last = menuActions(content)[3];
+                    scroll.scrollTo(0, content.getTop() + last.getTop() + last.getHeight() / 2 - size / 2);
+                    assertActionInSafeBand(scroll, content, last, size);
+                    scroll.scrollTo(0, content.getHeight());
+                    assertTrue(scroll.isVerticalScrollBarEnabled());
+                    saveMenuFrame(drawRoundView(scroll, size), name + "-end");
+                }
+            }
+        }
+    }
+
+    private static TextView directText(LinearLayout content, String label) {
+        for (int i = 0; i < content.getChildCount(); i++) {
+            if (content.getChildAt(i) instanceof TextView text && label.contentEquals(text.getText())) return text;
+        }
+        throw new AssertionError("Missing action: " + label);
+    }
+
+    private static void assertTitlePassesOldCutoff(MainActivity activity, ScrollView scroll,
+                                                  LinearLayout instructions, int size,
+                                                  int top, int bottom, String name) throws Exception {
+        Bitmap candidate = drawRoundView(scroll, size);
+        Field group = MainActivity.class.getDeclaredField("connectionInstructions");
+        group.setAccessible(true);
+        group.set(activity, null);
+        Bitmap reference;
+        try {
+            reference = drawRoundView(scroll, size);
+        } finally {
+            group.set(activity, instructions);
+        }
+        try {
+            int addedPixels = 0;
+            for (int y = top; y < bottom; y++) {
+                for (int x = 0; x < size; x++) {
+                    if (candidate.getPixel(x, y) != reference.getPixel(x, y)) addedPixels++;
+                }
+            }
+            assertTrue(name + ": the circle exposes the heading below the previous viewport edge ("
+                    + top + "–" + bottom + ")", addedPixels > 0);
+            writeMenuFrame(reference, name + "-edge-reference");
+            writeMenuFrame(candidate, name + "-edge");
+        } finally {
+            reference.recycle();
+            candidate.recycle();
+        }
+    }
+
+    private static void assertActionInSafeBand(ScrollView scroll, LinearLayout content, TextView action, int size) {
+        int top = content.getTop() + action.getTop() - scroll.getScrollY();
+        assertTrue("the action can be scrolled fully into view",
+                top >= scroll.getPaddingTop() && top + action.getHeight() <= size - scroll.getPaddingBottom());
+    }
+
+    private static TextView[] menuActions(LinearLayout content) {
+        String[] labels = {"Agora", "Alertas", "CrewLife", "Escala"};
+        TextView[] actions = new TextView[labels.length];
+        for (int i = 0; i < content.getChildCount(); i++) {
+            if (!(content.getChildAt(i) instanceof TextView text) || !text.isClickable()) continue;
+            for (int label = 0; label < labels.length; label++) {
+                String value = text.getText().toString();
+                if (value.equals(labels[label]) || value.startsWith(labels[label] + " · ")) {
+                    actions[label] = text;
+                }
+            }
+        }
+        for (TextView action : actions) assertNotNull("the action exists in the rendered menu", action);
+        return actions;
+    }
+
+    /** Reconstruct the previous inset and button style on the same synthetic content. */
+    private static void restorePreviousMenuGeometry(MainActivity activity, ScrollView scroll,
+                                                     LinearLayout content, TextView[] actions,
+                                                     int safeInset) throws Exception {
+        scroll.setPadding(safeInset, scroll.getPaddingTop(), safeInset, scroll.getPaddingBottom());
+        scroll.setClipToPadding(true);
+        for (int i = 0; i < content.getChildCount(); i++) {
+            View child = content.getChildAt(i);
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) child.getLayoutParams();
+            params.leftMargin -= safeInset;
+            params.rightMargin -= safeInset;
+            child.setLayoutParams(params);
+        }
+        for (int i = 0; i < actions.length; i++) {
+            TextView action = actions[i];
+            TextView previous = (TextView) call(activity, "actionChip",
+                    new Class[]{String.class, int.class, boolean.class},
+                    action.getText().toString(), Color.rgb(34, 211, 238), i == 0);
+            previous.setMaxLines(1);
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) action.getLayoutParams();
+            params.leftMargin = 0;
+            params.rightMargin = 0;
+            int index = content.indexOfChild(action);
+            content.removeViewAt(index);
+            content.addView(previous, index, params);
+            actions[i] = previous;
+        }
+    }
+
+    private static void renderMenuFrames(ScrollView scroll, LinearLayout content, TextView[] actions,
+                                         int size, int safeInset, String name, boolean expanded) throws Exception {
+        scroll.scrollTo(0, 0);
+        saveMenuFrame(drawRoundView(scroll, size), name + "-start");
+        TextView first = actions[0];
+        int center = content.getTop() + first.getTop() + first.getHeight() / 2;
+        scroll.scrollTo(0, center - size / 2);
+        Bitmap centered = drawRoundView(scroll, size);
+        try {
+            int y = center - scroll.getScrollY();
+            assertEquals("the menu action still has its selected fill", Color.rgb(34, 211, 238),
+                    centered.getPixel(safeInset + 4, y));
+            assertEquals("the fill extends into the usable circle only in the candidate", expanded,
+                    centered.getPixel(safeInset - 4, y) == Color.rgb(34, 211, 238));
+            writeMenuFrame(centered, name + "-middle");
+        } finally {
+            centered.recycle();
+        }
+        TextView last = actions[3];
+        scroll.scrollTo(0, content.getTop() + last.getTop() + last.getHeight() / 2 - size / 2);
+        assertActionInSafeBand(scroll, content, last, size);
+        scroll.scrollTo(0, content.getHeight());
+        saveMenuFrame(drawRoundView(scroll, size), name + "-end");
+    }
+
+    private static Bitmap drawRoundView(ScrollView scroll, int size) {
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Path display = new Path();
+        display.addCircle(size / 2f, size / 2f, size / 2f, Path.Direction.CW);
+        canvas.clipPath(display);
+        canvas.translate(0, -scroll.getScrollY());
+        scroll.draw(canvas);
+        return bitmap;
+    }
+
+    private static void saveMenuFrame(Bitmap bitmap, String name) throws Exception {
+        try {
+            writeMenuFrame(bitmap, name);
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
+    private static void writeMenuFrame(Bitmap bitmap, String name) throws Exception {
+        String directory = System.getenv("CREWCHECK_WEAR_CAPTURE_DIR");
+        if (directory == null || directory.isBlank()) return;
+        var target = Files.createDirectories(Paths.get(directory)).resolve(name + ".png");
+        try (var stream = Files.newOutputStream(target)) {
+            assertTrue("PNG saved", bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream));
+        }
+    }
+
+    @Test public void scrollIndicatorIsEnabledWithoutReservingContentWidth() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    ScrollView scroll = field(controller.get(), "scroll", ScrollView.class);
+                    measure(scroll, size);
+                    assertTrue("scroll affordance remains available", scroll.isVerticalScrollBarEnabled());
+                    assertEquals("indicator overlays rather than shrinking content",
+                            View.SCROLLBARS_INSIDE_OVERLAY, scroll.getScrollBarStyle());
+                    assertTrue("indicator fades when idle", scroll.isScrollbarFadingEnabled());
+                }
+            }
+        }
+    }
 
     @Test public void longOperationalTextAndButtonsFitSmallRoundScreens() throws Exception {
         for (float scale : new float[]{1f, 1.3f, 1.5f}) {
@@ -293,7 +572,7 @@ public class WatchTextLayoutTest {
         if (view instanceof TextView) {
             TextView text = (TextView) view;
             Layout layout = text.getLayout();
-            assertNotNull("TextView has been measured", layout);
+            assertNotNull("TextView has been measured: " + text.getText(), layout);
             for (int i = 0; i < layout.getLineCount(); i++) {
                 assertTrue("line wider than layout: " + text.getText() + " (" + layout.getLineMax(i) + "/" + layout.getWidth() + ")",
                         layout.getLineMax(i) <= layout.getWidth() + 1);
