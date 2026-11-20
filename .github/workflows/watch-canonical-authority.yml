@@ -1,0 +1,45 @@
+name: Watch canonical authority isolated gates
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/watch-authority/**'
+      - 'server/v139/auth.mjs'
+      - 'server/v139/common.mjs'
+      - 'client/src/lib/authClient.ts'
+      - 'scripts/regression-watch-canonical-session.mjs'
+      - '.github/workflows/watch-canonical-authority.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-watch-canonical-session.mjs
+      - name: Start disposable InnoDB without network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-watch-authority-qa-socket
+          docker run --detach --rm --name crewcheck-watch-authority-qa --network none --mount type=bind,source=/tmp/crewcheck-watch-authority-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_watch_authority_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-watch-authority-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-watch-authority-qa mysql --database=crewcheck_watch_authority_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-watch-authority-qa mysql --database=crewcheck_watch_authority_qa --execute='SELECT 1'
+          docker exec crewcheck-watch-authority-qa chmod 755 /var/run/mysqld
+      - run: node scripts/v139/apply.mjs
+      - name: Real canonical getMe and current-epoch transactions
+        env:
+          CREWCHECK_WATCH_INNODB_QA: github-disposable-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-watch-authority-qa-socket/mysqld.sock
+        run: node scripts/regression-watch-canonical-session.mjs
+      - run: node scripts/regression-getme-error-differentiation.mjs
+      - run: npx tsc --noEmit
+      - if: always()
+        run: docker rm -f crewcheck-watch-authority-qa || true
