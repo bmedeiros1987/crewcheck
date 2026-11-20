@@ -9,7 +9,7 @@ try{
  await build({configFile:false,logLevel:'silent',build:{lib:{entry:{subject:path.resolve('client/src/lib/nextFinancialPayment.ts'),parser:path.resolve('client/src/lib/aimsParser.ts'),coverage:path.resolve('client/src/lib/aimsFlightSourceCoverage.ts')},formats:['es'],fileName:(_format,name)=>name+'.mjs'},outDir,minify:false}});
  const {nextAllowancePayment,nextPayrollPayment,observedBrlPaymentDate}=await import(pathToFileURL(path.join(outDir,'subject.mjs')));
  const {parseAimsRoster}=await import(pathToFileURL(path.join(outDir,'parser.mjs')));
- const {aimsFlightSourceCoveragePending,AIMS_REDACTED_REST_ONLY}=await import(pathToFileURL(path.join(outDir,'coverage.mjs')));
+ const {aimsFlightSourceCoveragePending,aimsSourceChecksum,AIMS_REDACTED_REST_ONLY}=await import(pathToFileURL(path.join(outDir,'coverage.mjs')));
  const days=['2032-01-28','2032-01-29','2032-01-30','2032-01-31','2032-02-01','2032-02-02','2032-02-03'];
  const rows=days.map(iso=>({iso,label:'Synthetic meal',currency:'BRL',value:10,convertedBRL:10,source:'Synthetic'}));
  const now=new Date('2032-02-05T15:00:00Z');
@@ -23,17 +23,18 @@ try{
 
  // All entries here are invented. The nominal cycle spans two sources and can
  // receive carry-in from the Tuesday before it.
- const published=(month, overrides={},visual=false)=>{
-  const dates=Array.from({length:month===1?31:29},(_,index)=>{
+ const published=(month, overrides={},visual=false, visualOverrides=overrides)=>{
+  const dateRows=values=>Array.from({length:month===1?31:29},(_,index)=>{
    const day=index+1;
    const activity=day>=6&&day<=10
     ? '08:00 LA 4101 09:00 BSB GRU 10:30 (320) LA 4102 11:30 GRU BSB 13:00 (320) 13:30'
     : 'VC';
-   return String(day).padStart(2,'0')+(month===1?'Jan':'Feb')+' '+(overrides[day]??activity);
+   return String(day).padStart(2,'0')+(month===1?'Jan':'Feb')+' '+(values[day]??activity);
   });
+  const dates=dateRows(overrides);
   const text=['Escala de Tripulante Convertida para padrão AIMS',
    'Tripulante: SYNTHETIC CREW -BP:00000000 -Base: BSB -01/0'+month+'/2032 até'+dates.length+'/0'+month+'/2032',...dates].join('\n');
-  const columns=visual?dates.flatMap((date,index)=>date.split(/\s+/).map((str,row)=>({
+  const columns=visual?dateRows(visualOverrides).flatMap((date,index)=>date.split(/\s+/).map((str,row)=>({
    page:1,key:row,text:str,items:[{str,x:100+index*100,y:800-row*15,page:1}],
   }))):undefined;
   return parseAimsRoster(text,columns);
@@ -62,6 +63,54 @@ try{
  const uncertainPositive=nextAllowancePayment([rows[0]],savedIssues,months,now,covered,fromHistory);
  assert.equal(uncertainPositive.totals,null,'the redacted rest proof never certifies an eligible amount');
  assert.deepEqual(uncertainPositive.calculationTotals,{BRL:10});
+
+ // The visual reader can legitimately win the itinerary merge without
+ // establishing that a disputed date was exclusively a rest day.
+ const disputedDay='2032-02-03';
+ const disputedSources=[
+  {text:'09:40 LA 4999 09:39 BSB VC', hasFlight:true},
+  {text:'ABC 14:00 BSB 17:00 VC', hasFlight:false},
+ ];
+ for(const {text,hasFlight} of disputedSources){
+  const textOnly=published(2,{3:text});
+  assert.equal(textOnly.aimsFlightSourceCoverage.sourceRestDates.includes(disputedDay),false);
+  assert.equal(textOnly.aimsFlightSourceCoverage.occurrences.some(item=>item.sourceDate===disputedDay),hasFlight);
+  const merged=published(2,{3:text},true,{3:'VC'});
+  assert.equal(merged.aimsFlightSourceCoverage.authority,'aims_visual');
+  assert.deepEqual(merged.days.filter(day=>day.date==='03/02/2032').map(day=>[day.pairingCode,day.legs.length]),[['VC',0]]);
+  assert.deepEqual(merged.aimsFlightSourceCoverage.occurrences,visualSources[1].aimsFlightSourceCoverage.occurrences,
+   'a disputed rest date does not change itinerary/source priority');
+  assert.deepEqual(issuesFor(merged),[],'no new general flight coverage warning');
+  for(const saved of [merged,redact(merged)]){
+   const result=nextAllowancePayment([],issuesFor(saved),months,now,covered,[visualSources[0],saved]);
+   assert.equal(result.totals,null,'the secondary reading disputes exclusive rest on a covered date');
+   assert.equal(result.noEligibleAllowance,undefined);
+   assert.equal(result.calculationPartial,true);
+  }
+ }
+ const outsideCycle=published(2,{22:'ABC 14:00 BSB 17:00 VC'},true,{22:'VC'});
+ assert.deepEqual(nextAllowancePayment([],issuesFor(outsideCycle),months,now,covered,[visualSources[0],outsideCycle]).totals,{BRL:0},
+  'a dated ambiguity outside the evidence window does not erase an independently covered cycle');
+ const emptyTextBlock=published(2,{3:''},true,{3:'VC'});
+ assert.deepEqual(nextAllowancePayment([],issuesFor(emptyTextBlock),months,now,covered,[visualSources[0],emptyTextBlock]).totals,{BRL:0},
+  'a date marker with no secondary activity does not dispute the visual rest cell');
+ const unscopedText=published(2,{22:'VC\n00Feb LA 4999 09:39 BSB'},true,{22:'VC'});
+ assert.deepEqual(issuesFor(unscopedText),[],'visual priority still governs the itinerary');
+ assert.equal(nextAllowancePayment([],[],months,now,covered,[visualSources[0],unscopedText]).totals,null,
+  'secondary evidence without a valid date cannot prove exclusive rest');
+
+ const previousProof=structuredClone(visualSources[1]);
+ const evidence=previousProof.aimsFlightSourceCoverage;
+ delete evidence.restProofVersion;
+ const previousDigest=raw=>aimsSourceChecksum(JSON.stringify([raw,evidence.authority,evidence.authorityPeriod,
+  evidence.unresolvedSourceDates,evidence.sourceDates,evidence.occurrences,evidence.publishedFlights,evidence.sourceRestDates]));
+ evidence.sourceChecksum=previousDigest(previousProof.rawText);
+ evidence.redactedRestChecksum=aimsSourceChecksum(JSON.stringify([evidence.sourceChecksum,previousDigest('')]));
+ assert.deepEqual(issuesFor(previousProof),[],'an older proof still passes ordinary source coverage');
+ for(const roster of [previousProof,redact(previousProof)]){
+  assert.equal(nextAllowancePayment([],issuesFor(roster),months,now,covered,[visualSources[0],roster]).totals,null,
+   'proof built before the merge check cannot establish zero');
+ }
  const changedHistory=structuredClone(fromHistory);
  changedHistory[0].days.find(day=>day.legs.length).legs[0].arrivalTime='10:45';
  const changedIssues=changedHistory.flatMap(issuesFor);

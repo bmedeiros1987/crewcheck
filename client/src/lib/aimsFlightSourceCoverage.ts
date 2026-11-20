@@ -12,6 +12,7 @@ export type AimsFlightSourceCoverage = {
   unresolvedSourceDates: boolean;
   sourceDates: string[];
   sourceRestDates?: string[];
+  restProofVersion?: number;
   redactedRestChecksum?: string;
   occurrences: AimsSourceFlightOccurrence[];
   publishedFlights: Array<{ date: string; identity: string | null }>;
@@ -24,6 +25,7 @@ export type AimsSourceCoveragePending = {
   sourceIssueId: string;
 };
 export const AIMS_REDACTED_REST_ONLY = 'aims-source-redacted-rest-only';
+const REST_PROOF_VERSION = 2;
 type FlightLike = Pick<FlightLeg, 'flightNumber' | 'origin' | 'destination' | 'departureTime' | 'arrivalTime'> & { aimsSourceDate?: string };
 type EventLike = { kind: string; day?: { date?: string }; leg?: FlightLike; canonical?: { leg?: FlightLike } | null };
 
@@ -54,7 +56,8 @@ function publishedFlights(roster: CrewRoster) {
   return (roster.days || []).flatMap(day => (day.legs || []).map(leg => ({ date: aimsSourceDateIso(day.date), identity: aimsFlightSourceIdentity(leg.aimsSourceDate || '', leg) })));
 }
 function coverageChecksum(rawText: string, evidence: AimsFlightSourceCoverage): string {
-  const restEvidence = evidence.sourceRestDates === undefined ? [] : [evidence.sourceRestDates];
+  const restEvidence: Array<string[] | number> = evidence.sourceRestDates === undefined ? [] : [evidence.sourceRestDates];
+  if (evidence.restProofVersion !== undefined) restEvidence.push(evidence.restProofVersion);
   return aimsSourceChecksum(JSON.stringify([rawText, evidence.authority, evidence.authorityPeriod, evidence.unresolvedSourceDates, evidence.sourceDates, evidence.occurrences, evidence.publishedFlights, ...restEvidence]));
 }
 function redactedRestChecksum(evidence: AimsFlightSourceCoverage): string {
@@ -63,7 +66,7 @@ function redactedRestChecksum(evidence: AimsFlightSourceCoverage): string {
 function hasRedactedRestProof(roster: CrewRoster, evidence: AimsFlightSourceCoverage): boolean {
   // The saved copy deliberately strips the source text. Validate the dated
   // rest witness separately; it cannot certify flights or eligible amounts.
-  if (roster.rawText !== '' || !evidence.sourceRestDates?.length || evidence.unresolvedSourceDates
+  if (roster.rawText !== '' || evidence.restProofVersion !== REST_PROOF_VERSION || !evidence.sourceRestDates?.length || evidence.unresolvedSourceDates
     || evidence.authorityPeriod !== nominalFinancialCompetencePrefix(roster)
     || !roster.days.every(day=>day.rawText==='')
     || evidence.redactedRestChecksum !== redactedRestChecksum(evidence)) return false;
@@ -74,6 +77,7 @@ export function finalizeAimsFlightSourceCoverage(roster: CrewRoster): CrewRoster
   const evidence = roster.aimsFlightSourceCoverage;
   if (!evidence) return roster;
   const finalized = { ...evidence, authorityPeriod: nominalFinancialCompetencePrefix(roster) || '', sourceDates: [...new Set(evidence.sourceDates)], publishedFlights: publishedFlights(roster) };
+  if (finalized.sourceRestDates?.length) finalized.restProofVersion = REST_PROOF_VERSION;
   finalized.sourceChecksum = coverageChecksum(roster.rawText || '', finalized);
   if (finalized.sourceRestDates?.length) finalized.redactedRestChecksum = redactedRestChecksum(finalized);
   return { ...roster, aimsFlightSourceCoverage: finalized };
@@ -84,7 +88,18 @@ export function mergeAimsFlightSourceCoverage(primary: CrewRoster, secondary: Cr
   // A reliable visual date cannot inherit warnings from contaminated linear text.
   // A genuinely absent source date can retain the secondary reader's evidence.
   const primaryDates = new Set(a.sourceDates);
-  return { ...a, sourceDates: [...a.sourceDates, ...b.sourceDates.filter(date => !primaryDates.has(date))],
+  const secondaryActivityDates = new Set([
+    ...b.occurrences.map(item => item.sourceDate),
+    ...secondary.days.filter(day => day.rawText?.trim() || day.legs.length || day.dutyReport || day.dutyDebrief || day.hotel)
+      .map(day => aimsSourceDateIso(day.date)),
+  ]);
+  const secondaryRestDates = new Set(b.sourceRestDates);
+  // Choosing the visual itinerary does not prove exclusive rest. Keep the
+  // existing itinerary precedence, but withhold that date's zero evidence
+  // when the other reader has a different or unscoped reading.
+  const sourceRestDates = a.sourceRestDates?.filter(date => !b.unresolvedSourceDates
+    && (!secondaryActivityDates.has(date) || secondaryRestDates.has(date)));
+  return { ...a, sourceRestDates, sourceDates: [...a.sourceDates, ...b.sourceDates.filter(date => !primaryDates.has(date))],
     occurrences: [...a.occurrences, ...b.occurrences.filter(item => !primaryDates.has(item.sourceDate))] };
 }
 
@@ -124,7 +139,7 @@ export function hasPublishedAimsRestCoverage(rosters: readonly CrewRoster[], ran
     const redacted = validWitness(evidence) && hasRedactedRestProof(roster, evidence);
     const source = validWitness(evidence) && !evidence.unresolvedSourceDates && evidence.authorityPeriod === month
       && (redacted || evidence.sourceChecksum === coverageChecksum(roster.rawText || '', evidence)) ? evidence : null;
-    const restDates = new Set(source?.sourceRestDates);
+    const restDates = new Set(source?.restProofVersion === REST_PROOF_VERSION ? source.sourceRestDates : []);
     for (const iso of source?.sourceDates || []) {
       if (iso >= range.start && iso <= range.end && !restDates.has(iso)) conflicting.add(iso);
     }
