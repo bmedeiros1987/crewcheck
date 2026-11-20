@@ -252,7 +252,7 @@ export default function InfoPage({ page }: { page: PageKey }) {
                     if (!ok||!isCurrent()) return;
                     const confirmation = window.prompt('Para confirmar, digite EXCLUIR') || '';
                     if (confirmation.trim().toUpperCase() !== 'EXCLUIR'||!isCurrent()) return;
-                    const token = deletionSession.token || '';
+                    const token = deletionSession.token?.trim() || '';
                     let response:Response;
                     try {
                       response=await fetch('/api/platform/account/delete', { method: 'POST', credentials: 'include', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' }, body: JSON.stringify({ confirmation }) });
@@ -264,8 +264,9 @@ export default function InfoPage({ page }: { page: PageKey }) {
                     if (response.status === 401) { if(isCurrent())window.location.href = '/login'; return; }
                     if (!response.ok||payload?.ok!==true||payload?.deleted!==true) { if(isCurrent())alert(payload?.message || 'Não foi possível confirmar a exclusão. Tente novamente.'); return; }
                     // The successful response belongs to the initiating account, even after a switch.
+                    const confirmedLocalOwner = token ? deletingOwner : null;
                     let localFinancialCleared=false;
-                    try { localFinancialCleared=typeof deletingOwner==='string'&&eraseFinancialCalculationCache(deletingOwner,window.localStorage); } catch {}
+                    try { localFinancialCleared=typeof confirmedLocalOwner==='string'&&eraseFinancialCalculationCache(confirmedLocalOwner,window.localStorage); } catch {}
                     let signedOut:ReturnType<typeof captureAuthSession>|undefined;
                     try {
                       const current=captureAuthSession();
@@ -275,7 +276,7 @@ export default function InfoPage({ page }: { page: PageKey }) {
                         signedOut=captureAuthSession();
                       }
                     } catch {}
-                    const localDraftsCleared=await eraseDeletedOwnerForecastDrafts(token?deletingOwner:null);
+                    const localDraftsCleared=await eraseDeletedOwnerForecastDrafts(confirmedLocalOwner);
                     if(!signedOut||signedOut.token||!isCurrent(signedOut))return;
                     if(payload.manageGooglePlayUrl&&window.confirm('Os dados foram excluídos. Abrir a Play Store para cancelar a assinatura separadamente?')&&isCurrent(signedOut))window.open(payload.manageGooglePlayUrl,'_blank','noopener,noreferrer');
                     if(!isCurrent(signedOut))return;

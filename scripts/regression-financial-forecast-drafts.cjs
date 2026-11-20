@@ -441,6 +441,28 @@ async function main(){
    }
   });
  }
+ await test('a cookie-only deletion never assigns local financial data to an unverified owner',async()=>{
+  const handler=deletionHandlers().find(([route])=>route==='public page')[1];
+  for(const token of [null,'   ']){
+   const storage=new StorageFixture();
+   const cachedOwners=[],draftOwners=[];
+   await vm.runInNewContext(handler,{
+    captureAuthSession:()=>({token,isCurrent:()=>true}),
+    getStoredUser:()=>({id:'synthetic-local-owner'}),getToken:()=>token,
+    eraseFinancialCalculationCache:owner=>{cachedOwners.push(owner);return true;},
+    eraseDeletedOwnerForecastDrafts:async owner=>{draftOwners.push(owner);return false;},
+    window:{confirm:()=>true,prompt:()=>'EXCLUIR',localStorage:storage,location:{href:''}},
+    alert:()=>{},
+    fetch:async(_url,request)=>{
+     assert.equal(request.credentials,'include');
+     assert.equal(request.headers.authorization,undefined);
+     return {status:200,ok:true,json:async()=>({ok:true,deleted:true})};
+    },
+   });
+   assert.deepEqual(cachedOwners,[]);
+   assert.deepEqual(draftOwners,[null]);
+  }
+ });
  const source=fs.readFileSync(path.join(root,'client/src/lib/financialForecastDrafts.ts'),'utf8');
  assert.doesNotMatch(source,/\bfetch\s*\(|dispatchEvent\s*\(|crewcheck:financial-config-changed|crewcheck_financial_month_settings/);
  console.log(JSON.stringify({scope:'Synthetic auth/storage/Web Locks; actual helper bundled with existing esbuild',passed:cases.length,cases,realData:false,network:false,payrollWrites:false,financialEvents:false},null,2));
