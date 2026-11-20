@@ -18,7 +18,7 @@ try {
  class FixtureDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
  const source=fs.readFileSync('client/src/pages/Home.tsx','utf8');
  const ast=ts.createSourceFile('Home.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- const names=['buildLegs','applyPresentationManagement','managedPresentationForEvent','parseTimeStrict','presentationLearningKey','presentationOverrideKey','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','eventIsNow','noFutureLeg','nextFlight','chronologicalNextRosterLeg'];
+ const names=['buildLegs','watchEventsWithPublishedVacation','applyPresentationManagement','managedPresentationForEvent','parseTimeStrict','presentationLearningKey','presentationOverrideKey','projectedFlightQuality','dedupeProjectedLegs','eventStartDateTime','eventEndDateTime','isOperationalEvent','eventIsNow','noFutureLeg','nextFlight','chronologicalNextRosterLeg'];
  const functions=names.map(name=>{const node=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(node,`Real Home function ${name}`);return node.getText(ast);}).join('\n');
  let overrides={};
  const ctx=vm.createContext({...lib,Date:FixtureDate,
@@ -29,9 +29,9 @@ try {
    loadPresentationOverrides:()=>overrides,loadPresentationRules:()=>({}),dateChip:d=>d.toISOString().slice(0,10),
    placeholderLeg:()=>({id:'empty',placeholder:true}),
  });
- vm.runInContext(ts.transpileModule(functions+'\n globalThis.project=buildLegs;globalThis.choose=nextFlight;', {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText,ctx);
+ vm.runInContext(ts.transpileModule(functions+'\n globalThis.project=buildLegs;globalThis.projectWatch=watchEventsWithPublishedVacation;globalThis.choose=nextFlight;', {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText,ctx);
  const roster=(leg,extra={})=>({month:10,year:2032,base:'GRU',rawText:'SYNTHETIC ONLY',days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'VOO',pairingCode:'QA',base:'GRU',rawText:'SYNTHETIC ONLY',legs:[{flightNumber:'QA123',origin:'GRU',destination:'REC',arrivalTime:'22:10',...leg}],...extra}]});
- const snapshot=r=>{const events=ctx.project(r);return {events,selected:ctx.choose(events),out:lib.buildCrewCheckWatchSnapshot(events,ctx.choose(events),null,now)};};
+ const snapshot=r=>{const events=ctx.project(r);return {events,selected:ctx.choose(events),out:lib.buildCrewCheckWatchSnapshot(ctx.projectWatch(events),ctx.choose(events),null,now)};};
  // Missing APZ becomes STD in canonical compatibility fields, but MUST NOT become watch APZ.
  const absent=snapshot(roster({departureTime:'19:05'}));
  assert.equal(absent.events[0].presentation,'19:05','Reproduce actual upstream fallback');
@@ -111,5 +111,26 @@ try {
  const folga=snapshot({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'DO',pairingCode:'DO',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'}]});
  assert.equal(folga.selected.placeholder,true,'Actual Home selects noFutureLeg for a rest-only roster');assert.equal(folga.out.state,'OFF_DUTY');assert.equal(folga.out.headline,'FOLGA');assert.equal(folga.out.presentationTime,'');assert(folga.out.validUntilEpochMs>now);assert.equal(lib.buildCrewCheckWatchSnapshot(folga.events,undefined,null,now).state,'OFF_DUTY');
  now=Date.parse('2032-10-19T15:00:00Z');const ended=snapshot({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'DO',pairingCode:'DO',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'}]});assert.equal(ended.out.state,'UNKNOWN');
- console.log('PASS real canonical → Home buildLegs/managedPresentation/nextFlight → watch producer: missing APZ/STD, known leg/day/duty APZ, explicit day provenance/manual controls including future/current duty date, midnight and prose, Folga-only placeholder, ended Folga',process.env.TZ);
+
+ const vacationDay={date:'19/10/2032',dayNumber:19,month:10,year:2032,type:'VC',pairingCode:'VC',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'};
+ const withFlight=roster({departureTime:'19:05',presentationTime:'18:20'});
+ now=Date.parse('2032-10-19T01:00:00Z'); // Still 18/10 in BRT.
+ for(const coverage of [[],withFlight.days]) {
+   for(const type of ['VC','DO']) {
+     const {events,out}=snapshot({...withFlight,days:[...coverage,{...vacationDay,type}]});
+     const vacation=events.find(event=>event.canonical?.kind==='rest'&&event.day.pairingCode==='VC');
+     assert(vacation,'Vacation source survived actual canonical input');
+     const item=out.schedule.find(item=>item.id===vacation.canonical.id);
+     assert.deepEqual([item?.title,item?.time,item?.presentation,item?.gate,item?.detail],['Férias','','','','19/10']);
+     if(!coverage.length) assert.equal(out.currentFlight,'','Vacation never becomes an operational activity');
+   }
+ }
+ for (const type of ['FOLGA','ASB']) {
+   const {out}=snapshot({...withFlight,days:[{...vacationDay,type}]});
+   assert(!out.schedule.some(item=>item.title==='Férias'),type+' cannot be relabelled by a stray pairing code');
+ }
+ now=Date.parse('2032-10-20T04:00:00Z');
+ assert(!snapshot({...withFlight,days:[vacationDay]}).out.schedule.some(item=>item.title==='Férias'),'Ended vacation cannot persist in the agenda');
+
+ console.log('PASS real canonical → Home buildLegs/managedPresentation/nextFlight → watch producer: missing APZ/STD, known leg/day/duty APZ, explicit day provenance/manual controls including future/current duty date, midnight and prose, Folga-only placeholder, ended Folga, explicit vacation row across UTC midnight',process.env.TZ);
 } finally {fs.rmSync(dir,{recursive:true,force:true});}

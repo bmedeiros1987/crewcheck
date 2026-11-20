@@ -1,6 +1,7 @@
 package com.crewcheck.watch;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -27,6 +28,40 @@ public final class ComplicationTextTest {
         assertEquals(snapshot.complicationShortText(NOW), rendering.shortText);
         assertEquals(snapshot.complicationLongText(NOW), rendering.longText);
         assertEquals(snapshot.complicationTitle(NOW), rendering.title);
+    }
+
+    @Test
+    public void nextStepHidesExpiredDetailFromAccessibility() throws Exception {
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(WatchContextSnapshot.demo(NOW)
+                .toJson().put("detail", "Van do hotel às 07:30"));
+        long deadline = snapshot.validUntilEpochMs;
+        assertTrue(ComplicationText.nextStep(snapshot, deadline).description.contains("Van do hotel às 07:30"));
+
+        ComplicationRendering expired = ComplicationText.nextStep(snapshot, deadline + 1L);
+        assertEquals("ABRIR", expired.shortText);
+        assertEquals("Abra no celular", expired.longText);
+        assertEquals("CrewCheck. Abra no celular", expired.description);
+    }
+
+    @Test
+    public void connectionComplicationDisambiguatesUpcomingAndFollowingFlights() throws Exception {
+        JSONObject raw = WatchContextSnapshot.demo(NOW).toJson()
+                .put("state", "CONNECTION").put("headline", "CONEXÃO").put("changed", false)
+                .put("currentFlight", "QA102").put("nextFlight", "QA103")
+                .put("connection", "20 MIN").put("gate", "B24").put("gateSource", "manual");
+        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(raw);
+        ComplicationRendering nextStep = ComplicationText.nextStep(snapshot, NOW);
+        ComplicationRendering gate = ComplicationText.gate(snapshot, NOW);
+        assertEquals("QA102 • 20 MIN", nextStep.longText);
+        assertEquals("QA103", snapshot.nextFlight);
+        assertTrue(gate.longText.contains("PORTÃO B24 · QA102"));
+        assertFalse(gate.longText.contains("QA103"));
+
+        WatchContextSnapshot unbound = WatchContextSnapshot.fromJson(raw.put("currentFlight", "").put("remoteStand", true));
+        ComplicationRendering withoutIdentity = ComplicationText.nextStep(unbound, NOW);
+        assertEquals("CREW", withoutIdentity.shortText);
+        assertEquals("CONEXÃO • 20 MIN", withoutIdentity.longText);
+        assertEquals("--", ComplicationText.gate(unbound, NOW).shortText);
     }
 
     // --- portão --------------------------------------------------------------------------
@@ -72,6 +107,65 @@ public final class ComplicationTextTest {
         ComplicationRendering rendering = ComplicationText.gate(null, NOW);
         assertEquals("--", rendering.shortText);
         assertEquals("PORTÃO", rendering.title);
+    }
+
+    @Test
+    public void hotelContextShowsOnlyTheUnambiguousProjectedNextGate() throws Exception {
+        for (String state : new String[]{"OVERNIGHT", "LEAVE_SOON"}) {
+            WatchContextSnapshot value = hotelGate(state, "QA123", "B26", "reported");
+            assertEquals("", value.gate); // Never changes the current-flight payload.
+            assertEquals("B26", value.displayedGate());
+            assertEquals("QA123", value.displayedGateFlight());
+            ComplicationRendering rendering = ComplicationText.gate(value, NOW);
+            assertEquals("PB26", rendering.shortText);
+            assertTrue(rendering.longText.contains("QA123"));
+            assertTrue(!rendering.longText.contains(value.boardingTime)); // Current-flight time cannot migrate to next flight.
+            assertTrue(rendering.description.contains("a confirmar"));
+            assertEquals("--", ComplicationText.gate(value, value.validUntilEpochMs + 1).shortText);
+        }
+        assertEquals("", hotelGate("OVERNIGHT", "OTHER", "B26", "reported").displayedGate());
+        assertEquals("", hotelGate("OFF_DUTY", "QA123", "B26", "reported").displayedGate());
+        assertEquals("", hotelGate("OVERNIGHT", "QA123", "B26", "").displayedGate());
+        assertEquals("REMOTA", ComplicationText.gate(hotelGate("OVERNIGHT", "QA123", "REMOTA", "reported"), NOW).shortText);
+    }
+
+    @Test
+    public void hotelGateCannotChooseBetweenOccurrencesOrReplaceCurrentGate() throws Exception {
+        JSONObject raw = hotelGate("OVERNIGHT", "QA123", "B26", "reported").toJson();
+        raw.getJSONArray("schedule").put(new JSONObject().put("id", "second-occurrence").put("kind", "flight").put("title", "QA123").put("gate", ""));
+        assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
+        raw.put("gate", "P5").put("currentFlight", "QA321").put("gateSource", "manual");
+        assertEquals("P5", WatchContextSnapshot.fromJson(raw).displayedGate());
+        raw.put("gate", "");
+        assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
+    }
+
+    @Test
+    public void unboundTopGateOrRemoteNeverBorrowsTheNextFlightIdentity() throws Exception {
+        JSONObject raw = hotelGate("OVERNIGHT", "QA123", "B26", "reported").toJson();
+        raw.put("gate", "9").put("currentRoute", "OTHER ROUTE");
+        WatchContextSnapshot conflict = WatchContextSnapshot.fromJson(raw);
+        assertEquals("9", conflict.displayedGate()); // Preserve legacy unbound display, not an occurrence claim.
+        assertEquals("", conflict.displayedGateFlight());
+        assertEquals("", conflict.displayedGateRoute());
+        assertEquals("", conflict.displayedGateBoardingTime());
+        assertTrue(!ComplicationText.gate(conflict, NOW).longText.contains("QA123"));
+        raw.put("gate", "").put("remoteStand", true);
+        WatchContextSnapshot remote = WatchContextSnapshot.fromJson(raw);
+        assertEquals("REMOTA", remote.displayedGate());
+        assertEquals("", remote.displayedGateFlight());
+        assertTrue(!ComplicationText.gate(remote, NOW).longText.contains(remote.boardingTime));
+        raw.put("remoteStand", false).put("gateSource", "unknown-source");
+        assertEquals("", WatchContextSnapshot.fromJson(raw).displayedGate());
+    }
+
+    private static WatchContextSnapshot hotelGate(String state, String next, String gate, String source) throws Exception {
+        JSONObject raw = WatchContextSnapshot.demo(NOW).toJson()
+                .put("state", state).put("currentFlight", "").put("gate", "").put("remoteStand", false)
+                .put("nextFlight", next).put("gateSource", source)
+                .put("schedule", new org.json.JSONArray().put(new JSONObject().put("id", "synthetic-occurrence")
+                        .put("kind", "flight").put("title", "QA123").put("gate", gate)));
+        return WatchContextSnapshot.fromJson(raw);
     }
 
     // --- CrewLife ------------------------------------------------------------------------

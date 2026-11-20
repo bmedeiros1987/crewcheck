@@ -1,5 +1,8 @@
 package com.crewcheck.watch;
 
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.text.Layout;
 import android.view.View;
 import android.view.ViewGroup;
@@ -40,6 +43,122 @@ public class WatchTextLayoutTest {
     }
     private static final String LONG_TEXT =
             "Apresentação São José dos Campos — conexão internacional alterada";
+
+    @Test public void scrollIndicatorIsEnabledWithoutReservingContentWidth() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    ScrollView scroll = field(controller.get(), "scroll", ScrollView.class);
+                    measure(scroll, size);
+                    assertTrue("scroll affordance remains available", scroll.isVerticalScrollBarEnabled());
+                    assertEquals("indicator overlays rather than shrinking content",
+                            View.SCROLLBARS_INSIDE_OVERLAY, scroll.getScrollBarStyle());
+                    assertTrue("indicator fades when idle", scroll.isScrollbarFadingEnabled());
+                }
+            }
+        }
+    }
+
+    @Test public void nonRoundViewportsKeepBlackBackgroundAndReachableOperationalContent() throws Exception {
+        boolean observedOverflow = false;
+        for (int[] viewport : new int[][]{{192, 192}, {227, 227}, {192, 240}}) {
+            int width = viewport[0], height = viewport[1];
+            RuntimeEnvironment.setQualifiers("w" + width + "dp-h" + height + "dp-notround-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    assertEquals("matrix actually exercises a non-round configuration",
+                            Configuration.SCREENLAYOUT_ROUND_NO,
+                            activity.getResources().getConfiguration().screenLayout
+                                    & Configuration.SCREENLAYOUT_ROUND_MASK);
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, width, height);
+                    assertTrue(scroll.getBackground() instanceof ColorDrawable);
+                    assertEquals("operational screen background is true black", Color.BLACK,
+                            ((ColorDrawable) scroll.getBackground()).getColor());
+                    assertTrue(scroll.isVerticalScrollBarEnabled());
+                    assertEquals(View.SCROLLBARS_INSIDE_OVERLAY, scroll.getScrollBarStyle());
+                    assertTrue(scroll.isScrollbarFadingEnabled());
+                    for (String state : new String[]{"OVERNIGHT", "REPORTING", "BOARDING", "CONNECTION", "CHANGED"}) {
+                        long now = System.currentTimeMillis();
+                        JSONObject json = WatchContextSnapshot.demo(now).toJson();
+                        json.put("state", state).put("headline", LONG_TEXT)
+                                .put("detail", REPORTED_DETAIL).put("overnight", LONG_TEXT)
+                                .put("gate", "B123").put("nextDetail", "GRU → SSA • PB123 • 09:30");
+                        WatchContextSnapshot snapshot = WatchContextSnapshot.fromJson(json.toString());
+                        content.removeAllViews();
+                        scroll.scrollTo(0, 0);
+                        call(activity, "renderHeader", new Class[]{WatchContextSnapshot.class}, snapshot);
+                        call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class}, snapshot, now);
+                        call(activity, "addNavigation", new Class[]{WatchContextSnapshot.class}, snapshot);
+                        measure(scroll, width, height);
+                        assertFits(content);
+                        View lastNavigation = content.getChildAt(content.getChildCount() - 1);
+                        assertTrue("matrix includes the final schedule navigation target",
+                                lastNavigation instanceof TextView
+                                        && ((TextView) lastNavigation).getText().toString().contains("Escala"));
+                        for (int i = content.getChildCount() - 4; i < content.getChildCount(); i++) {
+                            TextView navigation = (TextView) content.getChildAt(i);
+                            assertEquals("navigation label stays on one readable line", 1, navigation.getLineCount());
+                            assertEquals("navigation label is not replaced by ellipsis", 0,
+                                    navigation.getLayout().getEllipsisCount(0));
+                        }
+                        int available = scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom();
+                        if (content.getHeight() > available) {
+                            observedOverflow = true;
+                            scroll.scrollTo(0, content.getHeight());
+                            assertTrue("overflow is reachable by scrolling", scroll.getScrollY() > 0);
+                            assertTrue("last navigation row can reach the safe viewport",
+                                    content.getBottom() - scroll.getScrollY()
+                                            <= scroll.getHeight() - scroll.getPaddingBottom() + 1);
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue("matrix exercises actual overflow, not only fitting screens", observedOverflow);
+    }
+
+    @Test public void nonRoundAmbientClockFitsWithoutScrolling() throws Exception {
+        for (int[] viewport : new int[][]{{192, 192}, {227, 227}, {192, 240}}) {
+            int width = viewport[0], height = viewport[1];
+            RuntimeEnvironment.setQualifiers("w" + width + "dp-h" + height + "dp-notround-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    assertEquals(Configuration.SCREENLAYOUT_ROUND_NO,
+                            activity.getResources().getConfiguration().screenLayout
+                                    & Configuration.SCREENLAYOUT_ROUND_MASK);
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, width, height);
+                    content.removeAllViews();
+                    long now = System.currentTimeMillis();
+                    JSONObject json = WatchContextSnapshot.demo(now).toJson();
+                    json.put("state", "CHANGED").put("headline", LONG_TEXT).put("gate", "B123");
+                    call(activity, "renderAmbient", new Class[]{WatchContextSnapshot.class, long.class},
+                            WatchContextSnapshot.fromJson(json.toString()), now);
+                    measure(scroll, width, height);
+                    assertFits(content);
+                    View last = content.getChildAt(content.getChildCount() - 1);
+                    assertTrue("non-round ambient content fits its vertical budget",
+                            last.getBottom() <= scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom());
+                    TextView clock = field(activity, "ambientClockView", TextView.class);
+                    assertEquals(1, clock.getLineCount());
+                    assertEquals("ambient clock is not replaced by ellipsis", 0,
+                            clock.getLayout().getEllipsisCount(0));
+                }
+            }
+        }
+    }
 
     @Test public void longOperationalTextAndButtonsFitSmallRoundScreens() throws Exception {
         for (float scale : new float[]{1f, 1.3f, 1.5f}) {
@@ -224,6 +343,33 @@ public class WatchTextLayoutTest {
         return result;
     }
 
+    @Test public void connectionCardShowsCurrentUpcomingFlightWithItsOwnGate() throws Exception {
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
+            MainActivity activity = controller.get();
+            LinearLayout content = field(activity, "content", LinearLayout.class);
+            long now = System.currentTimeMillis();
+            JSONObject json = WatchContextSnapshot.demo(now).toJson()
+                    .put("state", "CONNECTION").put("headline", "CONEXÃO").put("changed", false)
+                    .put("currentFlight", "QA102").put("currentRoute", "CGH → CNF")
+                    .put("nextFlight", "QA103").put("nextDetail", "CNF → BSB")
+                    .put("connection", "20 MIN").put("gate", "B24").put("gateSource", "manual")
+                    .put("boardingTime", "");
+            content.removeAllViews();
+            call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json), now);
+            String shown = allText(content);
+            assertTrue(shown, shown.contains("QA102 · PORTÃO B24"));
+            assertTrue(shown, shown.contains("CGH → CNF"));
+            assertFalse(shown, shown.contains("QA103"));
+
+            json.put("currentFlight", "").put("remoteStand", true);
+            content.removeAllViews();
+            call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json), now);
+            String withoutIdentity = allText(content);
+            assertFalse(withoutIdentity, withoutIdentity.contains("B24") || withoutIdentity.contains("REMOTA"));
+            assertFalse(withoutIdentity, withoutIdentity.contains("QA103") || withoutIdentity.contains("CGH → CNF"));
+        }
+    }
+
     @Test public void reportingKeepsDateAndEstimatedBoardingVisible() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
             MainActivity activity = controller.get();
@@ -258,6 +404,16 @@ public class WatchTextLayoutTest {
         }
     }
 
+    @Test public void confirmedHotelVanActionDoesNotClaimTrafficRefresh() throws Exception {
+        JSONObject raw = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson()
+                .put("state", "LEAVE_SOON").put("headline", "VAN DO HOTEL");
+        java.lang.reflect.Method method = MainActivity.class.getDeclaredMethod("actionLabel", WatchContextSnapshot.class);
+        method.setAccessible(true);
+        assertEquals("Sincronizar", method.invoke(null, WatchContextSnapshot.fromJson(raw)));
+        raw.put("headline", "HORA DE SAIR");
+        assertEquals("Atualizar trânsito", method.invoke(null, WatchContextSnapshot.fromJson(raw)));
+    }
+
     @Test public void compactAmbientDistinguishesApzFromLeaveTime() throws Exception {
         for (float scale : new float[]{1f, 1.5f, 2f}) {
             RuntimeEnvironment.setFontScale(scale);
@@ -281,12 +437,17 @@ public class WatchTextLayoutTest {
     }
 
     private static void measure(ScrollView scroll, int size) {
-        int spec = View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY);
-        scroll.measure(spec, spec);
-        scroll.layout(0, 0, size, size);
+        measure(scroll, size, size);
+    }
+
+    private static void measure(ScrollView scroll, int width, int height) {
+        int widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY);
+        int heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY);
+        scroll.measure(widthSpec, heightSpec);
+        scroll.layout(0, 0, width, height);
         // onLayout installs padding and rebuilds responsive rows once size is known.
-        scroll.measure(spec, spec);
-        scroll.layout(0, 0, size, size);
+        scroll.measure(widthSpec, heightSpec);
+        scroll.layout(0, 0, width, height);
     }
 
     private static void assertFits(View view) {

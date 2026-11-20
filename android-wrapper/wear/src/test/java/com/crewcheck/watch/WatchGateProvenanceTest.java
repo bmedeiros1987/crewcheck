@@ -120,6 +120,27 @@ public class WatchGateProvenanceTest {
         assertFalse("a reported remote stand is not announced as remote: " + remoteText, remoteText.contains("remot") || remoteText.contains("Remota"));
     }
 
+    @Test public void connectionNoticeUsesOnlyTheUpcomingFlightAndItsConfirmedGate() throws Exception {
+        WatchContextSnapshot snapshot = snapshot("CONNECTION", "B24", "manual", null);
+        WatchNotificationCenter.postForSnapshot(context, snapshot);
+        assertEquals(1, posted().size());
+        String shown = text(posted().get(0));
+        assertTrue(shown, shown.contains("QA123 · PORTÃO B24"));
+        assertFalse(shown, shown.contains("QA456"));
+
+        cancelAll();
+        JSONObject followingChanged = snapshot.toJson().put("nextFlight", "QA789");
+        WatchNotificationCenter.postForSnapshot(context, WatchContextSnapshot.fromJson(followingChanged));
+        assertEquals("Change in the following flight alone cannot show the current notice again", 0, posted().size());
+
+        JSONObject unbound = snapshot.toJson().put("currentFlight", "").put("remoteStand", true);
+        WatchNotificationCenter.postForSnapshot(context, WatchContextSnapshot.fromJson(unbound));
+        assertEquals(1, posted().size());
+        String withoutIdentity = text(posted().get(0));
+        assertFalse(withoutIdentity, withoutIdentity.contains("PORTÃO") || withoutIdentity.contains("REMOTA"));
+        assertFalse(withoutIdentity, withoutIdentity.contains("QA456") || withoutIdentity.contains("09:30"));
+    }
+
     @Test public void gateDetailStatesOriginAndConfirmation() throws Exception {
         String[][] cases = {
                 {"reported", "Informado por FlightAware · a confirmar · recebido 09:20 BRT", "A confirmar"},

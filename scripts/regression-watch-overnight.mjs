@@ -17,7 +17,25 @@ try {
  assert.equal(confirmed.hotelPickup,'APZ hotel 19/10 07:30 America/Recife');assert.equal(confirmed.presentationTime,'');
  assert(confirmed.validUntilEpochMs<=at('2032-10-19T10:30:00Z'));
  for(const patch of [{eventId:'other'},{signature:signature+'changed'},{apzConfirmed:false},{apzSource:'legacy-unconfirmed'},{timeZone:''},{apzDate:'2032-10-20'},{draft:{presentationTime:'25:00'}}])assert.equal(build([stay,tomorrow],tomorrow,null,now,{...record,...patch}).hotelPickup,'APZ hotel não informada');
- const apzPast=build([stay],stay,null,at('2032-10-19T10:30:00Z'),record);assert.equal(apzPast.hotelPickup,'APZ hotel não informada');
+ const apzPast=build([stay],stay,null,at('2032-10-19T10:30:00Z'),record);assert.equal(apzPast.state,'LEAVE_SOON','confirmed hotel van starts departure context at its own instant');assert.match(apzPast.hotelPickup,/07:30/);assert.equal(apzPast.presentationTime,'','hotel van is never airport presentation');
+ // Before/at/after the confirmed van: context only, never a canonical rest edit.
+ const original=JSON.stringify([stay,tomorrow,record]);
+ for(const minute of ['10:29','10:30','10:31']){
+  const clock=at('2032-10-19T'+minute+':00Z');
+  const snap=build([stay,tomorrow],tomorrow,null,clock,record);
+  assert.equal(snap.state,minute==='10:29'?'OVERNIGHT':'LEAVE_SOON');
+  assert.match(snap.hotelPickup,/07:30 America\/Recife/);
+  assert.equal(snap.presentationTime,'');
+  if(minute!=='10:29'){assert.equal(snap.headline,'VAN DO HOTEL');assert.equal(snap.leaveTime,'07:30');assert.doesNotMatch(snap.headline,/SAIR EM/);}
+  assert.equal(build([stay,tomorrow],tomorrow,null,clock,null).state,'OVERNIGHT','airport APZ cannot invent a hotel van');
+  for(const patch of [{eventId:'other'},{signature:signature+'other'},{apzConfirmed:false},{apzSource:'imported-unverified'},{apzDate:'2032-10-20'},{timeZone:''}])assert.equal(build([stay,tomorrow],tomorrow,null,clock,{...record,...patch}).state,'OVERNIGHT','unconfirmed/divergent van never changes the context');
+ }
+ assert.equal(JSON.stringify([stay,tomorrow,record]),original,'projection never edits canonical stay/rest/airport APZ');
+ const crossed={...record,apzDate:'2032-10-18',timeZone:'America/Recife',draft:{presentationTime:'23:30'}};
+ assert.equal(build([stay],stay,null,at('2032-10-19T02:29:00Z'),crossed).state,'OVERNIGHT');
+ assert.equal(build([stay],stay,null,at('2032-10-19T02:30:00Z'),crossed).state,'LEAVE_SOON','local date/fuso resolve across UTC midnight');
+ const rest={id:'synthetic-rest',kind:'rest',canonical:{kind:'rest',startDateTime:'2032-10-19T00:00:00Z',endDateTime:'2032-10-20T00:00:00Z'}};
+ assert.equal(build([rest],rest,null,now,record).state,'OFF_DUTY','hotel evidence cannot turn a rest-only day into work');
  const future=build([stay],stay,null,at('2032-10-18T22:59:59Z'));assert.equal(future.state,'UNKNOWN');assert.equal(future.headline,'PRÓXIMA ESCALA');
  const ended=build([stay],stay,null,at('2032-10-19T12:00:00Z'));assert.equal(ended.state,'UNKNOWN');assert.equal(ended.headline,'ESCALA ENCERRADA');assert.equal(ended.hotelPickup,'');
  const noZone={...stay,canonical:{...stay.canonical,startDateTime:'2032-10-18T20:00:00'}};assert.notEqual(build([noZone,tomorrow],tomorrow,null,now).state,'OVERNIGHT');

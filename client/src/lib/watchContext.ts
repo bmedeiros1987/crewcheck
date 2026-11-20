@@ -60,6 +60,7 @@ export type WatchEventLike = {
   id: string;
   kind: string;
   placeholder?: boolean;
+  publishedVacation?: boolean;
   origin?: string;
   destination?: string;
   flightNumber?: string;
@@ -100,16 +101,16 @@ export type WatchHotelReport = {
   eventId: string; signature: string; apzConfirmed: boolean; apzSource: string;
   apzDate: string; timeZone: string; draft: { presentationTime?: string };
 };
-function hotelReport(event: WatchEventLike, record: WatchHotelReport | null, now: number): { at: number; label: string } | null {
+function hotelReport(event: WatchEventLike, record: WatchHotelReport | null, now: number): { at: number; label: string; clock: string } | null {
   const signature = [event.id,event.canonical?.startDateTime,event.canonical?.endDateTime,event.origin,event.destination].join('|');
   if (event.kind !== 'stay' || !record || record.eventId !== event.id || record.signature !== signature
     || record.apzConfirmed !== true || record.apzSource !== 'manual') return null;
   const at = stayLocalInstant(record.apzDate, record.draft?.presentationTime || '', record.timeZone);
   const start = instant(event.canonical?.startDateTime), end = instant(event.canonical?.endDateTime);
-  if (at === null || !Number.isFinite(start) || !Number.isFinite(end) || at < start || at > end || at <= now) return null;
+  if (at === null || !Number.isFinite(start) || !Number.isFinite(end) || at < start || at > end) return null;
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: record.timeZone, day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23' }).formatToParts(new Date(at));
   const value = (type: string) => parts.find(p => p.type === type)?.value || '';
-  return { at, label: `APZ hotel ${value('day')}/${value('month')} ${value('hour')}:${value('minute')} ${record.timeZone}` };
+  return { at, clock: `${value('hour')}:${value('minute')}`, label: `APZ hotel ${value('day')}/${value('month')} ${value('hour')}:${value('minute')} ${record.timeZone}` };
 }
 
 export type WatchRouteContext = {
@@ -222,6 +223,65 @@ function validWindow(now: number, eventEndMs: number): number {
   return Math.max(now + 15 * 60 * 1000, Math.min(maxFresh, eventFresh));
 }
 
+function buildWatchSchedule(events: readonly WatchEventLike[], now: number): CrewCheckWatchScheduleItem[] {
+  return events
+    .filter((candidate) => !candidate.placeholder && (
+      (candidate.canonical?.kind === 'rest' && candidate.publishedVacation === true)
+      || (['flight', 'stay', 'duty'].includes(candidate.kind) && !['rest', 'journey-rest'].includes(candidate.canonical?.kind || ''))
+    ))
+    .filter((candidate) => {
+      const start = candidate.canonical?.startDateTime
+        ? instant(candidate.canonical.startDateTime)
+        : Number.POSITIVE_INFINITY;
+      const end = instant(candidate.canonical?.endDateTime);
+      return Number.isFinite(start) && Number.isFinite(end) && end >= now;
+    })
+    .slice(0, 8)
+    .map((candidate): CrewCheckWatchScheduleItem => {
+      if (candidate.publishedVacation === true && candidate.canonical?.kind === 'rest') {
+        return {
+          id: clean(candidate.canonical.id) || candidate.id,
+          kind: 'duty',
+          title: 'Férias',
+          time: '',
+          route: '',
+          presentation: '',
+          gate: '',
+          detail: dayLabel(clockOnEventDate(candidate, '00:00')),
+        };
+      }
+      const candidatePresentation = publishedPresentation(candidate);
+      const candidatePresentationMs = presentationInstant(candidate, candidatePresentation);
+      const start = candidate.kind === 'duty' ? candidatePresentationMs : instant(candidate.canonical?.startDateTime);
+      const date = Number.isFinite(start) ? start : clockOnEventDate(candidate, '00:00');
+      const kind: CrewCheckWatchScheduleItem['kind'] =
+        candidate.kind === 'flight' || candidate.kind === 'stay' ? candidate.kind : 'duty';
+      const title = kind === 'flight'
+        ? clean(candidate.flightNumber) || 'Voo'
+        : kind === 'stay'
+          ? 'Pernoite'
+          : clean(candidate.flightNumber) || 'Programação';
+      const route = kind === 'flight'
+        ? [clean(candidate.origin), clean(candidate.destination)].filter(Boolean).join(' → ')
+        : clean(candidate.destination) || clean(candidate.origin);
+      const rawGate = ''; // Filled only by the confirmed occurrence projection.
+      const remote = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
+      return {
+        id: clean(candidate.canonical?.id) || candidate.id,
+        kind,
+        time: candidate.kind === 'flight' ? (publishedDeparture(candidate) ? clockLabel(start) : '')
+          : candidate.kind === 'duty' ? (publishedPresentation(candidate) ? clockLabel(start) : '') : clockLabel(start),
+        title,
+        route,
+        presentation: Number.isFinite(candidatePresentationMs) && (candidate.kind !== 'flight' || publishedDeparture(candidate))
+          ? `${dayLabel(candidatePresentationMs)} ${candidatePresentation}`
+          : '',
+        gate: remote ? 'REMOTA' : rawGate,
+        detail: [dayLabel(date), 'BRT', kind === 'stay' ? clean(candidate.hotel) : kind === 'flight' ? (publishedDeparture(candidate) ? 'Decolagem prevista' : 'Decolagem a confirmar') : ''].filter(Boolean).join(' • '),
+      };
+    });
+}
+
 export function buildCrewCheckWatchSnapshot(
   events: readonly WatchEventLike[],
   event: WatchEventLike,
@@ -229,6 +289,7 @@ export function buildCrewCheckWatchSnapshot(
   now = Date.now(),
   hotelReportRecord: WatchHotelReport | null = null,
 ): CrewCheckWatchSnapshot {
+  const schedule = buildWatchSchedule(events, now);
   const activeWindow = (candidate: WatchEventLike) => !candidate.placeholder
     && instant(candidate.canonical?.startDateTime) <= now && now < instant(candidate.canonical?.endDateTime);
   const currentStays = events.filter(candidate => candidate.kind === 'stay' && activeWindow(candidate));
@@ -267,7 +328,7 @@ export function buildCrewCheckWatchSnapshot(
       hotelPickup: '',
       changed: false,
       source: 'canonical-roster',
-      schedule: [],
+      schedule,
     };
   }
 
@@ -308,6 +369,9 @@ export function buildCrewCheckWatchSnapshot(
     ? presentationMs - ((route?.durationMinutes || 0) + (route?.marginMinutes || 0)) * 60 * 1000
     : 0;
 
+  // A confirmed hotel van changes only the glance context, never the canonical stay/rest.
+  const hotelApz = event.kind === 'stay' ? hotelReport(event, hotelReportRecord, now) : null;
+  const hotelDeparture = Boolean(hotelApz && now >= hotelApz.at && now < endMs);
   let state: CrewCheckWatchState = 'UNKNOWN';
   if (future || expired) {
     state = restToday ? 'OFF_DUTY' : 'UNKNOWN';
@@ -316,7 +380,7 @@ export function buildCrewCheckWatchSnapshot(
   } else if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
     state = 'UNKNOWN';
   } else if (event.kind === 'stay') {
-    state = 'OVERNIGHT';
+    state = hotelDeparture ? 'LEAVE_SOON' : 'OVERNIGHT';
   } else if (event.kind === 'flight') {
     const groundBefore = Number(canonical?.groundBeforeMinutes ?? event.groundBeforeMinutes ?? 0);
     const inConnectionWindow = groundBefore > 0
@@ -346,64 +410,22 @@ export function buildCrewCheckWatchSnapshot(
   const remainingConnectionMinutes = state === 'CONNECTION'
     ? Math.max(0, Math.round((startMs - now) / 60_000))
     : 0;
-  const leaveTime = leaveMs ? clockLabel(leaveMs) : '';
+  const leaveTime = hotelDeparture ? hotelApz!.clock : leaveMs ? clockLabel(leaveMs) : '';
   const leaveMinutes = leaveMs ? Math.max(0, Math.round((leaveMs - now) / 60_000)) : 0;
 
   const headline = state === 'LEAVE_SOON'
-    ? (leaveMinutes > 0 ? `SAIR EM ${leaveMinutes} MIN` : 'HORA DE SAIR')
+    ? (hotelDeparture ? 'VAN DO HOTEL' : leaveMinutes > 0 ? `SAIR EM ${leaveMinutes} MIN` : 'HORA DE SAIR')
     : state === 'CONNECTION'
       ? 'CONEXÃO'
       : state === 'OVERNIGHT'
             ? 'PERNOITE'
             : state === 'OFF_DUTY' ? 'FOLGA' : state === 'UNKNOWN' ? (future ? 'PRÓXIMA ESCALA' : expired ? 'ESCALA ENCERRADA' : 'CONFIRA A ESCALA') : 'APRESENTAÇÃO';
 
-  const hotelApz = state === 'OVERNIGHT' ? hotelReport(event, hotelReportRecord, now) : null;
   const currentFlight = event.kind === 'flight' ? clean(event.flightNumber) : '';
   const currentRoute = event.kind === 'flight'
     ? [clean(event.origin), clean(event.destination)].filter(Boolean).join(' → ')
     : '';
 
-  const schedule = events
-    .filter((candidate) => !candidate.placeholder && ['flight', 'stay', 'duty'].includes(candidate.kind) && !['rest', 'journey-rest'].includes(candidate.canonical?.kind || ''))
-    .filter((candidate) => {
-      const start = candidate.canonical?.startDateTime
-        ? instant(candidate.canonical.startDateTime)
-        : Number.POSITIVE_INFINITY;
-      const end = instant(candidate.canonical?.endDateTime);
-      return Number.isFinite(start) && Number.isFinite(end) && end >= now;
-    })
-    .slice(0, 8)
-    .map((candidate): CrewCheckWatchScheduleItem => {
-      const candidatePresentation = publishedPresentation(candidate);
-      const candidatePresentationMs = presentationInstant(candidate, candidatePresentation);
-      const start = candidate.kind === 'duty' ? candidatePresentationMs : instant(candidate.canonical?.startDateTime);
-      const date = Number.isFinite(start) ? start : clockOnEventDate(candidate, '00:00');
-      const kind: CrewCheckWatchScheduleItem['kind'] =
-        candidate.kind === 'flight' || candidate.kind === 'stay' ? candidate.kind : 'duty';
-      const title = kind === 'flight'
-        ? clean(candidate.flightNumber) || 'Voo'
-        : kind === 'stay'
-          ? 'Pernoite'
-          : clean(candidate.flightNumber) || 'Programação';
-      const route = kind === 'flight'
-        ? [clean(candidate.origin), clean(candidate.destination)].filter(Boolean).join(' → ')
-        : clean(candidate.destination) || clean(candidate.origin);
-      const rawGate = ''; // Filled only by the confirmed occurrence projection.
-      const remote = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
-      return {
-        id: clean(candidate.canonical?.id) || candidate.id,
-        kind,
-        time: candidate.kind === 'flight' ? (publishedDeparture(candidate) ? clockLabel(start) : '')
-          : candidate.kind === 'duty' ? (publishedPresentation(candidate) ? clockLabel(start) : '') : clockLabel(start),
-        title,
-        route,
-        presentation: Number.isFinite(candidatePresentationMs) && (candidate.kind !== 'flight' || publishedDeparture(candidate))
-          ? `${dayLabel(candidatePresentationMs)} ${candidatePresentation}`
-          : '',
-        gate: remote ? 'REMOTA' : rawGate,
-        detail: [dayLabel(date), 'BRT', kind === 'stay' ? clean(candidate.hotel) : kind === 'flight' ? (publishedDeparture(candidate) ? 'Decolagem prevista' : 'Decolagem a confirmar') : ''].filter(Boolean).join(' • '),
-      };
-    });
 
   // A canonical duty start may be an estimated/legacy report clock. Future
   // prose must use the same publication proof as APZ and schedule.time.
@@ -419,11 +441,11 @@ export function buildCrewCheckWatchSnapshot(
     state,
     headline,
     primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : event.kind === 'flight' ? clockLabel(startMs) : '',
-    detail: state === 'OVERNIGHT' ? (hotelApz?.label || 'APZ no hotel não informada; confira no celular.') : event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(dateMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
+    detail: hotelDeparture ? `${hotelApz!.label}; horário informado, não confirma saída realizada.` : state === 'OVERNIGHT' ? (hotelApz?.label || 'APZ no hotel não informada; confira no celular.') : event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(dateMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
     presentationTime: inactive ? '' : presentation,
     presentationPlace: [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
     leaveTime: inactive ? '' : leaveTime,
-    trafficDetail: !inactive && routeIsFresh ? `${route?.durationMinutes || 0} min • deslocamento atual` : '',
+    trafficDetail: hotelDeparture ? hotelApz!.label : !inactive && routeIsFresh ? `${route?.durationMinutes || 0} min • deslocamento atual` : '',
     currentFlight: inactive ? '' : currentFlight,
     currentRoute: inactive ? '' : currentRoute,
     gate: inactive ? '' : gate,
@@ -442,12 +464,12 @@ export function buildCrewCheckWatchSnapshot(
           '', // No unconfirmed schedule gate on the operational watch glance.
         ].filter(Boolean).join(' • ')
       : '',
-    overnight: state === 'OVERNIGHT'
+    overnight: event.kind === 'stay' && (state === 'OVERNIGHT' || hotelDeparture)
       ? clean(event.hotel) || clean(event.destination) || clean(event.origin)
       : nextStay
         ? clean(nextStay.hotel) || clean(nextStay.destination) || clean(nextStay.origin)
         : '',
-    hotelPickup: state === 'OVERNIGHT' ? (hotelApz?.label || 'APZ hotel não informada') : '',
+    hotelPickup: (state === 'OVERNIGHT' || hotelDeparture) ? (hotelApz?.label || 'APZ hotel não informada') : '',
     changed: false,
     source: 'canonical-roster',
     schedule,

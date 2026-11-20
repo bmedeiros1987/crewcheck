@@ -10,7 +10,18 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.service.notification.StatusBarNotification;
+import android.util.Base64;
 
+import androidx.core.app.NotificationCompat;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 
 /**
@@ -22,7 +33,12 @@ import java.util.Locale;
 public final class WatchNotificationCenter {
     private static final String PREFS = "crewcheck_watch_notifications";
     private static final String ENABLED = "enabled";
-    private static final String LAST_FINGERPRINT = "last_fingerprint";
+    private static final String LEGACY_FINGERPRINT = "last_fingerprint";
+    private static final String LAST_ACTION = "last_notice_action_digest";
+    private static final String LAST_NOTICE = "last_notice_digest";
+    private static final String LAST_CONTENT = "last_notice_content_digest";
+    private static final String DELIVERY_RECEIPTS = "recent_notice_receipts";
+    private static final int MAX_DELIVERY_RECEIPTS = 32;
     private static final String OPS_CHANNEL = "crewcheck_watch_ops";
     private static final int OPS_NOTIFICATION_ID = 4101;
 
@@ -32,7 +48,7 @@ public final class WatchNotificationCenter {
         return preferences(context).getBoolean(ENABLED, true);
     }
 
-    public static void setEnabled(Context context, boolean enabled) {
+    public static synchronized void setEnabled(Context context, boolean enabled) {
         preferences(context).edit().putBoolean(ENABLED, enabled).apply();
         if (!enabled) {
             NotificationManager manager = context.getSystemService(NotificationManager.class);
@@ -45,7 +61,7 @@ public final class WatchNotificationCenter {
     }
 
     // One sampled wall-clock instant; package visibility allows deterministic boundary tests.
-    static void postForSnapshot(Context context, WatchContextSnapshot snapshot, long nowEpochMs) {
+    static synchronized void postForSnapshot(Context context, WatchContextSnapshot snapshot, long nowEpochMs) {
         if (context == null || snapshot == null || !isEnabled(context)) return;
         // Delayed/offline deliveries cannot turn an expired projection into a new alert.
         // Use the same inclusive validity boundary as the watch display.
@@ -57,12 +73,38 @@ public final class WatchNotificationCenter {
         Notice notice = noticeFor(snapshot);
         if (notice == null) return;
 
-        String fingerprint = fingerprint(snapshot, notice);
         SharedPreferences prefs = preferences(context);
-        if (fingerprint.equals(prefs.getString(LAST_FINGERPRINT, ""))) return;
+        String occurrence = snapshot.contextId.isBlank() ? "" : digest(snapshot.contextId);
+        boolean boardingNotice = isBoardingNotice(snapshot);
+        String gate = boardingNotice ? confirmedGate(snapshot) : "";
+        String actionDigest = digest(occurrence + "\n" + alertFingerprint(snapshot, notice));
+        String noticeDigest = boardingNotice ? digest(actionDigest + "\n" + gate) : actionDigest;
+        String contentDigest = digest(notice.title + "\n" + notice.body);
+        // Generation orders revisions within a known occurrence and identifies
+        // replays. It does not turn a countdown refresh into a new alert.
+        String delivery = digest(snapshot.generatedAtEpochMs + ":" + noticeDigest + ":" + contentDigest);
+        LinkedHashMap<String, Receipt> receipts = readReceipts(prefs, nowEpochMs);
+        if (receipts.containsKey(delivery)) return;
+        if (!occurrence.isEmpty()) {
+            for (Receipt receipt : receipts.values()) {
+                if (occurrence.equals(receipt.occurrence) && snapshot.generatedAtEpochMs < receipt.generatedAt) return;
+            }
+        }
 
+        Receipt receipt = new Receipt(occurrence, snapshot.generatedAtEpochMs, snapshot.validUntilEpochMs);
+        String legacy = prefs.getString(LEGACY_FINGERPRINT, "");
+        boolean legacyMatch = !legacy.isEmpty() && legacy.equals(legacyFingerprint(snapshot, notice));
+        // Withdrawing confirmation removes the gate from the card without
+        // presenting an unconfirmed gate as a new operational event.
+        boolean missingGate = boardingNotice && gate.isBlank() && actionDigest.equals(prefs.getString(LAST_ACTION, ""));
+        boolean sameNotice = legacyMatch || missingGate || noticeDigest.equals(prefs.getString(LAST_NOTICE, ""));
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
+        if (sameNotice && (legacyMatch || contentDigest.equals(prefs.getString(LAST_CONTENT, ""))
+                || !hasActiveNotice(manager))) {
+            rememberDelivery(prefs, receipts, delivery, receipt, actionDigest, noticeDigest, contentDigest);
+            return;
+        }
         ensureChannel(manager);
 
         Intent launch = new Intent(context, MainActivity.class)
@@ -70,25 +112,89 @@ public final class WatchNotificationCenter {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context,
-                4101,
+                OPS_NOTIFICATION_ID,
                 launch,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Notification notification = new Notification.Builder(context, OPS_CHANNEL)
+        Notification notification = new NotificationCompat.Builder(context, OPS_CHANNEL)
                 .setSmallIcon(R.drawable.ic_crewcheck_complication)
                 .setContentTitle(notice.title)
                 .setContentText(notice.body)
-                .setStyle(new Notification.BigTextStyle().bigText(notice.body))
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(notice.body))
                 .setCategory(Notification.CATEGORY_EVENT)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
-                .setOnlyAlertOnce(true)
+                .setOnlyAlertOnce(sameNotice)
+                .setSilent(sameNotice)
                 .setShowWhen(true)
                 .build();
 
+        // The single operational slot stays in place. A distinct notice can
+        // alert on update according to the existing Android channel settings.
         manager.notify(OPS_NOTIFICATION_ID, notification);
-        prefs.edit().putString(LAST_FINGERPRINT, fingerprint).apply();
+        rememberDelivery(prefs, receipts, delivery, receipt, actionDigest, noticeDigest, contentDigest);
+    }
+
+    private static boolean hasActiveNotice(NotificationManager manager) {
+        for (StatusBarNotification active : manager.getActiveNotifications()) {
+            if (active.getId() == OPS_NOTIFICATION_ID && active.getTag() == null) return true;
+        }
+        return false;
+    }
+
+    private static LinkedHashMap<String, Receipt> readReceipts(SharedPreferences prefs, long nowEpochMs) {
+        LinkedHashMap<String, Receipt> receipts = new LinkedHashMap<>();
+        try {
+            JSONArray saved = new JSONArray(prefs.getString(DELIVERY_RECEIPTS, "[]"));
+            for (int i = Math.max(0, saved.length() - MAX_DELIVERY_RECEIPTS); i < saved.length(); i++) {
+                JSONArray entry = saved.optJSONArray(i);
+                if (entry == null) continue;
+                String key = entry.optString(0);
+                long expiresAt = entry.optLong(3);
+                if (!key.isEmpty() && expiresAt >= nowEpochMs) {
+                    receipts.put(key, new Receipt(entry.optString(1), entry.optLong(2), expiresAt));
+                }
+            }
+        } catch (JSONException ignored) {
+            // An unreadable receipt must not prevent an otherwise valid notice.
+        }
+        return receipts;
+    }
+
+    private static void rememberDelivery(SharedPreferences prefs, LinkedHashMap<String, Receipt> receipts,
+                                         String delivery, Receipt receipt, String actionDigest,
+                                         String noticeDigest, String contentDigest) {
+        receipts.put(delivery, receipt);
+        if (receipts.size() > MAX_DELIVERY_RECEIPTS) receipts.remove(receipts.keySet().iterator().next());
+        JSONArray saved = new JSONArray();
+        receipts.forEach((key, value) -> saved.put(new JSONArray().put(key).put(value.occurrence)
+                .put(value.generatedAt).put(value.expiresAt)));
+        prefs.edit().putString(LAST_ACTION, actionDigest).putString(LAST_NOTICE, noticeDigest)
+                .putString(LAST_CONTENT, contentDigest)
+                .putString(DELIVERY_RECEIPTS, saved.toString())
+                .remove(LEGACY_FINGERPRINT).apply();
+    }
+
+    private static final class Receipt {
+        final String occurrence;
+        final long generatedAt;
+        final long expiresAt;
+
+        Receipt(String occurrence, long generatedAt, long expiresAt) {
+            this.occurrence = occurrence;
+            this.generatedAt = generatedAt;
+            this.expiresAt = expiresAt;
+        }
+    }
+
+    private static String digest(String value) {
+        try {
+            byte[] bytes = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return Base64.encodeToString(bytes, Base64.NO_WRAP | Base64.NO_PADDING | Base64.URL_SAFE);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
     }
 
     private static void ensureChannel(NotificationManager manager) {
@@ -133,9 +239,9 @@ public final class WatchNotificationCenter {
                     "Conexão",
                     join(" · ",
                             s.connection,
-                            s.nextFlight,
+                            s.currentFlight,
                             confirmedGate(s),
-                            s.boardingTime.isBlank() ? "" : "embarque " + s.boardingTime)
+                            s.currentFlight.isBlank() || s.boardingTime.isBlank() ? "" : "embarque previsto " + s.boardingTime)
             );
             case "OVERNIGHT" -> new Notice(
                     "Pernoite " + firstNonBlank(s.overnight, ""),
@@ -158,16 +264,31 @@ public final class WatchNotificationCenter {
         return s.remoteStand && !s.gateReported();
     }
 
-    private static String fingerprint(WatchContextSnapshot s, Notice notice) {
+    private static String alertFingerprint(WatchContextSnapshot s, Notice notice) {
+        if (!s.changed && "LEAVE_SOON".equals(s.state)) {
+            return String.join("|", s.state, s.leaveTime, s.hotelPickup, presentation(s)).toUpperCase(Locale.ROOT);
+        }
+        if (isBoardingNotice(s)) {
+            return String.join("|", s.state, s.currentFlight, s.boardingTime).toUpperCase(Locale.ROOT);
+        }
+        return String.join("|", s.state, notice.title, notice.body).toUpperCase(Locale.ROOT);
+    }
+
+    private static boolean isBoardingNotice(WatchContextSnapshot s) {
+        return !s.changed && ("BOARDING".equals(s.state) || "CONNECTION".equals(s.state));
+    }
+
+    private static String legacyFingerprint(WatchContextSnapshot s, Notice notice) {
+        boolean connection = "CONNECTION".equals(s.state);
         return String.join("|",
                 s.state,
                 s.headline,
                 s.primaryTime,
                 s.leaveTime,
                 s.currentFlight,
-                s.nextFlight,
-                s.gateReported() ? "" : s.gate,
-                s.boardingTime,
+                connection ? "" : s.nextFlight,
+                connection || s.gateReported() ? "" : s.gate,
+                connection ? "" : s.boardingTime,
                 s.overnight,
                 Boolean.toString(s.changed),
                 notice.title,

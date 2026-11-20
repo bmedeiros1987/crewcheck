@@ -121,7 +121,7 @@ import { DATABASE_STATUS_MESSAGES } from '@/lib/databaseClient';
 import { airportCity } from '@/lib/airports';
 import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent, rosterCounters, type CanonicalRosterEvent } from '@/lib/canonicalRoster';
 import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
-import { isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';
+import { careStateForScheduleActivity, isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import { SalaryCalculationStatus } from '@/components/finance/SalaryCalculationStatus';
 import { salaryCalculationDiagnostic } from '@/lib/salaryCalculationDiagnostic';
@@ -1121,6 +1121,12 @@ function reviewableCompliance(compliance: ComplianceResult, roster: CrewRoster) 
   return { ...compliance, alerts: (compliance.alerts || []).map(alert => ({ ...alert, reviewIdentity: complianceAlertIdentity(alert, roster) })) };
 }
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
+
+function watchEventsWithPublishedVacation(events: readonly ZeroLeg[]) {
+  return events.map(event => event.canonical?.kind === 'rest' && careStateForScheduleActivity(event) === 'FERIAS'
+    ? { ...event, publishedVacation: true }
+    : event);
+}
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
   // Capture salary clock evidence before canonical midnight/arrival fallbacks.
@@ -5755,7 +5761,8 @@ export default function Home() {
         const localStay=stay&&alertRosterOwned(bundle.roster)?readStayOperationalProjection(stay,now,events):null;
         const projectedEvents=localStay?.isCurrent()&&localStay.hotelName?events.map(item=>item===stay?{...item,hotel:localStay.hotelName}:item):events;
         const projectedEvent=projectedEvents.find(item=>item.id===event.id)||event;
-        const base = buildCrewCheckWatchSnapshot(projectedEvents, projectedEvent, null, now, hotelReport);
+        const watchEvents = watchEventsWithPublishedVacation(projectedEvents);
+        const base = buildCrewCheckWatchSnapshot(watchEvents, projectedEvent, null, now, hotelReport);
         // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
         const nextFlightEvent = selectNextFlight(events);
         const gateInfo = nextFlightEvent ? resolveNextFlightGate({
