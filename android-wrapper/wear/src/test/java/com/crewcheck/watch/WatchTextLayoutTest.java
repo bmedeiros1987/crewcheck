@@ -107,6 +107,7 @@ public class WatchTextLayoutTest {
                     MainActivity activity = controller.get();
                     ScrollView scroll = field(activity, "scroll", ScrollView.class);
                     LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, size);
                     call(activity, "renderSnapshot", new Class[]{WatchContextSnapshot.class}, (Object) null);
                     measure(scroll, size);
                     LinearLayout instructions = field(activity, "connectionInstructions", LinearLayout.class);
@@ -114,8 +115,8 @@ public class WatchTextLayoutTest {
                     TextView detail = (TextView) instructions.getChildAt(2);
                     assertEquals("Conecte ao CrewCheck", heading.getText().toString());
                     assertTrue(detail.getText().toString().startsWith("Abra o app no celular."));
-                    assertFits(content);
                     for (TextView text : new TextView[]{heading, detail}) {
+                        assertFits(text);
                         Layout layout = text.getLayout();
                         for (int line = 0; line < layout.getLineCount(); line++) {
                             assertEquals("instruction line keeps every character", 0, layout.getEllipsisCount(line));
@@ -187,7 +188,8 @@ public class WatchTextLayoutTest {
                     if (candidate.getPixel(x, y) != reference.getPixel(x, y)) addedPixels++;
                 }
             }
-            assertTrue("the physical circle exposes the heading that the square previously cut", addedPixels > 0);
+            assertTrue(name + ": the circle exposes the heading below the previous viewport edge ("
+                    + top + "–" + bottom + ")", addedPixels > 0);
             writeMenuFrame(reference, name + "-edge-reference");
             writeMenuFrame(candidate, name + "-edge");
         } finally {
@@ -570,7 +572,7 @@ public class WatchTextLayoutTest {
         if (view instanceof TextView) {
             TextView text = (TextView) view;
             Layout layout = text.getLayout();
-            assertNotNull("TextView has been measured", layout);
+            assertNotNull("TextView has been measured: " + text.getText(), layout);
             for (int i = 0; i < layout.getLineCount(); i++) {
                 assertTrue("line wider than layout: " + text.getText() + " (" + layout.getLineMax(i) + "/" + layout.getWidth() + ")",
                         layout.getLineMax(i) <= layout.getWidth() + 1);

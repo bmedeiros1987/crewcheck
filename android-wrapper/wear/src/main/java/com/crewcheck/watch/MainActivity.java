@@ -596,7 +596,6 @@ public final class MainActivity extends FragmentActivity
         // the visible circle instead of disappearing at the square viewport.
         connectionInstructions = new LinearLayout(this);
         connectionInstructions.setOrientation(LinearLayout.VERTICAL);
-        content.addView(connectionInstructions);
 
         TextView title = text("SINCRONIZAR", 10, CYAN, true, Gravity.CENTER);
         title.setLetterSpacing(.08f);
@@ -613,6 +612,7 @@ public final class MainActivity extends FragmentActivity
         );
         detail.setPadding(0, dp(8), 0, dp(8));
         connectionInstructions.addView(detail);
+        content.addView(connectionInstructions);
 
         TextView sync = heroAction("Sincronizar agora", CYAN);
         sync.setOnClickListener(view -> requestSync());
