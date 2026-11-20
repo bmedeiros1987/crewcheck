@@ -70,11 +70,22 @@ jobs:
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
+          node scripts/regression-asaas-inbox-transaction.mjs
+          node scripts/regression-google-subscription-route.mjs
+          node scripts/regression-google-current-status.mjs
+          node scripts/regression-billing-current-read-adapters.mjs
+          node scripts/regression-google-purchase-handler.mjs
+          node scripts/regression-billing-cancellation.mjs
+          node scripts/regression-billing-verification-flight.mjs
+          node scripts/regression-billing-checkout-confirmation.mjs
+          node scripts/regression-google-play-confirmation.mjs
+          node scripts/regression-asaas-transport.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs
           node scripts/regression-profile-locks.mjs
           node scripts/regression-platform-entitlement-mysql.mjs
+          BILLING_INTENT_RUN_LEGACY_SQL=0 BILLING_INTENT_EVIDENCE_DIR=artifacts/billing-intent-raw bash scripts/regression-billing-contracting-intent-mysql-local.sh
           node scripts/v139/apply.mjs
           node scripts/android-play/test_release_approval_isolated.mjs || exit $?
           node scripts/android-play/test_release_workflow_off.mjs
@@ -92,14 +103,34 @@ jobs:
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/regression-asaas-webhook-inbox.mjs
           node scripts/regression-asaas-webhook-http.mjs
+          node scripts/regression-asaas-inbox-transaction.mjs
+          node scripts/regression-google-subscription-route.mjs
+          node scripts/regression-google-current-status.mjs
+          node scripts/regression-billing-current-read-adapters.mjs
+          node scripts/regression-google-purchase-handler.mjs
+          node scripts/regression-billing-cancellation.mjs
+          node scripts/regression-billing-verification-flight.mjs
+          node scripts/regression-billing-checkout-confirmation.mjs
+          node scripts/regression-google-play-confirmation.mjs
+          node scripts/regression-asaas-transport.mjs
           node scripts/regression-asaas-webhook-mysql.mjs
           node scripts/regression-escala-contact-mysql.mjs
           node scripts/regression-platform-entitlement.mjs
           node scripts/regression-profile-locks.mjs
           node scripts/regression-platform-entitlement-mysql.mjs
+          BILLING_INTENT_RUN_LEGACY_SQL=0 BILLING_INTENT_EVIDENCE_DIR=artifacts/billing-intent-prepared bash scripts/regression-billing-contracting-intent-mysql-local.sh
       - name: Remove disposable database
         if: always()
         run: docker stop crewcheck-notification-qa || true
+      - name: Preserve synthetic billing intent evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: billing-intent-mysql-synthetic
+          path: |
+            artifacts/billing-intent-raw/
+            artifacts/billing-intent-prepared/
+          if-no-files-found: ignore
   emergency-browser:
     name: SOS authenticated recovery browser fixtures
     runs-on: ubuntu-24.04
@@ -131,6 +162,9 @@ jobs:
           NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-billing-checkout-browser.mjs
+          node scripts/regression-google-play-confirmation-browser.mjs
+          node scripts/regression-billing-cancellation-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -163,6 +197,9 @@ jobs:
           NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-billing-checkout-browser.mjs
+          node scripts/regression-google-play-confirmation-browser.mjs
+          node scripts/regression-billing-cancellation-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -180,6 +217,13 @@ jobs:
           node scripts/regression-escala-contact-browser.mjs
           node scripts/regression-standby-sequence-card-browser.mjs
           node scripts/regression-wakeup-session-browser.mjs
+      - name: Retain synthetic billing confirmation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: billing-checkout-synthetic
+          path: artifacts/billing-checkout/
+          if-no-files-found: warn
   web-and-server:
     name: Web, TypeScript and server
     runs-on: ubuntu-latest

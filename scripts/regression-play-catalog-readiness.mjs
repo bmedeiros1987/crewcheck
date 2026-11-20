@@ -14,12 +14,21 @@ import vm from 'node:vm';
 import {createRequire} from 'node:module';
 const require=createRequire(process.env.COMPOSITION_DEPS_PACKAGE||new URL('../package.json',import.meta.url));
 const ts=require('typescript'),jsx=require('react/jsx-runtime');
+// The real purchase handler now captures the canonical session. Supply that
+// actual module with synthetic storage/events, never an always-valid fence.
+const {build}=await import('esbuild');
+const authBundle=await build({stdin:{contents:"export {captureAuthSession} from './client/src/lib/authClient';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs'});
+const storage=new Map([['crewcheck_auth_token','synthetic-token'],['crewcheck_auth_user',JSON.stringify({id:'synthetic-owner',role:'crew'})]]),authEvents=new EventTarget();
+const authModule={exports:{}};
+vm.runInNewContext(authBundle.outputFiles[0].text,{module:authModule,exports:authModule.exports,window:authEvents,localStorage:{getItem:key=>storage.get(key)??null}});
+const captureAuthSession=authModule.exports.captureAuthSession;
+const checkFence=captureAuthSession();authEvents.dispatchEvent(new Event('crewcheck:auth-changed'));assert.equal(checkFence.isCurrent(),false,'fixture preserves actual auth-generation revocation');
 const source=fs.readFileSync('client/src/components/platform/PlatformCenter.tsx','utf8');
 const ast=ts.createSourceFile('PlatformCenter.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 let card,subscribe;
 function visit(node){if(ts.isFunctionDeclaration(node)){if(node.name?.text==='PlanCard')card=node.getText(ast);if(node.name?.text==='subscribe')subscribe=node.getText(ast);}ts.forEachChild(node,visit);}visit(ast);
 let play=true,purchases=0,web=0;const errors=[];
-const context={module:{exports:{}},exports:{},require:()=>jsx,hasGooglePlayBillingBridge:()=>play,money:()=> 'WEB PRICE',ShieldCheck:()=>null,Crown:()=>null,Check:()=>null,Smartphone:()=>null,Loader2:()=>null,playPlanReady,playProducts:{},setBusy:()=>{},profile:{publicId:'fixture'},startGooglePlayPurchase:()=>purchases++,toast:{error:message=>errors.push(message),message:()=>{},success:()=>{}},window:{prompt:()=> 'fixture'},createWebSubscription:async()=>{web++;return{};},load:async()=>{}};
+const context={module:{exports:{}},exports:{},require:()=>jsx,captureAuthSession,hasGooglePlayBillingBridge:()=>play,money:()=> 'WEB PRICE',ShieldCheck:()=>null,Crown:()=>null,Check:()=>null,Smartphone:()=>null,Loader2:()=>null,playPlanReady,playProducts:{},playPurchaseSession:{current:null},setBusy:()=>{},profile:{publicId:'fixture'},startGooglePlayPurchase:()=>purchases++,toast:{error:message=>errors.push(message),message:()=>{},success:()=>{}},window:{prompt:()=> 'fixture'},createWebSubscription:async()=>{web++;return{};},load:async()=>{}};
 context.exports=context.module.exports;
 vm.runInNewContext(ts.transpileModule('module.exports={PlanCard:('+card+'),subscribe:('+subscribe+')}',{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
 const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(nodes)];

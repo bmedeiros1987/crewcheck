@@ -256,6 +256,10 @@ export async function ensureProfile(db, email, name = '') {
 
 export async function userFromAccount(db, email, mustChangePassword = false) {
   const profile = await ensureProfile(db, email);
+  return userFromProfile(profile, email, mustChangePassword);
+}
+
+export function userFromProfile(profile, email, mustChangePassword = false) {
   const admin = isAdminEmail(email);
   const plan = admin ? 'premium_unlimited' : String(profile.plan || 'free');
   return {

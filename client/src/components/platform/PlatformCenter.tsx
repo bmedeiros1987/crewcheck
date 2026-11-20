@@ -1,3 +1,4 @@
+import { captureAuthSession } from '@/lib/authClient';
 import { playPlanReady } from '@shared/play-catalog-readiness.mjs';
 import { consumePendingNavigationContext } from '@/lib/navigationContext';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -15,7 +16,7 @@ import {
   createVisitor,
   createWebSubscription,
   defaultVisitorPermissions,
-  getPlatformBilling,
+  getFreshPlatformBilling,
   getPlatformCatalog,
   getPlatformProfile,
   hasGooglePlayBillingBridge,
@@ -116,47 +117,82 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   const [error, setError] = useState('');
   const [playProducts, setPlayProducts] = useState<Record<string, { productId?: string; formattedPrice?: string; billingPeriod?: string }>>({});
 
+  const billingSession=useRef<ReturnType<typeof captureAuthSession>|null>(null);
   const playCatalogRequest=useRef<string|null>(null);
+  const playPurchaseSession=useRef<{session:ReturnType<typeof captureAuthSession>;productId?:string}|null>(null);
+  const playVerifications=useRef(new Set<string>());
   function queryCatalog(plans: PlatformPlan[]) {
     setPlayProducts({});playCatalogRequest.current=null;
     playCatalogRequest.current=queryGooglePlayProducts(plans.map(plan=>plan.googlePlayProductId||'').filter(Boolean));
   }
-  async function load() {
-    setError('');
+  async function loadForSession(session: ReturnType<typeof captureAuthSession>) {
+    const current = () => { try { return session.isCurrent(); } catch { return false; } };
+    if (!current()) return;
+    setError(value => current() ? '' : value);
     playCatalogRequest.current=null;
     setPlayProducts({});
-    setBusy('');
+    setBusy(value => current() ? 'loading' : value);
     let catalogResult: PlatformCatalog | null = null;
     try {
       catalogResult = await getPlatformCatalog();
-      setCatalog(catalogResult);
+      if (!current()) return;
+      setCatalog(value => current() ? catalogResult : value);
       if (hasGooglePlayBillingBridge()) queryCatalog(catalogResult.plans);
     } catch {
-      setError('Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.');
+      if (!current()) return;
+      setError(value => current() ? 'Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.' : value);
       return;
     }
     try {
-      const [profileResult, billingResult] = await Promise.all([getPlatformProfile(), getPlatformBilling()]);
-      setProfile(profileResult.profile);
-      setBilling({ ...profileResult.billing, ...billingResult });
+      const [profileResult, billingResult] = await Promise.all([getPlatformProfile(), getFreshPlatformBilling(session)]);
+      if (!current()) return;
+      billingSession.current = session;
+      setProfile(value => current() ? profileResult.profile : value);
+      setBilling(value => current() ? billingResult : value);
+      setBusy(value => current() && value === 'loading' ? '' : value);
     } catch {
-      setProfile({ publicId: '—', displayName: 'Tripulante CrewCheck' } as PlatformProfile);
-      setBilling({ plan: 'free', status: 'unavailable', usage: { used: 0, limit: 0, remaining: 0, monthKey: '' } } as PlatformBilling);
-      setBusy('database');
-      setError('A conexão segura com o banco está temporariamente indisponível. Você pode consultar os planos, mas contratar, restaurar ou alterar a assinatura ficará pausado até a conexão voltar.');
+      if (!current()) return;
+      setProfile(value => current() ? { publicId: '—', displayName: 'Tripulante CrewCheck' } as PlatformProfile : value);
+      setBilling(value => current() ? { plan: 'free', status: 'unavailable', usage: { used: 0, limit: 0, remaining: 0, monthKey: '' } } as PlatformBilling : value);
+      setBusy(value => current() ? 'database' : value);
+      setError(value => current() ? 'A conexão segura com o banco está temporariamente indisponível. Você pode consultar os planos, mas contratar, restaurar ou alterar a assinatura ficará pausado até a conexão voltar.' : value);
     }
+  }
+
+  async function load() {
+    let session: ReturnType<typeof captureAuthSession>;
+    try { session = captureAuthSession(); } catch { setError('Sessão indisponível. Abra os planos novamente.'); return; }
+    return loadForSession(session);
   }
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    const listener = (event: Event) => {
+    let mountedSession: ReturnType<typeof captureAuthSession> | null = null;
+    try { mountedSession = captureAuthSession(); } catch { /* No storage access: no purchase admission. */ }
+    const listener = async (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (!detail.productId || !detail.purchaseToken) return;
-      setBusy('restore');
-      verifyGooglePlayPurchase(detail.productId, detail.purchaseToken)
-        .then((result) => { if (result.needsAcknowledgement) acknowledgeGooglePlayPurchase(detail.purchaseToken); toast.success(result.message || 'Compra Google Play confirmada.'); return load(); })
-        .catch((err) => toast.error(err instanceof Error ? err.message : 'Não consegui confirmar a compra.'))
-        .finally(() => setBusy(''));
+      const intent = playPurchaseSession.current || (detail.restored === true ? {session:mountedSession,productId:undefined} : null);
+      const session = intent?.session;
+      const current = () => { try { return Boolean(session?.token) && session!.isCurrent(); } catch { return false; } };
+      if (!current() || typeof detail.productId !== 'string' || typeof detail.purchaseToken !== 'string'
+          || !detail.productId.trim() || !detail.purchaseToken.trim()
+          || (intent?.productId && intent.productId !== detail.productId) || playVerifications.current.has(detail.purchaseToken)) return;
+      playVerifications.current.add(detail.purchaseToken);
+      setBusy(value => current() ? 'restore' : value);
+      try {
+        const result = await verifyGooglePlayPurchase(detail.productId, detail.purchaseToken, session!);
+        if (!current()) return;
+        if (result.billing.premiumAccess) {
+          if (result.needsAcknowledgement) acknowledgeGooglePlayPurchase(detail.purchaseToken);
+          toast.success('Assinatura Google Play confirmada.');
+        } else toast.message(result.billing.status === 'pending' ? 'Compra pendente na Google Play. O acesso ainda não está ativo.' : 'Compra localizada, mas ainda sem acesso ativo.');
+        await loadForSession(session!);
+      } catch (err) {
+        if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui confirmar a compra.');
+      } finally {
+        playVerifications.current.delete(detail.purchaseToken);
+        setBusy(value => current() && value === 'restore' ? '' : value);
+      }
     };
     window.addEventListener('crewcheck:billing-purchase', listener as EventListener);
     return () => window.removeEventListener('crewcheck:billing-purchase', listener as EventListener);
@@ -176,7 +212,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
       if (detail?.catalogInvalidated !== false) { playCatalogRequest.current=null;setPlayProducts({}); }
       toast.error(detail?.message || 'Google Play indisponível.');
     };
-    const pending = () => toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.');
+    const pending = () => { try { const session=playPurchaseSession.current?.session; if(session?.token && session.isCurrent()) toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.'); } catch { /* Revoked or inaccessible session: no notice. */ } };
     window.addEventListener('crewcheck:billing-products', products as EventListener);
     window.addEventListener('crewcheck:billing-ready', ready);
     window.addEventListener('crewcheck:billing-error', errorListener as EventListener);
@@ -191,53 +227,75 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
 
   async function subscribe(plan: PlatformPlan) {
     if (plan.id !== 'premium_monthly' && plan.id !== 'premium_annual') return;
+    let session: ReturnType<typeof captureAuthSession>;
+    try { session = captureAuthSession(); } catch { toast.error('Sessão indisponível. Abra os planos novamente.'); return; }
+    const current = () => { try { return session.isCurrent(); } catch { return false; } };
+    if (!session.token || !current()) return;
     setBusy(plan.id);
     try {
       if (hasGooglePlayBillingBridge()) {
         if (!plan.googlePlayProductId || !playPlanReady(plan, playProducts[plan.googlePlayProductId])) throw new Error('Plano ainda não confirmado pela Google Play. Consulte novamente antes de assinar.');
+        playPurchaseSession.current={session,productId:plan.googlePlayProductId};
         startGooglePlayPurchase(plan.googlePlayProductId, profile?.publicId || '');
         toast.message('Conclua a compra na janela segura da Google Play.');
       } else {
         const cpf = window.prompt('CPF do titular para a cobrança web pelo Asaas') || '';
-        if (!cpf.trim()) return;
+        if (!cpf.trim() || !current()) return;
         const result = await createWebSubscription(plan.id, cpf);
-        if (result.checkoutUrl) window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
-        toast.success(result.message || 'Assinatura web criada.');
-        await load();
+        if (!current()) return;
+        if (!result.checkoutUrl || (result.checkoutState && result.checkoutState !== 'ready')) {
+          toast.message('O link de pagamento ainda não está disponível. A assinatura permanece pendente.');
+          await loadForSession(session);
+          return;
+        }
+        window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer');
+        toast.message('Continue o pagamento no link. O acesso depende da confirmação do pagamento.');
+        await loadForSession(session);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Não consegui iniciar a assinatura.');
-    } finally { setBusy(''); }
+      if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui iniciar a assinatura.');
+    } finally { setBusy(value => current() && value === plan.id ? '' : value); }
   }
 
   function restore() {
+    let session: ReturnType<typeof captureAuthSession>;
+    try { session = captureAuthSession(); } catch { toast.error('Sessão indisponível. Abra os planos novamente.'); return; }
+    const current = () => { try { return Boolean(session.token) && session.isCurrent(); } catch { return false; } };
+    if (!current()) return;
     try {
-      setBusy('restore');
+      playPurchaseSession.current={session};
+      setBusy(value => current() ? 'restore' : value);
       restoreGooglePlayPurchases();
       toast.message('Consultando compras vinculadas à sua conta Google Play...');
-      window.setTimeout(() => setBusy(''), 5000);
+      window.setTimeout(() => setBusy(value => current() && value === 'restore' ? '' : value), 5000);
     } catch (err) {
-      setBusy('');
-      toast.error(err instanceof Error ? err.message : 'Restauração indisponível.');
+      setBusy(value => current() ? '' : value);
+      if (current()) toast.error(err instanceof Error ? err.message : 'Restauração indisponível.');
     }
   }
 
   async function manageSubscription() {
-    if (!billing) return;
-    setBusy('manage');
+    const session = billingSession.current;
+    const current = () => { try { return Boolean(session?.token) && session!.isCurrent(); } catch { return false; } };
+    if (!billing || !current()) return;
+    setBusy(value => current() ? 'manage' : value);
     try {
       if (billing.provider === 'google_play') {
         const product = encodeURIComponent(billing.productId || '');
-        window.open(`https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`, '_blank', 'noopener,noreferrer');
+        if (current()) window.open(`https://play.google.com/store/account/subscriptions?sku=${product}&package=com.crewcheck.app`, '_blank', 'noopener,noreferrer');
         return;
       }
-      if (!confirm('Cancelar a renovação da assinatura web?')) return;
-      const result = await cancelSubscription();
-      if (result.manageUrl) window.open(result.manageUrl, '_blank', 'noopener,noreferrer');
-      toast.success(result.message || 'Assinatura atualizada.');
-      await load();
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui gerenciar a assinatura.'); }
-    finally { setBusy(''); }
+      if (!confirm('Cancelar a renovação da assinatura web?') || !current()) return;
+      const result = await cancelSubscription(session!);
+      if (!current()) return;
+      if (result.actionRequired === true) {
+        window.open(result.manageUrl, '_blank', 'noopener,noreferrer');
+        toast.message(result.message);
+      } else if (result.alreadyRecorded === true) toast.message(result.message);
+      else toast.success(result.message);
+      await loadForSession(session!);
+    } catch (err) { if (current()) toast.error(err instanceof Error ? err.message : 'Não consegui gerenciar a assinatura.'); }
+    finally { setBusy(value => current() && value === 'manage' ? '' : value); }
   }
 
   const usage = billing?.usage;

@@ -17,6 +17,22 @@ assert.equal((await call(webhook,{...req,headers:{}})).status,403);assert.equal(
 assert.equal((await call(webhook,{...req,body:{}})).status,400);assert.equal(poolReads,0);
 dbAvailable=false;assert.equal((await call(webhook,req)).status,503);dbAvailable=true;
 const orphan=await call(webhook,req);assert.equal(orphan.status,200);assert.equal(orphan.body.reconciled,false);assert.equal(orphan.body.disposition,'quarantined');
+// An authenticated unknown subscription is evidence only, never account creation/access.
+const orphanBefore=await fixture.state();
+assert.equal(orphan.body.reason,'subscription_not_reconciled');
+const repeatedOrphan=await call(webhook,req);
+assert.equal(repeatedOrphan.body.duplicate,true);assert.equal(repeatedOrphan.body.reconciled,false);
+assert.deepEqual(await fixture.state(),orphanBefore,'duplicate quarantine must not mutate evidence or create access');
+const conflictingOrphan=await call(webhook,{...req,body:{...event,payment:{...event.payment,subscription:'sub_other_synthetic'}}});
+assert.equal(conflictingOrphan.status,409);assert.deepEqual(await fixture.state(),orphanBefore);
+for(const token of ['wrong-synthetic-hook','synthetic-hook ',['synthetic-hook']]){
+ const reads=[poolReads,bodyReads];assert.equal((await call(webhook,{...req,headers:{'asaas-access-token':token}})).status,403);
+ assert.deepEqual([poolReads,bodyReads],reads,'invalid provider authentication must precede body and storage');
+}
+assert.deepEqual(orphanBefore.profiles,{});assert.deepEqual(orphanBefore.subscriptions,[]);
+assert.equal(Object.keys(orphanBefore.receipts).length,1);
+const persistedOrphan=JSON.stringify(orphanBefore.receipts);
+assert(!persistedOrphan.includes('synthetic-hook'),'authentication secret must not enter receipt storage');
 schemaReady=false;const missing=await call(webhook,req);assert.equal(missing.status,503);assert.equal(missing.body.code,'DATABASE_MIGRATION_REQUIRED');schemaReady=true;
 fixture={db:{async connect(){throw Error('synthetic migration missing');}}};assert.equal((await call(webhook,req)).status,503);
 const before=poolReads;

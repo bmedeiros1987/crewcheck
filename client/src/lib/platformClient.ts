@@ -233,6 +233,23 @@ export async function getPlatformBilling(): Promise<PlatformBilling & { ok: bool
   }
 }
 
+/** Subscription UI requires a current server read. Do not adopt or overwrite
+ * the shared legacy cache while a checkout refresh is awaiting another account. */
+export async function getFreshPlatformBilling(session: ReturnType<typeof captureAuthSession>): Promise<PlatformBilling & { ok: boolean; plans: PlatformPlan[] }> {
+  const current = () => { try { return session.isCurrent(); } catch { return false; } };
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const payload = await authFetch<PlatformBilling & { ok: boolean; plans: PlatformPlan[] }>('/api/platform/billing/status');
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const usage = payload?.usage;
+  if (payload?.ok !== true || !['free','premium_monthly','premium_annual','premium_unlimited'].includes(payload.plan)
+      || typeof payload.status !== 'string' || !payload.status.trim() || typeof payload.premiumAccess !== 'boolean'
+      || !Array.isArray(payload.plans) || usage?.kind !== 'wakeup_call' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(usage.monthKey || '')
+      || ![usage.used,usage.limit,usage.remaining].every(value => Number.isSafeInteger(value) && value >= 0)) {
+    throw new Error('Não foi possível confirmar o status da assinatura.');
+  }
+  return payload;
+}
+
 export async function createWebSubscription(plan: 'premium_monthly' | 'premium_annual', cpfCnpj: string, billingType = 'UNDEFINED') {
   return authFetch<any>('/api/platform/billing/asaas/checkout', {
     method: 'POST',
@@ -241,8 +258,20 @@ export async function createWebSubscription(plan: 'premium_monthly' | 'premium_a
   });
 }
 
-export async function cancelSubscription() {
-  return authFetch<any>('/api/platform/billing/cancel', { method: 'POST', body: '{}' });
+export async function cancelSubscription(session = captureAuthSession()) {
+  const current = () => { try { return Boolean(session.token) && session.isCurrent(); } catch { return false; } };
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const result = await authFetch<any>('/api/platform/billing/cancel', { method: 'POST', body: '{}' });
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const period = result?.currentPeriodEnd;
+  const validPeriod = period === null || (typeof period === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(period) && Number.isFinite(Date.parse(period)) && new Date(period).toISOString() === period);
+  const canceled = result?.canceled === true && (result.actionRequired === undefined || result.actionRequired === false) && validPeriod && (result.alreadyRecorded === undefined || typeof result.alreadyRecorded === 'boolean');
+  let management = false;
+  if (result?.actionRequired === true && result.canceled !== true && typeof result.manageUrl === 'string') {
+    try { const url = new URL(result.manageUrl); management = url.protocol === 'https:' && url.hostname === 'play.google.com' && url.pathname === '/store/account/subscriptions' && url.searchParams.get('package') === 'com.crewcheck.app' && !url.port && !url.username && !url.password; } catch { /* Invalid URL is not authority to navigate. */ }
+  }
+  if (result?.ok !== true || (!canceled && !management) || typeof result.message !== 'string' || !result.message.trim()) throw new Error('Não foi possível confirmar a resposta do cancelamento. Confira o status antes de tentar novamente.');
+  return result;
 }
 
 type AndroidBillingBridge = {
@@ -286,11 +315,41 @@ export function acknowledgeGooglePlayPurchase(purchaseToken: string): void {
   window.AndroidCrewCheckBilling?.acknowledge?.(purchaseToken);
 }
 
-export async function verifyGooglePlayPurchase(productId: string, purchaseToken: string) {
-  return authFetch<any>('/api/platform/billing/google-play/verify', {
-    method: 'POST',
-    body: JSON.stringify({ productId, purchaseToken }),
+export async function verifyGooglePlayPurchase(productId: string, purchaseToken: string, session = captureAuthSession()): Promise<{ok:true;billing:PlatformBilling;needsAcknowledgement:boolean}> {
+  const current = () => { try { return Boolean(session.token) && session.isCurrent(); } catch { return false; } };
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const result = await authFetch<any>('/api/platform/billing/google-play/verify', {
+    method: 'POST', body: JSON.stringify({ productId, purchaseToken }),
   });
+  if (!current()) throw new Error('A conta mudou. Abra os planos novamente.');
+  const billing = result?.billing, usage = billing?.usage;
+  const active = billing?.premiumAccess === true;
+  const activeStatus = ['active','trialing','grace_period'].includes(billing?.status);
+  // saveGoogleSubscription stores Google's ISO expiry as UTC DATETIME; mysql dateStrings returns that exact form.
+  const end = typeof billing?.currentPeriodEnd === 'string' ? billing.currentPeriodEnd : '';
+  const utcEnd = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(end) ? end.replace(' ','T')+'Z' : end;
+  const parts = utcEnd.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/);
+  let expiry = NaN;
+  if (parts) {
+    const [year,month,day,hour,minute,second] = parts.slice(1,7).map(Number);
+    const millis = Number((parts[7] || '').padEnd(3,'0'));
+    const wall = new Date(0); wall.setUTCFullYear(year,month-1,day); wall.setUTCHours(hour,minute,second,millis);
+    const offsetHours = Number(parts[10] || 0), offsetMinutes = Number(parts[11] || 0);
+    if (wall.getUTCFullYear()===year && wall.getUTCMonth()===month-1 && wall.getUTCDate()===day
+        && wall.getUTCHours()===hour && wall.getUTCMinutes()===minute && wall.getUTCSeconds()===second
+        && offsetHours<=23 && offsetMinutes<=59) expiry = wall.getTime() - (parts[9]==='-'?-1:1)*(offsetHours*60+offsetMinutes)*60000;
+  }
+  if (result?.ok !== true || typeof result.needsAcknowledgement !== 'boolean'
+      || billing?.provider !== 'google_play' || billing.productId !== productId
+      || !['free','premium_monthly','premium_annual'].includes(billing.plan)
+      || !['active','trialing','grace_period','pending','past_due','paused','expired','canceled','cancelled'].includes(billing.status)
+      || typeof billing.premiumAccess !== 'boolean' || active !== activeStatus
+      || (active && (billing.plan === 'free' || !Number.isFinite(expiry) || expiry <= Date.now()))
+      || usage?.kind !== 'wakeup_call' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(usage.monthKey || '')
+      || ![usage.used,usage.limit,usage.remaining].every(value => Number.isSafeInteger(value) && value >= 0)) {
+    throw new Error('Não foi possível confirmar o comprovante Google Play. Consulte ou restaure a assinatura antes de tentar novamente.');
+  }
+  return result;
 }
 
 export async function syncPlatformRoster(roster: unknown, compliance: unknown, sourceName: string) {

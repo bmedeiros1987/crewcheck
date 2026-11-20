@@ -57,6 +57,7 @@ test('the deletion handler runs the health statements inside its transaction, be
   const handler = source.slice(source.indexOf('async function handleAccountDeletion'));
   const loop = handler.indexOf('accountHealthDeletionStatements(context.identity.email)');
   assert.ok(loop > 0, 'account deletion must include the health tables');
-  assert.ok(loop > handler.indexOf("await client.query('BEGIN')"));
-  assert.ok(loop < handler.indexOf("await client.query('COMMIT')"));
+  const start = handler.indexOf('await withCurrentAccount(db, principal, async client =>');
+  const commit = handler.indexOf('}, { forUpdate: true, retryDeadlock: false });', start);
+  assert.ok(start >= 0 && start < loop && commit > loop, 'health cleanup uses the authenticated write transaction');
 });

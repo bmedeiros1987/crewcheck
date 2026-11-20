@@ -1,0 +1,46 @@
+# Identidade da conta na cobrança
+
+Os endpoints `/api/platform/billing/status`, `/api/platform/profile` e `/api/auth/me` exigem um JWT verificado de conta principal com o identificador do perfil atual. Um perfil ausente ou substituído encerra a leitura com `401`. Credenciais antigas cujo identificador deriva do e-mail precisam passar pelo login canônico. Indisponibilidade do banco continua retornando `503`.
+
+Perfil, assinatura e franquia são lidos no mesmo snapshot. Uma leitura com lock compartilhado confirma a geração atual antes de liberar a resposta. O `PATCH` de perfil exige a mesma identidade e mantém o lock do perfil durante a alteração. `me` reutiliza o perfil confirmado para compor o usuário e a vigência da sessão, sem criar perfil, tabela ou token. Sessões legítimas da mesma conta continuam independentes de aparelho.
+
+O teste em MySQL descartável cobre autorizações simultâneas, exclusão e recriação durante consultas, credenciais antigas, perfis distintos, atualização do perfil atual, expiração e indisponibilidade. Foram usados somente perfis e tokens fictícios. A composição ainda precisa ser conciliada com o trabalho de sessão do relógio na #1150.
+
+## Escritas e efeitos
+
+| Entrada | Proteção nesta candidata |
+| --- | --- |
+| Confirmação ou restauração Google Play | Perfil correspondente ao JWT antes da consulta ao Google. Escritas locais vinculadas ao perfil e ao hash da compra. Nova leitura do mesmo vínculo antes de devolver a confirmação. |
+| Checkout web Asaas | Perfil correspondente ao JWT. Cliente Asaas identificado por referência própria. Cliente legado sem vínculo verificável fica pendente de conciliação. A gravação local usa o perfil sob lock, e a entrega do link exige a mesma assinatura pendente. |
+| Cancelamento | Sessão da geração atual, contrato exato e checagem dentro da gravação do resultado. Google Play continua enviando ao gerenciamento da Play. |
+| Exclusão de conta com assinatura | Sessão da geração atual e estado da assinatura conferidos antes da limpeza. Uma reativação observada invalida a decisão anterior de dispensar cancelamento. A limpeza não é repetida automaticamente após deadlock. |
+| Concessão administrativa Unlimited | Sessão administrativa da geração atual. Autor e perfil de destino ficam protegidos pela transação. |
+| Franquia de ligação via HTTP | Reserva sob o lock do perfil. Uma devolução usa a reserva do mesmo pedido, com a conta original e a competência original. O marcador é local ao processo. |
+
+As notificações de cobrança iniciadas pelos provedores continuam com autenticação própria. RTDN Google e webhook Asaas validam evidência e reconciliação do provedor de forma independente da sessão do navegador. Nenhum código de recepção de eventos foi alterado neste recorte. O callback do Telegram ainda precisa da composição de vínculo da #1348. As rotas gerais de criação de perfil e a remoção definitiva de outros dados mantêm seus escopos de revisão separados.
+
+HOLD permanece. A verificação de sessão e as transações locais não tornam atômicos o banco e o Asaas. O cancelamento ainda precisa montar a admissão durável e comprovar a conciliação de timeouts, concorrência e confirmações tardias. A admissão no checkout é detalhada ao final. Exclusão exige a mesma proteção e revisão dos consumidores de dados e da retenção. Sessões antigas sem identificador da geração precisam fazer login novamente se esta candidata chegar à produção. Sessões válidas da conta atual, inclusive em aparelhos diferentes, seguem válidas. O controle verifica expiração e geração do perfil. Revogação geral após logout ou troca de senha exige um mecanismo próprio.
+
+A política de renovação, o tratamento humano de comprovantes e a configuração de produção permanecem no escopo das revisões específicas. Nenhum dado de usuário, transação de provedor ou migração real é necessário para rodar os testes.
+
+## Retomada após resposta incerta no Asaas
+
+O handler preparado para substituir o cancelamento usa o registro durável do contrato para retomar uma solicitação ocupada. Uma nova tentativa autenticada consulta o estado do mesmo contrato por meio do leitor injetado. Uma primeira tentativa continua com uma única solicitação de escrita. Um retorno positivo de leitura registra prova mínima e aplica o resultado sob a identidade da conta atual. Se o comprovante já existe, a transação local o reaproveita. Se a sessão expirar durante a consulta, a prova fica registrada e a aplicação exige uma sessão atual.
+
+A consulta de conciliação usa somente GET. O adaptador aceita uma remoção explícita da assinatura esperada em resposta 200 e com estado compatível. Referência divergente, resposta incompleta, suspensão sem remoção, 404, erro de autenticação ou leitura indisponível mantêm o resultado pendente. A forma positiva foi usada em fixtures. A documentação de GET não garante que um contrato removido ainda possa ser consultado nem que a forma positiva esteja disponível no ambiente real. A leitura futura precisa ser autenticada, atual e sem cache. A documentação do Asaas confirma que o 404 também cobre recursos inacessíveis, portanto ele não libera nova tentativa de escrita. A confirmação de remoção não é confirmação de compensação, pagamento ou estorno.
+
+A composição preparada continua isolada do dispatcher público. O contrato de produção ainda precisa reconciliar o efeito sobre cobranças pendentes e vencidas, pois a remoção da assinatura alcança todas as cobranças vinculadas nesses estados. Preservam-se o período pago, a política 3/30 em revisão, o tratamento humano de comprovantes e o HOLD de auditoria. Os testes usam somente clientes simulados e MySQL descartável.
+
+Referências oficiais: [Recuperar uma assinatura](https://docs.asaas.com/reference/recuperar-uma-unica-assinatura) e [Remover assinatura](https://docs.asaas.com/reference/remover-assinatura).
+
+## Evento de vencimento após confirmação
+
+Uma cobrança Asaas com recibo local de financiamento ficou marcada como vencida quando o mesmo identificador chegou mais tarde como `PAYMENT_OVERDUE` no teste anterior. A correção mantém esse evento em reconciliação e conserva o período e o acesso já registrados. Uma cobrança sem financiamento continua elegível à classificação de vencida. Um estorno concluído continua sendo tratado em separado. O teste cruza outubro e novembro, confere a preservação do período e exige idempotência no replay.
+
+O fluxo documentado do Asaas mostra vencimento antes da confirmação. O recibo já registrado, e não apenas a data do evento mais recente, sustenta a retenção desta contradição. O recorte não confirma a origem de períodos históricos nem altera a carência, a política 3/30 ou as regras de cancelamento. [Eventos de cobrança do Asaas](https://docs.asaas.com/docs/webhook-para-cobrancas).
+
+## Admissão no checkout Asaas
+
+A rota autenticada mantém a consulta de links das assinaturas pendentes. Uma nova contratação exige que o coordenador grave a admissão para a conta atual antes de criar o cliente ou a assinatura no provedor. A autoridade e a elegibilidade são revistas antes de cada escrita. O identificador e a evidência da assinatura são registrados antes de gravar a pendência local. Um resultado incerto mantém a intenção ocupada, inclusive após falha ao gravar a assinatura, e uma nova tentativa não repete a escrita no provedor. Sem o esquema de intenções, a nova contratação fica indisponível.
+
+O HOLD de liberação inclui o ciclo de encerramento de intenções, a recuperação assistida de referências sem pendência local e a retenção e exclusão dos dados de titularidade. A admissão do lançamento nativo, a conciliação Asaas–Google, o cancelamento montado e as regras de renovação e comprovantes continuam como frentes separadas.
