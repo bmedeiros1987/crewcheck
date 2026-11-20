@@ -42,7 +42,9 @@ try{
   const switchAccount=()=>{generation++;items.set('crewcheck_auth_user',JSON.stringify({id:'synthetic-b'}));items.set('crewcheck_auth_token','token-b');};
   const captureAuthSession=()=>{const g=generation,owner=user()?.id,token=items.get('crewcheck_auth_token');return{token,isCurrent:()=>g===generation&&owner===user()?.id&&token===items.get('crewcheck_auth_token')};};
   const alerts=[],window={localStorage:storage,confirm:()=>{confirmations++;if(scenario==='switch-before-request'||scenario==='switch-during-confirm'&&confirmations===2)switchAccount();return scenario!=='cancel';},prompt:()=> 'EXCLUIR',location:{href:''},open:()=>{throw Error('not authorized');}};
-  const c=vm.createContext({window,getStoredUser:user,captureAuthSession,alert:x=>{alerts.push(x);if(scenario==='switch-during-alert')switchAccount();},eraseFinancialCalculationCache,fetch:async(url,options)=>{
+  const c=vm.createContext({window,getStoredUser:user,getToken:()=>items.get('crewcheck_auth_token')??null,captureAuthSession,alert:x=>{alerts.push(x);if(scenario==='switch-during-alert')switchAccount();},eraseFinancialCalculationCache,eraseDeletedOwnerForecastDrafts:async owner=>{
+   assert.equal(owner,'synthetic-a');return true; // The separate draft suite exercises actual erasure.
+  },fetch:async(url,options)=>{
    requests++;assert.equal(options.headers.authorization,'Bearer private-token','request remains bound to initiating account');
    if(scenario==='switch'||scenario==='switch-unauthorized')switchAccount();
    return{status:scenario.includes('unauthorized')?401:scenario==='failure'?503:200,ok:!['failure','unauthorized','switch-unauthorized'].includes(scenario),json:async()=>({ok:true,deleted:scenario!=='unconfirmed',...(scenario==='switch-during-confirm'?{manageGooglePlayUrl:'https://play.google.com/store/account/subscriptions'}:{})})};
@@ -53,7 +55,7 @@ try{
   if(scenario==='success'){assert(!items.has('crewcheck_auth_token'));assert.equal(window.location.href,'/login');}
   if(scenario.startsWith('switch')){assert.equal(items.get('crewcheck_auth_token'),'token-b','new session survives');assert.equal(user().id,'synthetic-b');assert.equal(window.location.href,'','new session is not redirected');}
   if(['cancel','switch-before-request'].includes(scenario))assert.equal(requests,0);
-  if(scenario==='blocked-erasure')assert(alerts.some(x=>x.includes('Limpe os dados deste navegador')),'local erasure failure is explicit');
+  if(scenario==='blocked-erasure')assert(alerts.some(x=>x.includes('limpeza dos dados financeiros ficou pendente')),'local erasure failure is explicit');
  }
  console.log('PASS financial cache: SHA-256 differential vectors; restart/read reuse, account/period/scope/build/input invalidation, unknown/zero/date, mutation isolation, stale-tab writes, corruption, blocked/quota storage and session races; synthetic only');
 }finally{modules.cleanup();}

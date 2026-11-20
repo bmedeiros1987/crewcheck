@@ -139,6 +139,7 @@ import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/fina
 import FinancialScreen, {useFinancialScreen} from '@/components/finance/FinancialScreen';
 import { nextAllowancePayment, type NextPayment } from '@/lib/nextFinancialPayment';
 import {createFinancialCalculationCache,financialInputSignature} from '@/lib/financialCalculationCache';
+import {eraseDeletedOwnerForecastDrafts,FORECAST_DRAFT_PREFIX} from '@/lib/financialForecastDrafts';
 import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
 import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
 import PersonalAllowanceReference from '@/components/finance/PersonalAllowanceReference';
@@ -3385,16 +3386,46 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     reader.readAsDataURL(file);
   }
   async function deleteAccount() {
-    if (!confirm('Excluir permanentemente sua conta, escalas, visitantes, hotéis, chat e histórico? Esta ação não pode ser desfeita.')) return;
-    const confirmation = prompt('Para confirmar, digite EXCLUIR') || '';
-    if (confirmation.trim().toUpperCase() !== 'EXCLUIR') { toast.message('Exclusão cancelada.'); return; }
+    let deletionSession:ReturnType<typeof captureAuthSession>|undefined;
     try {
+      deletionSession=captureAuthSession();
+      const deletingOwner=financialRateOwner();
+      if (!confirm('Excluir permanentemente sua conta, escalas, visitantes, hotéis, chat e histórico? Esta ação não pode ser desfeita.')||!deletionSession.isCurrent()) return;
+      const confirmation = prompt('Para confirmar, digite EXCLUIR') || '';
+      if(!deletionSession.isCurrent())return;
+      if (confirmation.trim().toUpperCase() !== 'EXCLUIR') { toast.message('Exclusão cancelada.'); return; }
       const result = await deleteCrewCheckAccount(confirmation);
-      if (result.manageGooglePlayUrl && confirm('Os dados foram excluídos. Deseja abrir a Play Store para cancelar a assinatura Google Play separadamente?')) window.open(result.manageGooglePlayUrl, '_blank', 'noopener,noreferrer');
-      try { Object.keys(localStorage).filter((key) => key.startsWith('crewcheck_') || key.startsWith('crewcheck:')).forEach((key) => localStorage.removeItem(key)); } catch {}
-      window.location.assign('/login');
+      if(result?.ok!==true||result?.deleted!==true)throw Error('ACCOUNT_DELETION_UNCONFIRMED');
+      let signedOut:ReturnType<typeof captureAuthSession>|undefined;
+      try {
+        const current=captureAuthSession();
+        const initiatedHere=deletionSession.isCurrent();
+        if(initiatedHere){
+          try {
+            for(const key of Object.keys(localStorage)){
+              if(!deletionSession.isCurrent())break;
+              if(key==='crewcheck_auth_token'||key==='crewcheck_auth_user'||key.startsWith(FORECAST_DRAFT_PREFIX))continue;
+              if(key.startsWith('crewcheck_')||key.startsWith('crewcheck:'))localStorage.removeItem(key);
+            }
+          } catch {}
+        }
+        // A return to the same deleted owner can still have queued draft writes.
+        if((initiatedHere||(deletingOwner&&financialRateOwner()===deletingOwner))&&current.isCurrent()){
+          localStorage.removeItem('crewcheck_auth_token');
+          if(!getToken())localStorage.removeItem('crewcheck_auth_user');
+          signedOut=captureAuthSession();
+        }
+      } catch {}
+      const cleared=await eraseDeletedOwnerForecastDrafts(deletingOwner);
+      if(!signedOut?.isCurrent()||signedOut.token)return;
+      if(!cleared)alert('Conta excluída. A limpeza dos rascunhos financeiros ficou pendente neste dispositivo.');
+      if(!signedOut.isCurrent())return;
+      if(result.manageGooglePlayUrl&&confirm('Os dados foram excluídos. Deseja abrir a Play Store para cancelar a assinatura Google Play separadamente?')&&signedOut.isCurrent())window.open(result.manageGooglePlayUrl,'_blank','noopener,noreferrer');
+      if(signedOut.isCurrent())window.location.assign('/login');
     } catch {
-      toast.error('Não foi possível concluir a exclusão agora. Nenhum dado foi removido.');
+      try {
+        if(!deletionSession||deletionSession.isCurrent())toast.error('Não foi possível confirmar a exclusão agora.');
+      } catch {}
     }
   }
   const profileName = String(user?.name || user?.email?.split('@')[0] || storage.get('crewcheck_profile_display_name', '') || 'Tripulante CrewCheck');

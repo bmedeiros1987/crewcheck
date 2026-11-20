@@ -34,6 +34,7 @@ on:
       - 'client/src/lib/financialForecastDrafts.ts'
       - 'scripts/regression-financial-forecast-drafts.cjs'
       - 'scripts/regression-financial-forecast-guided-browser.cjs'
+      - 'scripts/regression-forecast-account-deletion-browser.cjs'
       - 'client/src/lib/personalAllowanceReference.ts'
       - 'scripts/regression-personal-allowance-*.mjs'
       - 'scripts/regression-owner-per-diem-review.mjs'
@@ -148,6 +149,12 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/finance-known-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/finance-known-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Forecast draft deletion with synthetic sessions in sandboxed Chromium
+        timeout-minutes: 4
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/finance-known-ui/package.json
+          PLAYWRIGHT_CHROMIUM_CHANNEL: chrome
+        run: node scripts/regression-forecast-account-deletion-browser.cjs
       - name: Compiled application with synthetic accounts and all APIs intercepted
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/finance-known-ui/package.json
