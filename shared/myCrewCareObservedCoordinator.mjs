@@ -15,7 +15,7 @@ function abortable(operation, signal) {
 /** OFF-only coordinator with an injected trusted same-session acquisition boundary.
  * No provider navigation, native connection or operational import is implemented here.
  */
-export function createMyCrewCareObservedCoordinator({ acquire } = {}) {
+export function createMyCrewCareObservedCoordinator({ acquire, clock = Date.now } = {}) {
   let binding = null;
   let generation = 0;
   let pending = null;
@@ -66,6 +66,10 @@ export function createMyCrewCareObservedCoordinator({ acquire } = {}) {
         return Object.freeze({ ...profile, accountId: scope.accountId, sessionId: scope.sessionId, requestId: scope.requestId });
       }
       try {
+        // Conservative freshness: the stamp is the start of the read, before any page.
+        const startedAt = clock();
+        if (!Number.isFinite(startedAt)) throw failure();
+        const observedAt = new Date(startedAt).toISOString();
         const before = identity(await page('profile-before'));
         const travel = await page('cards');
         const cards = observeMyCrewCareCards(travel.document, travel.url);
@@ -78,7 +82,9 @@ export function createMyCrewCareObservedCoordinator({ acquire } = {}) {
           binding: Object.freeze({ ...scope, fresh: true }), profileBefore: before, profileAfter: after,
         }));
         if (!live()) throw failure();
-        latest = Object.freeze({ accountId: scope.accountId, requestId: scope.requestId,
+        // Session and start stamp come from this generation, never from page content.
+        latest = Object.freeze({ accountId: scope.accountId, sessionId: scope.sessionId, requestId: scope.requestId,
+          observedAt,
           operationalImportAllowed: false, reservations: Object.freeze(reservations) });
         return latest;
       } catch {
