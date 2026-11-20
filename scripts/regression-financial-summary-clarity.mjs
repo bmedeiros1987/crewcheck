@@ -9,11 +9,12 @@ import Explorer from'${root}/client/src/components/finance/FinancialHistoryExplo
 const roster={crewId:'SYNTHETIC',crewName:'SYNTHETIC',rank:'CC',base:'BSB',month:11,year:2032,days:[{date:'01/11/2032',type:'CRM',pairingCode:'CRM',legs:[],base:'BSB',dutyReport:'05:00',dutyDebrief:'21:00'}]};
 const line=(currency,value)=>({iso:'2032-11-01',label:currency+' synthetic',currency,value,source:'SYNTHETIC ONLY'});
 const quote={rate:'5',base:'USD',quote:'BRL',asOf:'2032-11-14',source:'SYNTHETIC',method:'account_manual'};
-function App(){const[scenario,setScenario]=useState('brl');window.__scenario=setScenario;const foreign=['mixed','foreign','loading','stale','recovered','invalid'].includes(scenario);const lines=scenario==='empty'?[]:scenario==='foreign'?[line('USD',20)]:[line('BRL',100),...(foreign?[line('USD',scenario==='invalid'?NaN:20)]:[])];
+function App(){const[scenario,setScenario]=useState('brl');window.__scenario=setScenario;const knownZero=scenario==='known-zero';const foreign=['mixed','foreign','loading','stale','recovered','invalid'].includes(scenario);const lines=scenario==='empty'||knownZero?[]:scenario==='foreign'?[line('USD',20)]:[line('BRL',100),...(foreign?[line('USD',scenario==='invalid'?NaN:20)]:[])];
 window.__fx={mode:'automatic',state:scenario==='loading'?'loading':scenario==='stale'?'stale':scenario==='recovered'?'available':'unavailable',quotes:['stale','recovered','invalid'].includes(scenario)?{USD:quote}:{}};
-const payment={kind:'allowance',range:{kind:'month',start:'2032-11-01',end:'2032-11-30',valid:true},lines,issues:scenario==='incomplete'?['SYNTHETIC: cobertura incompleta']:[],totals:foreign?null:scenario==='empty'?null:{BRL:100},calculationTotals:lines.length?{BRL:100}:null,calculationPartial:foreign||scenario==='incomplete',timing:'Data a confirmar',source:'SYNTHETIC ONLY',caption:'Diárias · valores na moeda original'};
+const payment={kind:'allowance',range:{kind:'month',start:'2032-11-01',end:'2032-11-30',valid:true},lines,issues:scenario==='incomplete'?['SYNTHETIC: cobertura incompleta']:[],totals:knownZero?{BRL:0}:foreign||scenario==='empty'?null:{BRL:100},calculationTotals:lines.length?{BRL:100}:null,calculationPartial:foreign||scenario==='incomplete',timing:'Data a confirmar',source:'SYNTHETIC ONLY',caption:'Diárias · valores na moeda original',...(knownZero?{noEligibleAllowance:true}:{})};
+const statementPayment=knownZero?{...payment,noEligibleAllowance:undefined,totals:null,calculationPartial:true}:payment;
 const snapshot=JSON.stringify(payment);window.__sourceUnchanged=()=>snapshot===JSON.stringify(payment);
-return <main className="cz-app" data-version="synthetic"><div className="cc-per-diem-content"><HomeFinancialEstimateProvider roster={roster} calculate={()=>payment}><section id="home"><Home/></section><Explorer roster={roster} mode="allowance" calculate={()=>({})} metric={()=>({})} render={()=> <Card payment={payment} statementPayment={payment} requestRange={()=>{}}/>}/></HomeFinancialEstimateProvider></div></main>;}
+return <main className="cz-app" data-version="synthetic"><div className="cc-per-diem-content"><HomeFinancialEstimateProvider roster={roster} calculate={()=>payment}><section id="home"><Home/></section><Explorer roster={roster} mode="allowance" calculate={()=>({})} metric={()=>({})} render={()=> <Card payment={payment} statementPayment={statementPayment} requestRange={()=>{}}/>}/></HomeFinancialEstimateProvider></div></main>;}
 createRoot(document.getElementById('root')).render(<App/>);`;
 await build({stdin:{contents:entry,resolveDir:root,loader:'tsx'},bundle:true,jsx:'automatic',format:'iife',outfile:out+'/app.js',alias:{'@':root+'/client/src','@shared':root+'/shared'},plugins:[{name:'controlled-fx',setup(b){b.onResolve({filter:/^\.\/FinancialFxProvider$/},a=>({path:a.path,namespace:'fx'}));b.onLoad({filter:/.*/,namespace:'fx'},()=>({contents:`import React from 'react';export const useFinancialFx=()=>window.__fx;export const FinancialFxProvider=({children})=>children;export const FinancialFxSourceControl=()=> <label>Fonte do câmbio<select aria-label="Fonte do câmbio"><option>Sintética</option></select></label>;`,resolveDir:root,loader:'tsx'}));}}],logLevel:'silent'});
 const files=['client/src/components/finance/financial-history.css','client/src/components/finance/payment-preview.css','client/src/components/finance/persistent-history.css','client/src/components/finance/financial-summary-clarity.css','client/src/components/finance/financial-privacy.css'];
@@ -29,6 +30,21 @@ try{for(const width of[320,390,1280])for(const theme of['light','dark']){
  const scenario=async s=>{await page.evaluate(s=>window.__scenario(s),s);await page.waitForTimeout(50);};
  assert(!/Cotação automática indisponível|Câmbio pendente|Consultando câmbio/.test(await home.innerText()),'BRL-only must not display an irrelevant FX failure');assert.match(await home.innerText(),/100,00/);assert.match(await home.innerText(),/01\/11\/2032 a 30\/11\/2032/);
  await scenario('empty');assert.match(await home.innerText(),/Sem diárias calculadas/);assert(!/Cotação automática|Câmbio pendente/.test(await home.innerText()));
+ await scenario('known-zero');
+ const hero=page.getByRole('region',{name:'Próximo pagamento previsto',exact:true});
+ for(const scope of [home,hero]){
+  assert.match(await scope.innerText(),/R\$\s*0,00/);
+  assert.match(await scope.innerText(),/Sem diárias previstas no ciclo/);
+  assert.doesNotMatch(await scope.innerText(),/Não calculável|Previsão incompleta|Crédito previsto/);
+ }
+ await hero.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).click();
+ for(const scope of [home,hero])assert.doesNotMatch(await scope.innerText(),/0,00/);
+ await hero.getByRole('button',{name:'Mostrar valores financeiros',exact:true}).click();
+ await page.getByRole('button',{name:'Extrato',exact:true}).click();
+ const emptyStatement=page.getByRole('region',{name:'Previsão da escala',exact:true});
+ await emptyStatement.getByText('Previsão incompleta',{exact:true}).waitFor();
+ assert.doesNotMatch(await emptyStatement.innerText(),/0,00|Sem diárias previstas no ciclo/);
+ await page.getByRole('button',{name:'Resumo financeiro',exact:true}).click();
  await scenario('mixed');assert.match(await home.innerText(),/Subtotal conhecido/);assert.match(await home.innerText(),/100,00/);assert.match(await home.innerText(),/Câmbio pendente: USD/);
  await home.getByText('Ver cálculo',{exact:true}).click();assert.match(await home.innerText(),/US\$\s*20,00/);assert.match(await home.innerText(),/Conversão pendente/);
  await home.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).click();assert(!/100,00|20,00/.test(await home.innerText()));assert.match(await home.innerText(),/01\/11\/2032/);await home.getByRole('button',{name:'Mostrar valores financeiros',exact:true}).click();
@@ -47,5 +63,5 @@ try{for(const width of[320,390,1280])for(const theme of['light','dark']){
  await page.screenshot({path:out+'/'+theme+'-'+width+'.png',fullPage:true});
  await ledger.getByRole('button',{name:'Ver previsão',exact:true}).click();await page.getByRole('heading',{name:'Próximo pagamento previsto',exact:true}).waitFor();
  await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-other',role:'user'}));localStorage.setItem('crewcheck_auth_token','other-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.waitForFunction(()=>document.querySelector('#home').textContent==='');
- assert.deepEqual(errors,[]);assert(requests.every(r=>r.method==='GET'),'no ledger or provider writes');results.push({width,theme,fxScenarios:8,privacy:true,accountBoundary:true,summaryFirst:true,localDates:true,ledgerOffExplained:true});await context.close();
+ assert.deepEqual(errors,[]);assert(requests.every(r=>r.method==='GET'),'no ledger or provider writes');results.push({width,theme,fxScenarios:8,knownZeroScope:true,privacy:true,accountBoundary:true,summaryFirst:true,localDates:true,ledgerOffExplained:true});await context.close();
 }fs.writeFileSync(out+'/results.json',JSON.stringify(results,null,2));console.log('PASS actual financial summary/statement: relevant FX, partial/native amounts, privacy/account fence, summary-first, local dates, ledger OFF action, keyboard/mobile/themes; controlled FX context, no real API or sends');}finally{await browser.close();await new Promise(r=>server.close(r));}

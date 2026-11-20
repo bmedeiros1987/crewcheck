@@ -526,6 +526,21 @@ function reconcileAimsPhysicalTimelineFromText(roster: CrewRoster, fullText: str
   return { ...roster, days: merged, rawText: roster.rawText || fullText };
 }
 
+function literalAimsRestBlock(tokens: readonly string[]): boolean {
+  return tokens.length === 1 && isAimsRestCode(tokens[0]);
+}
+
+function recordAimsRestBlock(rest: Map<string, boolean>, iso: string, literalRest: boolean) {
+  if (!iso) return;
+  // Every block for the date must be a single explicit rest marker, even
+  // when the activity parser discards an unreadable token before that marker.
+  rest.set(iso, rest.get(iso) !== false && literalRest);
+}
+
+function aimsRestDates(rest: ReadonlyMap<string, boolean>): string[] {
+  return [...rest].filter(([, isRest])=>isRest).map(([iso])=>iso);
+}
+
 function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth: number, rosterYear: number, coverage?: AimsFlightSourceCoverage): AimsPhysicalLeg[] {
   const rosterOnly = String(fullText || '').split(/\n\s*Tripula(?:ç|c)[oõ]es\b/i)[0];
   const content = rosterOnly
@@ -543,6 +558,7 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
   let previousArrival: string | null = null;
   let startsAfterActivity = false;
   const sourceBlocks = new Set<string>();
+  const sourceRest = new Map<string, boolean>();
   let recordSourceBlock = true;
 
   for (let i = 0; i < tokens.length; i += 1) {
@@ -556,7 +572,9 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
         const sourceDate = aimsSourceDateIso(formatAimsHumanDate(markerDate));
         coverage.sourceDates.push(sourceDate);
         const nextMarker = tokens.findIndex((candidate, index) => index > i && Boolean(parseAimsPhysicalDateToken(candidate, rosterMonth, rosterYear)));
-        const blockKey = JSON.stringify([sourceDate, tokens.slice(i + 1, nextMarker < 0 ? tokens.length : nextMarker)]);
+        const blockTokens = tokens.slice(i + 1, nextMarker < 0 ? tokens.length : nextMarker);
+        recordAimsRestBlock(sourceRest, sourceDate, literalAimsRestBlock(blockTokens));
+        const blockKey = JSON.stringify([sourceDate, blockTokens]);
         recordSourceBlock = !sourceBlocks.has(blockKey);
         sourceBlocks.add(blockKey);
       }
@@ -640,6 +658,7 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
     i = Math.max(i + 1, j - 1);
   }
 
+  if (coverage) coverage.sourceRestDates = aimsRestDates(sourceRest);
   return legs
     .filter((item) => isCredibleAimsLeg(item.leg))
     .sort((a, b) => a.depAbs - b.depAbs || a.arrAbs - b.arrAbs);
@@ -1032,6 +1051,9 @@ function parseAimsRosterFromVisualRows(fullText: string, visualRows: AimsVisualR
 
   const evidence = newAimsFlightSourceCoverage('aims_visual');
   evidence.sourceDates = columns.map(column => aimsSourceDateIso(column.date));
+  const sourceRest = new Map<string, boolean>();
+  for (const column of columns) recordAimsRestBlock(sourceRest, aimsSourceDateIso(column.date), column.literalRest);
+  evidence.sourceRestDates = aimsRestDates(sourceRest);
   evidence.unresolvedSourceDates = allItems.some(item => isInvalidAimsSourceDateToken(item.str, header.month, header.year));
   const rescuedDays = rescueAimsAtomicFlightsFromColumns(rescueAimsColumnContinuationFlights(days, columns, header), columns, header, evidence);
   const uniqueDays = dedupeAimsOperationalDays(rescuedDays).sort(compareAimsOperationalDays);
@@ -1059,6 +1081,7 @@ type AimsVisualColumn = {
   dateObj: Date;
   dayOfWeek: string;
   tokens: string[];
+  literalRest: boolean;
 };
 
 function buildAimsVisualColumns(
@@ -1094,7 +1117,6 @@ function buildAimsVisualColumns(
           return centerX >= left && centerX < right;
         })
         .filter(item => item.y < topY - 1)
-        .filter(item => !shouldIgnoreAimsItem(item.str))
         .sort((a, b) => {
           const dy = b.y - a.y;
           if (Math.abs(dy) > 2) return dy;
@@ -1102,6 +1124,7 @@ function buildAimsVisualColumns(
         });
 
       const tokens = columnItems
+        .filter(item => !shouldIgnoreAimsItem(item.str))
         .flatMap(item => splitAimsVisualToken(item.str))
         .map(t => t.trim())
         .filter(Boolean)
@@ -1115,6 +1138,7 @@ function buildAimsVisualColumns(
         dateObj,
         dayOfWeek: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dateObj.getDay()],
         tokens,
+        literalRest: literalAimsRestBlock(columnItems.flatMap(item => splitAimsVisualToken(item.str))),
       });
     });
   }
