@@ -1,0 +1,26 @@
+import assert from'node:assert/strict';import fs from'node:fs';import{createHash}from'node:crypto';
+import{mysqlAdapter}from'../server/mysql-platform-adapter.mjs';
+import{prepareTelegramClosureDocumentQueue}from'../server/telegram-binding-document-erasure.mjs';
+import{createTelegramBindingChallenge,consumeTelegramBindingChallenge,beginTelegramBindingClosure,readTelegramBindingClosure,eraseTelegramBindingAccountState}from'../server/telegram-binding-state.mjs';
+globalThis.fetch=()=>assert.fail('No provider/network permitted');
+assert.equal(process.env.TELEGRAM_BINDING_QA,'isolated-mysql');const factory=await(await import('./fixtures/telegram-binding-mysql.mjs')).telegramBindingMysqlFactory(),f=await factory.make();
+const A='closed-doc-a@example.invalid',B='closed-doc-b@example.invalid',input={email:A,ownerId:'owner-a',operationId:'a'.repeat(64)};let checks=0;
+const rows=async()=> (await f.pool.query('SELECT * FROM crewcheck_platform_document_deletion_queue ORDER BY id'))[0];
+const prepare=()=>prepareTelegramClosureDocumentQueue(f.pool,input);
+async function seed(id,email){await f.pool.query("INSERT INTO crewcheck_platform_documents(id,owner_email,category,encrypted_name,mime_type,storage_provider,storage_public_id,storage_cipher_url,cipher_iv,cipher_tag,plaintext_sha256,bytes) VALUES(?,?,'other','SYNTHETIC','application/pdf','cloudinary',?,'https://example.invalid/synthetic','SYNTHETIC','SYNTHETIC',?,1)",[id,email,'synthetic/'+id,'a'.repeat(64)]);}
+try{
+ const migration=fs.readFileSync('migrations/20260715_005_v139_recovery_bids_crewlock.sql','utf8');await f.pool.query('DROP TABLE IF EXISTS crewcheck_platform_document_deletion_queue');await f.pool.query('DROP TABLE IF EXISTS crewcheck_platform_documents');for(const table of['crewcheck_platform_documents','crewcheck_platform_document_deletion_queue'])await f.pool.query(migration.match(new RegExp('CREATE TABLE IF NOT EXISTS '+table+'[\\s\\S]*?;'))[0]);
+ for(const[email,ownerId,chatId,code]of[[A,'owner-a','9000012345','cc_closed_doc_first_a'],[B,'owner-b','9000012346','cc_closed_doc_first_b']]){await f.seedProfile(email,ownerId);await createTelegramBindingChallenge(f.pool,{email,ownerId,code});await consumeTelegramBindingChallenge(f.pool,{code,chatId,senderId:chatId,chatType:'private'});}
+ await seed('doc-a',A);await seed('doc-b',B);await f.pool.query("INSERT INTO crewcheck_platform_document_deletion_queue(id,document_id,owner_email,storage_public_id,attempts,last_error) VALUES('old-a','old-a',?,'synthetic/old-a',3,'SYNTHETIC_PENDING'),('old-b','old-b',?,'synthetic/old-b',2,'SYNTHETIC_PENDING')",[A,B]);const before=await rows();
+ await assert.rejects(prepare(),{code:'LINK_CLOSURE_MISSING'});assert.deepEqual(await rows(),before);checks++;
+ await beginTelegramBindingClosure(f.pool,input);for(const change of[{ownerId:'other-owner'},{operationId:'b'.repeat(64)}])await assert.rejects(prepareTelegramClosureDocumentQueue(f.pool,{...input,...change}),{code:'LINK_CLOSURE_CONFLICT'});assert.deepEqual(await rows(),before);checks++;
+ const result=await prepare();assert.equal(result.queuePreserved,true);assert.equal(result.accountDeletionNotAttested,true);assert.equal(result.providerDeletionNotAttested,true);const prepared=await rows();assert.equal(prepared.length,3);assert.deepEqual(prepared.filter(x=>x.id.startsWith('old-')),before);assert(!prepared.some(x=>x.document_id==='doc-b'));assert((await f.state())['link-email:'+A]);assert.equal((await readTelegramBindingClosure(f.pool,input)).status,'fenced');checks++;
+ await prepareTelegramClosureDocumentQueue(mysqlAdapter(f.pool),input);assert.deepEqual(await rows(),prepared);checks++;
+ await Promise.all(Array.from({length:4},()=>prepare()));assert.deepEqual(await rows(),prepared);checks++;
+ await seed('doc-a-new',A);const id=createHash('sha256').update(JSON.stringify(['account-document-erasure-v1',A,'doc-a-new','synthetic/doc-a-new'])).digest('hex');f.failNext('write:'+id);await assert.rejects(prepare(),{code:'LINK_STORAGE_UNAVAILABLE'});assert.deepEqual(await rows(),prepared);assert.equal((await readTelegramBindingClosure(f.pool,input)).status,'fenced');checks++;
+ f.failNext('commit-after');await assert.rejects(prepare(),{code:'LINK_COMMIT_UNCERTAIN'});assert.equal(f.stats.destroyed,1);const committed=await rows();assert.equal(committed.length,4);await prepare();assert.deepEqual(await rows(),committed);checks++;
+ const b={email:B,ownerId:'owner-b',operationId:'b'.repeat(64)};await beginTelegramBindingClosure(f.pool,b);await f.deleteProfile(B);await assert.rejects(prepareTelegramClosureDocumentQueue(f.pool,b),{code:'LINK_ACCOUNT_CHANGED'});assert.deepEqual(await rows(),committed);checks++;
+ // Test-only no-op callback commits only the binding marker, never full erasure.
+ await eraseTelegramBindingAccountState(f.pool,{email:A,ownerId:'owner-a',closureOperationId:input.operationId},async()=>{});await assert.rejects(prepare(),{code:'LINK_CLOSURE_NOT_FENCED'});assert.deepEqual(await rows(),committed);checks++;
+ console.log(`PASS actual closure/document-queue composition: ${checks} isolated MySQL cases; real fence/profile/operation admission, same-connection queue preservation, concurrent repeats, rollback and lost-commit readback; no binding removal by preparation, provider call, full deletion or retention policy`);
+}finally{await factory.close();}

@@ -24,7 +24,13 @@ update('server.mjs', source => {
   source = replace(source, "{ command: 'hoteis', description: 'Hotéis e pernoites' }", "{ command: 'hoteis', description: 'Meu pernoite e registros salvos' }", 'Telegram command description');
   // Trust the actual Telegram transport type, including audio/callback paths.
   source = replace(source, '  const cached = telegramProfileForChat(message);', "  const cached = { ...telegramProfileForChat(message), channel: 'telegram', chatType: String(message?.chat?.type || '') };", 'Telegram private channel provenance');
+  if (source.includes('const linked=await telegramBindingRuntime.resolveChat(base.chatId);')) {
+    // Canonical binding resolver keeps transport provenance and never accepts a
+    // cache as identity. Verify its complete return before accepting reapplication.
+    if (!source.includes("const cached = { ...telegramProfileForChat(message), channel: 'telegram', chatType: String(message?.chat?.type || '') };") || !source.includes('return linked?{...base,...linked,channel:base.channel,chatType:base.chatType,linked:true}:base;')) throw new Error('[concierge-stay-menu] missing canonical Telegram provenance');
+  } else {
   source = replace(source, "return { email: conciergeSafeKey(persisted.email), name: persisted.name || cached.name, chatId: cached.chatId, linked: true, accessKeyHash: persisted.accessKeyHash || '' };", "return { ...cached, email: conciergeSafeKey(persisted.email), name: persisted.name || cached.name, chatId: cached.chatId, linked: true, accessKeyHash: persisted.accessKeyHash || '' };", 'persisted Telegram provenance');
+  }
   // The app can carry a linked Telegram chatId; only the trusted call site
   // identifies the request channel. Do not promote access-key sessions to JWT.
   source = replace(source, "buildTelegramConciergeReply(String(body.text || body.message || ''), profile, snapshot)", "buildTelegramConciergeReply(String(body.text || body.message || ''), { ...profile, channel: 'app' }, snapshot)", 'app request provenance');

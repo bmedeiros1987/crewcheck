@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { cleanText, env, flag, readBody, requireIdentity, sendJson, sha256 } from './common.mjs';
+import { cleanText, env, flag, readBody, requireExistingIdentity as requireIdentity, sendJson, sha256 } from './common.mjs';
 
 const ALLOWED_MIME = new Set(['application/pdf','image/jpeg','image/png','image/webp','image/heic','image/heif']);
 const MIME_BY_EXTENSION = {

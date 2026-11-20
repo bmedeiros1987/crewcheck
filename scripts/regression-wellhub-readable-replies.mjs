@@ -1,3 +1,4 @@
+import {submitScopedTelegramReply} from '../server/telegram-binding-reply-scope.mjs';
 import { wellhubTelegramMessage, wellhubPlainMessage } from '../shared/wellhub-unit-actions.mjs';
 import { createTelegramMenu } from '../server/concierge/telegram-menu.mjs';
 import assert from 'node:assert/strict';
@@ -48,7 +49,7 @@ assert.doesNotMatch(await context.reply(snapshot, '/academias'), /javascript:/);
 let payload;
 const start = server.indexOf('async function sendTelegramMessage(');
 const sender = server.slice(start, server.indexOf('\n}', start) + 2);
-const transport = vm.createContext({ crewcheckMenu: createTelegramMenu({}), wellhubTelegramMessage, loadVerifiedWellhubPartners: wellhub.loadVerifiedWellhubPartners, telegramApiUrl: () => 'https://example.invalid', fetch: async (_, init) => { payload = JSON.parse(init.body); return { ok: true, status: 200, json: async () => ({ ok: true }) }; } });
+const transport = vm.createContext({ submitScopedTelegramReply,crewcheckMenu: createTelegramMenu({}), wellhubTelegramMessage, loadVerifiedWellhubPartners: wellhub.loadVerifiedWellhubPartners, telegramApiUrl: () => 'https://example.invalid', fetch: async (_, init) => { payload = JSON.parse(init.body); return { ok: true, status: 200, json: async () => ({ ok: true }) }; } });
 vm.runInContext(sender + '\nthis.send = sendTelegramMessage;', transport);
 await transport.send('synthetic', special);
 assert.equal(payload.text, telegramHasUnitActions ? wellhubTelegramMessage(special, wellhub.loadVerifiedWellhubPartners()).text : special);

@@ -15,6 +15,34 @@ on:
       - 'scripts/regression-operational-briefing-browser.mjs'
       - 'scripts/regression-briefing-concierge-composition.mjs'
       - 'client/src/components/notifications/**'
+      - 'server/telegram-binding-*.mjs'
+      - 'server/telegram-visitor-reply-guard.mjs'
+      - 'server/platform-owned-erasure.mjs'
+      - 'server/account-document-erasure.mjs'
+      - 'server/v139/crewlock.mjs'
+      - 'scripts/regression-crewlock-existing-identity.mjs'
+      - 'shared/accountDeletionLocal.mjs'
+      - 'scripts/regression-account-deletion-client.mjs'
+      - 'scripts/regression-account-document-erasure.mjs'
+      - 'scripts/regression-platform-owned-erasure.mjs'
+      - 'scripts/fixtures/telegram-binding-*.mjs'
+      - 'scripts/regression-telegram-binding-state.mjs'
+      - 'scripts/regression-telegram-binding-integration.mjs'
+      - 'scripts/regression-telegram-binding-delivery-channels.mjs'
+      - 'scripts/regression-telegram-binding-admission.mjs'
+      - 'scripts/regression-telegram-binding-local-transports.mjs'
+      - 'scripts/regression-telegram-binding-source-spans.mjs'
+      - 'scripts/regression-telegram-binding-erasure.mjs'
+      - 'scripts/regression-telegram-binding-closure.mjs'
+      - 'scripts/regression-telegram-binding-document-erasure.mjs'
+      - 'scripts/regression-telegram-binding-reply-scope.mjs'
+      - 'scripts/regression-telegram-binding-job-proof.mjs'
+      - 'scripts/regression-telegram-binding-queue-adapter.mjs'
+      - 'scripts/regression-telegram-binding-authenticated-queue.mjs'
+      - 'scripts/regression-telegram-binding-visitor-private.mjs'
+      - 'scripts/regression-telegram-binding-visitor-invite-race.mjs'
+      - 'scripts/telegram-binding/**'
+      - 'scripts/v139/apply.mjs'
       - '.github/workflows/telegram-operational-briefing.yml'
 permissions:
   contents: read
@@ -32,6 +60,12 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Transactional binding and cache contract with synthetic I/O
+        run: |
+          node scripts/regression-telegram-binding-state.mjs
+          node scripts/regression-telegram-binding-admission.mjs
+          node scripts/regression-telegram-binding-erasure.mjs
+          node scripts/regression-telegram-binding-job-proof.mjs
       - name: Compile current canonical engines and test raw source
         run: |
           node scripts/p1-concierge-journey/compile.mjs
@@ -73,6 +107,12 @@ jobs:
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+      - name: Transactional binding in existing isolated MySQL fixture
+        run: node scripts/regression-telegram-binding-state.mjs
+        env:
+          TELEGRAM_BINDING_QA: isolated-mysql
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
       - name: Read-only pinned Concierge lifecycle source for composition
         uses: actions/checkout@v6
         with:
@@ -104,6 +144,29 @@ jobs:
           node --test scripts/tests/operational-briefing.test.mjs scripts/tests/telegram-operational-briefing.test.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-state.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-erasure.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-closure.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-platform-owned-erasure.mjs
+          node scripts/regression-account-deletion-client.mjs
+          node scripts/regression-crewlock-existing-identity.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-account-document-erasure.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-document-erasure.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-job-proof.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-queue-adapter.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-authenticated-queue.mjs
+          node scripts/regression-telegram-binding-integration.mjs
+          node scripts/regression-telegram-binding-delivery-channels.mjs
+          node scripts/regression-telegram-binding-source-spans.mjs
+          node scripts/regression-telegram-binding-local-transports.mjs
+          node scripts/regression-telegram-binding-reply-scope.mjs
+          node scripts/regression-telegram-binding-visitor-private.mjs
+          node scripts/regression-telegram-binding-visitor-invite-race.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-visitor-invite-race.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-admission.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-local-transports.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-reply-scope.mjs
+          TELEGRAM_BINDING_QA=isolated-mysql node scripts/regression-telegram-binding-integration.mjs
           node scripts/regression-telegram-briefing-mysql.mjs
           node scripts/regression-operational-briefing-browser.mjs
           node scripts/regression-briefing-concierge-composition.mjs
