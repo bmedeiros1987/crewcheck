@@ -992,6 +992,15 @@ public class MainActivity extends Activity {
 
     public class CrewCheckNativeBridge {
         @JavascriptInterface
+        public String nativePushStatus() { return NativePushRuntime.snapshot(MainActivity.this); }
+
+        @JavascriptInterface
+        public boolean setNativePushSession(String ownerHint) { return NativePushRuntime.scope(MainActivity.this, ownerHint); }
+
+        @JavascriptInterface
+        public boolean requestNativePushToken() { return NativePushRuntime.requestToken(MainActivity.this); }
+
+        @JavascriptInterface
         public boolean openExternal(final String url) {
             runOnUiThread(() -> openExternalUrl(url));
             return true;
