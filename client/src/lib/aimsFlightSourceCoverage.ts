@@ -25,7 +25,7 @@ export type AimsSourceCoveragePending = {
   sourceIssueId: string;
 };
 export const AIMS_REDACTED_REST_ONLY = 'aims-source-redacted-rest-only';
-const REST_PROOF_VERSION = 2;
+const REST_PROOF_VERSION = 3;
 type FlightLike = Pick<FlightLeg, 'flightNumber' | 'origin' | 'destination' | 'departureTime' | 'arrivalTime'> & { aimsSourceDate?: string };
 type EventLike = { kind: string; day?: { date?: string }; leg?: FlightLike; canonical?: { leg?: FlightLike } | null };
 
@@ -55,13 +55,23 @@ export function newAimsFlightSourceCoverage(authority: AimsFlightSourceCoverage[
 function publishedFlights(roster: CrewRoster) {
   return (roster.days || []).flatMap(day => (day.legs || []).map(leg => ({ date: aimsSourceDateIso(day.date), identity: aimsFlightSourceIdentity(leg.aimsSourceDate || '', leg) })));
 }
+function publishedFlightKey(item: AimsFlightSourceCoverage['publishedFlights'][number]): string {
+  return JSON.stringify({date:item.date, identity:item.identity});
+}
 function coverageChecksum(rawText: string, evidence: AimsFlightSourceCoverage): string {
   const restEvidence: Array<string[] | number> = evidence.sourceRestDates === undefined ? [] : [evidence.sourceRestDates];
   if (evidence.restProofVersion !== undefined) restEvidence.push(evidence.restProofVersion);
   return aimsSourceChecksum(JSON.stringify([rawText, evidence.authority, evidence.authorityPeriod, evidence.unresolvedSourceDates, evidence.sourceDates, evidence.occurrences, evidence.publishedFlights, ...restEvidence]));
 }
 function redactedRestChecksum(evidence: AimsFlightSourceCoverage): string {
-  return aimsSourceChecksum(JSON.stringify([evidence.sourceChecksum, coverageChecksum('', evidence)]));
+  // A JSON column can reorder object keys. Bind the actual fields in a fixed
+  // order so the saved proof survives redaction and a database round trip.
+  return aimsSourceChecksum(JSON.stringify([
+    evidence.sourceChecksum, evidence.authority, evidence.authorityPeriod, evidence.unresolvedSourceDates,
+    evidence.sourceDates, evidence.sourceRestDates, evidence.restProofVersion,
+    evidence.occurrences.map(item=>[item.sourceDate,item.flightNumber,item.identity]),
+    evidence.publishedFlights.map(publishedFlightKey),
+  ]));
 }
 function hasRedactedRestProof(roster: CrewRoster, evidence: AimsFlightSourceCoverage): boolean {
   // The saved copy deliberately strips the source text. Validate the dated
@@ -70,7 +80,7 @@ function hasRedactedRestProof(roster: CrewRoster, evidence: AimsFlightSourceCove
     || evidence.authorityPeriod !== nominalFinancialCompetencePrefix(roster)
     || !roster.days.every(day=>day.rawText==='')
     || evidence.redactedRestChecksum !== redactedRestChecksum(evidence)) return false;
-  const inventory = (flights: AimsFlightSourceCoverage['publishedFlights']) => flights.map(item=>JSON.stringify([item.date,item.identity])).sort();
+  const inventory = (flights: AimsFlightSourceCoverage['publishedFlights']) => flights.map(publishedFlightKey).sort();
   return JSON.stringify(inventory(publishedFlights(roster))) === JSON.stringify(inventory(evidence.publishedFlights));
 }
 export function finalizeAimsFlightSourceCoverage(roster: CrewRoster): CrewRoster {
@@ -88,16 +98,15 @@ export function mergeAimsFlightSourceCoverage(primary: CrewRoster, secondary: Cr
   // A reliable visual date cannot inherit warnings from contaminated linear text.
   // A genuinely absent source date can retain the secondary reader's evidence.
   const primaryDates = new Set(a.sourceDates);
-  const secondaryActivityDates = new Set([
-    ...b.occurrences.map(item => item.sourceDate),
-    ...secondary.days.filter(day => day.rawText?.trim() || day.legs.length || day.dutyReport || day.dutyDebrief || day.hotel)
-      .map(day => aimsSourceDateIso(day.date)),
-  ]);
+  const secondaryActivityDates = new Set(secondary.days
+    .filter(day => day.rawText?.trim() || day.legs.length || day.dutyReport || day.dutyDebrief || day.hotel)
+    .map(day => aimsSourceDateIso(day.date)));
+  const secondaryFlightDates = new Set(b.occurrences.map(item => item.sourceDate));
   const secondaryRestDates = new Set(b.sourceRestDates);
   // Choosing the visual itinerary does not prove exclusive rest. Keep the
   // existing itinerary precedence, but withhold that date's zero evidence
   // when the other reader has a different or unscoped reading.
-  const sourceRestDates = a.sourceRestDates?.filter(date => !b.unresolvedSourceDates
+  const sourceRestDates = a.sourceRestDates?.filter(date => !b.unresolvedSourceDates && !secondaryFlightDates.has(date)
     && (!secondaryActivityDates.has(date) || secondaryRestDates.has(date)));
   return { ...a, sourceRestDates, sourceDates: [...a.sourceDates, ...b.sourceDates.filter(date => !primaryDates.has(date))],
     occurrences: [...a.occurrences, ...b.occurrences.filter(item => !primaryDates.has(item.sourceDate))] };
@@ -196,8 +205,8 @@ export function aimsFlightSourceCoveragePending(roster: CrewRoster, events: read
     if (evidence.unresolvedSourceDates) add('', 'aims-source-date-unverified', 'há referência de voo ou marcador de data sem data legível na fonte selecionada.');
     evidence.publishedFlights.forEach((item, index) => { if (!item.identity) add(item.date, `aims-published-unverified:${index}`, 'há voo publicado cuja identidade de origem não pôde ser verificada.'); });
     // Detect real flight edits without invalidating benign hotel/crew annotations.
-    const previous = counts(evidence.publishedFlights.map(item => JSON.stringify(item)));
-    const current = counts(publishedFlights(roster).map(item => JSON.stringify(item)));
+    const previous = counts(evidence.publishedFlights.map(publishedFlightKey));
+    const current = counts(publishedFlights(roster).map(publishedFlightKey));
     for (const key of new Set([...previous.keys(), ...current.keys()])) {
       if (previous.get(key) !== current.get(key)) {
         const item = JSON.parse(key); add(item.date, `aims-changed:${key}`, 'uma identidade ou data de voo mudou após a leitura da fonte.');

@@ -53,7 +53,12 @@ try{
  const visualSources=[published(1,{27:'DO'},true),published(2,{},true)];
  assert(visualSources.every(roster=>roster.aimsFlightSourceCoverage?.authority==='aims_visual'));
  assert.deepEqual(nextAllowancePayment([],[],months,now,covered,visualSources).totals,{BRL:0});
- const redact=roster=>({...roster,rawText:'',days:roster.days.map(day=>({...day,rawText:''}))});
+ // History clears source text and its JSON column may reorder object keys.
+ const redact=roster=>JSON.parse(JSON.stringify(
+  {...roster,rawText:'',days:roster.days.map(day=>({...day,rawText:''}))},
+  (_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)
+   ?Object.fromEntries(Object.entries(value).reverse()):value,
+ ));
  const issuesFor=roster=>aimsFlightSourceCoveragePending(roster,roster.days.flatMap(day=>day.legs.map(leg=>({kind:'flight',day,leg}))));
  const fromHistory=visualSources.map(redact);
  const savedIssues=fromHistory.flatMap(issuesFor);
@@ -99,17 +104,20 @@ try{
  assert.equal(nextAllowancePayment([],[],months,now,covered,[visualSources[0],unscopedText]).totals,null,
   'secondary evidence without a valid date cannot prove exclusive rest');
 
- const previousProof=structuredClone(visualSources[1]);
- const evidence=previousProof.aimsFlightSourceCoverage;
- delete evidence.restProofVersion;
- const previousDigest=raw=>aimsSourceChecksum(JSON.stringify([raw,evidence.authority,evidence.authorityPeriod,
-  evidence.unresolvedSourceDates,evidence.sourceDates,evidence.occurrences,evidence.publishedFlights,evidence.sourceRestDates]));
- evidence.sourceChecksum=previousDigest(previousProof.rawText);
- evidence.redactedRestChecksum=aimsSourceChecksum(JSON.stringify([evidence.sourceChecksum,previousDigest('')]));
- assert.deepEqual(issuesFor(previousProof),[],'an older proof still passes ordinary source coverage');
- for(const roster of [previousProof,redact(previousProof)]){
-  assert.equal(nextAllowancePayment([],issuesFor(roster),months,now,covered,[visualSources[0],roster]).totals,null,
-   'proof built before the merge check cannot establish zero');
+ for(const version of [undefined,2]){
+  const previousProof=structuredClone(visualSources[1]);
+  const evidence=previousProof.aimsFlightSourceCoverage;
+  evidence.restProofVersion=version;
+  const previousDigest=raw=>aimsSourceChecksum(JSON.stringify([raw,evidence.authority,evidence.authorityPeriod,
+   evidence.unresolvedSourceDates,evidence.sourceDates,evidence.occurrences,evidence.publishedFlights,evidence.sourceRestDates,
+   ...(version===undefined?[]:[version])]));
+  evidence.sourceChecksum=previousDigest(previousProof.rawText);
+  evidence.redactedRestChecksum=aimsSourceChecksum(JSON.stringify([evidence.sourceChecksum,previousDigest('')]));
+  assert.deepEqual(issuesFor(previousProof),[],'an older proof still passes ordinary source coverage');
+  for(const roster of [previousProof,redact(previousProof)]){
+   assert.equal(nextAllowancePayment([],issuesFor(roster),months,now,covered,[visualSources[0],roster]).totals,null,
+    'an obsolete rest proof cannot establish zero');
+  }
  }
  const changedHistory=structuredClone(fromHistory);
  changedHistory[0].days.find(day=>day.legs.length).legs[0].arrivalTime='10:45';
