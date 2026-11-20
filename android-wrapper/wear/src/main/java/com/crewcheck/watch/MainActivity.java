@@ -591,16 +591,22 @@ public final class MainActivity extends FragmentActivity
         }
         Primary primary = primaryFor(snapshot);
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
+        boolean compact = stackColumns();
 
-        TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
-        icon.setPadding(0, dp(8), 0, dp(4));
-        content.addView(icon);
+        if (!compact) {
+            TextView icon = text(stateGlyph(snapshot.state), 19, accent, true, Gravity.CENTER);
+            icon.setPadding(0, dp(8), 0, dp(4));
+            icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            content.addView(icon);
+        }
 
         TextView eyebrow = text(
                 stale ? "DADOS ANTIGOS" : primary.eyebrow,
                 9, accent, true, Gravity.CENTER
         );
         eyebrow.setLetterSpacing(.08f);
+        eyebrow.setAccessibilityHeading(true);
+        if (compact) eyebrow.setPadding(0, dp(4), 0, 0);
         content.addView(eyebrow);
 
         TextView value = text(

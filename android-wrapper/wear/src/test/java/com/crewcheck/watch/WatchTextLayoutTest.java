@@ -370,6 +370,49 @@ public class WatchTextLayoutTest {
         }
     }
 
+    @Test public void compactLiveFlightCardStartsWithOperationalHeading() throws Exception {
+        for (int size : new int[]{192, 227}) {
+            RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
+            for (float scale : new float[]{1f, 1.5f, 2f}) {
+                RuntimeEnvironment.setFontScale(scale);
+                try (ActivityController<MainActivity> controller =
+                             Robolectric.buildActivity(MainActivity.class).create()) {
+                    MainActivity activity = controller.get();
+                    ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                    LinearLayout content = field(activity, "content", LinearLayout.class);
+                    measure(scroll, size);
+
+                    long now = System.currentTimeMillis();
+                    JSONObject json = WatchContextSnapshot.demo(now - 120_000L).toJson()
+                            .put("state", "CONNECTION").put("headline", "CONEXÃO")
+                            .put("currentFlight", "QA102").put("gate", "B24").put("gateSource", "manual")
+                            .put("connection", "20 MIN").put("boardingTime", "18:20");
+                    content.removeAllViews();
+                    call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class},
+                            WatchContextSnapshot.fromJson(json.toString()), now);
+                    measure(scroll, size);
+
+                    boolean compact = size == 192 || scale > 1.2f;
+                    TextView heading = (TextView) content.getChildAt(compact ? 0 : 1);
+                    assertEquals("CONEXÃO", heading.getText().toString());
+                    assertTrue(heading.isAccessibilityHeading());
+                    assertEquals(1, heading.getLineCount());
+                    assertEquals(0, heading.getLayout().getEllipsisCount(0));
+                    if (!compact) {
+                        View icon = content.getChildAt(0);
+                        assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, icon.getImportantForAccessibility());
+                    }
+                    String shown = allText(content);
+                    assertTrue(shown, shown.contains("20 MIN"));
+                    assertTrue(shown, shown.contains("QA102 · PORTÃO B24"));
+                    assertTrue(shown, shown.contains("Embarque previsto 18:20"));
+                    assertTrue(shown, shown.contains("Atualizado há 2 min"));
+                    assertFits(content);
+                }
+            }
+        }
+    }
+
     @Test public void reportingKeepsDateAndEstimatedBoardingVisible() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
             MainActivity activity = controller.get();
