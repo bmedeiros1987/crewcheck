@@ -230,3 +230,105 @@ test('breakfast defaults cross to previous local day in explicit hotel zones', (
     }
   }
 });
+
+const automaticArgs = {
+  ...args, manualScheduleRequested: false, automaticScheduleRequested: true,
+  defaultLeadMinutes: 75, defaultWithoutBreakfastMinutes: 45, breakfastPlan: 'with',
+};
+const midnightApz = { ...hotelApz, hotelReportAt: '2030-10-11T00:00:00-03:00' };
+
+test('automatic proposal requires explicit intent plus the existing integration and device gates', () => {
+  assert.equal(planStayAlarm({ ...automaticArgs, enabled: false }).reason, 'integration-disabled');
+  for (const automaticScheduleRequested of [undefined, false, 'true', 1]) {
+    assert.equal(planStayAlarm({ ...automaticArgs, automaticScheduleRequested }).reason, 'manual-confirmation-required');
+  }
+  for (const gate of ['automaticConfigured', 'channelConfigured']) {
+    assert.equal(planStayAlarm({ ...automaticArgs, [gate]: false }).reason, 'capability-not-configured');
+  }
+  assert.equal(planStayAlarm({ ...automaticArgs, devicePermission: 'denied' }).reason, 'device-permission-unconfirmed');
+  const manual = planStayAlarm({ ...args, automaticScheduleRequested: true });
+  assert.equal(manual.calculated.leadMinutes, args.leadMinutes);
+});
+
+test('automatic proposal uses confirmed hotel APZ at local midnight and the two personal leads', () => {
+  for (const timeZone of ['America/Fortaleza', 'Asia/Tokyo']) {
+    const apz = stayLocalInstant('2030-10-11', '00:00', timeZone);
+    const hotel = { ...hotelApz, timeZone, hotelReportAt: new Date(apz).toISOString() };
+    const occurrence = {
+      ...stay, timeZone,
+      startAt: new Date(apz - 12 * 3_600_000).toISOString(),
+      endAt: new Date(apz + 4 * 3_600_000).toISOString(),
+    };
+    for (const [breakfastPlan, lead, clock] of [['with', 75, '22:45'], ['without', 45, '23:15']]) {
+      const proposed = planStayAlarm({
+        ...automaticArgs, now: apz - 6 * 3_600_000, stay: occurrence,
+        hotelApz: hotel, pickupAt: pickup.pickupAt, breakfastPlan,
+      });
+      assert.equal(proposed.action, 'prepare');
+      assert.equal(proposed.targetKind, 'hotel-apz');
+      assert.equal(proposed.hotelReportAt, hotel.hotelReportAt);
+      assert.deepEqual(proposed.calculated.display, {
+        date: '2030-10-10', clock, timeZone, instant: new Date(apz - lead * 60_000).toISOString(),
+      });
+      assert.equal(proposed.calculated.schedulingState, 'not-programmed');
+    }
+  }
+});
+
+test('without a confirmed breakfast choice, the midnight rule remains unresolved', () => {
+  for (const confirmedApz of [midnightApz, { ...hotelApz, hotelReportAt: '2030-10-10T23:59:00-03:00' }]) {
+    for (const breakfastPlan of [undefined, 'unknown']) {
+      assert.equal(planStayAlarm({ ...automaticArgs, hotelApz: confirmedApz, breakfastPlan }).reason, 'breakfast-plan-unconfirmed');
+    }
+  }
+  assert.equal(planStayAlarm({ ...automaticArgs, defaultLeadMinutes: undefined }).reason, 'lead-not-configured');
+  assert.equal(planStayAlarm({ ...automaticArgs, breakfastPlan: 'without', defaultWithoutBreakfastMinutes: undefined }).reason, 'lead-not-configured');
+});
+
+test('saved individual overrides take priority over the automatic breakfast defaults', () => {
+  const options = { ...automaticArgs, hotelApz: midnightApz, breakfastPlan: 'unknown' };
+  const relative = planStayAlarm({ ...options, choice: { mode: 'relative', leadMinutes: 30 } });
+  assert.equal(relative.calculated.preferenceSource, 'individual');
+  assert.equal(relative.calculated.display.clock, '23:30');
+  const choice = Object.freeze({ mode: 'absolute', alarmAt: '2030-10-11T02:15:00Z', timeZone: stay.timeZone });
+  const proposed = planStayAlarm({ ...options, choice, defaultLeadMinutes: 105, hotelApz });
+  assert.equal(proposed.calculated.preferenceSource, 'individual');
+  assert.equal(proposed.scheduledAt, '2030-10-11T02:15:00.000Z');
+  assert.equal(planStayAlarm({ ...options, choice, hotelApz: null }).reason, 'hotel-apz-missing-manual-required');
+});
+
+test('automatic APZ edits reuse one pending occurrence and never resurrect its cancellation', () => {
+  const first = planStayAlarm(automaticArgs);
+  const job = Object.freeze({ ...scope, jobKey: first.jobKey, scheduledAt: first.scheduledAt,
+    hotelReportAt: first.hotelReportAt, status: 'pending' });
+  assert.equal(planStayAlarm({ ...automaticArgs, jobs: [job] }).reason, 'already-pending');
+  const edited = { ...automaticArgs, hotelApz: { ...hotelApz, hotelReportAt: '2030-10-11T01:00:00-03:00' } };
+  const next = planStayAlarm({ ...edited, jobs: [job] });
+  assert.equal(next.action, 'update-pending');
+  assert.equal(next.jobKey, first.jobKey);
+  assert.notEqual(next.scheduledAt, first.scheduledAt);
+  assert.equal(job.scheduledAt, first.scheduledAt);
+  const absolute = planStayAlarm({ ...edited, jobs: [job], choice: { mode: 'absolute', alarmAt: first.scheduledAt } });
+  assert.equal(absolute.action, 'update-pending');
+  assert.equal(absolute.jobKey, first.jobKey);
+  assert.equal(absolute.scheduledAt, first.scheduledAt);
+  assert.notEqual(absolute.hotelReportAt, first.hotelReportAt);
+  assert.equal(planStayAlarm({ ...edited, jobs: [job, job] }).reason, 'duplicate-jobs-require-review');
+  assert.equal(planStayAlarm({ ...edited, jobs: [{ ...job, status: 'cancelled' }] }).reason, 'cancellation-preserved');
+  assert.equal(planStayAlarm({ ...edited, jobs: [{ ...job, rosterRevision: 'r0' }] }).reason, 'obsolete-job-requires-cancellation');
+});
+
+test('automatic proposal rejects missing hotel APZ, uncertain zone and unrelated occurrences', () => {
+  assert.equal(planStayAlarm({ ...automaticArgs, hotelApz: null, pickupAt: pickup.pickupAt }).reason, 'hotel-apz-missing-manual-required');
+  assert.equal(planStayAlarm({ ...automaticArgs, hotelApz: pickup }).reason, 'hotel-apz-provider-contract-unavailable');
+  assert.equal(planStayAlarm({ ...automaticArgs, hotelApz: { ...hotelApz, timeZone: 'UTC' } }).reason, 'hotel-apz-unconfirmed');
+  assert.equal(planStayAlarm({ ...automaticArgs, hotelApz: { ...hotelApz, confirmed: false } }).reason, 'hotel-apz-unconfirmed');
+  assert.equal(planStayAlarm({ ...automaticArgs, hotelApz: { ...hotelApz, rosterEventId: 'other-stay' } }).reason, 'scope-mismatch');
+  assert.equal(planStayAlarm({
+    ...automaticArgs, stay: { ...stay, eventId: undefined }, hotelApz: { ...hotelApz, rosterEventId: undefined },
+  }).reason, 'stay-occurrence-unconfirmed');
+  assert.equal(planStayAlarm({ ...automaticArgs, stay: { ...stay, kind: 'flight' } }).reason, 'stay-occurrence-unconfirmed');
+  for (const hotelReportAt of [stay.startAt, '2030-10-11T12:01:00Z']) {
+    assert.equal(planStayAlarm({ ...automaticArgs, hotelApz: { ...hotelApz, hotelReportAt } }).reason, 'hotel-apz-outside-stay');
+  }
+});
