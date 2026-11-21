@@ -1,0 +1,10 @@
+export const INFLIGHT_REST_LIMITS: Readonly<{ minTurns: number; maxTurns: number; maxHandoverMinutes: number; minTurnMinutes: number; maxWindowMinutes: number }>;
+export const INFLIGHT_REST_MODES: readonly ['sound', 'vibrate'];
+export type InflightRestMode = 'sound' | 'vibrate';
+export type InflightRestInput = { flightId: string; startAt: string; endAt: string; turns: number; handoverMinutes: number; myTurn: number | null; alertEveryHandover: boolean; mode: InflightRestMode };
+export type InflightRestTurn = Readonly<{ index: number; startAt: string; endAt: string; minutes: number; mine: boolean }>;
+export type InflightRestAlarm = Readonly<{ id: string; group: string; kind: 'own-turn-end' | 'handover'; turn: number; at: string; epochMs: number; channel: 'alarm' | 'vibrate' }>;
+export type InflightRestPlan = Readonly<{ ok: true; group: string; turnMinutes: number; handoverMinutes: number; turns: readonly InflightRestTurn[]; alarms: readonly InflightRestAlarm[]; past: readonly InflightRestAlarm[]; watchOnly: boolean }>;
+export type InflightRestFailure = Readonly<{ ok: false; reason: string }>;
+export function inflightRestGroup(flightId: unknown): string | null;
+export function planInflightRest(input: InflightRestInput, now: number): InflightRestPlan | InflightRestFailure;
