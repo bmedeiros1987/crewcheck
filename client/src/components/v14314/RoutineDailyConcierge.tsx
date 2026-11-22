@@ -1,3 +1,7 @@
+import {withLifeAccountBoundary} from '@/components/life/LifeAccountBoundary';
+import {captureAuthSession} from '@/lib/authClient';
+import {useRef} from 'react';
+import {readLifeAccountJson,writeLifeAccountJson} from '@/lib/lifeAccountStorage';
 import { useCallback, useMemo, useState } from 'react';
 import {
   BellRing,
@@ -95,18 +99,9 @@ const DEFAULT_SETTINGS: DayGuideSettings = {
   tripMinGapHours: 30,
 };
 
-function readSettings(): DayGuideSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
+function readSettings(): DayGuideSettings {return readLifeAccountJson(SETTINGS_KEY,DEFAULT_SETTINGS);}
+function saveSettings(value: DayGuideSettings) {writeLifeAccountJson(SETTINGS_KEY,value);}
 
-function saveSettings(value: DayGuideSettings) {
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(value)); } catch {}
-}
 
 function eventStart(item?: RoutineEvent): Date {
   return new Date(item?.canonical?.startDateTime || 0);
@@ -231,7 +226,8 @@ function placeActionType(place: LifePlace): 'exercise' | 'study' | 'leisure' {
   return 'leisure';
 }
 
-export default function RoutineDailyConcierge({ events }: { events: RoutineEvent[] }) {
+function RoutineDailyConcierge({ events }: { events: RoutineEvent[] }) {
+  const lifeSession=useRef(captureAuthSession()).current;
   const [settings, setSettings] = useState<DayGuideSettings>(() => readSettings());
   const [location, setLocation] = useState<LifeCoordinates | null>(() => loadLifeLocation());
   const [locationName, setLocationName] = useState(() => lifeLocationLabel());
@@ -245,10 +241,12 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   const categories = useMemo(() => searchSet(plan), [plan.recoveryPriority, plan.tripEligible, plan.freeMinutes]);
 
   const loadPlaces = useCallback(async (target: LifeCoordinates, force = false) => {
+    if(!lifeSession.isCurrent())return;
     setBusyPlaces(true);
     setMessage('');
     try {
       const result = await searchLifePlaceSet(categories, target, force);
+      if(!lifeSession.isCurrent())return;
       setPlaces(result.slice(0, 9));
       if (!result.length) setMessage('Nenhum local adequado foi encontrado agora. Tente atualizar ou ampliar a busca no mapa.');
     } catch {
@@ -259,13 +257,17 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   }, [categories]);
 
   const locate = useCallback(async (forcePlaces = false) => {
+    if(!lifeSession.isCurrent())return;
     setBusyLocation(true);
     try {
       const target = await requestLifeLocation({ maximumAge: forcePlaces ? 0 : 5 * 60_000 });
+      if(!lifeSession.isCurrent())return;
       setLocation(target);
       const label = await reverseGeocodeLifeLocation(target).catch(() => 'Localização atual');
+      if(!lifeSession.isCurrent())return;
       setLocationName(label);
       await loadPlaces(target, forcePlaces);
+      if(!lifeSession.isCurrent())return;
       toast.success('Localização atualizada. As sugestões foram recalculadas.');
     } catch {
       toast.error('Não consegui acessar sua localização. Ative a permissão do CrewCheck e tente novamente.');
@@ -275,6 +277,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   }, [loadPlaces]);
 
   function saveGuideSettings() {
+    if(!lifeSession.isCurrent())return;
     saveSettings(settings);
     setSettingsOpen(false);
     toast.success('Preferências do guia diário salvas.');
@@ -294,21 +297,24 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   }
 
   async function connectTelegram() {
+    if(!lifeSession.isCurrent())return;
     try {
       const response = await fetch('/api/telegram/health', { cache: 'no-store', credentials: 'same-origin' });
       const payload = await response.json().catch(() => null);
+      if(!lifeSession.isCurrent())return;
       const username = String(payload?.botUsername || '').replace(/^@/, '');
       if (!username) return toast.info('Telegram ainda aguarda a configuração do bot.');
       const deepLink = `tg://resolve?domain=${encodeURIComponent(username)}&start=crewcheck_life`;
       const webLink = `https://t.me/${encodeURIComponent(username)}?start=crewcheck_life`;
       window.location.href = deepLink;
-      window.setTimeout(() => window.open(webLink, '_blank', 'noopener,noreferrer'), 700);
+      window.setTimeout(() => {if(lifeSession.isCurrent())window.open(webLink, '_blank', 'noopener,noreferrer');}, 700);
     } catch {
       toast.error('Não consegui abrir o Telegram agora.');
     }
   }
 
   async function connectNotifications() {
+    if(!lifeSession.isCurrent())return;
     try {
       const runtime = (window as any).CrewCheckPremium;
       const ok = runtime?.requestNotifications ? await runtime.requestNotifications() : ('Notification' in window ? await Notification.requestPermission() === 'granted' : false);
@@ -319,11 +325,13 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   }
 
   function openCalendar() {
+    if(!lifeSession.isCurrent())return;
     window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'calendar' }));
     toast.message('Abrindo a sincronização de calendário.');
   }
 
   function choosePlace(place: LifePlace) {
+    if(!lifeSession.isCurrent())return;
     const type = placeActionType(place);
     if (type === 'exercise' && ['gym', 'crossfit', 'pilates', 'yoga', 'swimming', 'sports'].includes(String(place.category))) {
       recordGymCheckIn(place.name, false);
@@ -335,6 +343,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   }
 
   async function shareCheckIn(place: LifePlace) {
+    if(!lifeSession.isCurrent())return;
     recordGymCheckIn(place.name, true);
     const text = shareGymCheckInText(place.name);
     try {
@@ -347,6 +356,7 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
   }
 
   function addPlanToCalendar() {
+    if(!lifeSession.isCurrent())return;
     const title = plan.recoveryPriority ? 'CrewCheck Life · Recuperação e rotina leve' : 'CrewCheck Life · Janela pessoal';
     const details = [
       `Sono protegido: ${dateTimeLabel(plan.sleepStart)}–${dateTimeLabel(plan.sleepEnd)}`,
@@ -430,3 +440,5 @@ export default function RoutineDailyConcierge({ events }: { events: RoutineEvent
     <footer className="cc-life-day-safety"><MoonStar/><p><strong>Orientação de rotina, não avaliação clínica.</strong> O CrewCheck reduz sugestões quando a carga operacional, o sono ou a janela disponível pedem recuperação. Em caso de fadiga relevante, use também os canais oficiais da empresa e sua própria avaliação.</p></footer>
   </section>;
 }
+
+export default withLifeAccountBoundary(RoutineDailyConcierge);

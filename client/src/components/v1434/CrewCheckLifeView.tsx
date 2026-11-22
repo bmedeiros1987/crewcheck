@@ -1,3 +1,9 @@
+import LifeConciergePanel from '@/components/v14313/LifeConciergePanel';
+import {clearLifeConciergeData,ingestHealthSummary,ingestManualSummary,saveLifeGoals} from '@/lib/lifeConcierge';
+import {readLifeAccountJson,writeLifeAccountJson,removeLifeAccountValue} from '@/lib/lifeAccountStorage';
+import {withLifeAccountBoundary} from '@/components/life/LifeAccountBoundary';
+import {captureAuthSession} from '@/lib/authClient';
+import {useRef} from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -107,18 +113,8 @@ const DEFAULT_MANUAL: ManualSummary = {
   updatedAt: '',
 };
 
-function readStored<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStored(key: string, value: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
+function readStored<T>(key: string, fallback: T): T { return readLifeAccountJson(key, fallback); }
+function writeStored(key: string, value: unknown) { writeLifeAccountJson(key,value); }
 
 function parseNativePayload(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object') return value as Record<string, unknown>;
@@ -154,7 +150,13 @@ function integrationLabel(status: NativeHealthStatus): string {
   return 'Aguardando app Android';
 }
 
-export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }) {
+const accountScopeNotice = <p className="cc-life-sync-note" role="note" data-life-account-scope>
+  <strong>Este resumo usa apenas registros desta conta.</strong>{' '}
+  <span>Registros antigos sem vínculo, se houver, ficam preservados no aparelho.</span>
+</p>;
+
+function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextProgram | null }) {
+  const lifeSession = useRef(captureAuthSession()).current;
   const [consent, setConsent] = useState<LifeConsent>(() => readStored(KEYS.consent, { active: false, acceptedAt: '', policyVersion: '1.0' }));
   const [consentChecked, setConsentChecked] = useState(false);
   const [profile, setProfile] = useState<LifeProfile>(() => {
@@ -200,12 +202,13 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   useEffect(() => {
-    const onStatus = (event: Event) => setNativeStatus(parseNativePayload((event as CustomEvent).detail) as NativeHealthStatus);
-    const onSummary = (event: Event) => {
-      const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
-      setNativeSummary(detail);
-      if (detail.ok) writeStored(KEYS.nativeSummary, detail);
+    const onStatus = (event: Event) => lifeSession.isCurrent() && setNativeStatus(parseNativePayload((event as CustomEvent).detail) as NativeHealthStatus);
+    const onSummary = (_event: Event) => {
+      // Ignore legacy health events.
+      // No request/account-bound native response protocol exists yet; never adopt a broadcast.
+      if (!lifeSession.isCurrent()) return;
     };
+
     window.addEventListener('crewcheck:health-status', onStatus);
     window.addEventListener('crewcheck:health-summary', onSummary);
     if (consent.active && nativeHealthEnabled) postAndroid('status');
@@ -218,45 +221,19 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   useEffect(() => {
     const native = (window as any).AndroidCrewCheckNative;
     const readCompanion = () => {
+      if (!lifeSession.isCurrent()) return;
       try {
         const statusRaw = native?.lifeCompanionStatus?.();
         const status = typeof statusRaw === 'string' ? JSON.parse(statusRaw) : (statusRaw || {});
         setCompanionStatus(status);
-        const summaryRaw = native?.readLifeCompanionSummary?.();
-        const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : (summaryRaw || {});
-        if (summary && typeof summary === 'object' && summary.automatic) {
-          const normalized = { ...summary, ok: true, source: 'samsung_health' };
-          setCompanionSummary(normalized);
-          try {
-            localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
-              ...normalized,
-              capturedAt: Number(normalized.generatedAtEpochMs) > 0
-                ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-                : new Date().toISOString(),
-              source: 'samsung-companion',
-            }));
-            window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
-          } catch {}
-        }
+        setCompanionStatus({...status,state:'unverified_account'});
+        // Device-wide cached summaries have no account/request provenance. Do not read or adopt them.
       } catch {}
     };
-    const onCompanion = (event: Event) => {
-      const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
-      if (detail && detail.automatic) {
-        const normalized = { ...detail, ok: true, source: 'samsung_health' };
-        setCompanionSummary(normalized);
-        setCompanionStatus((current) => ({ ...current, installed: true, state: 'connected', automatic: true }));
-        try {
-          localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
-            ...normalized,
-            capturedAt: Number(normalized.generatedAtEpochMs) > 0
-              ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-              : new Date().toISOString(),
-            source: 'samsung-companion',
-          }));
-          window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
-        } catch {}
-      }
+    const onCompanion = (_event: Event) => {
+      if (!lifeSession.isCurrent()) return;
+      // A broadcast without a request-scoped account capability cannot supply personal history.
+      setCompanionStatus(current=>({...current,state:'unverified_account'}));
     };
     readCompanion();
     window.addEventListener('crewcheck:life-companion-summary', onCompanion);
@@ -289,7 +266,9 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       && Number.isFinite(companionAgeMs)
       && companionAgeMs >= 0
   );
-  const companionStateLabel = automaticSamsung
+  const companionStateLabel = companionStatus.state === 'unverified_account'
+    ? 'Resumo automático sem vínculo confirmado com esta conta'
+    : automaticSamsung
     ? 'Samsung Health conectado · automático'
     : companionMigrationRequired
       ? 'Companion antigo · migrar para a versão oficial'
@@ -315,6 +294,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
           : '';
 
   function openCompanionStore() {
+    if (!lifeSession.isCurrent()) return;
     const native = (window as any).AndroidCrewCheckNative;
     try {
       if (native?.openLifeCompanionStore?.()) return;
@@ -324,10 +304,11 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       '_blank',
       'noopener,noreferrer',
     );
-    toast.info('A sincronização automática com Samsung Health requer o app Android CrewLife Companion.');
+    toast.info('Instalar o Companion não ativa a sincronização nesta versão do CrewCheck.');
   }
 
   function migrateCompanionToOfficialPlay() {
+    if (!lifeSession.isCurrent()) return;
     const native = (window as any).AndroidCrewCheckNative;
     try {
       if (native?.migrateLifeCompanionToPlay?.()) {
@@ -416,6 +397,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }, [metrics, nextProgram, profile]);
 
   function activateLife() {
+    if (!lifeSession.isCurrent()) return;
     if (!consentChecked) return;
     const next: LifeConsent = { active: true, acceptedAt: new Date().toISOString(), policyVersion: '1.0' };
     setConsent(next);
@@ -424,6 +406,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function saveProfile() {
+    if (!lifeSession.isCurrent()) return;
     const safe: LifeProfile = {
       ...profile,
       sleepTarget: Math.min(12, Math.max(1, numberOrZero(profile.sleepTarget) || 7.5)),
@@ -436,6 +419,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function saveManual() {
+    if (!lifeSession.isCurrent()) return;
     const safe: ManualSummary = {
       sleepHours: Math.min(24, numberOrZero(manual.sleepHours)),
       steps: Math.min(200000, Math.round(numberOrZero(manual.steps))),
@@ -450,18 +434,21 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function connectAndroid() {
+    if (!lifeSession.isCurrent()) return;
     if (!postAndroid('requestPermissions', { consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('Abra esta opção no aplicativo Android CrewCheck. No navegador, use o lançamento manual.');
     }
   }
 
   function refreshAndroid() {
+    if (!lifeSession.isCurrent()) return;
     if (!postAndroid('readSummary', { days: 7, consentVersion: '1.0', consentAccepted: consent.active })) {
       toast.info('A atualização automática está disponível no aplicativo Android.');
     }
   }
 
   function setWatchMirror(enabled: boolean) {
+    if (!lifeSession.isCurrent()) return;
     const bridge = (window as any).AndroidCrewCheckNative;
     if (!bridge?.setWatchLifeConsent) {
       toast.info('O espelhamento do CrewLife está disponível no aplicativo Android CrewCheck.');
@@ -480,6 +467,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function connectApple() {
+    if (!lifeSession.isCurrent()) return;
     if (!appleBridge) {
       toast.info('Apple Health será liberado junto com o aplicativo nativo iOS. O modo manual já funciona no iPhone e iPad.');
       return;
@@ -488,15 +476,17 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function revokeNative() {
+    if (!lifeSession.isCurrent()) return;
     postAndroid('revokePermissions');
     try { appleBridge?.postMessage({ action: 'revokeOrOpenSettings' }); } catch {}
     setNativeSummary({});
     setNativeStatus({ availability: androidBridge?.postMessage ? 'permission_required' : 'unavailable' });
-    try { localStorage.removeItem(KEYS.nativeSummary); } catch {}
+    try { removeLifeAccountValue(KEYS.nativeSummary); } catch {}
     toast.success('Resumo local removido. A revogação do sistema foi solicitada quando disponível.');
   }
 
   function pauseLife() {
+    if (!lifeSession.isCurrent()) return;
     const next = { ...consent, active: false };
     setConsent(next);
     writeStored(KEYS.consent, next);
@@ -504,16 +494,21 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   function deleteLife() {
-    if (!window.confirm('Apagar consentimento, objetivos e todos os resumos locais do CrewCheck Life neste aparelho?')) return;
+    if (!lifeSession.isCurrent()) return;
+    if (!window.confirm('Apagar os dados locais do CrewCheck Life desta conta? Registros antigos sem conta ficam preservados.')) return;
+    if (!lifeSession.isCurrent()) return;
     postAndroid('revokePermissions');
-    Object.values(KEYS).forEach((key) => { try { localStorage.removeItem(key); } catch {} });
+    if (!lifeSession.isCurrent()) return;
+    const removed = Object.values(KEYS).map(key=>removeLifeAccountValue(key)).every(Boolean);
+    const routineRemoved = clearLifeConciergeData();
     setConsent({ active: false, acceptedAt: '', policyVersion: '1.0' });
     setProfile(DEFAULT_PROFILE);
     setManual(DEFAULT_MANUAL);
     setNativeSummary({});
     setNativeStatus({});
     setConsentChecked(false);
-    toast.success('Dados locais do CrewCheck Life apagados.');
+    if (removed && routineRemoved) toast.success('Dados locais desta conta apagados.');
+    else toast.error('Não foi possível confirmar toda a remoção local. Tente novamente.');
   }
 
   if (!consent.active) {
@@ -522,6 +517,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
         <span><HeartPulse/></span>
         <div><small>ROTINA PESSOAL OPCIONAL</small><h1 id="crewcheck-life-title">CrewCheck Life</h1><p>Organize descanso, estudos, atividade física e tempo pessoal ao redor da sua escala.</p></div>
       </header>
+      {accountScopeNotice}
       <article className="cc-life-readable cc-life-consent-card">
         <ShieldCheck/>
         <div><h2>Você decide se quer usar</h2><p>O CrewCheck Life não é uma ferramenta médica, não faz diagnóstico e não avalia aptidão. Os dados servem somente para recomendações pessoais e ficam neste aparelho nesta primeira entrega.</p></div>
@@ -541,6 +537,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       <div><small>ROTINA PESSOAL · CONTROLE LOCAL</small><h1 id="crewcheck-life-title">CrewCheck Life</h1><p>Planejamento de bem-estar ligado à escala, sem diagnóstico ou avaliação de aptidão.</p></div>
       <b>Ativo</b>
     </header>
+    {accountScopeNotice}
 
     <section className={`cc-life-recommendation ${recommendation.tone}`}>
       <div><small>ORIENTAÇÃO PESSOAL</small><h2>{recommendation.title}</h2><p>{recommendation.body}</p></div>
@@ -568,29 +565,26 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
 
     <section className="cc-life-block cc-life-integrations">
       <header><div><small>INTEGRAÇÕES</small><h2>Conecte somente o que quiser</h2></div><ShieldCheck/></header>
+      <p className="cc-life-sync-note" role="status" data-life-native-hold>Sincronização automática indisponível nesta versão.</p>
       <div className="cc-life-integration-grid">
-        <article className={automaticSamsung ? 'connected' : companionStatus.installed ? 'ready' : ''}>
-          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Lê automaticamente passos, sono, atividade e Energy Score do Samsung Health, somente com sua autorização.</p><small>{companionStateLabel}</small>{companionDiagnosticDetail && <p>{companionDiagnosticDetail}</p>}{companionMigrationRequired && <p>Você está usando uma versão piloto antiga. O Android precisa remover somente o Companion uma vez para instalar a versão oficial da Play. Seu CrewCheck, login e escala não serão removidos.</p>}</div>
-          <button className={automaticSamsung ? '' : 'primary'} onClick={() => {
-            if (companionMigrationRequired) {
-              migrateCompanionToOfficialPlay();
-              return;
-            }
+        <article>
+          <Smartphone/><div><h3>CrewLife Companion Samsung</h3><p>Resumos automáticos aguardam confirmação segura da conta. Instalar ou atualizar o Companion não libera a sincronização aqui.</p><small>{companionStateLabel}</small></div>
+          <button disabled={companionMigrationRequired} className={automaticSamsung ? '' : 'primary'} onClick={() => {
             if (!companionStatus.installed) {
               openCompanionStore();
               return;
             }
             const ok = (window as any).AndroidCrewCheckNative?.openLifeCompanion?.();
-            if (!ok) toast.info('Abra o CrewLife Companion para concluir a conexão com o Samsung Health.');
-          }}>{automaticSamsung ? 'Abrir Companion' : companionMigrationRequired ? 'Migrar para versão oficial' : companionConnectedStale ? 'Atualizar no Companion' : companionStatus.installed ? 'Abrir Companion' : 'Baixar na Play Store'}</button>
+            if (!ok) toast.info('O Companion não abriu. A sincronização continua indisponível nesta versão.');
+          }}>{companionMigrationRequired ? 'Integração indisponível' : companionStatus.installed ? 'Abrir Companion' : 'Ver app na Play Store'}</button>
         </article>
-        {nativeHealthEnabled && <article className={nativeStatus.allGranted ? 'connected' : ''}>
-          <Smartphone/><div><h3>Health Connect</h3><p>Integração Android alternativa quando disponível nesta build.</p><small>{integrationLabel(nativeStatus)}</small></div>
-          <div><button className="primary" onClick={connectAndroid}>{nativeStatus.allGranted ? 'Rever permissões' : 'Conectar'}</button>{nativeStatus.allGranted && <button onClick={refreshAndroid}><RefreshCw/> Atualizar</button>}</div>
+        {nativeHealthEnabled && <article>
+          <Smartphone/><div><h3>Health Connect</h3><p>A leitura automática aguarda vínculo seguro com esta conta.</p><small>Indisponível nesta versão</small></div>
+          <div><button disabled onClick={connectAndroid}>Conexão indisponível</button>{nativeStatus.allGranted && <button disabled onClick={refreshAndroid}><RefreshCw/> Atualização indisponível</button>}</div>
         </article>}
-        {(!(window as any).AndroidCrewCheckNative || appleBridge) && <article className={appleBridge ? 'ready' : ''}>
-          <Apple/><div><h3>Apple Health</h3><p>Interface preparada. A leitura depende do aplicativo nativo iOS e da autorização do HealthKit.</p><small>{appleBridge ? 'App iOS pronto para autorizar' : 'Modo manual disponível no iPhone/iPad'}</small></div>
-          <button onClick={connectApple}>{appleBridge ? 'Conectar' : 'Ver disponibilidade'}</button>
+        {(!(window as any).AndroidCrewCheckNative || appleBridge) && <article>
+          <Apple/><div><h3>Apple Health</h3><p>Use o registro manual. A leitura automática ainda não está disponível.</p><small>Indisponível nesta versão</small></div>
+          <button disabled onClick={connectApple}>Conexão indisponível</button>
         </article>}
         <article className="connected">
           <Check/><div><h3>Entrada manual</h3><p>Funciona no navegador e nos aplicativos, sem vincular nenhuma conta de saúde.</p><small>Disponível agora</small></div>
@@ -633,3 +627,5 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     </section>
   </section>;
 }
+
+export default withLifeAccountBoundary(CrewCheckLifeView);

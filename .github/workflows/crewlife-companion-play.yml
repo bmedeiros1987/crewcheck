@@ -128,11 +128,11 @@ jobs:
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Install Play API client
-        if: github.ref == 'refs/heads/main' && env.SAMSUNG_SDK_READY == 'true'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_internal && env.SAMSUNG_SDK_READY == 'true'
         run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
 
       - name: Allocate live Companion version
-        if: github.ref == 'refs/heads/main' && env.SAMSUNG_SDK_READY == 'true'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_internal && env.SAMSUNG_SDK_READY == 'true'
         run: python3 scripts/android-play/companion_play.py allocate
 
       - name: Restore CrewCheck signing key

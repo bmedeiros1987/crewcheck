@@ -12,7 +12,7 @@ update('client/src/lib/lifeConcierge.ts', (source) => {
 
   const readPattern = /function readJson<T>\(key: string, fallback: T\): T \{[\s\S]*?\n\}/;
   if (!readPattern.test(next)) throw new Error('[v14313-hardening] readJson não encontrado.');
-  next = next.replace(readPattern, `function readJson<T>(key: string, fallback: T): T {
+  if (!next.includes('return readLifeAccountJson(key, fallback);')) next = next.replace(readPattern, `function readJson<T>(key: string, fallback: T): T {
   if (!storageAvailable()) return fallback;
   try {
     const raw = window.localStorage.getItem(key);
@@ -64,7 +64,8 @@ function isLifeQuietTime(date: Date, preferences: LifeAdaptivePreferences): bool
     "    if (item.time.getTime() <= now.getTime() + 60_000 || isLifeQuietTime(item.time, preferences)) return;",
   );
 
-  if (!next.includes('if (Array.isArray(fallback))') || !next.includes('isLifeQuietTime(item.time, preferences)')) {
+  const accountReader = next.includes('return readLifeAccountJson(key, fallback);') && fs.readFileSync('client/src/lib/lifeAccountStorage.ts', 'utf8').includes('if(Array.isArray(fallback))');
+  if ((!accountReader && !next.includes('if (Array.isArray(fallback))')) || !next.includes('isLifeQuietTime(item.time, preferences)')) {
     throw new Error('[v14313-hardening] Armazenamento ou silêncio dos lembretes não foi endurecido.');
   }
   return next;

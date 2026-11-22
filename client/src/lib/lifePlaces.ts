@@ -1,3 +1,5 @@
+import {captureAuthSession} from './authClient';
+import {readLifeAccountJson,writeLifeAccountJson} from './lifeAccountStorage';
 export type LifePlaceCategory =
   | 'gym' | 'crossfit' | 'pilates' | 'yoga' | 'swimming' | 'running' | 'sports'
   | 'park' | 'nature' | 'leisure' | 'museum' | 'cinema' | 'spa' | 'cafe' | 'restaurant'
@@ -40,20 +42,9 @@ const LOCATION_KEY = 'crewcheck:life:last-location:v1';
 const LOCATION_LABEL_KEY = 'crewcheck:life:last-location-label:v1';
 const PLACE_CACHE_PREFIX = 'crewcheck:life:places:v1:';
 
-function readJson<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) as T : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(key: string, value: unknown) {
-  if (typeof window === 'undefined') return;
-  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
+function readJson<T>(key: string, fallback: T): T {return readLifeAccountJson(key,fallback);}
+function writeJson(key: string, value: unknown) {writeLifeAccountJson(key,value);}
+function currentLifeRequest(){const session=captureAuthSession();if(!session.token||!session.owner||!session.isCurrent())throw new Error('Sessão da rotina indisponível.');return session;}
 
 export function loadLifeLocation(): LifeCoordinates | null {
   const value = readJson<LifeCoordinates | null>(LOCATION_KEY, null);
@@ -66,6 +57,7 @@ export function lifeLocationLabel(): string {
 }
 
 export async function requestLifeLocation(options: PositionOptions = {}): Promise<LifeCoordinates> {
+  const session=currentLifeRequest();
   if (typeof navigator === 'undefined' || !navigator.geolocation) throw new Error('Localização não disponível neste aparelho.');
   const position = await new Promise<GeolocationPosition>((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -75,6 +67,7 @@ export async function requestLifeLocation(options: PositionOptions = {}): Promis
       ...options,
     });
   });
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   const location: LifeCoordinates = {
     latitude: Number(position.coords.latitude),
     longitude: Number(position.coords.longitude),
@@ -83,18 +76,23 @@ export async function requestLifeLocation(options: PositionOptions = {}): Promis
   };
   writeJson(LOCATION_KEY, location);
   window.dispatchEvent(new CustomEvent('crewcheck:life-location-update', { detail: location }));
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   void reverseGeocodeLifeLocation(location).catch(() => null);
   return location;
 }
 
 export async function reverseGeocodeLifeLocation(location: LifeCoordinates): Promise<string> {
+  const session=currentLifeRequest();
   const params = new URLSearchParams({ latitude: String(location.latitude), longitude: String(location.longitude) });
   const response = await fetch(`/api/maps/reverse-geocode?${params.toString()}`, { cache: 'no-store', credentials: 'same-origin' });
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   const payload = await response.json().catch(() => null);
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   if (!payload?.ok) return 'Localização atual';
   const label = String(payload.shortAddress || payload.address || 'Localização atual');
   writeJson(LOCATION_LABEL_KEY, { shortAddress: label, address: payload.address, city: payload.city, state: payload.state, capturedAt: new Date().toISOString() });
   window.dispatchEvent(new CustomEvent('crewcheck:life-location-label-update', { detail: { label } }));
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   return label;
 }
 
@@ -103,6 +101,7 @@ function cacheKey(category: LifePlaceCategory, location: LifeCoordinates, query 
 }
 
 export async function searchLifePlaces(category: LifePlaceCategory, location: LifeCoordinates, query = '', force = false): Promise<LifePlaceSearchResult> {
+  const session=currentLifeRequest();
   const key = cacheKey(category, location, query);
   const cached = readJson<{ cachedAt: number; payload: LifePlaceSearchResult } | null>(key, null);
   if (!force && cached && Date.now() - cached.cachedAt < 20 * 60_000) return cached.payload;
@@ -112,7 +111,9 @@ export async function searchLifePlaces(category: LifePlaceCategory, location: Li
   });
   if (query.trim()) params.set('query', query.trim());
   const response = await fetch(`/api/places/search?${params.toString()}`, { cache: 'no-store', credentials: 'same-origin' });
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   const payload = await response.json().catch(() => null);
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   const result: LifePlaceSearchResult = {
     ok: Boolean(payload?.ok),
     configured: payload?.configured,
@@ -126,7 +127,9 @@ export async function searchLifePlaces(category: LifePlaceCategory, location: Li
 }
 
 export async function searchLifePlaceSet(categories: Array<{ category: LifePlaceCategory; query?: string }>, location: LifeCoordinates, force = false): Promise<LifePlace[]> {
+  const session=currentLifeRequest();
   const results = await Promise.allSettled(categories.slice(0, 4).map((item) => searchLifePlaces(item.category, location, item.query || '', force)));
+  if(!session.isCurrent())throw new Error('A conta mudou.');
   const seen = new Set<string>();
   const places: LifePlace[] = [];
   for (const result of results) {

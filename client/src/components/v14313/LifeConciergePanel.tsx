@@ -1,3 +1,6 @@
+import {withLifeAccountBoundary} from '@/components/life/LifeAccountBoundary';
+import {captureAuthSession} from '@/lib/authClient';
+import {useRef} from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BellRing,
@@ -30,6 +33,7 @@ import {
   getActiveLifeSession,
   getLifeAdaptivePreferences,
   getLifeRoutineContext,
+  listLifeEvents,
   recordGymCheckIn,
   recordHydration,
   recordLifeEvent,
@@ -76,7 +80,8 @@ function elapsedLabel(active: ActiveSession, tick: number): string {
   return durationLabel(elapsed);
 }
 
-export default function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgram?: NextProgram | null; healthSummary?: HealthSummary; profile?: LifeProfile }) {
+function LifeConciergePanel({ nextProgram, healthSummary, profile }: { nextProgram?: NextProgram | null; healthSummary?: HealthSummary; profile?: LifeProfile }) {
+  const lifeSession = useRef(captureAuthSession()).current;
   const [preferences, setPreferences] = useState<LifeAdaptivePreferences>(() => getLifeAdaptivePreferences());
   const [context, setContext] = useState<LifeRoutineContext>(() => getLifeRoutineContext());
   const [activeSession, setActiveSession] = useState<ActiveSession>(() => getActiveLifeSession());
@@ -87,13 +92,14 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   const [tick, setTick] = useState(Date.now());
 
   const refresh = useCallback(() => {
+    if (!lifeSession.isCurrent()) return;
     setPreferences(getLifeAdaptivePreferences());
     setContext(getLifeRoutineContext());
     setActiveSession(getActiveLifeSession());
   }, []);
 
   useEffect(() => {
-    const listener = () => refresh();
+    const listener = () => { if (lifeSession.isCurrent()) refresh(); };
     window.addEventListener('crewcheck:life-adaptive-update', listener);
     window.addEventListener('crewcheck:health-summary', listener);
     window.addEventListener('storage', listener);
@@ -110,12 +116,14 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   const recommendation = useMemo(() => buildLifeConciergeRecommendation(nextProgram), [context, nextProgram, tick]);
 
   function registerHydration() {
+    if (!lifeSession.isCurrent()) return;
     recordHydration(preferences.hydrationPortionMl);
     refresh();
     toast.success(`${preferences.hydrationPortionMl} ml registrados. O concierge ajustará o restante do dia.`);
   }
 
   function toggleSession(type: 'study' | 'exercise' | 'leisure') {
+    if (!lifeSession.isCurrent()) return;
     if (activeSession) {
       if (activeSession.type !== type) {
         toast.info('Finalize a atividade em andamento antes de iniciar outra.');
@@ -133,6 +141,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   async function gymCheckIn() {
+    if (!lifeSession.isCurrent()) return;
     const name = gymName.trim() || 'Academia';
     recordGymCheckIn(name, preferences.shareGymCheckins);
     recordLifeEvent({ type: 'exercise', status: 'completed', source: 'gym-checkin', durationMinutes: 0, note: `Check-in em ${name}` });
@@ -150,6 +159,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function savePreferences() {
+    if (!lifeSession.isCurrent()) return;
     const saved = saveLifeAdaptivePreferences(preferences);
     setPreferences(saved);
     setContext(getLifeRoutineContext());
@@ -157,6 +167,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function scheduleReminders() {
+    if (!lifeSession.isCurrent()) return;
     const count = scheduleLifeRemindersForToday();
     const native = (window as any).CrewCheckNative || (window as any).AndroidCrewCheckNative;
     if (typeof native?.scheduleNotification === 'function') {
@@ -179,6 +190,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function runPrimaryAction() {
+    if(!lifeSession.isCurrent())return;
     if (recommendation.category === 'hydration') registerHydration();
     else if (recommendation.category === 'study') toggleSession('study');
     else if (recommendation.category === 'exercise') void gymCheckIn();
@@ -190,6 +202,7 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   function sendFeedback(useful: boolean) {
+    if(!lifeSession.isCurrent())return;
     recordRecommendationFeedback(recommendation.id, useful);
     setFeedback(useful ? 'yes' : 'no');
     refresh();
@@ -197,6 +210,12 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
   }
 
   const hydrationPercent = Math.min(100, Math.round(context.hydration.progress * 100));
+  const hydrationRecorded = useMemo(() => {
+    const today = new Date(tick);
+    today.setHours(0, 0, 0, 0);
+    return listLifeEvents().some(event => event.type === 'hydration' && event.status === 'completed'
+      && new Date(event.occurredAt).getTime() >= today.getTime());
+  }, [context, tick]);
   const programLabel = nextProgram?.title ? `${nextProgram.title}${nextProgram.presentation ? ` · ${nextProgram.presentation}` : ''}` : 'Sem próxima programação completa';
 
   return <section className="cc-life-ai-shell" aria-label="CrewCheck Life Concierge adaptativo">
@@ -225,10 +244,10 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
 
     <div className="cc-life-ai-dashboard">
       <article><MoonStar/><small>Descanso</small><strong>{context.sleep.available ? durationLabel(context.sleep.latestMinutes) : 'Aguardando sono'}</strong><span>{context.sleep.available ? `${context.sleep.deficitMinutes ? `${durationLabel(context.sleep.deficitMinutes)} abaixo da meta` : 'meta pessoal atendida'}` : 'sem presumir sua disposição'}</span></article>
-      <article><GlassWater/><small>Hidratação</small><strong>{context.hydration.mlToday.toLocaleString('pt-BR')} ml</strong><span>{hydrationPercent}% da meta pessoal</span><i><b style={{ width: `${hydrationPercent}%` }}/></i></article>
-      <article><Dumbbell/><small>Atividades</small><strong>{context.exercise.sessions7Days}/{context.exercise.targetSessions}</strong><span>melhor adesão: {periodLabel(context.exercise.preferredPeriod).toLowerCase()}</span></article>
-      <article><BookOpenCheck/><small>Estudo</small><strong>{context.study.sessions7Days}/{context.study.targetSessions}</strong><span>{durationLabel(context.study.minutes7Days)} na semana</span></article>
-      <article><Palmtree/><small>Lazer</small><strong>{context.leisure.sessions7Days}/{context.leisure.targetSessions}</strong><span>{durationLabel(context.leisure.minutes7Days)} registrados</span></article>
+      <article><GlassWater/><small>Hidratação</small><strong>{hydrationRecorded ? `${context.hydration.mlToday.toLocaleString('pt-BR')} ml` : 'Sem registro'}</strong><span>{hydrationRecorded ? `${hydrationPercent}% da meta pessoal` : `Meta pessoal: ${context.hydration.targetMl.toLocaleString('pt-BR')} ml`}</span>{hydrationRecorded && <i><b style={{ width: `${hydrationPercent}%` }}/></i>}</article>
+      <article><Dumbbell/><small>Atividades</small><strong>{context.exercise.sessions7Days ? `${context.exercise.sessions7Days}/${context.exercise.targetSessions}` : 'Sem registro'}</strong><span>Registros desta conta · últimos 7 dias</span></article>
+      <article><BookOpenCheck/><small>Estudo</small><strong>{context.study.sessions7Days ? `${context.study.sessions7Days}/${context.study.targetSessions}` : 'Sem registro'}</strong><span>{context.study.sessions7Days ? `${durationLabel(context.study.minutes7Days)} na semana` : 'Registros desta conta · últimos 7 dias'}</span></article>
+      <article><Palmtree/><small>Lazer</small><strong>{context.leisure.sessions7Days ? `${context.leisure.sessions7Days}/${context.leisure.targetSessions}` : 'Sem registro'}</strong><span>{context.leisure.sessions7Days ? `${durationLabel(context.leisure.minutes7Days)} registrados` : 'Registros desta conta · últimos 7 dias'}</span></article>
     </div>
 
     <section className="cc-life-ai-actions">
@@ -249,8 +268,8 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
     <section className="cc-life-ai-collapsible">
       <button className="cc-life-ai-collapse-head" onClick={() => setPatternsOpen((value) => !value)}><span><TrendingUp/><span><small>PADRÕES APRENDIDOS</small><strong>Como o CrewCheck está se adaptando</strong></span></span>{patternsOpen ? <ChevronUp/> : <ChevronDown/>}</button>
       {patternsOpen && <div className="cc-life-pattern-grid">
-        <article><Dumbbell/><span><small>Atividade física</small><strong>{periodLabel(context.exercise.preferredPeriod)}</strong><p>{context.exercise.sessions7Days} check-ins/sessões nos últimos 7 dias.</p></span></article>
-        <article><BookOpenCheck/><span><small>Estudo</small><strong>{periodLabel(context.study.preferredPeriod)}</strong><p>{context.study.sessions7Days} blocos concluídos; o horário muda conforme sua adesão.</p></span></article>
+        <article><Dumbbell/><span><small>Atividade física</small><strong>{context.exercise.sessions7Days ? periodLabel(context.exercise.preferredPeriod) : 'Sem padrão registrado'}</strong><p>{context.exercise.sessions7Days ? `${context.exercise.sessions7Days} registros desta conta nos últimos 7 dias.` : 'Registre uma atividade para começar.'}</p></span></article>
+        <article><BookOpenCheck/><span><small>Estudo</small><strong>{context.study.sessions7Days ? periodLabel(context.study.preferredPeriod) : 'Sem padrão registrado'}</strong><p>{context.study.sessions7Days ? `${context.study.sessions7Days} blocos concluídos nesta conta.` : 'Registre um estudo para começar.'}</p></span></article>
         <article><HeartHandshake/><span><small>Estilo do concierge</small><strong>{preferences.flexibility === 'flexivel' ? 'Flexível' : preferences.flexibility === 'equilibrado' ? 'Equilibrado' : 'Estruturado'}</strong><p>Tom {preferences.coachTone}; sugestões nunca substituem sua decisão.</p></span></article>
         <article><BellRing/><span><small>Lembretes</small><strong>{preferences.remindersEnabled ? 'Ativos' : 'Desativados'}</strong><p>No máximo três lembretes úteis no dia, respeitando a escala.</p></span></article>
       </div>}
@@ -281,3 +300,5 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
     <footer className="cc-life-ai-privacy"><HeartHandshake/><p><strong>Assistente de rotina, não avaliação médica.</strong> O aprendizado usa resumos e registros locais. A escala, o deslocamento e o descanso têm prioridade; dados brutos do relógio não são copiados para o servidor.</p></footer>
   </section>;
 }
+
+export default withLifeAccountBoundary(LifeConciergePanel);

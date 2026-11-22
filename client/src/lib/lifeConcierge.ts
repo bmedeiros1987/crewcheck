@@ -1,3 +1,4 @@
+import {readLifeAccountJson, writeLifeAccountJson, removeLifeAccountValue, clearLifeAccountStorage} from './lifeAccountStorage';
 export type LifePeriod = 'auto' | 'manha' | 'tarde' | 'noite' | 'qualquer';
 export type LifeFlexibility = 'flexivel' | 'equilibrado' | 'estruturado';
 export type LifeCoachTone = 'acolhedor' | 'direto' | 'discreto';
@@ -144,21 +145,13 @@ function storageAvailable(): boolean {
 }
 
 function readJson<T>(key: string, fallback: T): T {
-  if (!storageAvailable()) return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? { ...fallback as any, ...JSON.parse(raw) } : fallback;
-  } catch {
-    return fallback;
-  }
+  return readLifeAccountJson(key, fallback);
 }
 
 function writeJson(key: string, value: unknown) {
-  if (!storageAvailable()) return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+  if (writeLifeAccountJson(key, value)) {
     window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key } }));
-  } catch {}
+  }
 }
 
 function safeNumber(value: unknown, fallback = 0): number {
@@ -335,14 +328,14 @@ export function finishLifeSession(rating?: number): LifeEvent | null {
     source: 'crewcheck',
     note: active.note,
   });
-  try { window.localStorage.removeItem(KEYS.activeSession); } catch {}
+  try { removeLifeAccountValue(KEYS.activeSession); } catch {}
   window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: KEYS.activeSession } }));
   return event;
 }
 
 export function cancelLifeSession() {
   if (!storageAvailable()) return;
-  try { window.localStorage.removeItem(KEYS.activeSession); } catch {}
+  try { removeLifeAccountValue(KEYS.activeSession); } catch {}
   window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: KEYS.activeSession } }));
 }
 
@@ -647,10 +640,9 @@ export function shareGymCheckInText(gymName = ''): string {
   return `Check-in CrewCheck Life: cheguei ${label}. Hoje o objetivo é começar e respeitar meu ritmo. ✈️`;
 }
 
-export function clearLifeConciergeData() {
-  if (!storageAvailable()) return;
-  Object.values(KEYS).filter((key) => ![KEYS.nativeSummary, KEYS.companionSummary, KEYS.profile].includes(key)).forEach((key) => {
-    try { window.localStorage.removeItem(key); } catch {}
-  });
+export function clearLifeConciergeData(): boolean {
+  if (!storageAvailable()) return false;
+  const removed = clearLifeAccountStorage();
   window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { cleared: true } }));
+  return removed;
 }
