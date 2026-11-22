@@ -126,8 +126,8 @@ try {
   const source = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
   assert.match(source, /P0_530_ADJACENT_MONTH_DISPLAY_WINDOW/);
   assert.match(source, /function newestDisplaySummaryByCompetence\(/);
-  assert.match(source, /function displayDaysBeforeNominalMerge\(/);
-  assert.match(source, /const retainedPrimaryDays = displayDaysBeforeNominalMerge\(primary, adjacent\);/);
+  assert.match(source, /const publishedDateKeys = nominalRosterDisplayDateKeys\(primary\);/);
+  assert.match(source, /mergeRosterDisplayAdjacent\(display, competence, ordinal < primaryOrdinal \? 'prepend' : 'append', publishedDateKeys\);/);
   assert.match(source, /const historical = newestDisplaySummaryByCompetence\(sameCrew, primaryOrdinal\);/);
 
   console.log('[p1-530-full-history] PASS — histórico completo retido e competência nominal soberana nas datas de fronteira.');

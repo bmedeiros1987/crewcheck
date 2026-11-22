@@ -222,7 +222,8 @@ try {
   assert.throws(() => verifyDisplaySelection('useMemo(() => buildLegs(rosterWindow), [rosterWindow, bundle.roster])'), assert.AssertionError);
   assert.throws(() => verifyDisplaySelection('useMemo(() => buildLegs(bundle.roster), [rosterWindow, bundle.roster])'), assert.AssertionError);
   assert.throws(() => verifyDisplaySelection('useMemo(() => buildLegs(rosterWindowPrimaryRef.current?.id === bundle.roster.id ? rosterWindow : bundle.roster), [rosterWindow, bundle.roster])'), assert.AssertionError);
-  assert.match(home, /<Cockpit events=\{rosterEvents\} compliance=\{reviewableCompliance\(compliance, bundle\.roster\)\}/, 'HOME usa histórico cercado sem atribuir outra competência ao compliance');
+  assert.match(home, /<Cockpit events=\{homeOperationalEvents\} displayEvents=\{rosterEvents\} conflictDates=\{homeOperationalProjection.conflictDates\} compliance=\{reviewableCompliance\(compliance, bundle\.roster\)\}/, 'HOME preserva histórico para navegação e autoridade ativa por data, sem trocar a competência do compliance');
+  assert.match(home, /homeOperationalRoster\(bundle\.roster, rosterWindowPrimaryRef\.current === bundle\.roster \? rosterWindow : bundle\.roster\)/, 'projeção operacional deve preservar o mesmo fence de publicação da navegação');
   assert.match(home, /const flightEvent = nextRealFlight\(events\);/, 'entrada global de voo continua operacional');
   assert.match(home, /const compliance = currentCompliance\(bundle\);/, 'compliance continua na competência ativa');
   assert.match(home, /view === 'roster'[\s\S]{0,900}events=\{rosterEvents\}/, 'Escala deve usar a janela visual multi-competência');

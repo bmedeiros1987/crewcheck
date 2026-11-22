@@ -1,15 +1,36 @@
 /** Reuse the publication/session-fenced display history for HOME's date-scoped consumers. */
 export function repairHomeContinuity(source) {
   const before = '<Cockpit events={events}';
-  const after = '<Cockpit events={rosterEvents}';
+  const old = '<Cockpit events={rosterEvents}';
+  const after = '<Cockpit events={homeOperationalEvents} displayEvents={rosterEvents} conflictDates={homeOperationalProjection.conflictDates}';
   if (!source.includes('rosterWindowPrimaryRef.current === bundle.roster ? rosterWindow : bundle.roster')) {
     throw new Error('HOME continuity requires the session-fenced roster window');
   }
-  if (source.split(after).length === 2 && !source.includes(before)) return source;
-  if (source.split(before).length !== 2 || source.includes(after)) {
-    throw new Error('HOME continuity: unique Cockpit consumer missing');
+  if (source.includes(after)) return source;
+  const consumer = source.includes(old) ? old : before;
+  if (source.split(consumer).length !== 2) throw new Error('HOME continuity: unique Cockpit consumer missing');
+  source = source.replace(consumer, after);
+  source = "import { homeOperationalRoster } from '@/lib/homeOperationalRoster';\n" + source;
+  const anchor = '  const rosterEvents = useMemo(() => buildLegs(rosterWindowPrimaryRef.current === bundle.roster ? rosterWindow : bundle.roster), [rosterWindow, bundle.roster]);';
+  if (!source.includes(anchor)) throw new Error('HOME operational authority: window producer missing');
+  source = source.replace(anchor, anchor + `
+  const homeOperationalProjection = useMemo(() => homeOperationalRoster(bundle.roster, rosterWindowPrimaryRef.current === bundle.roster ? rosterWindow : bundle.roster), [bundle.roster, rosterWindow]);
+  const homeOperationalEvents = useMemo(() => buildLegs(homeOperationalProjection.roster), [homeOperationalProjection]);`);
+  for (const name of ['Cockpit', 'PersonalizedCockpit']) {
+    const signature = 'function ' + name + '({ events, ';
+    if (source.split(signature).length !== 2) throw new Error('HOME authority: consumer signature missing: ' + name);
+    source = source.replace(signature, 'function ' + name + '({ events, displayEvents = events, conflictDates = [], ');
+    const begin = source.indexOf('function ' + name + '(');
+    const type = source.indexOf('events: ZeroLeg[];', begin);
+    if (type < begin) throw new Error('HOME authority: consumer type missing');
+    source = source.slice(0, type) + source.slice(type).replace('events: ZeroLeg[];', 'events: ZeroLeg[]; displayEvents?: ZeroLeg[]; conflictDates?: string[];');
   }
-  return source.replace(before, after);
+  const wrappers = '<PersonalizedCockpit events={events}';
+  if (source.split(wrappers).length !== 4) throw new Error('HOME authority: expected three layout branches');
+  source = source.replaceAll(wrappers, wrappers + ' displayEvents={displayEvents} conflictDates={conflictDates}');
+  const preview = '<HomeRosterPreview events={events} onNavigate={setView}/>';
+  if (source.split(preview).length !== 2) throw new Error('HOME authority: preview consumer missing');
+  return source.replace(preview, '<HomeRosterPreview events={displayEvents} operationalEvents={events} conflictDates={conflictDates} onNavigate={setView}/>');
 }
 
 function replaceOne(source, before, after) {

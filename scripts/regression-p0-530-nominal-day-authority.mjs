@@ -1,3 +1,4 @@
+import './regression-home-operational-authority.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -73,6 +74,14 @@ function dateKey(value) {
   return match ? `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}` : raw;
 }
 
+function publishedActivity(date, code) {
+  return { date, type: code, pairingCode: code, isDayOff: code === 'VC', legs: [] };
+}
+
+function codesOn(roster, date) {
+  return roster.days.filter((day) => dateKey(day.date) === date).map((day) => day.pairingCode).sort();
+}
+
 try {
   await build({
     configFile: false,
@@ -113,7 +122,43 @@ try {
     'nominal publication must replace the whole boundary day, not append stale carry-over legs by per-leg dedupe',
   );
 
-  console.log('[P0-530] PASS — nominal competence is sovereign for the complete civil day at adjacent-month boundaries.');
+  const october = {
+    ...september, month: 10, rawText: 'MÊS DE REFERÊNCIA DE OUTUBRO',
+    days: [publishedActivity('2026-10-25', 'VC')],
+  };
+  const november = {
+    ...october, month: 11, rawText: 'FÉRIAS PUBLICADAS EM NOVEMBRO',
+    days: [
+      publishedActivity('28/11/2026', 'HSBE'),
+      publishedActivity('2026-11-30', 'VC'),
+      publishedActivity('2026-12-01', 'HSBE'),
+    ],
+  };
+  const december = {
+    ...october, month: 12, rawText: 'DEZEMBRO COM REGISTROS DE FRONTEIRA',
+    days: [
+      publishedActivity('29/11/2026', 'HSBE'),
+      publishedActivity('30/11/2026', 'HSBE'),
+      publishedActivity('01/12/2026', 'VC'),
+    ],
+  };
+  for (const roster of [october, november, december]) {
+    await database.saveRosterAnalysis({ roster, compliance, gym: [], sourceFileName: `fixture-${roster.month}.pdf` });
+  }
+
+  for (const primary of [october, november, december]) {
+    const original = structuredClone(primary);
+    const display = await database.openRosterDisplayWindow(primary);
+    assert.deepEqual(codesOn(display, '2026-11-30'), ['VC'], `Novembro nominal vence sobreaviso de Dezembro, com mês de referência ${primary.month}`);
+    assert.deepEqual(codesOn(display, '2026-12-01'), ['VC'], 'Dezembro nominal substitui a linha de borda de Novembro');
+    assert.deepEqual(codesOn(display, '2026-11-28'), ['HSBE'], 'sobreaviso nominal legítimo permanece visível mesmo sem relógios');
+    assert.deepEqual(codesOn(display, '2026-11-29'), ['HSBE'], 'registro de borda permanece se o mês nominal não tiver linha para a data');
+    assert.equal(display.month, original.month);
+    assert.equal(display.rawText, original.rawText);
+    assert.deepEqual(primary, original, 'mesclar para visualização não pode editar a publicação original');
+  }
+
+  console.log('[P0-530] PASS — nominal competence is sovereign for each civil day across the active and historical publications.');
 } finally {
   fs.rmSync(outDir, { recursive: true, force: true });
 }
