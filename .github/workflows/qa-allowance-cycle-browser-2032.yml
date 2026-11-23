@@ -1,0 +1,49 @@
+name: QA allowance cycle in sandboxed Chrome
+on:
+  push:
+    branches: [qa/allowance-cycle-browser-2032]
+    paths:
+      - 'scripts/regression-allowance-cycle-browser.cjs'
+      - '.github/workflows/qa-allowance-cycle-browser-2032.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Confirm the exact reference application tree
+        run: |
+          set -euo pipefail
+          baseline=1d241f98e16833fe232e46baa12b2dc363fc5023
+          test "$(git rev-parse HEAD^)" = "$baseline"
+          actual="$(git diff --name-only "$baseline" HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' .github/workflows/qa-allowance-cycle-browser-2032.yml scripts/regression-allowance-cycle-browser.cjs)"
+          test "$actual" = "$expected"
+          printf 'CREWCHECK_QA_BASELINE_SHA=%s\nCREWCHECK_QA_SHA=%s\n' "$baseline" "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Use the Chrome and Playwright configuration from the finance UI job
+        run: |
+          set -euo pipefail
+          google-chrome --version
+          npm install --prefix "$RUNNER_TEMP/allowance-cycle" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+      - name: Verify synthetic fixtures and run the eight browser scenarios
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/allowance-cycle/package.json
+          PLAYWRIGHT_CHROMIUM_CHANNEL: chrome
+          TZ: America/Sao_Paulo
+        run: |
+          set -euo pipefail
+          node scripts/regression-allowance-cycle-browser.cjs --fixture-check
+          node scripts/regression-allowance-cycle-browser.cjs
