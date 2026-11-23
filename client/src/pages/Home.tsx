@@ -2455,11 +2455,10 @@ function timelineStateClass(event: ZeroLeg): string {
   if (start > now) return 'future';
   return 'past';
 }
-function homeAllowancePayment(roster: CrewRoster) {
-  if(!roster.days?.length)return null;
-  const snapshot=financeSnapshot(roster),month=String(roster.year)+'-'+String(roster.month).padStart(2,'0');
-  const evidence=aggregateAllowanceEvidence([snapshot]);
-  return nextAllowancePayment(evidence.rows,evidence.unclassifiedItems,[month],new Date(),nominalFinancialDays([roster]),[roster]);
+function homeAllowancePayment(sources: readonly CrewRoster[], now: Date) {
+  const evidence = aggregateAllowanceEvidence(sources.map(roster => financeSnapshot(roster)));
+  const months = sources.map(roster => `${roster.year}-${String(roster.month).padStart(2,'0')}`);
+  return nextAllowancePayment(evidence.rows,evidence.unclassifiedItems,months,now,nominalFinancialDays(sources),sources);
 }
 const FINANCIAL_CACHE_BUILD=import.meta.env.VITE_CREWCHECK_BUILD_COMMIT||'local';
 const financialCalculationCache=createFinancialCalculationCache();

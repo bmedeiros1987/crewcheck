@@ -20,18 +20,18 @@ globalThis.fetch=async(url,init={})=>{
  const payload=u.pathname==='/api/rosters'?{ok:true,rosters:authorized?inventory:[]}:u.pathname==='/api/rosters/active'?{ok:true,roster:null}:u.pathname.startsWith('/api/rosters/')?{ok:true,data:{roster:authorized?documents[decodeURIComponent(u.pathname.slice('/api/rosters/'.length))]:null,compliance:null,gym:[]}}:assert.fail('Unadmitted synthetic route '+u.pathname);
  return new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}});
 };
-const modules=['authClient','aimsParser','databaseClient','financialHistoryPeriods','financialComparisonPeriods','financialForecastPeriods','financialActApplicability','sharedAllowanceResolution','latamAllowanceCatalog','financialStatementLearning','financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialRules','financialFxReference','financialSettingStore','nextFinancialPayment','canonicalRoster'];
+const modules=['authClient','aimsParser','databaseClient','financialHistoryPeriods','financialComparisonPeriods','financialForecastPeriods','financialActApplicability','sharedAllowanceResolution','latamAllowanceCatalog','financialStatementLearning','financialAmounts','financialJourneyGrouping','financialIntervalEvidence','compensationPolicy','financialRules','financialFxReference','financialSettingStore','nextFinancialPayment','canonicalRoster','financialAllowanceCycleSources'];
 try{
  const out=path.join(dir,'libs.mjs');
  await build({stdin:{contents:[...modules.map((name,i)=>`export * as m${i} from './client/src/lib/${name}';`),"export * as fx from './shared/financialFx.mjs';"].join('\n'),resolveDir:root,loader:'ts'},bundle:true,format:'esm',platform:'node',outfile:out,logLevel:'silent',define:{'import.meta.env':'{}'},alias:{'@':path.join(root,'client/src'),'@shared':path.join(root,'shared')}});
  const imported=await import(pathToFileURL(out));const libs=Object.assign({},...Object.values(imported));
  const home=fs.readFileSync(path.join(root,'client/src/pages/Home.tsx'),'utf8'),ast=ts.createSourceFile('Home.tsx',home,99,true,ts.ScriptKind.TSX);
- const names=['PerDiemView','perDiemConfig','calculatePerDiem','scopedFinancialForecast','readOptionalNumberSetting','readNumberSetting','moneyCurrency','moneyBRL','financialEventCode','flightWorkType','isOperationalEvent','eventStartDateTime','eventEndDateTime'];
+ const names=['PerDiemView','homeAllowancePayment','perDiemConfig','calculatePerDiem','scopedFinancialForecast','readOptionalNumberSetting','readNumberSetting','moneyCurrency','moneyBRL','financialEventCode','flightWorkType','isOperationalEvent','eventStartDateTime','eventEndDateTime'];
  const functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));
  for(const name of ['perDiemConfig','calculatePerDiem','scopedFinancialForecast'])assert(functions.some(n=>n.name.text===name),name);
  const fixed=Date.parse('2026-10-31T12:00:00Z');class FixtureDate extends Date{constructor(...args){super(...(args.length?args:[fixed]));}static now(){return fixed;}}
  const context=vm.createContext({...libs,React,Date:FixtureDate,useFinancialFx:()=>({quotes:{},setMode:()=>{}}),financeSnapshot:()=>null,FinancialHistoryExplorer:()=>null,FinancialFreeDayDetails:()=>null,FinancialFxSourceControl:()=>null,CanonicalForecastCapture:()=>null,PerDiemMonthView:()=>null,NextPaymentCard:()=>null,FinancialStatementReconciliation:()=>null,storage:{get:(key,fallback='')=>libs.isFinancialSetting(key)?libs.readFinancialSetting(key,fallback):(values.get(key)??fallback)},loadAirportPerDiemOverrides:()=>({}),dateChip:d=>d.toISOString().slice(0,10)});
- vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.subject={calculatePerDiem,scopedFinancialForecast,PerDiemView};',{compilerOptions:{target:99,jsx:ts.JsxEmit.React}}).outputText,context);
+ vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.subject={calculatePerDiem,scopedFinancialForecast,PerDiemView,homeAllowancePayment};',{compilerOptions:{target:99,jsx:ts.JsxEmit.React}}).outputText,context);
  const login=owner=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));values.set('crewcheck_auth_user',JSON.stringify({id:owner,role:'user',name:'SYNTHETIC'}));values.set('crewcheck_auth_token','synthetic-'+owner);window.dispatchEvent(new Event('crewcheck:auth-changed'));};
  const owner='synthetic-finance-A';login(owner);
  const day=iso=>({date:iso.split('-').reverse().join('/'),type:'CRM',pairingCode:'CRM',dutyReport:'11:00',dutyDebrief:'11:15',dutyReportSource:'published',dutyDebriefSource:'published',base:'GRU',legs:[]});
@@ -389,5 +389,100 @@ try{
  reset();let finish;defer=new Promise(resolve=>finish=resolve);const old=explorer('allowance');await settle();login('synthetic-finance-B');finish();const stale=await old;await settle();assert(!stale.loadedNow().some(item=>item.roster.month===10),'late A result never enters B');
  reset();
  evidence.push({name:'actual Explorer allowance source lookup',priorSourceRequested:true,salaryUnchanged:true,missingPriorUnknown:true,apiWrites:0});
+
+ // Compare the product consumers through the same roster reader, with synthetic
+ // AIMS publications and a real BRT bank reference. The positive credit is
+ // earned in October and remains payable on a November vacation day.
+ const tour='08:00 LA 4101 09:00 BSB GRU 10:30 (320) LA 4102 11:30 GRU BSB 13:00 (320) 13:30';
+ const published=(month,name,last,edits={})=>libs.parseAimsRoster([
+  'Escala de Tripulante Convertida para padrão AIMS',
+  `Tripulante: SYNTHETIC CREW -BP:00000000 -Base: BSB -01/${month}/2026 até${last}/${month}/2026`,
+  ...Array.from({length:last},(_,i)=>`${String(i+1).padStart(2,'0')}${name} ${edits[i+1]??(i>=9&&i<=13?tour:'VC')}`)
+ ].join('\n'));
+ const octoberRest=published('10','Oct',31),novemberRest=published('11','Nov',30);
+ const referenceAt=new Date('2026-11-05T12:00:00Z');
+ const periodsAt=instant=>libs.financialMonths(libs.allowanceSourceRange(libs.nextAllowanceReference(new Date(instant)).range));
+ assert.deepEqual(periodsAt(referenceAt),['2026-10','2026-11']);
+ assert.deepEqual(periodsAt('2026-07-03T02:59:59Z'),['2026-06']);
+ assert.deepEqual(periodsAt('2026-07-03T03:00:00Z'),['2026-06','2026-07'],'BRT midnight switches to a cycle that needs only the preceding day in June');
+ const scope=periodsAt(referenceAt);
+ function seedSources(previous) {
+  reset();
+  libs.writeFinancialSetting('crewcheck_perdiem_rate_domestic','42');
+  inventory=[summary('nov',novemberRest,'2026-11-01T12:00:00Z',true)];
+  documents={nov:novemberRest};
+  if(previous){inventory.push(summary('oct',previous,'2026-10-27T12:00:00Z'));documents.oct=previous;}
+ }
+ const compareConsumers=async(active=novemberRest,now=referenceAt)=>{
+  const saved=await libs.readAllowanceCycleRosters(active,periodsAt(now),libs.captureAuthSession().isCurrent);
+  assert(saved);
+  const originalClock=context.Date,originalSnapshot=context.financeSnapshot;
+  context.Date=class extends Date{constructor(...args){super(...(args.length?args:[now.getTime()]));}static now(){return now.getTime();}};
+  context.financeSnapshot=roster=>({roster,perdiem:context.subject.calculatePerDiem(events(roster),roster,now)});
+  try{
+   const cockpit=context.subject.homeAllowancePayment(saved,now);
+   const diarias=consumer(saved.map(context.financeSnapshot),libs.nextAllowanceReference(now).range).payment;
+   assert.deepEqual(cockpit.range,diarias.range);
+   assert.deepEqual(cockpit.totals,diarias.totals);
+   assert.equal(cockpit.noEligibleAllowance,diarias.noEligibleAllowance);
+   assert.deepEqual(cockpit.expectedPaymentDates,diarias.expectedPaymentDates);
+   return cockpit;
+  }finally{context.Date=originalClock;context.financeSnapshot=originalSnapshot;}
+ };
+ seedSources(octoberRest);
+ const emptyCycle=await compareConsumers();
+ assert.deepEqual(emptyCycle.totals,{BRL:0});
+ assert.equal(emptyCycle.noEligibleAllowance,true);
+ assert.deepEqual(emptyCycle.expectedPaymentDates,{});
+ assert.deepEqual(requests,['/api/rosters','/api/rosters/oct','/api/rosters/nov']);
+ seedSources(null);
+ assert.equal((await compareConsumers()).totals,null,'an absent adjacent source cannot confirm zero');
+ seedSources(octoberRest);
+ inventory.push({...inventory[1],id:'ambiguous'});documents.ambiguous=octoberRest;
+ assert.equal((await compareConsumers()).totals,null,'tied adjacent revisions cannot confirm zero');
+ assert(!requests.includes('/api/rosters/oct')&&!requests.includes('/api/rosters/ambiguous'));
+ seedSources(published('10','Oct',31,{31:'PERNOITE GRU'}));
+ assert.equal((await compareConsumers()).totals,null,'an unproved overnight cannot confirm zero');
+ seedSources(published('10','Oct',31,{31:tour}));
+ const payable=await compareConsumers();
+ assert(payable.totals?.BRL>0);
+ assert.equal(payable.expectedPaymentDates.BRL,'2026-11-05');
+ assert.equal(payable.noEligibleAllowance,undefined);
+ seedSources(octoberRest);
+ documents.oct={...octoberRest,crewId:'SYN-OTHER'};
+ assert.equal((await compareConsumers()).totals,null,'an adjacent response for a different crew cannot supply coverage');
+ const juneRest=published('06','Jun',30),julyRest=published('07','Jul',31);
+ const newCycleAt=new Date('2026-07-03T03:00:00Z');
+ seedSources(null);
+ inventory=[summary('jun',juneRest,'2026-06-01T12:00:00Z'),summary('jul',julyRest,'2026-07-01T12:00:00Z',true)];
+ documents={jun:juneRest,jul:julyRest};
+ assert.equal((await compareConsumers(julyRest,newCycleAt)).noEligibleAllowance,true);
+ inventory=inventory.filter(item=>item.id!=='jun');
+ assert.equal((await compareConsumers(julyRest,newCycleAt)).totals,null,'the day before a July-only pay cycle still needs June');
+ seedSources(octoberRest);
+ let finishInventory;defer=new Promise(resolve=>{finishInventory=resolve;});
+ const priorSession=libs.readAllowanceCycleRosters(novemberRest,scope,libs.captureAuthSession().isCurrent);
+ login('synthetic-finance-B');finishInventory();
+ await assert.rejects(priorSession,error=>error.code==='STALE_SESSION');
+ assert.deepEqual(requests,['/api/rosters'],'changing accounts before inventory resolves prevents all detail reads');
+ seedSources(octoberRest);
+ let detailRequested,finishDetail;
+ const detailStarted=new Promise(resolve=>{detailRequested=resolve;}),holdDetail=new Promise(resolve=>{finishDetail=resolve;});
+ const fixtureFetch=globalThis.fetch;
+ globalThis.fetch=async(url,init)=>{
+  const response=await fixtureFetch(url,init);
+  if(new URL(String(url),'http://synthetic.invalid').pathname==='/api/rosters/oct'){detailRequested();await holdDetail;}
+  return response;
+ };
+ try{
+  const readBeforeLogin=libs.readAllowanceCycleRosters(novemberRest,scope,libs.captureAuthSession().isCurrent);
+  await detailStarted;
+  login(owner);finishDetail();
+  assert.equal(await readBeforeLogin,null,'same-account reauthentication invalidates outstanding roster detail');
+ }finally{globalThis.fetch=fixtureFetch;}
+ seedSources(octoberRest);
+ assert.equal((await compareConsumers()).noEligibleAllowance,true,'the current session can still read its own sources');
+ reset();
+ evidence.push({name:'FlightDeck adjacent allowance cycle',confirmedZeroWithoutCreditDate:true,absentAmbiguousAndOvernightPending:true,priorPayableDuringVacation:true,brtMidnight:true,sessionFenced:true});
  console.log(JSON.stringify({status:'PASS',timezone:process.env.TZ,evidence,sessionFence:'real reader rejects A→B with zero followup; B has no A settings',source:'real DB reader, canonical events, competence selector, ACT/owned resolver, Home calculator and range total; HTTP/storage/clock fixtures only; no tariff validation',externalRequests:0,apiWrites:0},null,2));
 }finally{fs.rmSync(dir,{recursive:true,force:true});}

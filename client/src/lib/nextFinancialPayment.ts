@@ -46,12 +46,17 @@ function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string;pendi
   const item=cycles.get(start)!;return {...row,expectedPaymentDate:item.date||undefined,expectedPaymentTimezone:item.date?'America/Sao_Paulo':undefined,partial:item.partial||row.partial===true};
  });
 }
-export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:string;airport:string;reason?:string;pendingKind?:string;sourceIssueId?:string}>, covered: string[], now = new Date(), coveredDays?: string[], rosters: readonly CrewRoster[] = []): NextPayment {
+export function nextAllowanceReference(now: Date) {
   const today = rosterOperationalIso(now), periods = observedAllowancePeriods(now, 'roster_brt');
   // The previous closed week is still the next reference on Wednesday/Thursday.
   // Never substitute the accumulating or selected month for that week's rows.
   const cycle = (observedBrlPaymentDate(rosterOperationalIso(periods.previous.payment))||rosterOperationalIso(periods.previous.payment)) >= today ? periods.previous : periods.accumulation;
   const range: FinancialRange = {start:rosterOperationalIso(cycle.start),end:rosterOperationalIso(cycle.end),kind:'custom',valid:true};
+  return {cycle,range};
+}
+
+export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:string;airport:string;reason?:string;pendingKind?:string;sourceIssueId?:string}>, covered: string[], now = new Date(), coveredDays?: string[], rosters: readonly CrewRoster[] = []): NextPayment {
+  const {cycle,range} = nextAllowanceReference(now);
   const lines = rowsInObservedCycle(rows, cycle), unknown = allowancePendingInRange(pending,range);
   const missing = financialMonths(range).filter(month=>!covered.includes(month));
   const {missingDays:absentDays} = financialDayCoverage(allowanceSourceRange(range),coveredDays);
