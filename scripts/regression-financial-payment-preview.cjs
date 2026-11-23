@@ -52,6 +52,16 @@ async function assertAllowanceStatementMonth(page,month){
  assert.doesNotMatch(text,/Crédito previsto|Dia do voo/,'a selected month must not imply the next-cycle credit date');
 }
 
+const isAllowanceInventory=request=>{
+ const url=new URL(request.url());
+ return request.method()==='GET'&&url.pathname==='/api/rosters'&&url.searchParams.get('limit')==='72'&&url.searchParams.get('manager')==='1';
+};
+async function waitForCompleteHomeAllowance(home){
+ const estimate=home.locator('.cc-home-brl-estimate[data-estimate-state="available"]');
+ await estimate.locator('strong').filter({hasText:/^R\$\s*1\.728,30$/}).waitFor();
+ assert.match(await estimate.innerText(),/28\/01\/2032 a 03\/02\/2032/,'Home displays the resolved work cycle');
+}
+
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox']});
@@ -60,7 +70,16 @@ async function assertAllowanceStatementMonth(page,month){
   const context=await browser.newContext({viewport:{width,height:1000},serviceWorkers:'block'}),errors=[];
   await context.addInitScript(()=>{const prefix='crewcheck_financial_calculation_cache_v1:',get=Storage.prototype.getItem,set=Storage.prototype.setItem;globalThis.__financialCacheIo={reads:0,writes:0,writeKeys:[]};Storage.prototype.getItem=function(key){if(String(key).startsWith(prefix))globalThis.__financialCacheIo.reads++;return get.call(this,key);};Storage.prototype.setItem=function(key,value){if(String(key).startsWith(prefix)){globalThis.__financialCacheIo.writes++;globalThis.__financialCacheIo.writeKeys.push(String(key));}return set.call(this,key,value);};});
 
-  await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
+  let inventoryBarrier;
+  await context.route('**/*',async route=>{
+   const request=route.request(),url=new URL(request.url());
+   if(url.origin!==origin)return route.abort();
+   if(url.pathname.startsWith('/api/')){
+    if(inventoryBarrier&&isAllowanceInventory(request))await inventoryBarrier;
+    return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});
+   }
+   return route.continue();
+  });
   const january={...roster('domestic',1),days:Array.from({length:31},(_,i)=>day(String(i+1).padStart(2,'0')+'/01/2032'))};
   const payload=scenario==='empty'?roster('empty'):roster('domestic');
   const december={...january,month:12,year:2031,days:Array.from({length:31},(_,i)=>day(String(i+1).padStart(2,'0')+'/12/2031'))};
@@ -71,10 +90,24 @@ async function assertAllowanceStatementMonth(page,month){
   const home=page.locator('.cc-home-finance');await home.waitFor();
   assert.equal(await home.count(),1,'one financial card in the active Home');
   if(width===390&&theme==='light'&&scenario==='complete'){
+    await waitForCompleteHomeAllowance(home);
     const cold=await page.evaluate(()=>({io:globalThis.__financialCacheIo,commit:window.__CREWCHECK_BUILD__?.commit}));
     if(cold.commit&&cold.commit!=='local'&&cold.commit!=='unknown'){
-      assert(cold.io.writes>0,'identified actual build must persist a serializable calculation');await page.reload();await home.waitFor();
+      assert(cold.io.writes>0,'identified actual build must persist a serializable calculation');
+      let releaseInventory;
+      inventoryBarrier=new Promise(resolve=>{releaseInventory=resolve;});
+      try{
+        await Promise.all([page.waitForRequest(isAllowanceInventory),page.reload({waitUntil:'domcontentloaded'})]);
+        await home.locator('.cc-home-brl-estimate[data-estimate-state="no_data"]').getByText('Não calculável',{exact:true}).waitFor();
+        const loading=await page.evaluate(()=>globalThis.__financialCacheIo);
+        console.log('Synthetic Home while inventory is pending: cache reads=%d, writes=%d',loading.reads,loading.writes);
+      }finally{
+        inventoryBarrier=undefined;
+        releaseInventory();
+      }
+      await waitForCompleteHomeAllowance(home);
       const reopened=await page.evaluate(()=>globalThis.__financialCacheIo);assert(reopened.reads>0,'reopening reads the device-local forecast');assert.equal(reopened.writes,0,'same-source reopening reuses the saved calculation without rewriting it');
+      console.log('Synthetic Home after 503 and local recovery: cache reads=%d, writes=%d',reopened.reads,reopened.writes);
     }else assert.equal(cold.io.writes,0,'unidentified development build must not persist reusable calculations');
   }
 
@@ -151,7 +184,7 @@ async function assertAllowanceStatementMonth(page,month){
     await showFinancial(page,'statement');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),'2032-01','chosen non-default month survives back and forward screens');await assertAllowanceStatementMonth(page,'2032-01');
     await page.getByLabel('Competência de referência',{exact:true}).selectOption(selectedMonth);await assertAllowanceStatementMonth(page,selectedMonth);
     if(width===390&&theme==='light'){
-      await page.reload();await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await page.locator('.cc-home-finance').waitFor();
+      await page.reload();await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await waitForCompleteHomeAllowance(home);
       const reopened=await page.evaluate(()=>({io:globalThis.__financialCacheIo,commit:window.__CREWCHECK_BUILD__?.commit}));
       if(reopened.commit&&!['local','unknown'].includes(reopened.commit)){assert(reopened.io.reads>0,'same-source reopening after selected-period navigation reads saved cache');assert.equal(reopened.io.writes,0,'same-source reopening after selected-period navigation does not recalculate');}
       else assert.equal(reopened.io.writes,0,'an unidentified build must not persist reusable calculations');

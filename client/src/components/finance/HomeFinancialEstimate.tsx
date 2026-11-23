@@ -1,8 +1,12 @@
 import {FinancialFxProvider,useFinancialFx,FinancialFxSourceControl} from './FinancialFxProvider';
 import {createContext,useContext,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import type {CrewRoster} from '@/lib/pdfParser';
-import type {NextPayment} from '@/lib/nextFinancialPayment';
-import {getStoredUser,getToken} from '@/lib/authClient';
+import {nextAllowanceReference,type NextPayment} from '@/lib/nextFinancialPayment';
+import {captureAuthSession,getStoredUser,getToken} from '@/lib/authClient';
+import {rosterOperationalDateAt,rosterOperationalIso} from '@/lib/compensationPolicy';
+import {allowanceSourceRange,financialMonths} from '@/lib/financialHistoryPeriods';
+import {readAllowanceCycleRosters} from '@/lib/financialAllowanceCycleSources';
+import {localHistoryKey} from '@/lib/databaseClient';
 import {readFinancialFxReferences} from '@/lib/financialFxReference';
 import {estimateAllowanceBrl} from '@shared/financialFx.mjs';
 import {formatFinancialMinor} from '@shared/financialMoney.mjs';
@@ -13,14 +17,62 @@ const Context=createContext<NextPayment|null>(null);
 const CalculationStatus=createContext({pending:false,retry:()=>{}});
 export const useHomeFinancialEstimate=()=>useContext(Context);
 const account=()=>String(getStoredUser()?.id||getStoredUser()?.email||'');
-export function HomeFinancialEstimateProvider({roster,calculate,children,accessKey}:{accessKey?:string;roster:CrewRoster;calculate:(roster:CrewRoster)=>NextPayment|null;children:ReactNode}){
- const [,refresh]=useState(0),owner=account(),token=getToken(),bound=useRef({owner,roster});
+export function HomeFinancialEstimateProvider({roster,calculate,children,accessKey}:{accessKey?:string;roster:CrewRoster;calculate:(sources:readonly CrewRoster[],now:Date)=>NextPayment|null;children:ReactNode}){
+ const [,refresh]=useState(0),[sourceRevision,refreshSources]=useState(0),owner=account(),token=getToken(),bound=useRef({owner,roster});
  if(roster!==bound.current.roster)bound.current={owner,roster};
- useEffect(()=>{const update=()=>refresh(n=>n+1);for(const e of ['crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:auth-will-change','crewcheck:financial-config-changed','storage'])window.addEventListener(e,update);return()=>{for(const e of ['crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:auth-will-change','crewcheck:financial-config-changed','storage'])window.removeEventListener(e,update);};},[]);
+ useEffect(()=>{
+  const reload=()=>refreshSources(n=>n+1),update=()=>refresh(n=>n+1);
+  const storage=(event:StorageEvent)=>{
+   if(event.storageArea!==localStorage)return;
+   if(event.key===null||['crewcheck_auth_user','crewcheck_auth_token',localHistoryKey()].includes(event.key))reload();
+   else update();
+  };
+  const events=['crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:auth-will-change'];
+  for(const event of events)window.addEventListener(event,reload);
+  window.addEventListener('crewcheck:financial-config-changed',update);
+  window.addEventListener('storage',storage);
+  return()=>{
+   for(const event of events)window.removeEventListener(event,reload);
+   window.removeEventListener('crewcheck:financial-config-changed',update);
+   window.removeEventListener('storage',storage);
+  };
+ },[]);
  const allowed=owner&&token&&bound.current.owner===owner&&!['visitor','guest'].includes(getStoredUser()?.role||'');
- // Reuse the canonical producer; never query or mutate the ledger for a Home estimate.
+ const cockpit=Boolean(allowed&&roster.days?.length&&accessKey==='cockpit');
+ const now=new Date(),today=rosterOperationalIso(now);
+ const periods=cockpit?financialMonths(allowanceSourceRange(nextAllowanceReference(now).range)).join(','):'';
+ const scope=useMemo(()=>({roster,periods}),[roster,periods,owner,token,sourceRevision]);
+ const [loaded,setLoaded]=useState<{scope:typeof scope;session:ReturnType<typeof captureAuthSession>;rosters:CrewRoster[]} | null>(null);
+ useEffect(()=>{
+  setLoaded(null);
+  if(!scope.periods)return;
+  const session=captureAuthSession();let live=true;
+  const isCurrent=()=>live&&session.isCurrent();
+  void readAllowanceCycleRosters(scope.roster,scope.periods.split(','),isCurrent).then(rosters=>{
+   if(rosters&&isCurrent())setLoaded({scope,session,rosters});
+  }).catch(()=>{
+   // Keep the estimate pending when its owned sources cannot be resolved.
+  });
+  return()=>{live=false;};
+ },[scope]);
+ useEffect(()=>{
+  if(!cockpit)return;
+  const update=()=>refresh(n=>n+1);
+  const reload=()=>refreshSources(n=>n+1);
+  const midnight=rosterOperationalDateAt(today,0).getTime()+86400_000;
+  const timer=window.setTimeout(update,Math.max(0,midnight-Date.now()));
+  window.addEventListener('focus',reload);
+  window.addEventListener('online',reload);
+  return()=>{
+   window.clearTimeout(timer);
+   window.removeEventListener('focus',reload);
+   window.removeEventListener('online',reload);
+  };
+ },[cockpit,today]);
+ const fallbackSources=cockpit?[]:[roster];
+ const sources=loaded?.scope===scope&&loaded.session.isCurrent()?loaded.rosters:fallbackSources;
  let payment:NextPayment|null=null,pending=false;
- try{payment=allowed&&roster.days?.length?calculate(roster):null;}catch(error){if(error instanceof Error&&error.message==='FINANCIAL_CALCULATION_CONTEXT_CHANGED')pending=true;else throw error;}
+ try{payment=allowed&&roster.days?.length?calculate(sources,now):null;}catch(error){if(error instanceof Error&&error.message==='FINANCIAL_CALCULATION_CONTEXT_CHANGED')pending=true;else throw error;}
  return <FinancialFxProvider accessKey={accessKey}><CalculationStatus.Provider value={{pending,retry:()=>refresh(n=>n+1)}}><Context.Provider value={payment}>{children}</Context.Provider></CalculationStatus.Provider></FinancialFxProvider>;
 }
 export default function HomeFinancialEstimate(){

@@ -551,7 +551,7 @@ export async function getStoredStats(): Promise<StoredStatsResponse> {
 
 const LEGACY_LOCAL_HISTORY_KEY = 'crewcheck_local_history_v1';
 
-function localHistoryKey(): string {
+export function localHistoryKey(): string {
   try {
     const user = getStoredUser();
     const raw = String(user?.id || user?.email || 'anon').trim().toLowerCase();
