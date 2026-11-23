@@ -194,3 +194,34 @@ Logout recovery identity remains until the entire per-account cleanup barrier co
 ### Follow-up: failed A followed by overlapping B logout
 
 The current binding or detached logout owns cleanup targeting. Failed cleanups are retained in a memory-only map keyed by account, not a global fallback target. Binding B neither inherits A's error nor clears it. Both overlapping B logouts target B (native and storage); any B failure remains retryable in either completion order. Returning to A surfaces its retained error until A cleanup succeeds. Late completion records that account's result, and publishes error only when that account owns the current cycle; it never reinstalls a prior context. Restore, consent and sync cannot hide a pending owner failure. No credential/data persistence is added; the map contains only stable cleanup error codes.
+
+
+### Revisão de 22/10/2026: atualidade exige aquisição autenticada
+
+Na camada de sessão, `live` e `dataState: fresh` agora exigem simultaneamente
+`status: connected` e observação dentro dos 15 minutos existentes. A idade
+do cache, sozinha, não comprova que o provedor continua autenticado. Uma
+resposta não autenticada, identidade divergente, vazio não confirmado ou veto
+de importação retira essa classificação imediatamente, mesmo um segundo após
+a última leitura bem-sucedida.
+
+Hotel e pickup continuam disponíveis como `cached`, com valores, procedência
+e instante original preservados. Consultas com `allowCached: false` retornam
+`null` durante atualização, após falha e após restauração. Reiniciar o processo,
+restaurar cache ou alternar consentimento não revalida a sessão; somente uma
+nova aquisição autenticada, reconciliada e persistida com sucesso o faz. Esta
+é uma mudança deliberada em relação à classificação anterior do cache recente
+como `fresh`. Os seletores puros de `myCrewCareLogistics` continuam classificando
+a idade dos fatos sem interpretar autenticação.
+
+O controlador inicia a sincronização antes de publicar o estado ocupado. Assim,
+um assinante síncrono não recebe `syncing` junto de `live: true`, nem consegue
+obter hotel/pickup como frescos durante essa publicação. Os testes exercitam
+a sessão real e o controlador com adaptadores sintéticos, incluindo nova
+autenticação, restart, falha temporária e vazio confirmado.
+
+Esta correção é autoral, sobre a infraestrutura existente; não incorpora código
+ou ativos de aplicativos terceiros. Não adiciona endpoints, persistência de
+credenciais, chamadas a provedores, integração com Wake ou montagem de UI. As
+chaves de release permanecem desligadas. Os testes sintéticos não comprovam
+SSO/MFA real, funcionamento de um servidor externo ou persistência física.
