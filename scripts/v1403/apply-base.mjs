@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { preparedTelegramBase } from './prepared-base.mjs';
 
 const VERSION = '14.0.4';
 const read = (path) => fs.readFileSync(path, 'utf8');
@@ -24,6 +25,14 @@ for (const file of Object.values(files)) {
 
 const serverPath = 'server.mjs';
 let server = read(serverPath);
+if (preparedTelegramBase(server, {
+  keyboards: read(files.keyboards), requestUser: read(files.requestUser), buildReply: read(files.buildReply),
+  menuProducer: read('scripts/telegram-concierge-menu/apply.mjs'), semantic: read('scripts/v14338/reply-wrapper.snippet'),
+  routineProducer: read('scripts/v14323/apply.mjs'),
+  modernWrapper: read('scripts/v14408/reply-wrapper.snippet'),
+})) {
+  console.log('CrewCheck v14.0.4: later composed Telegram base preserved without rewriting server.mjs.');
+} else {
 const anchor = "import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';";
 const previousImport = "import { DEFAULT_CONCIERGE_NAME, airportName, buildBlankDaySummary, buildConciergeSettingsReply, buildDepartureSummary, buildProgramSummary, cleanDisplayName, isPremiumConcierge, preferredConciergeName, preferredUserName, premiumGreeting, premiumVoicePolicy, premiumVoiceText, spokenTime } from './server/v1403/telegram-human.mjs';";
 const premiumImport = "import { DEFAULT_CONCIERGE_NAME, airportName, buildBlankDaySummary, buildConciergeSettingsReply, buildDepartureSummary, buildProgramSummary, calculateDepartureWindow, cleanDisplayName, isPremiumConcierge, matchesDepartureIntent, matchesNextIntent, matchesRadarIntent, matchesRosterSummaryIntent, matchesTodayIntent, matchesTomorrowIntent, preferredConciergeName, preferredUserName, premiumGreeting, premiumVoicePolicy, premiumVoiceText, spokenTime } from './server/v1404/telegram-language.mjs';";
@@ -80,3 +89,4 @@ server = server.replace(
 
 write(serverPath, server);
 console.log(`CrewCheck v${VERSION}: núcleo natural do Telegram aplicado.`);
+}
