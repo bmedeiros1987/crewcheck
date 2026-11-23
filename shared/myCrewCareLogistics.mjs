@@ -4,6 +4,10 @@
  * This module never mutates roster, APZ, presentation, duty/rest or alarms. It
  * validates provider observations against an authenticated persisted-stay registry.
  */
+import { airportTimeZone, reviewedAirportTimeZones } from './airport-timezones.mjs';
+import { presentStayInstant, resolveStayDisplayZone } from './stay-time-presentation.mjs';
+import { myCrewCareObservedStatus } from './myCrewCareObservedContract.mjs';
+
 export const MYCREWCARE_LOGISTICS_SCHEMA = 1;
 export const MYCREWCARE_SOURCE = 'mycrewcare';
 export const MYCREWCARE_MAX_RECORDS = 50;
@@ -261,6 +265,262 @@ export function normalizeMyCrewCareRecord(value) {
     transitMinutes,
     status,
   });
+}
+
+const OBSERVED_WALL = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/;
+const OBSERVED_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const BRASILIA_ZONE = 'America/Sao_Paulo';
+const OBSERVATION_KEYS = ['accountId', 'observedAt', 'operationalImportAllowed', 'requestId', 'reservations', 'sessionId'];
+const RESERVATION_KEYS = ['airport', 'checkInWallDateTime', 'checkOutWallDateTime', 'dutyPeriodNumber', 'hotelName',
+  'operationalImportAllowed', 'pairingId', 'providerReservationId', 'schemaVersion', 'status', 'timeZone',
+  'transportToAirport', 'transportToHotel'];
+const TRANSPORT_KEYS = ['explicitPickupDate', 'pickupWallTime', 'providerName', 'transitMinutes'];
+const STATUS_KEYS = ['display', 'raw'];
+
+/**
+ * Plain copy of exactly these own data properties, each read once; anything
+ * else (extra/missing keys, accessors, other prototypes) is not the observed contract.
+ */
+function exactCopy(value, keys) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.getPrototypeOf(value) !== Object.prototype
+    || Reflect.ownKeys(value).length !== keys.length) return null;
+  const copy = {};
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !('value' in descriptor)) return null;
+    copy[key] = descriptor.value;
+  }
+  return copy;
+}
+const exactText = (value, max = TEXT_LIMIT) => typeof value === 'string' && opaque(value, max) === value ? value : '';
+const numericOrder = (left, right) => left.length - right.length || (left < right ? -1 : left > right ? 1 : 0);
+
+function observedTransport(input) {
+  const value = exactCopy(input, TRANSPORT_KEYS);
+  if (!value) return null;
+  const providerName = opaque(value.providerName);
+  return providerName
+    && typeof value.pickupWallTime === 'string'
+    && OBSERVED_TIME.test(value.pickupWallTime)
+    && value.explicitPickupDate === null
+    && Number.isInteger(value.transitMinutes)
+    && value.transitMinutes >= 0
+    && value.transitMinutes <= 360
+    ? Object.freeze({
+      providerName,
+      pickupWallTime: value.pickupWallTime,
+      // A time-only pickup never borrows a date or zone from the hotel period.
+      pickupDate: null,
+      pickupAt: null,
+      transitMinutes: value.transitMinutes,
+    })
+    : null;
+}
+
+/** Display must be exactly what the observed decoder derives from the raw text. */
+function observedStatus(input) {
+  const value = exactCopy(input, STATUS_KEYS);
+  if (!value) return null;
+  const raw = exactText(value.raw, 80);
+  return raw && typeof value.display === 'string' && value.display === myCrewCareObservedStatus(raw).display
+    ? { raw, display: value.display }
+    : null;
+}
+
+function observedAcceptance(rawStatus, policy) {
+  // User policy may accept PLANNED; it is never external/provider confirmation.
+  if (/^planned$/i.test(rawStatus)) {
+    return policy && typeof policy === 'object'
+      && Object.getOwnPropertyDescriptor(policy, 'plannedAcceptedAsConfirmed')?.value === true
+      ? { acceptance: 'accepted-by-user-policy', acceptanceBasis: 'user-policy-planned-as-confirmed', pending: [] }
+      : { acceptance: 'awaiting-user-policy', acceptanceBasis: null, pending: ['status-awaiting-user-policy'] };
+  }
+  if (/^cancelled$/i.test(rawStatus)) {
+    return { acceptance: 'not-accepted-cancelled', acceptanceBasis: null, pending: ['status-cancelled'] };
+  }
+  return { acceptance: 'not-accepted-unknown-status', acceptanceBasis: null, pending: ['status-unknown'] };
+}
+
+/** Zone from the existing reviewed airport catalog only; never device, UTC or a fixed offset. */
+function derivedAirportTimeZone(airport) {
+  const zone = airportTimeZone(airport);
+  // Defensive: the catalog returns '' for unknown codes; an unusable zone is never kept.
+  if (!zone || !formatter(zone)) return null;
+  const reviewed = Object.hasOwn(reviewedAirportTimeZones, airport) ? reviewedAirportTimeZones[airport] : null;
+  return Object.freeze({
+    zone,
+    origin: 'derived',
+    providerStated: false,
+    basis: reviewed ? 'reviewed-airport-evidence' : 'base-airport-catalog',
+    airport,
+    evidence: reviewed ? Object.freeze({ icao: reviewed.icao, region: reviewed.region, reviewedOn: reviewed.reviewedOn }) : null,
+  });
+}
+
+function observedWallInstant(wall, zone) {
+  const epoch = myCrewCareLocalInstant(wall.slice(0, 10), wall.slice(11, 16), zone);
+  if (epoch === null) return null;
+  // Defensive round trip through the existing presenter: it must reproduce the source wall clock.
+  const local = presentStayInstant(new Date(epoch).toISOString(), zone);
+  return local.status === 'available' && `${local.date}T${local.clock}` === wall ? epoch : null;
+}
+
+function brasiliaView(epoch, localZone) {
+  const instant = new Date(epoch).toISOString();
+  const display = resolveStayDisplayZone({ source: 'manual', manualZone: BRASILIA_ZONE }, { localZone });
+  const shown = display.zone === BRASILIA_ZONE ? presentStayInstant(instant, BRASILIA_ZONE) : null;
+  return shown?.status === 'available'
+    ? Object.freeze({ instant, date: shown.date, clock: shown.clock, offset: shown.offset })
+    : null;
+}
+
+function observedCandidate(input, scope, policy) {
+  const value = exactCopy(input, RESERVATION_KEYS);
+  if (!value) return null;
+  const providerReservationId = exactText(value.providerReservationId, 40);
+  const dutyPeriodNumber = exactText(value.dutyPeriodNumber, 40);
+  const airport = exactText(value.airport, 3);
+  const pairingId = exactText(value.pairingId);
+  const hotelName = exactText(value.hotelName);
+  const status = observedStatus(value.status);
+  const transportToHotel = observedTransport(value.transportToHotel);
+  const transportToAirport = observedTransport(value.transportToAirport);
+  const checkInWall = typeof value.checkInWallDateTime === 'string' ? value.checkInWallDateTime : '';
+  const checkOutWall = typeof value.checkOutWallDateTime === 'string' ? value.checkOutWallDateTime : '';
+  // A supplied timezone or pickup date is not this decoder's output.
+  if (value.schemaVersion !== 1
+    || value.operationalImportAllowed !== false
+    || value.timeZone !== null
+    || !/^\d+$/.test(providerReservationId)
+    || !/^\d+$/.test(dutyPeriodNumber)
+    || !/^[A-Z]{3}$/.test(airport)
+    || !pairingId
+    || !hotelName
+    || !status
+    || !OBSERVED_WALL.test(checkInWall)
+    || !OBSERVED_WALL.test(checkOutWall)
+    || checkOutWall <= checkInWall
+    || !transportToHotel
+    || !transportToAirport) return null;
+  const acceptance = observedAcceptance(status.raw, policy);
+  const derivedTimeZone = derivedAirportTimeZone(airport);
+  const start = derivedTimeZone && observedWallInstant(checkInWall, derivedTimeZone.zone);
+  const end = derivedTimeZone && observedWallInstant(checkOutWall, derivedTimeZone.zone);
+  const resolved = Number.isFinite(start) && Number.isFinite(end) && end > start;
+  const checkIn = resolved ? brasiliaView(start, derivedTimeZone.zone) : null;
+  const checkOut = resolved ? brasiliaView(end, derivedTimeZone.zone) : null;
+  const anchored = Boolean(checkIn && checkOut);
+  return Object.freeze({
+    source: MYCREWCARE_SOURCE,
+    provenance: 'observed-dom',
+    requestId: scope.requestId,
+    providerReservationId,
+    dutyPeriodNumber,
+    airport,
+    pairingId,
+    hotelName,
+    rawStatus: status.raw,
+    statusDisplay: status.display,
+    acceptance: acceptance.acceptance,
+    acceptanceBasis: acceptance.acceptanceBasis,
+    providerConfirmation: 'not-observed',
+    checkInWallDateTime: checkInWall,
+    checkOutWallDateTime: checkOutWall,
+    timeZone: null,
+    derivedTimeZone,
+    reservationStartAt: anchored ? checkIn.instant : null,
+    reservationEndAt: anchored ? checkOut.instant : null,
+    brasilia: anchored
+      ? Object.freeze({ label: 'Brasília', timeZone: BRASILIA_ZONE, origin: 'derived', checkIn, checkOut })
+      : null,
+    transportToAirport,
+    pending: Object.freeze([
+      ...acceptance.pending,
+      ...(derivedTimeZone ? [] : ['time-zone-unavailable']),
+      ...(derivedTimeZone && !anchored ? ['reservation-local-time-invalid-or-ambiguous'] : []),
+      ...(anchored ? [] : ['reservation-instants-unavailable']),
+      'pickup-date-unavailable',
+      'stay-binding-unavailable',
+      'transport-to-hotel-out-of-schema',
+      'operational-import-vetoed',
+    ]),
+    operationalImportAllowed: false,
+  });
+}
+
+/**
+ * OFF-only diagnostic view of one coordinator observation. It never creates
+ * provider records or facts and always keeps the operational import veto.
+ * Observed values are preserved; a derived zone/instant is labelled as derived.
+ * The caller must pass the coordinator's current observation and its own binding;
+ * this pure function cannot prove the observation is still the latest one.
+ */
+export function mapMyCrewCareObservedCandidates({
+  observation: observationValue,
+  expected,
+  now = Date.now(),
+  policy = null,
+  freshForMs = 15 * 60_000,
+} = {}) {
+  const base = {
+    operationalImportAllowed: false,
+    accountId: null,
+    sessionId: null,
+    requestId: null,
+    observedAt: null,
+    dataState: null,
+    candidates: Object.freeze([]),
+    error: null,
+  };
+  const failed = (error) => Object.freeze({ ...base, error });
+  try {
+    const scope = {
+      accountId: exactText(expected?.accountId),
+      sessionId: exactText(expected?.sessionId),
+      requestId: exactText(expected?.requestId),
+    };
+    if (!scope.accountId || !scope.sessionId || !scope.requestId
+      || !Number.isFinite(now) || !Number.isFinite(freshForMs) || freshForMs < 0) return failed('invalid-scope');
+    const observation = exactCopy(observationValue, OBSERVATION_KEYS);
+    // Read the list length once and each element once; later reads cannot grow it.
+    const list = observation && Array.isArray(observation.reservations) ? observation.reservations : null;
+    const count = list ? list.length : 0;
+    if (!observation
+      || observation.operationalImportAllowed !== false
+      || !list
+      || !Number.isSafeInteger(count)
+      || count === 0
+      || count > MYCREWCARE_MAX_RECORDS) return failed('invalid-observation');
+    const reservations = Array.from({ length: count }, (_, index) => list[index]);
+    if (observation.accountId !== scope.accountId
+      || observation.sessionId !== scope.sessionId
+      || observation.requestId !== scope.requestId) return failed('identity-mismatch');
+    // Freshness comes only from the coordinator's own read-start stamp.
+    const observedAt = myCrewCareInstant(observation.observedAt);
+    if (!Number.isFinite(observedAt) || observedAt > now + 30_000) return failed('invalid-observed-at');
+    if (now - observedAt > MYCREWCARE_CACHE_MAX_AGE_MS) return failed('expired-observation');
+    const keys = new Set();
+    const candidates = [];
+    for (const value of reservations) {
+      const candidate = observedCandidate(value, scope, policy);
+      const key = candidate && `${candidate.providerReservationId}:${candidate.dutyPeriodNumber}`;
+      if (!candidate || keys.has(key)) return failed('invalid-observation');
+      keys.add(key);
+      candidates.push(candidate);
+    }
+    return Object.freeze({
+      ...base,
+      ...scope,
+      observedAt: new Date(observedAt).toISOString(),
+      dataState: Math.max(0, now - observedAt) <= freshForMs ? 'fresh' : 'cached',
+      candidates: Object.freeze(candidates.sort((left, right) => numericOrder(left.providerReservationId, right.providerReservationId)
+        || numericOrder(left.dutyPeriodNumber, right.dutyPeriodNumber))),
+    });
+  } catch {
+    // Throwing getters/coercions in foreign input fail closed, never partially.
+    return failed('invalid-observation');
+  }
 }
 
 function factIdentity(fact) {
