@@ -44,7 +44,8 @@ def login(page, owner):
     assert page.evaluate('window.__CREWCHECK_BUILD__?.commit') == config['commit']
 
 def open_browser_page(browser, stack):
-    context = stack.enter_context(browser.new_context(service_workers='block'))
+    # The real locale resolver translates the Settings logout label.
+    context = stack.enter_context(browser.new_context(locale='pt-BR', service_workers='block'))
     context.route('**/*', lambda route: route.continue_()
                   if route.request.url.startswith(origin + '/') else route.abort())
     page = context.new_page()
