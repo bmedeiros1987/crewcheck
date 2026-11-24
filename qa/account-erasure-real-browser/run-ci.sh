@@ -73,4 +73,10 @@ env -i PATH="$qa_path" npm install --prefix "$qa_root/allowance-test" --ignore-s
 "${browser_env[@]}" CREWCHECK_QA_ROOT="$product" CREWCHECK_QA_SHA="$candidate" \
   MENU_PLAYWRIGHT_PACKAGE="$qa_root/allowance-test/package.json" PLAYWRIGHT_CHROMIUM_CHANNEL=chrome \
   TZ=America/Sao_Paulo node "$qa_dir/regression-allowance-cycle-browser.cjs" || failed=1
+printf 'Testing cache with the VM fixture overlay after exact product checks\n'
+fixed_test=scripts/regression-financial-calculation-cache.mjs
+git -C "$product" diff --exit-code "$candidate" -- "$fixed_test"
+git -C "$product" apply --check "$qa_dir/financial-cache-fixture-review.patch"
+git -C "$product" apply "$qa_dir/financial-cache-fixture-review.patch"
+(cd "$product" && env -i PATH="$qa_path" node "$fixed_test") || failed=1
 exit "$failed"

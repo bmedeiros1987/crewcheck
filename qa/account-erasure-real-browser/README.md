@@ -19,3 +19,9 @@ run](https://github.com/bmedeiros1987/crewcheck/actions/runs/45304309823/job/138
 did not pass the deletion invariants. The [broader reference
 composition](https://github.com/bmedeiros1987/crewcheck/actions/runs/45302280646/job/138137496050)
 passed, but includes unrelated changes and is outside this candidate.
+
+The exact product checks run before the cache VM fixture overlay. The
+overlay affects only `scripts/regression-financial-calculation-cache.mjs`;
+it supplies the new handler dependencies to the existing test and checks
+that cleanup is requested only for the confirmed owner. It remains a
+separate proposed test patch, with the product SHA and tree above unchanged.
