@@ -201,11 +201,20 @@ try {
     if (api[target.pathname] !== req.method) return sendJson(res,404,{ok:false});
     inFlight = inFlight.then(async () => {
       httpRequests++;
+      let deletionConfirmed;
+      if (target.pathname === '/api/platform/account/delete') {
+        const end = res.end.bind(res);
+        res.end = (chunk, ...args) => {
+          const result = JSON.parse(String(chunk));
+          deletionConfirmed = result.ok === true && result.deleted === true;
+          return end(chunk, ...args);
+        };
+      }
       const handled = target.pathname.startsWith('/api/auth/')
         ? await handleAuthRoute(req, res, target) : await handlePlatformRoute(req, res, target);
       assert.equal(handled, true);
       observations.push({request: httpRequests, method: req.method, pathname: target.pathname,
-        status: res.statusCode, state: await snapshot()});
+        status: res.statusCode, deletionConfirmed, state: await snapshot()});
     }).catch(error => {
       report.handlerError = {name: error.name, code: error.code || 'LOCAL_HANDLER_ERROR'};
       if (!res.headersSent) res.writeHead(500, {'content-type': 'application/json'});
@@ -232,7 +241,7 @@ try {
   const deletion = observations.find(o => o.pathname === '/api/platform/account/delete');
   const finalState = observations.at(-1)?.state;
   report.checks = {...clientResult.checks,
-    one_confirmed_deletion: observations.filter(o=>o.pathname==='/api/platform/account/delete' && o.status===200).length===1,
+    one_confirmed_deletion: observations.filter(o=>o.pathname==='/api/platform/account/delete' && o.status===200 && o.deletionConfirmed).length===1,
     A_account_profile_roster_removed_in_MySQL: [deletion?.state, finalState].every(state =>
       state?.A.accounts===0 && state.A.profiles===0 && state.A.rosters===0),
     B_account_profile_roster_preserved: Boolean(finalState?.B.accounts===1 && finalState.B.profiles===1 && finalState.B.expectedOldPublicId && finalState.B.rosters===1),

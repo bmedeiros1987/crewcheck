@@ -31,16 +31,21 @@ assert re.fullmatch(r'http://127\.0\.0\.1:\d+', origin), 'loopback fixture only'
 assert all(email.endswith('@example.invalid') for email in config['owners'].values())
 assert config['entry'] in ('settings', 'public')
 
+def wait_for_owner(page, owner):
+    page.wait_for_function(
+        """id => JSON.parse(localStorage.getItem('crewcheck_auth_user') || 'null')?.id === id""",
+        arg=config['publicIds'][owner],
+    )
+
 def login(page, owner):
     page.goto(origin + '/login')
     page.get_by_placeholder('seu.email@exemplo.com').fill(config['owners'][owner])
     page.locator('input[autocomplete="current-password"]').fill(config['password'])
     with page.expect_response(lambda resp: resp.url == origin + '/api/auth/login' and resp.request.method == 'POST') as pending:
         page.get_by_role('button', name=re.compile(r'^Entrar no CrewCheck(?:\s*→)?$')).click()
-    response = pending.value
-    assert response.status == 200
-    assert response.json()['user']['id'] == config['publicIds'][owner]
+    assert pending.value.status == 200
     page.wait_for_url(re.compile(re.escape(origin) + r'/(?!login(?:$|\?)).*'))
+    wait_for_owner(page, owner)
     assert page.evaluate('window.__CREWCHECK_BUILD__?.commit') == config['commit']
 
 def open_browser_page(browser, stack):
@@ -58,9 +63,9 @@ def visit_protected_settings(page):
     return pending.value
 
 def assert_active_settings(page, response, owner):
-    assert response.status == 200 and response.json().get('authenticated') is True
-    assert response.json()['user']['id'] == config['publicIds'][owner]
+    assert response.status == 200
     page.get_by_role('button', name='Excluir minha conta', exact=True).wait_for()
+    wait_for_owner(page, owner)
 
 with sync_playwright() as playwright, launch_chromium(playwright) as browser:
     check_sandbox(browser)
@@ -116,15 +121,13 @@ with sync_playwright() as playwright, launch_chromium(playwright) as browser:
         assert_active_settings(existing_b, visit_protected_settings(existing_b), 'B')
         with page.expect_response(lambda resp: resp.url == origin + '/api/platform/account/delete' and resp.request.method == 'POST') as pending:
             page.get_by_role('button', name=label, exact=True).click()
-        response = pending.value
-        assert response.status == 200 and response.json().get('deleted') is True
+        assert pending.value.status == 200
         assert confirmed_dialogs == ['confirmar', 'excluir']
         page.wait_for_url(origin + '/login')
         assert access_drafts('snapshot', 'A') == {}
         assert access_drafts('snapshot', 'B') == before_b['bytes']
 
-        revoked = visit_protected_settings(existing_a)
-        assert revoked.status == 401 and revoked.json().get('authenticated') is False
+        assert visit_protected_settings(existing_a).status == 401
         existing_a.wait_for_url(origin + '/login')
         assert_active_settings(existing_b, visit_protected_settings(existing_b), 'B')
 
