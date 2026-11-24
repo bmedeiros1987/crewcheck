@@ -88,3 +88,23 @@ para usar o CrewCheck sem olhar o celular. Operação e saúde ficam sempre junt
 1. Colocar `crewwatch.html` e este arquivo em `design/crewwatch/` no repositório.
 2. Pedir ao Claude Code para mapear onde o CrewCheck já tem os horários de apresentação/etapas e a Saída Inteligente.
 3. A partir disso, propor o módulo Wear OS e o contrato acima, antes de escrever código.
+
+## App no relógio: "Radar de pulso" (`crewwatch-app.html`)
+Protótipo interativo do app Wear (não do mostrador). Abre na tela Radar e as funções ficam num anel. Para navegar:
+- toque, ou deslize para cima, para abrir as funções;
+- deslize para a direita para voltar;
+- a coroa rola listas e escolhe a função.
+
+O app nativo já existe em `android-wrapper/wear` (`MainActivity.java`, alimentado por `WatchContextSnapshot` e `CrewLifeSnapshot`). Comparação com o protótipo:
+
+| Tela | No app nativo hoje | Precisa de |
+|---|---|---|
+| Radar (Agora) | `MODE_NOW`, estados `LEAVE_SOON`, `REPORTING`, `BOARDING`, `IN_FLIGHT`, `CONNECTION`, `OVERNIGHT`, `CHANGED`, `OFF_DUTY` | visual novo (arco, número grande, ação contextual) |
+| Escala | `MODE_SCHEDULE` (até 6 itens de `schedule`) | detalhe da etapa ao tocar; dias seguintes |
+| Portão | `MODE_GATE` com procedência (`gateSource`) | portão anterior riscado |
+| Alertas | `MODE_NOTIFICATIONS` | alerta de trânsito com nível de chegada |
+| CrewLife | `MODE_CREWLIFE` | sem mudança de dados |
+| Saída Inteligente | só como estado `LEAVE_SOON` (`leaveTime`, `trafficDetail`) | tela própria e campos `arrival`, `slackMin` e `status` (`ok/limit/late`) no snapshot |
+| Despertador | não existe | campos de alarme no snapshot (hora sugerida, ajustada, ativo); tocar no relógio; sincronizar edição com o celular |
+| Jornada | não existe | início, fim previsto, horas de voo e repouso, calculados no celular |
+| Pernoite | só como estado `OVERNIGHT` (`overnight`, `hotelPickup`) | tela própria com hotel, traslado e apresentação de amanhã |
