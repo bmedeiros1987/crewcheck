@@ -1,0 +1,44 @@
+name: Account erasure integrated synthetic QA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [fix/forecast-draft-account-deletion]
+    paths:
+      - '.github/workflows/qa-account-erasure-real-browser.yml'
+      - 'qa/account-erasure-real-browser/**'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-browser-mysql:
+    if: >-
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'qa/account-erasure-real-browser' &&
+      github.event.pull_request.base.sha == '624c8b4b1d8e7f948994f1f34b976a0653e8e58f'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Confirm the PR contains only QA files
+        run: |
+          base=624c8b4b1d8e7f948994f1f34b976a0653e8e58f
+          git fetch --no-tags --depth=1 https://github.com/bmedeiros1987/crewcheck.git "$base"
+          changed=$(git diff --name-only "$base" HEAD)
+          test -n "$changed"
+          while IFS= read -r file; do
+            case "$file" in
+              .github/workflows/qa-account-erasure-real-browser.yml|qa/account-erasure-real-browser/*) ;;
+              *) printf 'Unexpected file in QA PR: %s\n' "$file" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.19.0'
+      - name: Browser with sandbox, real handlers, and private disposable MySQL
+        run: bash qa/account-erasure-real-browser/run-ci.sh

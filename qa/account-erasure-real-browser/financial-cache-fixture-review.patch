@@ -1,0 +1,34 @@
+--- a/scripts/regression-financial-calculation-cache.mjs
++++ b/scripts/regression-financial-calculation-cache.mjs
+@@ -37,23 +37,28 @@
+   const own='crewcheck_financial_calculation_cache_v1:synthetic-a:2032-02:forecast',other='crewcheck_financial_calculation_cache_v1:synthetic-b:2032-02:forecast';
+   const items=new Map([[own,'private-a'],[other,'private-b'],['crewcheck_auth_user',JSON.stringify({id:'synthetic-a'})],['crewcheck_auth_token','private-token'],['other-application-key','preserve']]);
+   let generation=0,requests=0,confirmations=0;
++  const forecastErasures=[];
+   const storage={get length(){return items.size;},key:i=>[...items.keys()][i],getItem:k=>items.get(k)??null,setItem:(k,v)=>items.set(k,v),removeItem:k=>{if(scenario==='blocked-erasure'&&k===own)throw Error('blocked');items.delete(k);}};
+   const user=()=>JSON.parse(items.get('crewcheck_auth_user')||'null');
+   const switchAccount=()=>{generation++;items.set('crewcheck_auth_user',JSON.stringify({id:'synthetic-b'}));items.set('crewcheck_auth_token','token-b');};
+   const captureAuthSession=()=>{const g=generation,owner=user()?.id,token=items.get('crewcheck_auth_token');return{token,isCurrent:()=>g===generation&&owner===user()?.id&&token===items.get('crewcheck_auth_token')};};
+   const alerts=[],window={localStorage:storage,confirm:()=>{confirmations++;if(scenario==='switch-before-request'||scenario==='switch-during-confirm'&&confirmations===2)switchAccount();return scenario!=='cancel';},prompt:()=> 'EXCLUIR',location:{href:''},open:()=>{throw Error('not authorized');}};
+-  const c=vm.createContext({window,getStoredUser:user,captureAuthSession,alert:x=>{alerts.push(x);if(scenario==='switch-during-alert')switchAccount();},eraseFinancialCalculationCache,fetch:async(url,options)=>{
++  const getToken=()=>storage.getItem('crewcheck_auth_token');
++  const eraseDeletedOwnerForecastDrafts=async owner=>{forecastErasures.push(owner);return true;};
++  const c=vm.createContext({window,getStoredUser:user,getToken,captureAuthSession,eraseDeletedOwnerForecastDrafts,alert:x=>{alerts.push(x);if(scenario==='switch-during-alert')switchAccount();},eraseFinancialCalculationCache,fetch:async(url,options)=>{
+    requests++;assert.equal(options.headers.authorization,'Bearer private-token','request remains bound to initiating account');
+    if(scenario==='switch'||scenario==='switch-unauthorized')switchAccount();
+    return{status:scenario.includes('unauthorized')?401:scenario==='failure'?503:200,ok:!['failure','unauthorized','switch-unauthorized'].includes(scenario),json:async()=>({ok:true,deleted:scenario!=='unconfirmed',...(scenario==='switch-during-confirm'?{manageGooglePlayUrl:'https://play.google.com/store/account/subscriptions'}:{})})};
+   }});
+   vm.runInContext(ts.transpileModule('globalThis.subject='+handler.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,c);await c.subject();
+   assert.equal(items.get(other),'private-b','another account cache must survive');assert.equal(items.get('other-application-key'),'preserve');
+-  if(['success','switch','switch-during-alert','switch-during-confirm'].includes(scenario))assert(!items.has(own),'only initiating account is erased after confirmed success');else assert.equal(items.get(own),'private-a');
++  const erasureConfirmed=['success','blocked-erasure','switch','switch-during-alert','switch-during-confirm'].includes(scenario);
++  if(!process.env.FINANCIAL_CACHE_ERASURE_BASELINE_TREE)assert.deepEqual(forecastErasures,erasureConfirmed?['synthetic-a']:[],'draft cleanup uses only the confirmed initiating owner');
++  if(erasureConfirmed&&scenario!=='blocked-erasure')assert(!items.has(own),'only initiating account is erased after confirmed success');else assert.equal(items.get(own),'private-a');
+   if(scenario==='success'){assert(!items.has('crewcheck_auth_token'));assert.equal(window.location.href,'/login');}
+   if(scenario.startsWith('switch')){assert.equal(items.get('crewcheck_auth_token'),'token-b','new session survives');assert.equal(user().id,'synthetic-b');assert.equal(window.location.href,'','new session is not redirected');}
+   if(['cancel','switch-before-request'].includes(scenario))assert.equal(requests,0);
+-  if(scenario==='blocked-erasure')assert(alerts.some(x=>x.includes('Limpe os dados deste navegador')),'local erasure failure is explicit');
++  if(scenario==='blocked-erasure')assert(alerts.some(x=>x.includes('A limpeza dos dados financeiros ficou pendente neste dispositivo.')),'local erasure failure is explicit');
+  }
+  console.log('PASS financial cache: SHA-256 differential vectors; restart/read reuse, account/period/scope/build/input invalidation, unknown/zero/date, mutation isolation, stale-tab writes, corruption, blocked/quota storage and session races; synthetic only');
+ }finally{modules.cleanup();}

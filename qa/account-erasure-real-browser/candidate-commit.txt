@@ -1,0 +1,6 @@
+tree b60449aea060b32afbfad3afb062f4bc3206ffef
+parent 43504832191cecdf19151f8f38b1f5c0277dc25f
+author CrewCheck QA <qa@example.invalid> 1795484463 +0000
+committer CrewCheck QA <qa@example.invalid> 1795484463 +0000
+
+Isolated CrewCheck candidate: owner-scoped erasure and session revocation
