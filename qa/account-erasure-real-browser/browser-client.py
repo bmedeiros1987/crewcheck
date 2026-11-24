@@ -4,7 +4,7 @@ import re
 import sys
 from contextlib import ExitStack
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeout, sync_playwright
 
 def launch_chromium(playwright):
     executable = os.environ.get('CREWCHECK_QA_BROWSER')
@@ -121,23 +121,37 @@ with sync_playwright() as playwright, launch_chromium(playwright) as browser:
         assert_active_settings(existing_b, visit_protected_settings(existing_b), 'B')
         with page.expect_response(lambda resp: resp.url == origin + '/api/platform/account/delete' and resp.request.method == 'POST') as pending:
             page.get_by_role('button', name=label, exact=True).click()
-        assert pending.value.status == 200
-        assert confirmed_dialogs == ['confirmar', 'excluir']
-        page.wait_for_url(origin + '/login')
-        assert access_drafts('snapshot', 'A') == {}
-        assert access_drafts('snapshot', 'B') == before_b['bytes']
+        deletion_status = pending.value.status
+        def returned_to_login(target):
+            try:
+                target.wait_for_url(origin + '/login')
+                return True
+            except PlaywrightTimeout:
+                return False
 
-        assert visit_protected_settings(existing_a).status == 401
-        existing_a.wait_for_url(origin + '/login')
-        assert_active_settings(existing_b, visit_protected_settings(existing_b), 'B')
-
-        login(page, 'B')
-        reopened = access_drafts('read', 'B')
-        assert reopened['valid'] and reopened['bytes'] == before_b['bytes']
+        checks = {
+            'native_deletion_action_confirmed':
+                deletion_status == 200 and confirmed_dialogs == ['confirmar', 'excluir'],
+            'A_initiating_browser_returns_to_login': returned_to_login(page),
+            'A_drafts_removed': access_drafts('snapshot', 'A') == {},
+            'B_draft_bytes_preserved': access_drafts('snapshot', 'B') == before_b['bytes'],
+        }
+        status_a = visit_protected_settings(existing_a).status
+        checks['A_existing_browser_session_revoked'] = status_a == 401 and returned_to_login(existing_a)
+        response_b = visit_protected_settings(existing_b)
+        try:
+            assert_active_settings(existing_b, response_b, 'B')
+            checks['B_existing_browser_session_preserved'] = True
+        except (AssertionError, PlaywrightTimeout):
+            checks['B_existing_browser_session_preserved'] = False
+        try:
+            login(page, 'B')
+            reopened = access_drafts('read', 'B')
+            checks['B_reopens_both_drafts'] = reopened['valid'] and reopened['bytes'] == before_b['bytes']
+        except (AssertionError, PlaywrightTimeout):
+            checks['B_reopens_both_drafts'] = False
         print(json.dumps({
             'browser': True, 'sandbox': True, 'browserVersion': browser.version, 'entry': config['entry'],
-            'checks': {'native_deletion_action_confirmed': True,
-                       'A_existing_browser_session_revoked': True,
-                       'B_existing_browser_session_preserved': True, 'A_drafts_removed': True,
-                       'B_draft_bytes_preserved': True, 'B_reopens_both_drafts': True}
+            'http': {'deletion': deletion_status, 'existingA': status_a, 'existingB': response_b.status},
+            'checks': checks,
         }))

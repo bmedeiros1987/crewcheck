@@ -266,7 +266,8 @@ try {
   report.preparedHashesAfter = hashes();
   report.cleanup = {serverClosed: Boolean(server), dbPoolClosed: Boolean(db), containerRemoved: started};
   writeFileSync(path.join(scratch, 'integrated-browser-result.json'), JSON.stringify(report, null, 2) + '\n');
-  console.log(JSON.stringify({result: report.result, failedPostconditions: report.failedPostconditions,
-    checks: report.checks, error: report.error, report: path.join(scratch, 'integrated-browser-result.json')}));
+  console.log(JSON.stringify({entry, sourceSha:source.sourceSha, rawTree:source.rawTree, result:report.result,
+    browser: report.clients?.browser, sandbox: report.clients?.sandbox, http:report.clients?.http,
+    failedPostconditions: report.failedPostconditions, checks: report.checks, error: report.error}));
   if (report.result !== 'PASS') process.exitCode = 1;
 }

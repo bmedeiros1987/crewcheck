@@ -1,9 +1,7 @@
-# QA integrada da exclusão de conta
+# Aceite de exclusão no candidato exato da #1374
 
-Esta revisão de QA tem como base a branch da #1368 no commit `624c8b4b`. Não é candidata à integração. Os arquivos da PR contêm o ensaio e a reconstrução da árvore de produto em um diretório descartável. A branch da #1368 fica intacta.
+Este rascunho exclusivo de QA usa a branch da #1368 como base de revisão. O checkout separado do produto usa apenas o HEAD `43504832` da #1374. A árvore `1ed9292e` é a mesma do merge virtual `0a86de0d` sobre a main `1d241f98`. Os cinco arquivos preparados do backend são verificados contra essa composição exata.
 
-A composição testada é a árvore `f647641b21280e5ef313bfc12a7abef1d27258a0` de `e613e45d6c8bc7b4b898f08cb7949d0d8ef14dfb`. O índice recupera objetos dos SHAs públicos da main e dos rascunhos #1342, #1368 e #1348. A sobreposição é a diferença local de seis arquivos. O script exige a árvore bruta esperada antes de preparar o app. A preparação canônica deve reproduzir os cinco hashes do backend que passou na prova anterior de API.
+O único job usa Chrome com sandbox e MySQL 8.4 descartável por socket e sem rede. Com duas contas sintéticas, o ensaio aciona a exclusão pelas telas Configurações e página pública. Cada entrada usa um banco novo. A prova exige exclusão persistida de A, HTTP 401 na sessão anterior de A, continuidade da sessão de B e reabertura dos rascunhos de férias e 13º de B. A segunda entrada roda mesmo se a primeira falhar, e qualquer falha mantém o job vermelho.
 
-O job usa Chrome com sandbox e MySQL 8.4 descartável por socket, sem portas publicadas. Os contextos do navegador ficam limitados à origem loopback. A API usa os handlers reais e só admite as rotas do ensaio. As duas contas e os rascunhos locais são sintéticos. Em cada entrada, Configurações e página pública, o navegador confirma a exclusão de A, comprova que a sessão anterior de A termina e que a sessão de B continua, e reabre os rascunhos de férias e 13º de B. O mesmo recibo exige remoção persistida de A no MySQL e preservação de B.
-
-O teste aceita apenas a PR em rascunho a partir do ref de QA contra a base exata. O job não tem ação de publicação nem configuração de serviço. O resultado pode ser consultado no log do job, por entrada.
+O resultado anterior passou nas duas telas na árvore `f647641b`. Ele permanece registrado no SHA de QA `bee0355d`. A decisão de release da #1374 depende da prova na árvore `1ed9292e` e dos demais checks aplicáveis. [Prova anterior](https://github.com/bmedeiros1987/crewcheck/actions/runs/45302280646/job/138137496050)
