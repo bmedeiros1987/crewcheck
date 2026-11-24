@@ -1,7 +1,21 @@
-# Aceite de exclusão no candidato exato da #1374
+# Integrated release QA
 
-Este rascunho exclusivo de QA usa a branch da #1368 como base de revisão. O checkout separado do produto usa apenas o HEAD `43504832` da #1374. A árvore `1ed9292e` é a mesma do merge virtual `0a86de0d` sobre a main `1d241f98`. Os cinco arquivos preparados do backend são verificados contra essa composição exata.
+This draft contains only the test workflow and fixtures. The runner rebuilds
+product commit `0c8a333eb0d9baacaf395976f8138d07e31a4d23` from the public
+#1374 head `43504832191cecdf19151f8f38b1f5c0277dc25f` and the attached review
+patch. Both the commit and its raw tree
+`b60449aea060b32afbfad3afb062f4bc3206ffef` are checked before materialization.
+The patch contains the owner-scoped client cleanup and the server session
+generation checks. It leaves billing and Telegram out of the composition.
 
-O único job usa Chrome com sandbox e MySQL 8.4 descartável por socket e sem rede. Com duas contas sintéticas, o ensaio aciona a exclusão pelas telas Configurações e página pública. Cada entrada usa um banco novo. A prova exige exclusão persistida de A, HTTP 401 na sessão anterior de A, continuidade da sessão de B e reabertura dos rascunhos de férias e 13º de B. A segunda entrada roda mesmo se a primeira falhar, e qualquer falha mantém o job vermelho.
+Chromium runs with its sandbox enabled. The two account deletion flows use
+the real handlers and a disposable MySQL instance with networking disabled.
+The allowance suite uses the same compiled app and eight scenarios with
+synthetic roster responses. All accounts, payroll entries, and rosters are
+fictional. This workflow has no deployment or notification step.
 
-O resultado anterior passou nas duas telas na árvore `f647641b`. Ele permanece registrado no SHA de QA `bee0355d`. A decisão de release da #1374 depende da prova na árvore `1ed9292e` e dos demais checks aplicáveis. [Prova anterior](https://github.com/bmedeiros1987/crewcheck/actions/runs/45302280646/job/138137496050)
+Earlier runs remain evidence for their own trees. The [#1374 baseline
+run](https://github.com/bmedeiros1987/crewcheck/actions/runs/45304309823/job/138144258278)
+did not pass the deletion invariants. The [broader reference
+composition](https://github.com/bmedeiros1987/crewcheck/actions/runs/45302280646/job/138137496050)
+passed, but includes unrelated changes and is outside this candidate.

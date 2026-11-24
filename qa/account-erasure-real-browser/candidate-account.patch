@@ -1,0 +1,642 @@
+diff --git a/client/src/lib/financialForecastDrafts.ts b/client/src/lib/financialForecastDrafts.ts
+index ad46ba5ca6b6accfc10e3aed58ca7ecabc3d59f7..64ce4b6c8ab22d64bb20e99628b98d1a45dc0b1a 100644
+--- a/client/src/lib/financialForecastDrafts.ts
++++ b/client/src/lib/financialForecastDrafts.ts
+@@ -19,0 +20,3 @@ const MAX_RAW_LENGTH = 32_768;
++// The current document must stop using this owner's drafts even if browser
++// storage cannot clear its obsolete auth token. Do not persist this fence.
++const deletedOwners = new Set<string>();
+@@ -86 +89,2 @@ export function deriveForecastPlan(kind:ForecastKind, values:unknown):string|nul
+-const prefix = (owner:string,kind:ForecastKind) => FORECAST_DRAFT_PREFIX+encodeURIComponent(owner)+':'+kind+':';
++const ownerPrefix = (owner:string) => FORECAST_DRAFT_PREFIX+encodeURIComponent(owner)+':';
++const prefix = (owner:string,kind:ForecastKind) => ownerPrefix(owner)+kind+':';
+@@ -90,0 +95 @@ function live(bound:Bound):boolean {
++  if(deletedOwners.has(bound.ownerId))return false;
+@@ -174 +179,30 @@ export function readLatestForecastDraft<K extends ForecastKind>(kind:K,context:F
+-async function locked<T>(bound:Bound,name:string,operation:()=>T):Promise<T|Failure> {
++/** Call only after confirmed account deletion, using the owner of the request. */
++export async function eraseDeletedOwnerForecastDrafts(owner:string|null|undefined):Promise<boolean> {
++ if(typeof owner!=='string'||!owner.trim())return false;
++ deletedOwners.add(owner);
++ try {
++  const store=globalThis.localStorage;
++  const vacationPrefix=prefix(owner,'vacation'),thirteenthPrefix=prefix(owner,'thirteenth');
++  const ownNames=()=>{
++   const names:string[]=[];
++   const count=store.length;
++   for(let i=0;i<count;i++){
++    const name=store.key(i);
++    if(name&&(name.startsWith(vacationPrefix)||name.startsWith(thirteenthPrefix)))names.push(name);
++   }
++   return names;
++  };
++  const erase=()=>{
++   let removed=true;
++   for(const name of ownNames()){
++    try {store.removeItem(name);} catch {removed=false;}
++   }
++   return removed&&ownNames().length===0;
++  };
++  const locks=globalThis.navigator?.locks;
++  // Draft writers also use the owner lock. Readers and other accounts remain independent.
++  return typeof locks?.request==='function'?await locks.request(ownerPrefix(owner),{mode:'exclusive'},erase):erase();
++ } catch {return false;}
++}
++
++async function locked<T>(bound:Bound,operation:()=>T):Promise<T|Failure> {
+@@ -182 +216 @@ async function locked<T>(bound:Bound,name:string,operation:()=>T):Promise<T|Fail
+-  const result=await locks.request(name,{mode:'exclusive'},()=>live(bound)?operation():{status:'stale' as const});
++  const result=await locks.request(ownerPrefix(bound.ownerId),{mode:'exclusive'},()=>live(bound)?operation():{status:'stale' as const});
+@@ -192 +226 @@ export async function saveForecastDraft<K extends ForecastKind>(kind:K,values:un
+- return locked(bound,key(bound.ownerId,kind,planId),()=>{
++ return locked(bound,()=>{
+@@ -219 +253 @@ export async function removeForecastDraft(kind:ForecastKind,planId:string,expect
+- return locked(bound,key(bound.ownerId,kind,planId),()=>{
++ return locked(bound,()=>{
+diff --git a/client/src/pages/Home.tsx b/client/src/pages/Home.tsx
+index 122eb1ae8048b4d5aef5b96234d519510b0f5af3..2cede59a3dde4946c6f4f22f87c7a30f02b21396 100644
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -141 +141,3 @@ import { nextAllowancePayment, type NextPayment } from '@/lib/nextFinancialPayme
+-import {createFinancialCalculationCache,financialInputSignature} from '@/lib/financialCalculationCache';
++import {createFinancialCalculationCache,eraseFinancialCalculationCache,financialInputSignature} from '@/lib/financialCalculationCache';
++import {eraseDeletedOwnerForecastDrafts} from '@/lib/financialForecastDrafts';
++import {clearKnownDeletedAccountStores} from '@shared/accountDeletionLocal.mjs';
+@@ -3387,3 +3389 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
+-    if (!confirm('Excluir permanentemente sua conta, escalas, visitantes, hotéis, chat e histórico? Esta ação não pode ser desfeita.')) return;
+-    const confirmation = prompt('Para confirmar, digite EXCLUIR') || '';
+-    if (confirmation.trim().toUpperCase() !== 'EXCLUIR') { toast.message('Exclusão cancelada.'); return; }
++    let deletionSession:ReturnType<typeof captureAuthSession>|undefined;
+@@ -3390,0 +3391,6 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
++      deletionSession=captureAuthSession();
++      const deletingOwner=financialRateOwner();
++      if (!confirm('Excluir permanentemente sua conta, escalas, visitantes, hotéis, chat e histórico? Esta ação não pode ser desfeita.')||!deletionSession.isCurrent()) return;
++      const confirmation = prompt('Para confirmar, digite EXCLUIR') || '';
++      if(!deletionSession.isCurrent())return;
++      if (confirmation.trim().toUpperCase() !== 'EXCLUIR') { toast.message('Exclusão cancelada.'); return; }
+@@ -3392,3 +3398,33 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
+-      if (result.manageGooglePlayUrl && confirm('Os dados foram excluídos. Deseja abrir a Play Store para cancelar a assinatura Google Play separadamente?')) window.open(result.manageGooglePlayUrl, '_blank', 'noopener,noreferrer');
+-      try { Object.keys(localStorage).filter((key) => key.startsWith('crewcheck_') || key.startsWith('crewcheck:')).forEach((key) => localStorage.removeItem(key)); } catch {}
+-      window.location.assign('/login');
++      if(result?.ok!==true||result?.deleted!==true)throw Error('ACCOUNT_DELETION_UNCONFIRMED');
++      let financialCacheCleared = false;
++      try {
++        financialCacheCleared = typeof deletingOwner === 'string' && eraseFinancialCalculationCache(deletingOwner, localStorage);
++      } catch {}
++      let knownStoresCleared = true;
++      let signedOut:ReturnType<typeof captureAuthSession>|undefined;
++      try {
++        const current=captureAuthSession();
++        const initiatedHere=deletionSession.isCurrent();
++        if (initiatedHere) {
++          try {
++            knownStoresCleared = clearKnownDeletedAccountStores({
++              ownerId: deletingOwner, local: localStorage, session: sessionStorage, isCurrent: deletionSession.isCurrent,
++            }).ok;
++          } catch {
++            knownStoresCleared = false;
++          }
++        }
++        // A return to the same deleted owner can still have queued draft writes.
++        if((initiatedHere||(deletingOwner&&financialRateOwner()===deletingOwner))&&current.isCurrent()){
++          localStorage.removeItem('crewcheck_auth_token');
++          if(!getToken())localStorage.removeItem('crewcheck_auth_user');
++          signedOut=captureAuthSession();
++        }
++      } catch {}
++      const cleared=await eraseDeletedOwnerForecastDrafts(deletingOwner);
++      if(!signedOut?.isCurrent()||signedOut.token)return;
++      if(!cleared)alert('Conta excluída. A limpeza dos rascunhos financeiros ficou pendente neste dispositivo.');
++      else if (!knownStoresCleared || !financialCacheCleared) alert('Conta excluída. A limpeza local ficou pendente neste dispositivo.');
++      if(!signedOut.isCurrent())return;
++      if(result.manageGooglePlayUrl&&confirm('Os dados foram excluídos. Deseja abrir a Play Store para cancelar a assinatura Google Play separadamente?')&&signedOut.isCurrent())window.open(result.manageGooglePlayUrl,'_blank','noopener,noreferrer');
++      if(signedOut.isCurrent())window.location.assign('/login');
+@@ -3396 +3432,3 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
+-      toast.error('Não foi possível concluir a exclusão agora. Nenhum dado foi removido.');
++      try {
++        if(!deletionSession||deletionSession.isCurrent())toast.error('Não foi possível confirmar a exclusão agora.');
++      } catch {}
+diff --git a/client/src/pages/InfoPage.tsx b/client/src/pages/InfoPage.tsx
+index 22f0b9d930cc90b7861cf020bbbf08a51b3410a6..e715f9bb3d7679d68b6d17c25bc28ce974a7164e 100644
+--- a/client/src/pages/InfoPage.tsx
++++ b/client/src/pages/InfoPage.tsx
+@@ -1 +1 @@
+-import {captureAuthSession,getStoredUser} from '@/lib/authClient';
++import {captureAuthSession,getStoredUser,getToken} from '@/lib/authClient';
+@@ -2,0 +3 @@ import {eraseFinancialCalculationCache} from '@/lib/financialCalculationCache';
++import {eraseDeletedOwnerForecastDrafts} from '@/lib/financialForecastDrafts';
+@@ -239 +240,11 @@ export default function InfoPage({ page }: { page: PageKey }) {
+-                    const deletionSession=captureAuthSession(),deletingOwner=getStoredUser()?.id;
++                    let deletionSession:ReturnType<typeof captureAuthSession>,deletingOwner:string|undefined;
++                    try {
++                      deletionSession=captureAuthSession();
++                      deletingOwner=getStoredUser()?.id??undefined;
++                    } catch {
++                      alert('Não foi possível identificar a sessão para confirmar a exclusão.');
++                      return;
++                    }
++                    const isCurrent=(session=deletionSession)=>{
++                      try {return session.isCurrent();} catch {return false;}
++                    };
+@@ -241 +252 @@ export default function InfoPage({ page }: { page: PageKey }) {
+-                    if (!ok||!deletionSession.isCurrent()) return;
++                    if (!ok||!isCurrent()) return;
+@@ -243,3 +254,9 @@ export default function InfoPage({ page }: { page: PageKey }) {
+-                    if (confirmation.trim().toUpperCase() !== 'EXCLUIR'||!deletionSession.isCurrent()) return;
+-                    const token = deletionSession.token || '';
+-                    const response = await fetch('/api/platform/account/delete', { method: 'POST', credentials: 'include', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' }, body: JSON.stringify({ confirmation }) });
++                    if (confirmation.trim().toUpperCase() !== 'EXCLUIR'||!isCurrent()) return;
++                    const token = deletionSession.token?.trim() || '';
++                    let response:Response;
++                    try {
++                      response=await fetch('/api/platform/account/delete', { method: 'POST', credentials: 'include', headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' }, body: JSON.stringify({ confirmation }) });
++                    } catch {
++                      if(isCurrent())alert('Não foi possível confirmar a exclusão agora.');
++                      return;
++                    }
+@@ -247,2 +264,2 @@ export default function InfoPage({ page }: { page: PageKey }) {
+-                    if (response.status === 401) { if(deletionSession.isCurrent())window.location.href = '/login'; return; }
+-                    if (!response.ok||payload?.ok!==true||payload?.deleted!==true) { if(deletionSession.isCurrent())alert(payload?.message || 'Não foi possível confirmar a exclusão. Tente novamente.'); return; }
++                    if (response.status === 401) { if(isCurrent())window.location.href = '/login'; return; }
++                    if (!response.ok||payload?.ok!==true||payload?.deleted!==true) { if(isCurrent())alert(payload?.message || 'Não foi possível confirmar a exclusão. Tente novamente.'); return; }
+@@ -249,0 +267 @@ export default function InfoPage({ page }: { page: PageKey }) {
++                    const confirmedLocalOwner = token ? deletingOwner : null;
+@@ -251,9 +269,16 @@ export default function InfoPage({ page }: { page: PageKey }) {
+-                    try { localFinancialCleared=typeof deletingOwner==='string'&&eraseFinancialCalculationCache(deletingOwner,window.localStorage); } catch {}
+-                    if(!deletionSession.isCurrent())return;
+-                    if(payload.manageGooglePlayUrl){const manage=window.confirm('Os dados foram excluídos. Abrir a Play Store para cancelar a assinatura separadamente?');if(!deletionSession.isCurrent())return;if(manage)window.open(payload.manageGooglePlayUrl,'_blank','noopener,noreferrer');}
+-                    if(!deletionSession.isCurrent())return;
+-                    alert((payload.message || 'Conta e dados removidos com sucesso.')+(!localFinancialCleared?' Limpe os dados deste navegador para remover a memória financeira local.':''));
+-                    if(!deletionSession.isCurrent())return;
+-                    window.localStorage.removeItem('crewcheck_auth_token');
+-                    window.localStorage.removeItem('crewcheck_auth_user');
+-                    window.location.href = '/login';
++                    try { localFinancialCleared=typeof confirmedLocalOwner==='string'&&eraseFinancialCalculationCache(confirmedLocalOwner,window.localStorage); } catch {}
++                    let signedOut:ReturnType<typeof captureAuthSession>|undefined;
++                    try {
++                      const current=captureAuthSession();
++                      if((isCurrent()||(token&&deletingOwner&&getStoredUser()?.id===deletingOwner))&&isCurrent(current)){
++                        window.localStorage.removeItem('crewcheck_auth_token');
++                        if(!getToken())window.localStorage.removeItem('crewcheck_auth_user');
++                        signedOut=captureAuthSession();
++                      }
++                    } catch {}
++                    const localDraftsCleared=await eraseDeletedOwnerForecastDrafts(confirmedLocalOwner);
++                    if(!signedOut||signedOut.token||!isCurrent(signedOut))return;
++                    if(payload.manageGooglePlayUrl&&window.confirm('Os dados foram excluídos. Abrir a Play Store para cancelar a assinatura separadamente?')&&isCurrent(signedOut))window.open(payload.manageGooglePlayUrl,'_blank','noopener,noreferrer');
++                    if(!isCurrent(signedOut))return;
++                    alert((payload.message || 'Conta excluída.')+(!localFinancialCleared||!localDraftsCleared?' A limpeza dos dados financeiros ficou pendente neste dispositivo.':''));
++                    if(isCurrent(signedOut))window.location.href='/login';
+diff --git a/scripts/regression-financial-forecast-drafts.cjs b/scripts/regression-financial-forecast-drafts.cjs
+index 1dcffe55b290dc950efe3b2cf3c69ece8fdf3905..f3f9804fec3305bf77d9b308cc085742e82a9660 100644
+--- a/scripts/regression-financial-forecast-drafts.cjs
++++ b/scripts/regression-financial-forecast-drafts.cjs
+@@ -5,0 +6 @@ const fs=require('node:fs');
++const ts=require('typescript');
+@@ -25 +26 @@ function locksFixture(){
+-  const result=(tails.get(name)||Promise.resolve()).then(async()=>{await this.before?.();return callback({name});});
++  const result=(tails.get(name)||Promise.resolve()).then(async()=>{await this.before?.(name);return callback({name});});
+@@ -47,0 +49,19 @@ function equalData(actual,expected){assert.deepEqual(JSON.parse(JSON.stringify(a
++function deletionHandlers(){
++ const routes=[
++  ['settings','client/src/pages/Home.tsx',node=>ts.isFunctionDeclaration(node)&&node.name?.text==='deleteAccount'],
++  ['public page','client/src/pages/InfoPage.tsx',(node,ast)=>ts.isArrowFunction(node)&&ts.isJsxExpression(node.parent)&&node.getText(ast).includes("fetch('/api/platform/account/delete'")],
++ ];
++ return routes.map(([route,file,match])=>{
++  const source=fs.readFileSync(file,'utf8');
++  const ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
++  const found=[];
++  function visit(node){
++   if(match(node,ast))found.push(node.getText(ast));
++   ts.forEachChild(node,visit);
++  }
++  visit(ast);
++  assert.equal(found.length,1,file);
++  const script=route==='settings'?found[0]+'\ndeleteAccount()':'('+found[0]+')()';
++  return [route,ts.transpileModule(script,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText];
++ });
++}
+@@ -49 +69,5 @@ async function main(){
+- const result=await build({entryPoints:[path.join(root,'client/src/lib/financialForecastDrafts.ts')],bundle:true,write:false,platform:'node',format:'cjs',logLevel:'silent',plugins:[{name:'synthetic-auth-only',setup(builder){
++ const {clearKnownDeletedAccountStores}=await import('../shared/accountDeletionLocal.mjs');
++ const result=await build({
++  stdin:{resolveDir:root,contents:`export * from './client/src/lib/financialForecastDrafts.ts';
++export { FINANCIAL_CACHE_PREFIX, eraseFinancialCalculationCache } from './client/src/lib/financialCalculationCache.ts';`},
++  bundle:true,write:false,platform:'node',format:'cjs',logLevel:'silent',plugins:[{name:'synthetic-auth-only',setup(builder){
+@@ -118 +142 @@ async function main(){
+-  assert.ok(f.locks.names.every(name=>name===slot('Account-A','thirteenth','2026')));
++  assert.ok(f.locks.names.every(name=>name===prefix+'Account-A:'));
+@@ -249,0 +274,206 @@ async function main(){
++ await test('confirmed erasure waits for in-flight writes of its owner and never blocks another owner',async()=>{
++  const f=fixture(bundle);
++  const ownerA=f.context();
++  const initial=await f.api.saveForecastDraft('thirteenth',thirteenth(),null,ownerA);
++  assert.equal(initial.status,'saved');
++  let release;
++  const hold=new Promise(resolve=>{release=resolve;});
++  f.locks.before=name=>name===prefix+'Account-A:'?hold:undefined;
++  const pending=f.api.saveForecastDraft('vacation',vacation(),null,ownerA);
++  f.switchTo('Account-B');
++  const erase=f.api.eraseDeletedOwnerForecastDrafts('Account-A');
++  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth({amount:'42'}),null,f.context())).status,'saved');
++  assert.ok(f.storage.data.has(slot('Account-A','thirteenth','2026')));
++  release();
++  assert.equal((await pending).status,'stale');
++  assert.equal(await erase,true);
++  assert.deepEqual([...f.storage.data.keys()],[slot('Account-B','thirteenth','2026')]);
++  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts('Account-A'),true);
++ });
++ await test('erasure handles unavailable storage and never infers an owner',async()=>{
++  const f=fixture(bundle),name=slot('Account-A','vacation','2025-11-01..2026-10-31');
++  f.storage.data.set(name,'malformed synthetic draft');
++  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts(null),false);
++  f.storage.removeFail=true;
++  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts('Account-A'),false);
++  assert.ok(f.storage.data.has(name));
++  f.storage.removeFail=false;f.sandbox.navigator={};
++  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts('Account-A'),true);
++  assert.equal(f.storage.data.has(name),false);
++ });
++ await test('confirmed deletion stops same-document writes even when auth storage keeps the old session',async()=>{
++  const f=fixture(bundle),owner='Account-A',context=f.context();
++  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth(),null,context)).status,'saved');
++  assert.equal((await f.api.saveForecastDraft('vacation',vacation(),null,context)).status,'saved');
++  let release;
++  const hold=new Promise(resolve=>{release=resolve;});
++  f.locks.before=()=>hold;
++  const queued=f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,context);
++  f.storage.onRemove=name=>{if(name===slot(owner,'thirteenth','2026'))throw Error('synthetic partially unavailable storage');};
++  const erased=f.api.eraseDeletedOwnerForecastDrafts(owner);
++  release();
++  assert.equal((await queued).status,'stale');
++  assert.equal(await erased,false);
++  assert.equal(f.storage.data.size,1,'continue erasing other plans of the same owner');
++  assert.equal(f.api.readLatestForecastDraft('thirteenth',context).status,'stale');
++  f.storage.onRemove=null;
++  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,f.context())).status,'stale');
++  assert.equal(await f.api.eraseDeletedOwnerForecastDrafts(owner),true);
++  f.switchTo('Account-B');
++  assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth(),null,f.context())).status,'saved');
++ });
++ for(const [route,handler] of deletionHandlers()){
++  await test(route+' erases only the acknowledged owner across response and session changes',async()=>{
++   const scenarios=['success','network','unconfirmed','switch-before','late-success','late-failure','late-return','blocked-cleanup','blocked-financial-cache','switch-during-prompt','switch-during-erasure','blocked-auth-read','blocked-auth-after-response','blocked-auth-remove'];
++   if(route==='settings')scenarios.push('switch-during-legacy-cleanup','blocked-legacy-cleanup');
++   for(const scenario of scenarios){
++    const f=fixture(bundle),ownerA='Account-A',ownerB='Account-A:other';
++    const tokenKey='crewcheck_auth_token',userKey='crewcheck_auth_user';
++    const store=new Proxy(f.storage,{
++     ownKeys:()=>[...f.storage.data.keys()],
++     getOwnPropertyDescriptor:(_,name)=>f.storage.data.has(name)?{enumerable:true,configurable:true}:undefined,
++    });
++    const login=owner=>{f.switchTo(owner);store.setItem(tokenKey,'fixture-'+owner);store.setItem(userKey,JSON.stringify({id:owner}));};
++    for(const owner of [ownerA,ownerB]){
++     login(owner);
++     const ctx=f.context();
++     assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth(),null,ctx)).status,'saved');
++     assert.equal((await f.api.saveForecastDraft('vacation',vacation(),null,ctx)).status,'saved');
++    }
++    login(ownerA);
++    let logoutObserved;
++    const logout=new Promise(resolve=>{logoutObserved=resolve;});
++    f.storage.afterRemove=name=>{if(name===tokenKey){f.switchTo('', '');logoutObserved();}};
++    const originalDrafts=[...f.storage.data].filter(([name])=>name.startsWith(prefix));
++    const currentUser=()=>JSON.parse(store.getItem(userKey)||'null');
++    const getToken=()=>store.getItem(tokenKey);
++    const sessionStorage=new StorageFixture();
++    const knownA='crewcheck_local_history_v11_account-a';
++    const unowned='crewcheck_synthetic_unowned';
++    store.setItem(knownA,'synthetic A');store.setItem(unowned,'ambiguous');
++    const cacheA=f.api.FINANCIAL_CACHE_PREFIX+encodeURIComponent(ownerA)+':2026-01:synthetic';
++    const cacheB=f.api.FINANCIAL_CACHE_PREFIX+encodeURIComponent(ownerB)+':2026-01:synthetic';
++    store.setItem(cacheA,'synthetic cache A');store.setItem(cacheB,'synthetic cache B');
++    const captureAuthSession=()=>{
++     const owner=currentUser()?.id,token=store.getItem(tokenKey),generation=f.state.generation;
++     return {token,isCurrent:()=>generation===f.state.generation&&currentUser()?.id===owner&&store.getItem(tokenKey)===token};
++    };
++    const messages=[];
++    const location={href:'',assign(url){this.href=url;}};
++    let requests=0,confirmations=0,resume;
++    const request=()=>{
++     requests++;assert.equal(currentUser()?.id,ownerA);
++     if(scenario==='network')return Promise.reject(Error('synthetic network failure'));
++     if(scenario.startsWith('late-'))return new Promise(resolve=>{resume=resolve;});
++     if(scenario==='blocked-auth-after-response')f.storage.onGet=name=>{if(name===tokenKey)throw Error('synthetic authentication storage failure');};
++     return Promise.resolve({ok:true,deleted:scenario!=='unconfirmed',...(scenario==='switch-during-prompt'?{manageGooglePlayUrl:'https://example.invalid/manage'}:{})});
++    };
++    const confirm=()=>{
++     confirmations++;
++     if(scenario==='switch-before'||scenario==='switch-during-prompt'&&confirmations===2)login(ownerB);
++     return true;
++    };
++    const prompt=()=>'EXCLUIR';
++    if(scenario==='blocked-cleanup')f.storage.onRemove=name=>{if(name.startsWith(prefix+ownerA+':'))throw Error('synthetic cleanup failure');};
++    if(scenario==='blocked-financial-cache')f.storage.onRemove=name=>{if(name===cacheA)throw Error('synthetic cache failure');};
++    if(scenario==='switch-during-erasure')f.locks.before=()=>login(ownerB);
++    if(scenario==='blocked-auth-read')f.storage.onGet=name=>{if(name===tokenKey)throw Error('synthetic authentication storage failure');};
++    if(scenario==='blocked-auth-remove')f.storage.onRemove=name=>{if(name===tokenKey)throw Error('synthetic authentication storage failure');};
++    if(scenario==='switch-during-legacy-cleanup'){
++     f.storage.onRemove=name=>{if(name===knownA)login(ownerB);};
++    }
++    if(scenario==='blocked-legacy-cleanup'){
++     f.storage.onRemove=name=>{if(name===knownA)throw Error('synthetic legacy cleanup failure');};
++    }
++    const execution=vm.runInNewContext(handler,{
++     captureAuthSession,financialRateOwner:()=>currentUser()?.id,getStoredUser:currentUser,getToken,
++     eraseDeletedOwnerForecastDrafts:f.api.eraseDeletedOwnerForecastDrafts,FORECAST_DRAFT_PREFIX:prefix,
++     eraseFinancialCalculationCache:f.api.eraseFinancialCalculationCache,clearKnownDeletedAccountStores,sessionStorage,
++     window:{localStorage:store,location,confirm,prompt,open:()=>assert.fail('no external links')},localStorage:store,confirm,prompt,
++     alert:text=>messages.push(text),toast:{error:text=>messages.push(text)},
++     deleteCrewCheckAccount:request,
++     fetch:async(url,options)=>{
++      assert.equal(url,'/api/platform/account/delete');
++      assert.equal(options.headers.authorization,'Bearer fixture-'+ownerA);
++      const payload=await request();
++      return {status:payload.ok?200:503,ok:payload.ok,json:async()=>payload};
++     },
++    });
++    if(scenario.startsWith('late-')){
++     assert.equal(typeof resume,'function');
++     login(ownerB);
++     const confirmed=scenario!=='late-failure';
++     if(scenario==='late-return'){
++      login(ownerA);
++      let release;
++      const hold=new Promise(resolve=>{release=resolve;});
++      f.locks.before=()=>hold;
++      const pending=f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,f.context());
++      resume({ok:true,deleted:true});
++      let timer;
++      const expired=new Promise(resolve=>{timer=setTimeout(()=>resolve(false),1000);});
++      const closed=await Promise.race([logout.then(()=>true),expired]);
++      clearTimeout(timer);
++      release();
++      assert.equal(closed,true,'also close a new session of the deleted owner before waiting for the lock');
++      assert.equal((await pending).status,'stale');
++      assert.equal(store.getItem(slot(ownerA,'thirteenth','2027')),null);
++     }else resume({ok:confirmed,deleted:confirmed,manageGooglePlayUrl:'https://example.invalid/manage'});
++    }
++    await execution;
++    if(scenario.startsWith('blocked-auth-'))f.storage.onGet=null;
++    const deletesOwn=['success','late-success','late-return','switch-during-prompt','switch-during-erasure','switch-during-legacy-cleanup','blocked-legacy-cleanup','blocked-financial-cache','blocked-auth-after-response','blocked-auth-remove'].includes(scenario);
++    for(const [name,value] of originalDrafts)assert.equal(store.getItem(name),deletesOwn&&name.startsWith(prefix+ownerA+':')?null:value,scenario);
++    assert.equal(store.getItem(unowned),'ambiguous');
++    assert.equal(store.getItem(cacheA),(deletesOwn&&scenario!=='blocked-financial-cache')||scenario==='blocked-cleanup'?null:'synthetic cache A',scenario);
++    assert.equal(store.getItem(cacheB),'synthetic cache B',scenario);
++    if(route==='settings'&&scenario==='success')assert.equal(store.getItem(knownA),null);
++    assert.equal(requests,['switch-before','blocked-auth-read'].includes(scenario)?0:1);
++    if(['switch-before','late-success','late-failure','switch-during-prompt','switch-during-erasure','switch-during-legacy-cleanup'].includes(scenario)){
++     assert.equal(store.getItem(tokenKey),'fixture-'+ownerB);
++     assert.equal(location.href,'');
++     assert.deepEqual(messages,[]);
++    }
++    if(['network','unconfirmed','blocked-auth-read'].includes(scenario)){
++     assert.equal(store.getItem(tokenKey),'fixture-'+ownerA);
++     assert.equal(location.href,'');
++     assert.equal(messages.length,1);
++    }
++    if(['success','blocked-cleanup','late-return','blocked-legacy-cleanup','blocked-financial-cache'].includes(scenario)){
++     assert.equal(store.getItem(tokenKey),null);
++     assert.equal(location.href,'/login');
++    }
++    if(['blocked-auth-after-response','blocked-auth-remove'].includes(scenario)){
++     assert.equal(store.getItem(tokenKey),'fixture-'+ownerA);
++     assert.equal(location.href,'');assert.deepEqual(messages,[]);
++     assert.equal(f.api.readLatestForecastDraft('thirteenth',f.context()).status,'stale');
++     assert.equal((await f.api.saveForecastDraft('thirteenth',thirteenth({year:'2027'}),null,f.context())).status,'stale');
++     login(ownerB);
++     assert.equal(f.api.readForecastDraft('thirteenth','2026',f.context()).status,'found');
++    }
++    if(['blocked-cleanup','blocked-legacy-cleanup','blocked-financial-cache'].includes(scenario))assert(messages.some(text=>/limpeza.*pendente/.test(text)));
++   }
++  });
++ }
++ await test('a cookie-only deletion never assigns local financial data to an unverified owner',async()=>{
++  const handler=deletionHandlers().find(([route])=>route==='public page')[1];
++  for(const token of [null,'   ']){
++   const storage=new StorageFixture();
++   const cachedOwners=[],draftOwners=[];
++   await vm.runInNewContext(handler,{
++    captureAuthSession:()=>({token,isCurrent:()=>true}),
++    getStoredUser:()=>({id:'synthetic-local-owner'}),getToken:()=>token,
++    eraseFinancialCalculationCache:owner=>{cachedOwners.push(owner);return true;},
++    eraseDeletedOwnerForecastDrafts:async owner=>{draftOwners.push(owner);return false;},
++    window:{confirm:()=>true,prompt:()=>'EXCLUIR',localStorage:storage,location:{href:''}},
++    alert:()=>{},
++    fetch:async(_url,request)=>{
++     assert.equal(request.credentials,'include');
++     assert.equal(request.headers.authorization,undefined);
++     return {status:200,ok:true,json:async()=>({ok:true,deleted:true})};
++    },
++   });
++   assert.deepEqual(cachedOwners,[]);
++   assert.deepEqual(draftOwners,[null]);
++  }
++ });
+diff --git a/server/account-session.mjs b/server/account-session.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..2f6fc91f02be35d209d1d7676864077c55dc6070
+--- /dev/null
++++ b/server/account-session.mjs
+@@ -0,0 +1,20 @@
++// Callers must pass claims from an already verified JWT. An email alone, or an
++// email-derived legacy subject, does not identify an incarnation of an account.
++export function accountSessionClaims(claims, now = Date.now()) {
++  const email = typeof claims?.email === 'string' ? claims.email.trim().toLowerCase() : '';
++  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || claims.iss !== 'crewcheck' || claims.aud !== 'crewcheck-web'
++    || claims.role === 'visitor' || typeof claims.sub !== 'string' || !claims.sub
++    || !Number.isFinite(now) || !Number.isInteger(claims.exp) || claims.exp <= Math.floor(now / 1000)) return null;
++  return { email, publicId: claims.sub };
++}
++
++export async function readAccountSessionProfile(client, { email, publicId }, { lock } = {}) {
++  const lockClause = lock === 'write' ? ' FOR UPDATE' : lock === 'read' ? ' FOR SHARE' : '';
++  const { rows } = await client.query(
++    `SELECT * FROM crewcheck_platform_profiles WHERE email=$1 AND public_id=$2 LIMIT 1${lockClause}`,
++    [email, publicId],
++  );
++  const profile = rows[0];
++  // SQL collations may compare distinct spellings as equal. Use exact claims.
++  return profile?.email === email && profile.public_id === publicId ? profile : null;
++}
+diff --git a/server/platform.mjs b/server/platform.mjs
+index a599f2915aaf27771e1d13715846fc5d063a3652..52bb21b448cac6cf5a2f0311842d94807867d35c 100644
+--- a/server/platform.mjs
++++ b/server/platform.mjs
+@@ -11,0 +12,2 @@ import { mysqlAdapter } from './mysql-platform-adapter.mjs';
++import { accountSessionClaims, readAccountSessionProfile } from './account-session.mjs';
++import { withProfileLocks } from './profile-locks.mjs';
+@@ -873,0 +876,17 @@ async function asaasRequest(path, init = {}) {
++function inactiveAccountSession() {
++  return Object.assign(new Error('Sessão da conta não é mais válida. Faça login novamente.'), { status: 401, code: 'AUTH_REQUIRED' });
++}
++
++async function currentAccountProfile(db, identity, lock) {
++  const principal = accountSessionClaims(identity.token);
++  if (!principal) return null;
++  const profile = await readAccountSessionProfile(db, principal, { lock });
++  return accountSessionClaims(identity.token) ? profile : null;
++}
++
++function effectiveAccountProfile(profile, identity) {
++  return identity.admin || unlimitedEmails().includes(identity.email)
++    ? { ...profile, plan: 'premium_unlimited' }
++    : profile;
++}
++
+@@ -891,2 +910,8 @@ async function requireMain(req, res, body = {}) {
+-  const profile = await ensureProfile(db, identity);
+-  return { identity, db, profile };
++  if (!identity.token) return { identity, db, profile: await ensureProfile(db, identity) };
++  const profile = await currentAccountProfile(db, identity);
++  if (!profile) {
++    const error = inactiveAccountSession();
++    sendJson(res, error.status, { ok: false, code: error.code, message: error.message });
++    return null;
++  }
++  return { identity, db, profile: effectiveAccountProfile(profile, identity) };
+@@ -1342,0 +1368,17 @@ async function handleAmilSearch(req, res, url) {
++async function withCurrentPlatformProfile(context, read, { write = false } = {}) {
++  const { db, identity } = context;
++  if (!identity.token) return read(db, context.profile);
++  try {
++    return await withProfileLocks(db, [identity.email], async client => {
++      const profile = await currentAccountProfile(client, identity, write ? 'write' : 'read');
++      if (!profile) throw inactiveAccountSession();
++      const result = await read(client, effectiveAccountProfile(profile, identity));
++      if (!accountSessionClaims(identity.token)) throw inactiveAccountSession();
++      return result;
++    }, { shared: !write });
++  } catch (error) {
++    if (error?.status === 404) throw inactiveAccountSession();
++    throw error;
++  }
++}
++
+@@ -1353,10 +1395,12 @@ async function handleProfile(req, res) {
+-  let profile = context.profile;
+-  if (req.method !== 'GET') profile = await ensureProfile(context.db, context.identity, {
+-    apply: true,
+-    ...(Object.hasOwn(body, 'displayName') ? { displayName: body.displayName } : {}),
+-    ...(Object.hasOwn(body, 'locale') ? { locale: normalizeLocale(body.locale) } : {}),
+-    ...(Object.hasOwn(body, 'timezone') ? { timezone: normalizeTimezone(body.timezone) } : {}),
+-    ...(Object.hasOwn(body, 'sharePresence') ? { sharePresence: Boolean(body.sharePresence) } : {}),
+-  });
+-  const billing = await subscriptionStatus(context.db, profile);
+-  return sendJson(res, 200, { ok: true, profile: publicProfile(profile), billing, encoding: 'UTF-8' });
++  const write = req.method !== 'GET';
++  const result = await withCurrentPlatformProfile(context, async (db, current) => {
++    const profile = write ? await ensureProfile(db, context.identity, {
++      apply: true,
++      ...(Object.hasOwn(body, 'displayName') ? { displayName: body.displayName } : {}),
++      ...(Object.hasOwn(body, 'locale') ? { locale: normalizeLocale(body.locale) } : {}),
++      ...(Object.hasOwn(body, 'timezone') ? { timezone: normalizeTimezone(body.timezone) } : {}),
++      ...(Object.hasOwn(body, 'sharePresence') ? { sharePresence: Boolean(body.sharePresence) } : {}),
++    }) : current;
++    return { ok: true, profile: publicProfile(profile), billing: await subscriptionStatus(db, profile), encoding: 'UTF-8' };
++  }, { write });
++  return sendJson(res, 200, result);
+@@ -1368 +1412,2 @@ async function handleBillingStatus(req, res) {
+-  return sendJson(res, 200, { ok: true, ...(await subscriptionStatus(context.db, context.profile)), plans: planCatalog() });
++  const billing = await withCurrentPlatformProfile(context, (db, profile) => subscriptionStatus(db, profile));
++  return sendJson(res, 200, { ok: true, ...billing, plans: planCatalog() });
+@@ -2444 +2489,5 @@ async function handleAccountDeletion(req, res) {
+-    await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);
++    if (context.identity.token) {
++      if (!await currentAccountProfile(client, context.identity, 'write')) throw inactiveAccountSession();
++    } else {
++      await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);
++    }
+@@ -2498,2 +2547,2 @@ async function handleAccountDeletion(req, res) {
+-  const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
+-  res.setHeader('Set-Cookie', `crewcheck_auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
++  // Revocation follows the deleted profile generation. An auth cookie expiry
++  // on this response could overwrite a newer login in the same browser.
+diff --git a/server/profile-locks.mjs b/server/profile-locks.mjs
+index cc0d6ae7d02c0bd558608e9816f2dc369d4ea76c..e7974a9507c40080d3b1e339794995660d128e2c 100644
+--- a/server/profile-locks.mjs
++++ b/server/profile-locks.mjs
+@@ -4 +4,2 @@
+-export async function withProfileLocks(db, emails, action, { repeatableRead = false } = {}) {
++export async function withProfileLocks(db, emails, action, { repeatableRead = false, shared = false } = {}) {
++  const profileLock = shared ? 'FOR SHARE' : 'FOR UPDATE';
+@@ -12 +13 @@ export async function withProfileLocks(db, emails, action, { repeatableRead = fa
+-        const found = await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [email]);
++        const found = await client.query(`SELECT email FROM crewcheck_platform_profiles WHERE email=$1 ${profileLock}`, [email]);
+diff --git a/server/v139/auth.mjs b/server/v139/auth.mjs
+index 22eae6a4c1592993284988b97de8605313c0da93..5d7c3e56b94eae0ace14569e60403d080ed92c5d 100644
+--- a/server/v139/auth.mjs
++++ b/server/v139/auth.mjs
+@@ -2,0 +3,3 @@ import crypto from 'node:crypto';
++import { accountSessionClaims, readAccountSessionProfile } from '../account-session.mjs';
++import { mysqlAdapter } from '../mysql-platform-adapter.mjs';
++import { withProfileLocks } from '../profile-locks.mjs';
+@@ -19,0 +23 @@ import {
++  userFromProfile,
+@@ -371,8 +375,3 @@ async function me(req, res, db) {
+-  const email = safeEmail(payload?.email);
+-  if (!email) return sendJson(res, 401, { ok: false, authenticated: false, message: 'Sessão expirada.' });
+-  // A valid token means the session itself is fine - a query failure here is a transient
+-  // backend problem (connection drop, deadlock, restart mid-request), not proof the
+-  // session is invalid. Without this, an unhandled rejection here reaches only the
+-  // process-level uncaughtException logger (no HTTP response ever gets sent), so the
+-  // client's request hangs indefinitely instead of failing fast with a status the client
+-  // can classify as "backend unavailable" rather than "log out".
++  const principal = accountSessionClaims(payload);
++  const invalid = () => sendJson(res, 401, { ok: false, authenticated: false, code: 'AUTH_REQUIRED', message: 'Sessão da conta não é mais válida. Faça login novamente.' });
++  if (!principal) return invalid();
+@@ -380 +379,17 @@ async function me(req, res, db) {
+-    const [accounts] = await db.query('SELECT must_change_password FROM crewcheck_platform_accounts WHERE email=? LIMIT 1', [email]);
++    // Hold the same profile row used by deletion while reading the session.
++    // Only explicit login or signup may create a missing profile.
++    const { email } = principal;
++    const user = await withProfileLocks(mysqlAdapter(db), [email], async client => {
++      const profile = await readAccountSessionProfile(client, principal, { lock: 'read' });
++      if (!profile) return null;
++      const { rows: accounts } = await client.query('SELECT must_change_password FROM crewcheck_platform_accounts WHERE email=$1 LIMIT 1', [email]);
++      let rank = null;
++      try {
++        const { rows } = await client.query('SELECT crew_function FROM crewcheck_platform_profile_functions WHERE email=$1 LIMIT 1', [email]);
++        rank = normalizeCrewFunction(rows[0]?.crew_function) || null;
++      } catch (error) {
++        if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
++      }
++      return { ...userFromProfile(profile, email, Boolean(accounts[0]?.must_change_password)), rank };
++    }, { shared: true });
++    if (!user || !accountSessionClaims(payload)) return invalid();
+@@ -385 +400 @@ async function me(req, res, db) {
+-      user: await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password))),
++      user,
+@@ -387,0 +403 @@ async function me(req, res, db) {
++    if (error?.status === 404) return invalid();
+@@ -1321 +1337 @@ export async function handleAuthRoute(req, res, url) {
+-}
+\ No newline at end of file
++}
+diff --git a/server/v139/common.mjs b/server/v139/common.mjs
+index bea4d3b7fb115e22301becc828840a731cb4d651..233b9389527678b017e3481ed280ccdc9bcc9b07 100644
+--- a/server/v139/common.mjs
++++ b/server/v139/common.mjs
+@@ -258,0 +259,4 @@ export async function userFromAccount(db, email, mustChangePassword = false) {
++  return userFromProfile(profile, email, mustChangePassword);
++}
++
++export function userFromProfile(profile, email, mustChangePassword = false) {
+diff --git a/shared/accountDeletionLocal.mjs b/shared/accountDeletionLocal.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4ac5dc2a6381623d14936399eebd779477876f4
+--- /dev/null
++++ b/shared/accountDeletionLocal.mjs
+@@ -0,0 +1,12 @@
++// Known local stores only. Never scan/delete other accounts or claim IndexedDB,
++// CacheStorage, remote devices or every legacy store has been erased.
++export function clearKnownDeletedAccountStores({ownerId,local,session,isCurrent}){
++ if(typeof isCurrent!=='function'||!isCurrent())return{ok:false,reason:'session_changed',completeErasureNotAttested:true};
++ if(typeof ownerId!=='string'||!(/^[a-zA-Z0-9_-]{1,80}$/).test(ownerId))return{ok:false,reason:'owner_scope_unconfirmed',completeErasureNotAttested:true};
++ const scope=ownerId.toLowerCase();const localKeys=[`crewcheck_local_history_v11_${scope}`,`crewcheck_offline_queue_v11_${scope}`,`crewcheck_saved_checksums_v11_${scope}`,`crewcheck_active_roster_snapshot_${scope}`,`crewcheck_latest_roster_bundle_${scope}`,`crewcheck_roster_sync_latest_v11_${scope}`];
++ try{
++  for(const key of localKeys){if(!isCurrent())return{ok:false,reason:'session_changed',completeErasureNotAttested:true};local.removeItem(key);}
++  for(const key of['crewcheck_roster','crewcheck_compliance','crewcheck_gym','crewcheck_source_file']){if(!isCurrent())return{ok:false,reason:'session_changed',completeErasureNotAttested:true};session.removeItem(key);}
++ }catch{return{ok:false,reason:'local_cleanup_unconfirmed',completeErasureNotAttested:true};}
++ return{ok:true,knownStoresOnly:true,completeErasureNotAttested:true};
++}
