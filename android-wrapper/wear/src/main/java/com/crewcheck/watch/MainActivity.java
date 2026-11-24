@@ -51,6 +51,7 @@ public final class MainActivity extends FragmentActivity
     private static final int MODE_CREWLIFE = 2;
     private static final int MODE_SCHEDULE = 3;
     private static final int MODE_GATE = 4;
+    private static final int MODE_SCHEDULE_DETAIL = 5;
     private static final int REQUEST_NOTIFICATIONS = 4102;
 
     private static final int BLACK = Color.BLACK;
@@ -98,7 +99,10 @@ public final class MainActivity extends FragmentActivity
         }
     };
 
-    private final Runnable dataRefresh = this::renderSnapshot;
+    private final Runnable dataRefresh = () -> {
+        closeScheduleDetail();
+        renderSnapshot();
+    };
     private final SharedPreferences.OnSharedPreferenceChangeListener dataListener = (preferences, key) -> {
         handler.removeCallbacks(dataRefresh);
         handler.postDelayed(dataRefresh, 120L);
@@ -120,6 +124,9 @@ public final class MainActivity extends FragmentActivity
     private boolean heroSyncShown;
     private boolean ambient;
     private int screenMode = MODE_NOW;
+    private ScheduleSelection scheduleSelection;
+
+    private record ScheduleSelection(String itemId, String snapshotKey) {}
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -145,6 +152,7 @@ public final class MainActivity extends FragmentActivity
     @Override
     protected void onResume() {
         super.onResume();
+        closeScheduleDetail();
         store.registerChangeListener(dataListener);
         restartClock();
         renderSnapshot();
@@ -171,7 +179,7 @@ public final class MainActivity extends FragmentActivity
             @Override
             public void onEnterAmbient(Bundle ambientDetails) {
                 ambient = true;
-                screenMode = MODE_NOW;
+                setScreenMode(MODE_NOW);
                 handler.removeCallbacks(clockTick);
                 renderSnapshot();
             }
@@ -196,10 +204,10 @@ public final class MainActivity extends FragmentActivity
     private void applyIntentScreen(Intent intent) {
         if (intent == null) return;
         String requested = intent.getStringExtra("crewcheck_screen");
-        if ("notifications".equals(requested)) screenMode = MODE_NOTIFICATIONS;
-        else if ("crewlife".equals(requested)) screenMode = MODE_CREWLIFE;
-        else if ("schedule".equals(requested)) screenMode = MODE_SCHEDULE;
-        else if ("gate".equals(requested)) screenMode = MODE_GATE;
+        if ("notifications".equals(requested)) setScreenMode(MODE_NOTIFICATIONS);
+        else if ("crewlife".equals(requested)) setScreenMode(MODE_CREWLIFE);
+        else if ("schedule".equals(requested)) setScreenMode(MODE_SCHEDULE);
+        else if ("gate".equals(requested)) setScreenMode(MODE_GATE);
     }
 
     private void restartClock() {
@@ -315,7 +323,7 @@ public final class MainActivity extends FragmentActivity
             @Override
             public void handleOnBackPressed() {
                 if (screenMode != MODE_NOW) {
-                    showScreen(MODE_NOW);
+                    showScreen(screenMode == MODE_SCHEDULE_DETAIL ? MODE_SCHEDULE : MODE_NOW);
                     return;
                 }
                 setEnabled(false);
@@ -331,9 +339,24 @@ public final class MainActivity extends FragmentActivity
      * trocar de tela no fim da rolagem abria a próxima no meio, sem cabeçalho.
      */
     private void showScreen(int mode) {
-        screenMode = mode;
+        setScreenMode(mode);
         renderSnapshot();
+        resetScroll();
+    }
+
+    private void resetScroll() {
         if (scroll != null) scroll.post(() -> scroll.scrollTo(0, 0));
+    }
+
+    private void setScreenMode(int mode) {
+        if (mode != MODE_SCHEDULE_DETAIL) scheduleSelection = null;
+        screenMode = mode;
+    }
+
+    private void closeScheduleDetail() {
+        if (screenMode != MODE_SCHEDULE_DETAIL) return;
+        setScreenMode(MODE_SCHEDULE);
+        resetScroll();
     }
 
     /** Keep the viewport safe while scrolling, including its top and bottom corners. */
@@ -373,13 +396,19 @@ public final class MainActivity extends FragmentActivity
     }
 
     private void renderSnapshot(WatchContextSnapshot snapshot) {
+        long now = System.currentTimeMillis();
+        WatchContextSnapshot.ScheduleItem selected = null;
+        if (screenMode == MODE_SCHEDULE_DETAIL) {
+            selected = resolveScheduleSelection(scheduleSelection, snapshot, now);
+            if (selected == null) closeScheduleDetail();
+        }
+
         content.removeAllViews();
         connectionInstructions = null;
         heroSyncShown = false;
         applySafePadding();
         content.getRootView().setBackgroundColor(BLACK);
 
-        long now = System.currentTimeMillis();
         renderedValidUntil = snapshot != null && !snapshot.isStale(now) ? snapshot.validUntilEpochMs : 0L;
 
         if (ambient) {
@@ -394,6 +423,7 @@ public final class MainActivity extends FragmentActivity
             case MODE_NOTIFICATIONS -> renderNotifications(snapshot, now);
             case MODE_CREWLIFE -> renderCrewLife(now);
             case MODE_SCHEDULE -> renderSchedule(snapshot, now);
+            case MODE_SCHEDULE_DETAIL -> renderScheduleDetail(snapshot, selected, now);
             case MODE_GATE -> renderGateDetail(snapshot, now);
             default -> {
                 if (snapshot == null) renderEmptyState();
@@ -837,10 +867,13 @@ public final class MainActivity extends FragmentActivity
             return;
         }
 
+        String snapshotKey = snapshot.toJson().toString();
         int count = 0;
         for (WatchContextSnapshot.ScheduleItem item : snapshot.schedule) {
             if (count >= 6) break;
-            addScheduleItem(item, count == 0);
+            ScheduleSelection selection = findScheduleDetail(snapshot, item.id) == null
+                    ? null : new ScheduleSelection(item.id, snapshotKey);
+            addScheduleItem(item, count == 0, selection);
             count++;
         }
 
@@ -848,6 +881,83 @@ public final class MainActivity extends FragmentActivity
                 snapshot.isStale(now) ? WARNING : MUTED, false, Gravity.CENTER);
         freshness.setPadding(0, dp(6), 0, 0);
         content.addView(freshness);
+    }
+
+    private static WatchContextSnapshot.ScheduleItem findScheduleDetail(
+            WatchContextSnapshot snapshot, String id) {
+        if (id.isBlank()) return null;
+        WatchContextSnapshot.ScheduleItem match = null;
+        for (WatchContextSnapshot.ScheduleItem item : snapshot.schedule) {
+            if (!id.equals(item.id)) continue;
+            if (match != null) return null;
+            match = item;
+        }
+        if (match == null || (match.time.isBlank() && match.route.isBlank()
+                && match.presentation.isBlank() && match.gate.isBlank() && match.detail.isBlank())) {
+            return null;
+        }
+        return match;
+    }
+
+    private static WatchContextSnapshot.ScheduleItem resolveScheduleSelection(
+            ScheduleSelection selection, WatchContextSnapshot snapshot, long now) {
+        // IDs are scoped to the snapshot, not to an account or position in the list.
+        if (selection == null || snapshot == null || snapshot.isStale(now)
+                || !selection.snapshotKey().equals(snapshot.toJson().toString())) {
+            return null;
+        }
+        return findScheduleDetail(snapshot, selection.itemId());
+    }
+
+    private void openScheduleDetail(ScheduleSelection selection) {
+        if (screenMode != MODE_SCHEDULE) return;
+        WatchContextSnapshot current = store.load();
+        if (resolveScheduleSelection(selection, current, System.currentTimeMillis()) == null) {
+            renderSnapshot(current);
+            return;
+        }
+        scheduleSelection = selection;
+        showScreen(MODE_SCHEDULE_DETAIL);
+    }
+
+    private void renderScheduleDetail(WatchContextSnapshot snapshot,
+                                      WatchContextSnapshot.ScheduleItem item, long now) {
+        TextView heading = text("DETALHE DA ETAPA", 10, CYAN, true, Gravity.CENTER);
+        heading.setAccessibilityHeading(true);
+        heading.setPadding(0, dp(4), 0, dp(7));
+        content.addView(heading);
+
+        LinearLayout card = premiumCard(CYAN);
+        String title = item.title.isBlank() ? "Etapa da escala" : item.title;
+        TextView titleView = text(title, 16, WHITE, true, Gravity.START);
+        fitLongestWord(titleView, contentWidth());
+        card.addView(titleView);
+        addScheduleDetailField(card, "Rota", item.route);
+        addScheduleDetailField(card, "Horário da etapa", item.time);
+        addScheduleDetailField(card, "Apresentação", item.presentation);
+        addScheduleDetailField(card, "Portão", item.gate);
+        addScheduleDetailField(card, "", item.detail);
+        if ("flight".equals(item.kind) && item.gate.isBlank()) {
+            addScheduleDetailField(card, "", "Portão ainda não informado para este trecho.");
+        }
+        content.addView(card, cardParams());
+
+        TextView freshness = text(snapshot.statusLabel(now), 8, MUTED, false, Gravity.CENTER);
+        freshness.setPadding(0, dp(6), 0, 0);
+        content.addView(freshness);
+    }
+
+    private void addScheduleDetailField(LinearLayout card, String label, String value) {
+        if (value.isBlank()) return;
+        if (!label.isBlank()) {
+            TextView caption = text(label, 9, MUTED, true, Gravity.START);
+            caption.setPadding(0, dp(7), 0, 0);
+            card.addView(caption);
+        }
+        TextView field = text(value, 11, WHITE, false, Gravity.START);
+        field.setPadding(0, dp(3), 0, 0);
+        fitLongestWord(field, contentWidth());
+        card.addView(field);
     }
 
     /**
@@ -905,7 +1015,8 @@ public final class MainActivity extends FragmentActivity
         content.addView(freshness);
     }
 
-    private void addScheduleItem(WatchContextSnapshot.ScheduleItem item, boolean first) {
+    private void addScheduleItem(WatchContextSnapshot.ScheduleItem item, boolean first,
+                                 ScheduleSelection selection) {
         LinearLayout card = premiumCard(
                 "stay".equals(item.kind) ? MAGENTA :
                 "flight".equals(item.kind) ? CYAN : VIOLET
@@ -941,6 +1052,11 @@ public final class MainActivity extends FragmentActivity
         copy.addView(detail);
 
         card.addView(copy, columnParams());
+        if (selection != null) {
+            card.setMinimumHeight(dp(48));
+            card.setFocusable(true);
+            card.setOnClickListener(view -> openScheduleDetail(selection));
+        }
         content.addView(card, cardParams());
     }
 
