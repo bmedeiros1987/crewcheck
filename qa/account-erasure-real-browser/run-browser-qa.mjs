@@ -169,12 +169,20 @@ try {
   };
   const {handleAuthRoute} = await import(url('server/v139/auth.mjs'));
   const {handlePlatformRoute} = await import(url('server/platform.mjs'));
-  const {mysqlAdapter}=await import(url('server/mysql-platform-adapter.mjs'));
-  const {withTransaction}=await import(url('server/profile-locks.mjs'));
-  report.preflightTransaction=await withTransaction(mysqlAdapter(db),async client=>{
-    const {rows}=await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR SHARE',[owners.A]);
-    assert.equal(rows.length,1);return {beginReadCommit:true,sharedProfileRead:true};
-  });
+  const client = await db.getConnection();
+  try {
+    await client.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+    await client.beginTransaction();
+    const [rows] = await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=? FOR SHARE', [owners.A]);
+    assert.equal(rows.length, 1);
+    await client.commit();
+    report.preflightTransaction = {beginReadCommit:true, sharedProfileRead:true};
+  } catch (error) {
+    await client.rollback();
+    throw error;
+  } finally {
+    client.release();
+  }
   const snapshot = async () => {
     const out = {};
     for (const [label, email] of Object.entries(owners)) {
