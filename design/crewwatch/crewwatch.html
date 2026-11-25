@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CrewWatch — Proposta de mostrador (DEMO)</title>
+<style>
+  :root{
+    --bg:#08090b; --ink:#eef2f5; --mut:#8a95a1; --faint:#4b545e; --line:rgba(255,255,255,.07);
+    --font:'Google Sans Flex','Roboto Flex','Inter','SF Pro Display','Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:radial-gradient(1200px 700px at 50% -10%,#141a21 0%,var(--bg) 60%);color:var(--ink);font-family:var(--font);
+       -webkit-font-smoothing:antialiased;padding:56px 24px 80px}
+  .wrap{max-width:1180px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+  h1{font-weight:500;font-size:28px;letter-spacing:-.01em}
+  h1 b{font-weight:700}
+  .demo{font-size:11px;letter-spacing:.18em;font-weight:700;color:#0b0d10;background:#ffb020;padding:3px 8px;border-radius:4px}
+  .sub{color:var(--mut);font-size:15px;max-width:720px;line-height:1.5}
+  h2{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--mut);font-weight:600;margin:72px 0 26px;
+     display:flex;align-items:center;gap:14px}
+  h2::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  /* caixa do relógio — só para o mockup */
+  .watch{position:relative;border-radius:50%;padding:3.2%;
+    background:conic-gradient(from 210deg,#2b3036,#9aa2ab 12%,#3a4047 24%,#c9cfd6 38%,#4a5058 52%,#23272c 64%,#8d959e 80%,#2b3036);
+    box-shadow:0 40px 80px -20px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.06) inset,0 2px 0 rgba(255,255,255,.08) inset}
+  .watch::before{content:"";position:absolute;inset:1.6%;border-radius:50%;background:#030405;box-shadow:inset 0 0 0 1px rgba(0,0,0,.8)}
+  .watch::after{content:"";position:absolute;right:-3.4%;top:44%;width:4.6%;height:12%;border-radius:3px;
+    background:linear-gradient(90deg,#3a4047,#b9c0c7 45%,#5b636b);box-shadow:0 4px 10px rgba(0,0,0,.6)}
+  .watch svg{position:relative;display:block;width:100%;height:auto;border-radius:50%}
+
+  .hero{display:grid;grid-template-columns:minmax(320px,520px) 1fr;gap:56px;align-items:center;margin-top:40px}
+  .anat{list-style:none;padding:0;display:grid;gap:14px}
+  .anat li{display:grid;grid-template-columns:26px 1fr;gap:10px;font-size:14px;color:#c6ced6;line-height:1.45}
+  .anat li span{width:22px;height:22px;border-radius:50%;border:1px solid rgba(255,255,255,.18);display:grid;place-items:center;
+     font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
+  .anat b{color:var(--ink);font-weight:600}
+
+  .row{display:grid;gap:40px;align-items:start}
+  .row.two{grid-template-columns:repeat(2,minmax(0,1fr));max-width:900px;margin:0 auto}
+  .row.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .row.four{grid-template-columns:repeat(4,minmax(0,1fr));gap:28px}
+  figure{display:grid;gap:16px}
+  figcaption{font-size:13px;color:var(--mut);line-height:1.5;text-align:center}
+  figcaption b{display:block;color:var(--ink);font-size:14px;font-weight:600;margin-bottom:2px;letter-spacing:.01em}
+  .tag{display:inline-block;font-size:10px;letter-spacing:.16em;font-weight:700;padding:2px 7px;border-radius:3px;margin-bottom:6px}
+  .tag.ok{color:#5ed3f3;border:1px solid rgba(94,211,243,.35)} .tag.warn{color:#ffb020;border:1px solid rgba(255,176,32,.45)}
+  .tag.go{color:#3ddc97;border:1px solid rgba(61,220,151,.4)} .tag.late{color:#0b0d10;background:#ff8a1f;border:1px solid #ff8a1f}
+  .sw{display:flex;justify-content:center;gap:6px;margin-top:4px}
+  .sw i{width:12px;height:12px;border-radius:50%;display:block}
+
+  .notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 48px;font-size:14px;color:#c6ced6;line-height:1.55}
+  .notes p b{color:var(--ink)}
+  .dayctl{display:flex;gap:16px;align-items:center;margin-bottom:22px}
+  .dayctl button{font:600 13px var(--font);color:#0a0d11;background:#5ed3f3;border:0;border-radius:999px;padding:10px 18px;cursor:pointer;white-space:nowrap}
+  .dayctl input{flex:1;accent-color:#5ed3f3}
+  .phases{list-style:none;padding:0;display:grid;gap:2px}
+  .phases li{display:grid;grid-template-columns:52px 1fr;gap:12px;padding:8px 12px;border-radius:8px;cursor:pointer;color:#9aa5b1;font-size:14px}
+  .phases li b{font-variant-numeric:tabular-nums;color:#c6ced6;font-weight:600}
+  .phases li.on{background:rgba(94,211,243,.08);color:var(--ink)} .phases li.on b{color:#5ed3f3}
+  .phnote{margin-top:16px;color:#c6ced6;font-size:14px;line-height:1.55;min-height:44px}
+  .row.strip{grid-template-columns:repeat(9,minmax(0,1fr));gap:14px;margin-top:40px}
+  .strip figure{gap:8px;cursor:pointer} .strip figcaption{font-size:11px}
+  .strip figcaption b{font-size:12px}
+  @media (max-width:860px){.row.strip{grid-template-columns:repeat(3,1fr)}}
+  footer{margin-top:64px;color:var(--faint);font-size:12px;letter-spacing:.04em}
+  @media (max-width:860px){.hero,.row.two,.row.three,.notes{grid-template-columns:1fr}.row.four{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1><b>CrewWatch</b> · Proposta de mostrador</h1><span class="demo">DEMO</span></header>
+  <p class="sub">Wear OS redondo, 450 × 450 px. Um mostrador que acompanha a rotina do tripulante, do despertador ao repouso, com operação e saúde no mesmo plano. Todos os dados são fictícios.</p>
+
+  <h2>O dia no pulso · o mostrador acompanha a rotina</h2>
+  <div class="hero" style="margin-top:0">
+    <div class="watch" id="slot-day" style="transition:opacity .25s"></div>
+    <div>
+      <div class="dayctl">
+        <button id="play" aria-label="Reproduzir o dia">▶ Reproduzir o dia</button>
+        <input id="scrub" type="range" min="0" max="8" value="0" step="1" aria-label="Fase do dia">
+      </div>
+      <ol class="phases" id="phases"></ol>
+      <p class="phnote" id="phnote"></p>
+    </div>
+  </div>
+  <div class="row strip" id="strip"></div>
+
+  <h2>Nova direção · Painel de Voo (digital operacional)</h2>
+  <div class="hero" style="margin-top:0">
+    <div class="watch" id="slot-fids"></div>
+    <ol class="anat">
+      <li><span>1</span><div><b>Hora em placas tipo letreiro</b>: dígitos grandes divididos ao meio, como no painel de partidas. A hora fica em branco e os minutos no acento do tema.</div></li>
+      <li><span>2</span><div><b>Faixa de voo</b>: <i>portão</i> em destaque (é o que se procura no corredor), horário de <i>embarque</i> e <i>status</i> com cor semântica. É a única faixa do mostrador.</div></li>
+      <li><span>3</span><div><b>Arco da etapa</b> mantido como identidade: vai da apresentação à decolagem, e o avião acompanha a tangente.</div></li>
+      <li><span>4</span><div><b>Saúde</b> numa linha logo abaixo da faixa. Embaixo dela, a etapa seguinte da escala.</div></li>
+      <li><span>5</span><div><b>Atalhos</b> nas laterais, nas pontas da faixa: Escala e Saída Inteligente à esquerda; Despertador e Alertas à direita.</div></li>
+    </ol>
+  </div>
+  <h2>Estados do voo · mesmo layout</h2>
+  <div class="row three">
+    <figure><div class="watch" id="slot-f2"></div><figcaption><span class="tag ok">EMBARQUE</span><b>Embarque aberto</b>Status no acento do tema; o arco já passou da metade.</figcaption></figure>
+    <figure><div class="watch" id="slot-f3"></div><figcaption><span class="tag warn">ALERTA</span><b>Portão alterado</b>O portão novo aparece em âmbar e o antigo riscado. A hora e a saúde não mudam.</figcaption></figure>
+    <figure><div class="watch" id="slot-f4"></div><figcaption><span class="tag warn">ALERTA</span><b>Atraso +25 min</b>O horário de embarque é reescrito e o anterior fica riscado; o arco acompanha a nova decolagem.</figcaption></figure>
+  </div>
+
+  <h2>Trânsito · níveis de chegada · mesmo layout</h2>
+  <div class="row three" id="traffic">
+    <figure><div class="watch" id="slot-t1"></div><figcaption><span class="tag go">VERDE</span><b>Chega a tempo</b>Folga confortável até a apresentação. Arco no acento do tema.</figcaption></figure>
+    <figure><div class="watch" id="slot-t2"></div><figcaption><span class="tag warn">ÂMBAR</span><b>Chega no limite</b>Trânsito +6 min: a folga cai abaixo de 10 min. Chegada e folga novas em âmbar, as antigas riscadas.</figcaption></figure>
+    <figure><div class="watch" id="slot-t3"></div><figcaption><span class="tag late">ÂMBAR FORTE</span><b>Vai atrasar</b>Trânsito +17 min: a chegada prevista passa da apresentação. O status vira uma placa cheia e a folga fica negativa.</figcaption></figure>
+  </div>
+
+  <h2>Primeira proposta · Híbrido</h2>
+  <div class="hero">
+    <div class="watch" id="slot-hero"></div>
+    <ol class="anat">
+      <li><span>1</span><div><b>Arco da etapa:</b> semicírculo superior fino, com trilha discreta e progresso vivo. Mede o <i>tempo</i> da etapa atual, não a posição de GPS. Em voo, o avião acompanha a tangente do arco.</div></li>
+      <li><span>2</span><div><b>Próxima etapa:</b> horário em destaque, rota e voo logo abaixo. É o único texto “operacional” no centro do mostrador.</div></li>
+      <li><span>3</span><div><b>Saúde:</b> dois subdiais (batimentos à esquerda, passos à direita) com anel de meta. Sono e bateria ficam na linha inferior.</div></li>
+      <li><span>4</span><div><b>Hora digital secundária</b> com data e horário UTC (Z), útil para quem trabalha com escala em Zulu.</div></li>
+      <li><span>5</span><div><b>Atalhos CrewCheck:</b> Escala e Saída Inteligente à esquerda; Alertas e Despertador à direita. Ocupam as posições das 4, 5, 7 e 8 h e têm área de toque de 48 dp.</div></li>
+    </ol>
+  </div>
+
+  <h2>Mesmo layout · rotina × alerta</h2>
+  <div class="row two">
+    <figure><div class="watch" id="slot-routine"></div>
+      <figcaption><span class="tag ok">ROTINA</span><b>Deslocamento para o aeroporto</b>O carro aparece de perfil sobre o arco e chega antes da apresentação.</figcaption></figure>
+    <figure><div class="watch" id="slot-alert"></div>
+      <figcaption><span class="tag warn">ALERTA</span><b>Trânsito +14 min</b>Arco, ETA e atalho de Alertas ficam âmbar. O aviso entra no espaço da próxima etapa e não cobre a hora nem as métricas.</figcaption></figure>
+  </div>
+
+  <h2>Propostas</h2>
+  <div class="row three">
+    <figure><div class="watch" id="slot-v1"></div><figcaption><b>Híbrido</b>Ponteiros fortes, subdiais esportivos, densidade organizada.</figcaption></figure>
+    <figure><div class="watch" id="slot-v2"></div><figcaption><b>Digital</b>Hora grande em peso leve; métricas em colunas sem caixas.</figcaption></figure>
+    <figure><div class="watch" id="slot-v3"></div><figcaption><b>Essencial</b>Ponteiros finos, arco e uma linha para cada assunto. Os atalhos continuam nas mesmas zonas.</figcaption></figure>
+  </div>
+
+  <h2>Temas de cor personalizáveis</h2>
+  <div class="row four" id="themes"></div>
+
+  <h2>Notas de implementação</h2>
+  <div class="notes">
+    <p><b>Watch Face Format (WFF):</b> desenhado em 450 × 450 com centro em (225, 225). Ponteiros como <i>AnalogClock</i>; arco como <i>PartDraw/Arc</i> fino ligado a uma complicação <i>RANGED_VALUE</i> (início/fim da etapa) que o app CrewCheck publica.</p>
+    <p><b>Marcador:</b> o avião é rotacionado pelo ângulo do progresso (tangente). O carro só é transladado e nunca gira. O estado de voo ou deslocamento vem do mesmo provider.</p>
+    <p><b>Atalhos:</b> quatro slots fixos de complicação <i>SMALL_IMAGE</i> com tap action em deep link (escala, saída, alertas, despertador). O alvo visível tem 50 px e a área de toque 96 px (48 dp).</p>
+    <p><b>Cor reservada:</b> âmbar só aparece em alertas e coral só no batimento. Os temas trocam o acento e a tinta do fundo, e o tema de cobre fica fora para não confundir com alerta.</p>
+    <p><b>AOD:</b> manter só os ponteiros em contorno, o arco a 40 % e a próxima etapa. A textura, a bateria e os ponteiros de segundos ficam fora. Pixels acesos abaixo de 15 %.</p>
+    <p><b>Legibilidade:</b> texto mínimo de 10 px a 450 px, algarismos tabulares e contraste ≥ 4,5:1 sobre o fundo. A textura (anéis + ruído) fica abaixo de 3 % de opacidade.</p>
+  </div>
+  <footer>CrewWatch · proposta visual · todos os dados são fictícios (DEMO) · sem relação com marcas existentes</footer>
+</div>
+
+<script>
+const C=225, rad=d=>(d-90)*Math.PI/180;
+const P=(r,a)=>[+(C+r*Math.cos(rad(a))).toFixed(2), +(C+r*Math.sin(rad(a))).toFixed(2)];
+function arc(r,a0,a1){const[x0,y0]=P(r,a0),[x1,y1]=P(r,a1);const s=((a1-a0)%360+360)%360;return `M${x0} ${y0}A${r} ${r} 0 ${s>180?1:0} 1 ${x1} ${y1}`}
+const AMBER='#FFB020', CORAL='#FF6B6B';
+const THEMES={
+  glaciar:{name:'Glaciar',acc:'#5ED3F3',acc2:'#2B8FD0',tint:'#17212b',lume:'#E3F4F1'},
+  pista:{name:'Pista',acc:'#B9E35C',acc2:'#5FA83A',tint:'#161d18',lume:'#EEF6DF'},
+  lavanda:{name:'Lavanda noturna',acc:'#A99CFF',acc2:'#6B5BE0',tint:'#191826',lume:'#ECEAFF'},
+  titanio:{name:'Titânio',acc:'#E4E8EC',acc2:'#7F8892',tint:'#1a1c1f',lume:'#F2F4F6'},
+};
+const ICON={
+ cal:'<rect x="3.5" y="5" width="17" height="15.5" rx="2.6"/><path d="M3.5 9.8h17M8 3v4M16 3v4"/><path d="M7.5 13.2h2M11 13.2h2M14.5 13.2h2M7.5 16.6h2M11 16.6h2" stroke-width="2.2"/>',
+ exit:'<path d="M12.5 4H6.8A1.8 1.8 0 0 0 5 5.8v12.4A1.8 1.8 0 0 0 6.8 20h5.7"/><path d="M10 12h10.5M17 8.5l3.5 3.5-3.5 3.5"/>',
+ bell:'<path d="M6 16.2V11a6 6 0 0 1 12 0v5.2l1.6 2H4.4z"/><path d="M10 20.6a2.1 2.1 0 0 0 4 0"/>',
+ alarm:'<circle cx="12" cy="13" r="7"/><path d="M12 9.3V13l2.6 1.7M3.8 6.6 6.6 3.8M20.2 6.6 17.4 3.8M7.2 19.4 5.6 21M16.8 19.4 18.4 21"/>',
+ heart:'<path d="M12 20s-7.2-4.5-7.2-10.2A4.1 4.1 0 0 1 12 7.2a4.1 4.1 0 0 1 7.2 2.6C19.2 15.5 12 20 12 20z"/>',
+ steps:'<path d="M8.6 3.2c1.9 0 2.9 2.3 2.6 5.1-.2 2-1.2 3.4-2.6 3.4S6.1 10.4 6 8.3c-.2-2.8.8-5.1 2.6-5.1zM6.4 13.8l4.4.6-.4 2.2a2.2 2.2 0 0 1-4.3-.6zM15.4 7.2c1.8 0 2.8 2.3 2.6 5.1-.1 2-1.1 3.4-2.6 3.4s-2.5-1.3-2.6-3.4c-.2-2.8.8-5.1 2.6-5.1zM13.2 17.8l4.4-.6.2 2.2a2.2 2.2 0 0 1-4.3.6z" fill="currentColor" stroke="none"/>',
+ moon:'<path d="M19.5 14.6A7.8 7.8 0 1 1 9.4 4.5a6.3 6.3 0 0 0 10.1 10.1z"/>',
+ warn:'<path d="M12 3.6 2.6 20h18.8z"/><path d="M12 10v4.6M12 17.2v.3" stroke-width="2.2"/>',
+};
+const ico=(k,x,y,s=1,col='currentColor',sw=1.7)=>`<g transform="translate(${x-12*s} ${y-12*s}) scale(${s})" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" style="color:${col}">${ICON[k]}</g>`;
+const batt=(x,y,v,col)=>`<g transform="translate(${x-11} ${y-6})"><rect x=".7" y=".7" width="18" height="10.6" rx="2.6" fill="none" stroke="${col}" stroke-width="1.4"/><rect x="19.6" y="3.8" width="2" height="4.4" rx="1" fill="${col}"/><rect x="2.8" y="2.8" width="${(13.8*v/100).toFixed(1)}" height="6.4" rx="1.3" fill="${col}"/></g>`;
+const PLANE='M10 0C10 -.9 8.6 -1.4 7 -1.4H3.2L-1.6 -8.6H-3.8L-1 -1.4H-5.8L-7.8 -4H-9.6L-8.4 0L-9.6 4H-7.8L-5.8 1.4H-1L-3.8 8.6H-1.6L3.2 1.4H7C8.6 1.4 10 .9 10 0Z';
+const CAR='<path d="M-11 2.6V-.6C-11 -2 -10 -3 -8.4 -3.3L-5 -4L-2.4 -7.2C-1.9 -7.8 -1.2 -8 -.4 -8H4.6C5.6 -8 6.4 -7.6 7 -6.8L9 -3.9C10.6 -3.5 11.6 -2.4 11.6 -.8V2.6Z" fill="currentColor"/><path d="M-4.2 -4.1L-1.9 -6.7H1.8V-4.1ZM3.2 -4.1V-6.7H5L6.8 -4.1Z" fill="#0b0f13" opacity=".75"/><circle cx="-6" cy="3" r="2.9" fill="#0b0f13" stroke="currentColor" stroke-width="1.5"/><circle cx="6.6" cy="3" r="2.9" fill="#0b0f13" stroke="currentColor" stroke-width="1.5"/>';
+
+function face(o){
+  const T=o.theme, id=o.id, v=o.variant||'hybrid', A=!!o.alert, acc=A?AMBER:T.acc, acc2=A?'#C9741A':T.acc2;
+  const ink='#EEF2F5', mut='#8C97A3', faint='#56606A';
+  const F="font-family:'Google Sans Flex','Roboto Flex','Inter','SF Pro Display','Segoe UI',system-ui,sans-serif;font-variant-numeric:tabular-nums";
+  let s=`<svg viewBox="0 0 450 450" xmlns="http://www.w3.org/2000/svg" style="${F}">
+  <defs>
+    <radialGradient id="${id}bg" cx="50%" cy="40%" r="62%"><stop offset="0" stop-color="${T.tint}"/><stop offset=".62" stop-color="#0c1015"/><stop offset="1" stop-color="#050608"/></radialGradient>
+    <radialGradient id="${id}vig" cx="50%" cy="50%" r="50%"><stop offset=".82" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></radialGradient>
+    <linearGradient id="${id}glass" x1="0" y1="0" x2=".7" y2=".8"><stop offset="0" stop-color="#fff" stop-opacity=".075"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${id}fac" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f4f6f8"/><stop offset=".5" stop-color="#cfd5db"/><stop offset=".5" stop-color="#7d868f"/><stop offset="1" stop-color="#9aa3ac"/></linearGradient>
+    <linearGradient id="${id}arc" gradientUnits="userSpaceOnUse" x1="39" y1="0" x2="411" y2="0"><stop offset="0" stop-color="${acc2}"/><stop offset=".6" stop-color="${acc}"/></linearGradient>
+    <radialGradient id="${id}sub" cx="50%" cy="38%" r="60%"><stop offset="0" stop-color="#121820"/><stop offset="1" stop-color="#07090c"/></radialGradient>
+    <filter id="${id}sh" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="2.5" dy="5" stdDeviation="3.2" flood-color="#000" flood-opacity=".6"/></filter>
+    <filter id="${id}glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>
+    <filter id="${id}noise"><feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .09"/></feComponentTransfer></filter>
+    <clipPath id="${id}clip"><circle cx="225" cy="225" r="225"/></clipPath>
+  </defs>
+  <g clip-path="url(#${id}clip)">
+  <rect width="450" height="450" fill="url(#${id}bg)"/>`;
+  // textura: anéis concêntricos (guilhochê leve) + ruído
+  let rings=''; for(let r=22;r<205;r+=3.3) rings+=`<circle cx="225" cy="225" r="${r.toFixed(1)}"/>`;
+  s+=`<g fill="none" stroke="#fff" stroke-opacity="${v==='essential'?.012:.024}" stroke-width=".6">${rings}</g>
+  <rect width="450" height="450" filter="url(#${id}noise)" opacity=".9"/>`;
+
+  // índices e minutagem
+  const skip=v==='hybrid'||v==='digital'?[4,5,7,8]:[];
+  let ix='';
+  for(let i=0;i<60;i++){const a=i*6, hr=i%5===0, h=i/5;
+    if(v==='essential'){ if(hr){const[x,y]=P(212,a); ix+= h===0?`<rect x="-2" y="-9" width="4" height="18" rx="2" fill="${ink}" transform="translate(${x} ${y})"/>`:`<circle cx="${x}" cy="${y}" r="${h%3===0?3.2:2.2}" fill="${h%3===0?ink:'#b9c1c9'}"/>`;} continue;}
+    if(hr && !skip.includes(h) && v==='hybrid') continue;
+    const[x0,y0]=P(hr?211:215,a),[x1,y1]=P(222,a);
+    ix+=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#fff" stroke-opacity="${hr?.55:.28}" stroke-width="${hr?2:1.1}"/>`;}
+  if(v==='hybrid'){
+    for(let h=0;h<12;h++){ if(skip.includes(h)) continue; const a=h*30;
+      const offs=h===0?[-5.2,5.2]:[0];
+      offs.forEach(dx=>{ix+=`<g transform="rotate(${a} 225 225)"><rect x="${225+dx-3.6}" y="6" width="7.2" height="${h%3===0?22:18}" rx="1.2" fill="url(#${id}fac)"/><rect x="${225+dx-1.5}" y="9" width="3" height="${h%3===0?15:11}" rx="1" fill="${T.lume}" opacity=".92"/></g>`;});}
+  }
+  s+=`<g filter="url(#${id}sh)">${ix}</g>`;
+
+  // ---- arco da etapa
+  const L=o.leg, p=Math.max(0,Math.min(1,L.p)), R=v==='essential'?190:186, a1=270+p*180;
+  s+=`<path d="${arc(R,270,90)}" fill="none" stroke="#fff" stroke-opacity=".09" stroke-width="${v==='essential'?2:3}" stroke-linecap="round"/>`;
+  [315,0,45].forEach(a=>{const[x0,y0]=P(R-4,a),[x1,y1]=P(R+4,a);s+=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#fff" stroke-opacity=".22" stroke-width="1"/>`;});
+  s+=`<path d="${arc(R,270,a1)}" fill="none" stroke="${acc}" stroke-width="6" stroke-linecap="round" opacity=".45" filter="url(#${id}glow)"/>
+      <path d="${arc(R,270,a1)}" fill="none" stroke="url(#${id}arc)" stroke-width="${v==='essential'?2.6:3.6}" stroke-linecap="round"/>`;
+  const[sx,sy]=P(R,270),[ex,ey]=P(R,90);
+  s+=`<circle cx="${sx}" cy="${sy}" r="3" fill="${acc2}"/><circle cx="${ex}" cy="${ey}" r="3" fill="#0b0f13" stroke="#fff" stroke-opacity=".35" stroke-width="1.2"/>`;
+  const[mx,my]=P(R,a1);
+  if(o.mode==='flight'){
+    s+=`<g transform="translate(${mx} ${my}) rotate(${a1%360})"><circle r="12.5" fill="#0a0d11" stroke="${acc}" stroke-opacity=".55" stroke-width="1"/><path d="${PLANE}" fill="${ink}"/></g>`;
+  } else {
+    s+=`<g transform="translate(${mx} ${my})" style="color:${ink}"><rect x="-17" y="-11.5" width="34" height="23" rx="11.5" fill="#0a0d11" stroke="${acc}" stroke-opacity=".55" stroke-width="1"/><g transform="translate(0 1.2) scale(.95)">${CAR}</g></g>`;
+  }
+  // rótulos das pontas
+  if(v!=='essential'){
+    const lab=(x,code,t,col)=>`<text x="${x}" y="176" text-anchor="middle" font-size="10.5" font-weight="700" letter-spacing="1.2" fill="${mut}">${code}</text><text x="${x}" y="191" text-anchor="middle" font-size="11.5" font-weight="500" fill="${col||ink}">${t}</text>`;
+    s+=lab(66,L.from,L.dep)+lab(384,L.to,L.arr,A?AMBER:null);
+  } else {
+    s+=`<text x="${sx+16}" y="${sy-8}" font-size="10" font-weight="700" letter-spacing="1.2" fill="${mut}">${L.from}</text><text x="${ex-16}" y="${ey-8}" text-anchor="end" font-size="10" font-weight="700" letter-spacing="1.2" fill="${mut}">${L.to}</text>`;
+  }
+
+  // ---- bloco superior: próxima etapa OU alerta (mesma área)
+  const N=o.next, topY=v==='digital'?86:96;
+  if(A){
+    s+=`${ico('warn',225,topY+2,.62,AMBER,2)}
+      <text x="225" y="${topY+30}" text-anchor="middle" font-size="${v==='essential'?14:15}" font-weight="700" letter-spacing=".6" fill="${AMBER}">${o.alert.title}</text>
+      <text x="225" y="${topY+47}" text-anchor="middle" font-size="11.5" fill="#d9c49e">${o.alert.sub}</text>`;
+  } else if(v==='essential'){
+    s+=`<text x="225" y="${topY+12}" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="2" fill="${mut}">${N.label}</text>
+      <text x="225" y="${topY+36}" text-anchor="middle" font-size="19" font-weight="600" fill="${ink}">${N.time} <tspan fill="${mut}" font-weight="500" font-size="14">${N.route}</tspan></text>`;
+  } else {
+    s+=`<text x="225" y="${topY}" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="2.2" fill="${mut}">${N.label}</text>
+      <text x="225" y="${topY+27}" text-anchor="middle" font-size="25" font-weight="600" letter-spacing=".5" fill="${ink}">${N.time}</text>
+      <text x="225" y="${topY+45}" text-anchor="middle" font-size="12" font-weight="500" fill="${acc}">${N.route}<tspan fill="${mut}"> · ${N.code}</tspan></text>`;
+  }
+
+  const M=o.m;
+  // ---- saúde + hora digital
+  if(v==='hybrid'){
+    const sub=(cx,icon,col,val,label,frac)=>{let t='';for(let i=0;i<24;i++){const[x0,y0]=[cx+35*Math.cos(i*Math.PI/12),225+35*Math.sin(i*Math.PI/12)],[x1,y1]=[cx+(i%6?37:38.5)*Math.cos(i*Math.PI/12),225+(i%6?37:38.5)*Math.sin(i*Math.PI/12)];t+=`<line x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"/>`;}
+      const a=(r,a0,a1)=>{const q=(rr,aa)=>[cx+rr*Math.cos(rad(aa)),225+rr*Math.sin(rad(aa))];const[x0,y0]=q(r,a0),[x1,y1]=q(r,a1);return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${a1-a0>180?1:0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`};
+      return `<circle cx="${cx}" cy="225" r="41" fill="url(#${id}sub)" stroke="#fff" stroke-opacity=".08"/>
+      <g stroke="#fff" stroke-opacity=".16" stroke-width=".9">${t}</g>
+      <circle cx="${cx}" cy="225" r="41" fill="none" stroke="#fff" stroke-opacity=".06" stroke-width="2.4"/>
+      <path d="${a(41,0,360*frac)}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linecap="round"/>
+      ${ico(icon,cx,206,.62,col,2)}
+      <text x="${cx}" y="233" text-anchor="middle" font-size="19" font-weight="600" fill="${ink}">${val}</text>
+      <text x="${cx}" y="248" text-anchor="middle" font-size="9" font-weight="600" letter-spacing="1.6" fill="${mut}">${label}</text>`;};
+    s+=sub(130,'heart',CORAL,M.hr,'BPM',.38)+sub(320,'steps',T.acc,M.steps.toLocaleString('pt-BR'),'PASSOS',M.steps/M.goal);
+    s+=`<text x="225" y="318" text-anchor="middle" font-size="32" font-weight="400" letter-spacing="1" fill="${ink}">${o.time.d}</text>
+      <text x="225" y="336" text-anchor="middle" font-size="10.5" font-weight="600" letter-spacing="1.6" fill="${mut}">${o.date} <tspan fill="${faint}">·</tspan> ${o.utc}</text>
+      ${batt(184,357,M.batt,'#c3cbd3')}<text x="198" y="361.5" font-size="12.5" font-weight="500" fill="${ink}">${M.batt}%</text>
+      ${ico('moon',240,357,.56,'#b7b0ff',2)}<text x="251" y="361.5" font-size="12.5" font-weight="500" fill="${ink}">${M.sleep}</text>`;
+  } else if(v==='digital'){
+    s+=`<text x="212" y="226" text-anchor="middle" font-size="80" font-weight="300" letter-spacing="-1" fill="${ink}">${o.time.d}</text>
+      <text x="344" y="224" font-size="15" font-weight="600" fill="${T.acc}" class="secd" data-s="${o.time.s}">${String(o.time.s).padStart(2,'0')}</text>
+      <text x="225" y="252" text-anchor="middle" font-size="11" font-weight="600" letter-spacing="1.8" fill="${mut}">${o.date} <tspan fill="${faint}">·</tspan> ${o.utc}</text>`;
+    const cols=[[129,ico('heart',129,282,.55,CORAL,2),M.hr,'BPM'],[193,ico('steps',193,282,.55,T.acc,2),(M.steps/1000).toFixed(1).replace('.',',')+'k','PASSOS'],[257,ico('moon',257,282,.55,'#b7b0ff',2),M.sleep,'SONO'],[321,batt(321,282,M.batt,'#c3cbd3'),M.batt+'%','BATERIA']];
+    cols.forEach(([x,ic,val,lab],i)=>{s+=ic+`<text x="${x}" y="311" text-anchor="middle" font-size="16" font-weight="600" fill="${ink}">${val}</text><text x="${x}" y="325" text-anchor="middle" font-size="8.5" font-weight="600" letter-spacing="1.3" fill="${mut}">${lab}</text>`; if(i) s+=`<line x1="${x-32}" y1="276" x2="${x-32}" y2="322" stroke="#fff" stroke-opacity=".08"/>`;});
+  } else {
+    s+=`<text x="225" y="300" text-anchor="middle" font-size="22" font-weight="400" letter-spacing="1" fill="${ink}">${o.time.d} <tspan font-size="11" font-weight="600" letter-spacing="1.4" fill="${mut}">${o.utc}</tspan></text>
+      <g font-size="12.5" font-weight="500" fill="${ink}">
+        ${ico('heart',150,331,.5,CORAL,2)}<text x="160" y="335.5">${M.hr}</text>
+        ${ico('steps',199,331,.5,T.acc,2)}<text x="209" y="335.5">${(M.steps/1000).toFixed(1).replace('.',',')}k</text>
+        ${ico('moon',255,331,.5,'#b7b0ff',2)}<text x="265" y="335.5">${M.sleep}</text></g>
+        ${batt(312,331,M.batt,'#9aa3ac')}`;
+  }
+
+  // ---- atalhos (posições 8h,7h | 5h,4h)
+  const sc=[[245,'cal'],[215,'exit'],[145,'bell'],[115,'alarm']];
+  sc.forEach(([a,k])=>{const[x,y]=P(178,a);
+    if(v==='essential'){ s+=ico(k,x,y,.78,'#9aa3ac',1.7); }
+    else s+=`<circle cx="${x}" cy="${y}" r="25" fill="#fff" fill-opacity=".045" stroke="#fff" stroke-opacity=".13"/><circle cx="${x}" cy="${y}" r="25" fill="none" stroke="#000" stroke-opacity=".35" stroke-width="1" transform="translate(0 1)"/>${ico(k,x,y,.86,'#E3E8ED',1.7)}`;
+    if(k==='bell' && (o.alerts||A)){const bx=x+(v==='essential'?9:17),by=y-(v==='essential'?9:17);s+=`<circle cx="${bx}" cy="${by}" r="7.5" fill="${A?AMBER:T.acc}" stroke="#0a0d11" stroke-width="2"/><text x="${bx}" y="${by+3.6}" text-anchor="middle" font-size="10" font-weight="800" fill="#0a0d11">${A?1:o.alerts}</text>`;}
+    if(k==='exit' && A){s+=`<circle cx="${x}" cy="${y}" r="25" fill="none" stroke="${AMBER}" stroke-opacity=".7" stroke-width="1.4"/>`;}
+  });
+
+  // marca + DEMO
+  s+=`<text x="225" y="${v==='essential'?372:398}" text-anchor="middle" font-size="8.5" font-weight="700" letter-spacing="3.4" fill="${faint}">CREWWATCH</text>
+     <g transform="translate(225 ${v==='essential'?388:413})"><rect x="-17" y="-7.5" width="34" height="15" rx="3.5" fill="none" stroke="${AMBER}" stroke-opacity=".55"/><text y="3.6" text-anchor="middle" font-size="9" font-weight="800" letter-spacing="1.6" fill="${AMBER}" opacity=".85">DEMO</text></g>`;
+
+  // ---- ponteiros
+  if(v!=='digital'){
+    const h=o.time.h%12, m=o.time.m, ha=h*30+m*.5, ma=m*6;
+    const slim=v==='essential';
+    const hh=slim?'M-3.6 16L-3 -112L0 -122L3 -112L3.6 16Z':'M-7.5 18L-6.2 -96L0 -114L6.2 -96L7.5 18Z';
+    const hl=slim?'M-1.2 -30L-1 -108L0 -114L1 -108L1.2 -30Z':'M-3.1 -24L-2.6 -92L0 -103L2.6 -92L3.1 -24Z';
+    const mh=slim?'M-2.8 20L-2.2 -176L0 -186L2.2 -176L2.8 20Z':'M-5.4 22L-4.2 -158L0 -177L4.2 -158L5.4 22Z';
+    const ml=slim?'M-.9 -40L-.8 -170L0 -178L.8 -170L.9 -40Z':'M-2.2 -32L-1.8 -154L0 -166L1.8 -154L2.2 -32Z';
+    s+=`<g filter="url(#${id}sh)">
+      <g transform="translate(225 225) rotate(${ha})"><path d="${hh}" fill="url(#${id}fac)"/><path d="${hl}" fill="${T.lume}"/></g>
+      <g transform="translate(225 225) rotate(${ma})"><path d="${mh}" fill="url(#${id}fac)"/><path d="${ml}" fill="${T.lume}"/></g>
+      <g class="sec" data-s="${o.time.s}" transform="translate(225 225) rotate(${o.time.s*6})"><line y1="34" y2="${slim?-192:-182}" stroke="${T.acc}" stroke-width="1.6" stroke-linecap="round"/>${slim?'':`<circle cy="26" r="5" fill="${T.acc}"/>`}</g>
+      <circle cx="225" cy="225" r="${slim?5.5:8.5}" fill="url(#${id}fac)"/><circle cx="225" cy="225" r="${slim?2:3.2}" fill="${T.acc}"/><circle cx="225" cy="225" r="1.2" fill="#0a0d11"/>
+    </g>`;
+  }
+  s+=`<rect width="450" height="450" fill="url(#${id}vig)"/>
+      <path d="M40 150C70 70 150 22 240 18C170 40 100 95 72 190Z" fill="url(#${id}glass)"/>
+      <circle cx="225" cy="225" r="224.5" fill="none" stroke="#fff" stroke-opacity=".06"/></g></svg>`;
+  return s;
+}
+
+// ---- dados fictícios (DEMO)
+const base={theme:THEMES.glaciar, mode:'flight', time:{h:10,m:9,s:36,d:'10:09'}, date:'SEX 20 NOV', utc:'13:09Z',
+  leg:{from:'GRU',to:'SDU',dep:'09:35',arr:'10:40',p:.52},
+  next:{label:'PRÓXIMA ETAPA',time:'12:20',route:'SDU → CNF',code:'DM 0421'},
+  m:{hr:72,steps:6840,goal:10000,sleep:'7h12',batt:78}, alerts:2};
+const drive={...base, mode:'drive', time:{h:7,m:42,s:12,d:'07:42'}, utc:'10:42Z',
+  leg:{from:'CASA',to:'GRU',dep:'07:30',arr:'08:25',p:.22},
+  next:{label:'APRESENTAÇÃO',time:'08:40',route:'GRU',code:'DM 0420'}, m:{hr:84,steps:1920,goal:10000,sleep:'6h48',batt:96}, alerts:0};
+
+const put=(slot,o)=>document.getElementById(slot).innerHTML=face(o);
+put('slot-hero',{...base,id:'h'});
+put('slot-routine',{...drive,id:'r'});
+put('slot-alert',{...drive,id:'a',leg:{...drive.leg,arr:'08:39'},alert:{title:'TRÂNSITO +14 MIN',sub:'Chegada 08:39 · apres. 08:40'}});
+put('slot-v1',{...base,id:'v1'});
+put('slot-v2',{...base,id:'v2',variant:'digital'});
+put('slot-v3',{...base,id:'v3',variant:'essential'});
+document.getElementById('themes').innerHTML=Object.entries(THEMES).map(([k,T],i)=>
+  `<figure><div class="watch">${face({...base,id:'t'+i,theme:T})}</div><figcaption><b>${T.name}</b><span class="sw"><i style="background:${T.acc}"></i><i style="background:${T.acc2}"></i><i style="background:${T.tint};border:1px solid #333"></i></span></figcaption></figure>`).join('');
+
+// ================= PAINEL DE VOO =================
+const OKG='#3DDC97', AMBER_STRONG='#FF8A1F';
+const ALERT_KINDS=['warn','limit','late'];
+function painel(o){
+  const T=o.theme, id=o.id, st=o.status, A=ALERT_KINDS.includes(st.kind), acc=A?AMBER:T.acc, acc2=A?'#C9741A':T.acc2;
+  const stCol=st.kind==='ok'?OKG:st.kind==='late'?AMBER_STRONG:A?AMBER:st.kind==='rest'?'#B7B0FF':T.acc;
+  const ink='#EEF2F5', mut='#8C97A3', faint='#56606A';
+  const F="font-family:'Google Sans Flex','Roboto Flex','Inter','SF Pro Display','Segoe UI',system-ui,sans-serif;font-variant-numeric:tabular-nums";
+  let s=`<svg viewBox="0 0 450 450" xmlns="http://www.w3.org/2000/svg" style="${F}"><defs>
+    <radialGradient id="${id}bg" cx="50%" cy="38%" r="64%"><stop offset="0" stop-color="${T.tint}"/><stop offset=".6" stop-color="#0b0e12"/><stop offset="1" stop-color="#040506"/></radialGradient>
+    <radialGradient id="${id}vig" cx="50%" cy="50%" r="50%"><stop offset=".82" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".6"/></radialGradient>
+    <linearGradient id="${id}glass" x1="0" y1="0" x2=".7" y2=".8"><stop offset="0" stop-color="#fff" stop-opacity=".07"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${id}tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232b34"/><stop offset=".5" stop-color="#181e25"/><stop offset=".5" stop-color="#11161b"/><stop offset="1" stop-color="#171d23"/></linearGradient>
+    <linearGradient id="${id}band" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".14" stop-color="#fff" stop-opacity=".05"/><stop offset=".86" stop-color="#fff" stop-opacity=".05"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${id}bandl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${stCol}" stop-opacity="0"/><stop offset=".5" stop-color="${stCol}" stop-opacity=".75"/><stop offset="1" stop-color="${stCol}" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${id}arc" gradientUnits="userSpaceOnUse" x1="23" y1="0" x2="427" y2="0"><stop offset="0" stop-color="${acc2}"/><stop offset=".6" stop-color="${acc}"/></linearGradient>
+    <filter id="${id}sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000" flood-opacity=".65"/></filter>
+    <filter id="${id}glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>
+    <filter id="${id}noise"><feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .09"/></feComponentTransfer></filter>
+    <pattern id="${id}hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" y1="0" x2="0" y2="5" stroke="#fff" stroke-opacity=".05" stroke-width="1.2"/></pattern>
+    <clipPath id="${id}clip"><circle cx="225" cy="225" r="225"/></clipPath></defs>
+  <g clip-path="url(#${id}clip)"><rect width="450" height="450" fill="url(#${id}bg)"/>
+  <rect width="450" height="450" filter="url(#${id}noise)"/>
+  <path d="${arc(212,200,240)}" fill="none" stroke="url(#${id}hatch)" stroke-width="10"/>`;
+  // minutagem
+  for(let i=0;i<60;i++){const a=i*6,hr=i%5===0;const[x0,y0]=P(hr?212:216,a),[x1,y1]=P(222,a);
+    s+=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#fff" stroke-opacity="${hr?.5:.22}" stroke-width="${hr?1.8:1}"/>`;}
+  // arco da etapa
+  const R=202,a1=270+o.p*180;
+  s+=`<path d="${arc(R,270,90)}" fill="none" stroke="#fff" stroke-opacity=".09" stroke-width="3" stroke-linecap="round"/>
+    <path d="${arc(R,270,a1)}" fill="none" stroke="${acc}" stroke-width="6" stroke-linecap="round" opacity=".45" filter="url(#${id}glow)"/>
+    <path d="${arc(R,270,a1)}" fill="none" stroke="url(#${id}arc)" stroke-width="3.6" stroke-linecap="round"/>`;
+  const[sx,sy]=P(R,270),[ex,ey]=P(R,90),[mx,my]=P(R,a1);
+  s+=`<circle cx="${sx}" cy="${sy}" r="3" fill="${acc2}"/><circle cx="${ex}" cy="${ey}" r="3" fill="#0b0f13" stroke="#fff" stroke-opacity=".35" stroke-width="1.2"/>
+    ${(o.marker||'plane')==='plane'?`<g transform="translate(${mx} ${my}) rotate(${a1%360})"><circle r="12" fill="#0a0d11" stroke="${acc}" stroke-opacity=".6"/><path d="${PLANE}" fill="${ink}" transform="scale(.92)"/></g>`
+    : o.marker==='car'?`<g transform="translate(${mx} ${my})" style="color:${ink}"><rect x="-17" y="-11.5" width="34" height="23" rx="11.5" fill="#0a0d11" stroke="${acc}" stroke-opacity=".6"/><g transform="translate(0 1.2) scale(.95)">${CAR}</g></g>`
+    : o.marker==='moon'?`<g transform="translate(${mx} ${my})"><circle r="12" fill="#0a0d11" stroke="${acc}" stroke-opacity=".6"/>${ico('moon',0,0,.6,'#B7B0FF',2)}</g>`
+    : o.marker==='sun'?`<g transform="translate(${mx} ${my})"><circle r="12" fill="#0a0d11" stroke="${acc}" stroke-opacity=".6"/>${ico('alarm',0,0,.6,ink,2)}</g>`
+    : `<g transform="translate(${mx} ${my})"><circle r="7" fill="#0a0d11" stroke="${acc}" stroke-width="2"/><circle r="2.6" fill="${ink}"/></g>`}`;
+  // topo
+  const top1=o.top1||`PRÓXIMO VOO · DECOLA <tspan fill="${A&&o.newDep?AMBER:ink}">${o.dep}</tspan>`;
+  const top2=o.top2||`${o.flight}  <tspan fill="${T.acc}" font-weight="600">${o.route}</tspan>`;
+  s+=`<text x="225" y="66" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="2.2" fill="${mut}">${top1}</text>
+    <text x="225" y="94" text-anchor="middle" font-size="19" font-weight="700" letter-spacing=".6" fill="${ink}">${top2}</text>`;
+  // placas
+  const digs=o.time.replace(':',''), xs=[100,160,236,296];
+  digs.split('').forEach((d,i)=>{const x=xs[i],y=110;
+    s+=`<g filter="url(#${id}sh)"><rect x="${x}" y="${y}" width="54" height="88" rx="7" fill="url(#${id}tile)" stroke="#fff" stroke-opacity=".07"/></g>
+      <text x="${x+27}" y="${y+71}" text-anchor="middle" font-size="76" font-weight="600" fill="${i<2?ink:T.acc}">${d}</text>
+      <line x1="${x}" y1="${y+44}" x2="${x+54}" y2="${y+44}" stroke="#05070a" stroke-width="1.6"/>
+      <rect x="${x-1.5}" y="${y+40}" width="3" height="8" rx="1" fill="#3a434d"/><rect x="${x+52.5}" y="${y+40}" width="3" height="8" rx="1" fill="#3a434d"/>`;});
+  s+=`<circle cx="225" cy="141" r="3.6" fill="${T.acc}"/><circle cx="225" cy="167" r="3.6" fill="${T.acc}"/>
+    <text x="225" y="221" text-anchor="middle" font-size="10.5" font-weight="600" letter-spacing="1.8" fill="${mut}">${o.date} <tspan fill="${faint}">·</tspan> ${o.utc}</text>`;
+  // faixa de voo
+  const by=234;
+  s+=`<rect x="84" y="${by}" width="282" height="72" fill="url(#${id}band)"/>
+    <rect x="84" y="${by}" width="282" height="1.4" fill="url(#${id}bandl)"/>
+    <line x1="182" y1="${by+14}" x2="182" y2="${by+60}" stroke="#fff" stroke-opacity=".08"/><line x1="262" y1="${by+14}" x2="262" y2="${by+60}" stroke="#fff" stroke-opacity=".08"/>`;
+  const cols=o.cols||[{l:'PORTÃO',v:o.gate,big:1,old:o.oldGate},{l:'EMBARQUE',v:o.board,old:o.oldBoard},{l:'STATUS',st:1}];
+  const cx=[134,222,306];
+  cols.forEach((c,i)=>{const x=cx[i];
+    if(c.st&&st.kind==='late'){s+=`<text x="${x}" y="${by+20}" text-anchor="middle" font-size="9" font-weight="700" letter-spacing="1.6" fill="${mut}">${c.l}</text><rect x="${x-38}" y="${by+29}" width="76" height="34" rx="6" fill="${stCol}"/>`;
+      st.lines.forEach((l,k)=>{s+=`<text x="${x}" y="${by+(st.lines.length>1?43:50)+k*13}" text-anchor="middle" font-size="11" font-weight="800" letter-spacing=".8" fill="#0a0d11">${l}</text>`;}); return;}
+    if(c.st){s+=`<text x="${x}" y="${by+20}" text-anchor="middle" font-size="9" font-weight="700" letter-spacing="1.6" fill="${mut}">${c.l}</text><circle cx="${x}" cy="${by+30}" r="3.4" fill="${stCol}"/>`;
+      st.lines.forEach((l,k)=>{s+=`<text x="${x}" y="${by+(st.lines.length>1?48:52)+k*13}" text-anchor="middle" font-size="11" font-weight="800" letter-spacing=".8" fill="${stCol}">${l}</text>`;}); return;}
+    const warnOld=!!c.old, col=c.col||(warnOld?AMBER:ink);
+    if(i===0&&c.old){s+=`<text x="${x}" y="${by+20}" text-anchor="middle" font-size="9" font-weight="700" letter-spacing="1.6" fill="${mut}">${c.l} <tspan fill="${faint}" text-decoration="line-through">${c.old}</tspan></text>`;}
+    else s+=`<text x="${x}" y="${by+20}" text-anchor="middle" font-size="9" font-weight="700" letter-spacing="1.6" fill="${mut}">${c.l}</text>`;
+    if(i>0&&c.old) s+=`<text x="${x}" y="${by+36}" text-anchor="middle" font-size="10.5" fill="${faint}" text-decoration="line-through">${c.old}</text>`;
+    const fs=c.big?(String(c.v).length>3?27:34):(i>0&&c.old?19:22), yy=c.big?56:(i>0&&c.old?57:52);
+    s+=`<text x="${x}" y="${by+yy}" text-anchor="middle" font-size="${fs}" font-weight="${c.big?700:600}" letter-spacing=".5" fill="${col}">${c.v}${c.u?`<tspan font-size="${c.big?14:12}" font-weight="600" fill="${mut}"> ${c.u}</tspan>`:''}</text>`;
+    if(c.sub) s+=`<text x="${x}" y="${by+68}" text-anchor="middle" font-size="9" font-weight="600" letter-spacing="1" fill="${mut}">${c.sub}</text>`;
+  });
+  // saúde
+  const M=o.m, hy=334;
+  s+=`<g font-size="12.5" font-weight="500" fill="${ink}">
+    ${ico('heart',137,hy,.5,CORAL,2)}<text x="147" y="${hy+4.5}">${M.hr}</text>
+    ${ico('steps',185,hy,.5,T.acc,2)}<text x="195" y="${hy+4.5}">${(M.steps/1000).toFixed(1).replace('.',',')}k</text>
+    ${ico('moon',238,hy,.5,'#b7b0ff',2)}<text x="248" y="${hy+4.5}">${M.sleep}</text>
+    ${batt(294,hy,M.batt,"#c3cbd3")}<text x="310" y="${hy+4.5}">${M.batt}%</text></g>
+    <text x="225" y="364" text-anchor="middle" font-size="10.5" font-weight="600" letter-spacing="1.4" fill="${mut}">${o.afterLabel||'DEPOIS'} <tspan fill="${ink}" font-weight="600">${o.after}</tspan></text>`;
+  // atalhos
+  [[287,'cal'],[253,'exit'],[73,'alarm'],[107,'bell']].forEach(([a,k])=>{const[x,y]=P(172,a);
+    s+=`<circle cx="${x}" cy="${y}" r="23" fill="#fff" fill-opacity=".045" stroke="#fff" stroke-opacity=".13"/>${ico(k,x,y,.82,'#E3E8ED',1.7)}`;
+    if(k==='bell'&&(o.alerts||A)){s+=`<circle cx="${x+16}" cy="${y-16}" r="7.5" fill="${A?AMBER:T.acc}" stroke="#0a0d11" stroke-width="2"/><text x="${x+16}" y="${y-12.4}" text-anchor="middle" font-size="10" font-weight="800" fill="#0a0d11">${A?1:o.alerts}</text>`;}});
+  s+=`<text x="225" y="394" text-anchor="middle" font-size="8.5" font-weight="700" letter-spacing="3.4" fill="${faint}">CREWWATCH</text>
+    <g transform="translate(225 409)"><rect x="-17" y="-7.5" width="34" height="15" rx="3.5" fill="none" stroke="${AMBER}" stroke-opacity=".55"/><text y="3.6" text-anchor="middle" font-size="9" font-weight="800" letter-spacing="1.6" fill="${AMBER}" opacity=".85">DEMO</text></g>
+    <rect width="450" height="450" fill="url(#${id}vig)"/><path d="M40 150C70 70 150 22 240 18C170 40 100 95 72 190Z" fill="url(#${id}glass)"/>
+    <circle cx="225" cy="225" r="224.5" fill="none" stroke="#fff" stroke-opacity=".06"/></g></svg>`;
+  return s;
+}
+const fb={theme:THEMES.glaciar,time:'11:32',date:'SEX 20 NOV',utc:'14:32Z',p:.44,flight:'DM 0421',route:'SDU → CNF',dep:'12:20',
+  gate:'B12',board:'11:50',status:{kind:'ok',lines:['NO HORÁRIO']},m:{hr:76,steps:5210,sleep:'7h12',batt:71},after:'CNF → GRU 15:40',alerts:0};
+document.getElementById('slot-fids').innerHTML=painel({...fb,id:'f1'});
+document.getElementById('slot-f2').innerHTML=painel({...fb,id:'f2',time:'11:52',utc:'14:52Z',p:.67,status:{kind:'info',lines:['EMBARQUE','ABERTO']},m:{...fb.m,steps:5640}});
+document.getElementById('slot-f3').innerHTML=painel({...fb,id:'f3',time:'11:35',utc:'14:35Z',p:.47,gate:'C04',oldGate:'B12',status:{kind:'warn',lines:['PORTÃO','ALTERADO']}});
+document.getElementById('slot-f4').innerHTML=painel({...fb,id:'f4',time:'11:40',utc:'14:40Z',p:.42,dep:'12:45',newDep:true,board:'12:15',oldBoard:'11:50',status:{kind:'warn',lines:['ATRASO','+25 MIN']}});
+
+// ---- trânsito: níveis de chegada (Deslocamento CASA → GRU, apresentação 06:45; saída 05:55, agora 06:12)
+// verde: folga >= 10 min · âmbar: 0 <= folga < 10 min · âmbar forte: chegada depois da apresentação
+const tr={...fb,time:'06:12',utc:'09:12Z',marker:'car',m:{hr:74,steps:980,sleep:'6h48',batt:95},after:'DM 0420 · 08:10',afterLabel:'1º VOO',
+  top2:'APRESENTAÇÃO <tspan fill="#5ED3F3" font-weight="600">06:45</tspan>'};
+const trTop=(min,col)=>`DESLOCAMENTO · TRÂNSITO <tspan fill="${col}">+${min} MIN</tspan>`;
+document.getElementById('slot-t1').innerHTML=painel({...tr,id:'t1',p:.45,top1:'DESLOCAMENTO · CASA → GRU',
+  cols:[{l:'CHEGADA',v:'06:33',big:1},{l:'FOLGA',v:'12',u:'min'},{l:'STATUS',st:1}],status:{kind:'ok',lines:['CHEGA','A TEMPO']}});
+document.getElementById('slot-t2').innerHTML=painel({...tr,id:'t2',p:.39,top1:trTop(6,AMBER),
+  cols:[{l:'CHEGADA',v:'06:39',big:1,old:'06:33'},{l:'FOLGA',v:'6',u:'min',old:'12'},{l:'STATUS',st:1}],status:{kind:'limit',lines:['CHEGA','NO LIMITE']}});
+document.getElementById('slot-t3').innerHTML=painel({...tr,id:'t3',p:.31,top1:trTop(17,AMBER_STRONG),
+  cols:[{l:'CHEGADA',v:'06:50',big:1,old:'06:33',col:AMBER_STRONG},{l:'FOLGA',v:'−5',u:'min',old:'12',col:AMBER_STRONG},{l:'STATUS',st:1}],status:{kind:'late',lines:['VAI','ATRASAR']}});
+
+// ================= O DIA NO PULSO (DEMO) =================
+const dm=(hr,steps,sleep,batt)=>({hr,steps,sleep,batt});
+const DAY=[
+ {name:'Despertar',t:'05:12',time:'05:12',utc:'08:12Z',marker:'sun',p:.05,
+  top1:'BOM DIA · APRESENTAÇÃO <tspan fill="#EEF2F5">06:45</tspan>',top2:'DM 0420  <tspan fill="#5ED3F3" font-weight="600">GRU → SDU</tspan>',
+  cols:[{l:'SAIR ATÉ',v:'05:55',big:1},{l:'TRAJETO',v:'38',u:'min'},{l:'SONO',st:1}],status:{kind:'rest',lines:['6h48','BOM']},
+  m:dm(58,40,'6h48',100),after:'1ª ETAPA 08:10',afterLabel:'DECOLAGEM',
+  note:'O alarme toca e o mostrador já responde à primeira pergunta do dia: até que horas dá para sair. O arco conta do despertar até a saída.'},
+ {name:'Saída Inteligente',t:'05:48',time:'05:48',utc:'08:48Z',marker:'dot',p:.84,
+  top1:'SAÍDA INTELIGENTE',top2:'CASA → <tspan fill="#5ED3F3" font-weight="600">GRU</tspan>',
+  cols:[{l:'SAIR EM',v:'7',u:'min',big:1,col:'#5ED3F3'},{l:'TRÂNSITO',v:'38',u:'min'},{l:'STATUS',st:1}],status:{kind:'ok',lines:['CHEGA','A TEMPO']},
+  m:dm(82,620,'6h48',97),after:'APRESENTAÇÃO 06:45',afterLabel:'META',
+  note:'Contagem regressiva para sair, com o trânsito atualizado pelo celular. Se o trânsito piorar, o status passa a CHEGA NO LIMITE (âmbar) ou VAI ATRASAR (âmbar forte); veja os níveis de chegada mais abaixo.'},
+ {name:'Deslocamento',t:'06:12',time:'06:12',utc:'09:12Z',marker:'car',p:.45,
+  top1:'DESLOCAMENTO · CASA → GRU',top2:'APRESENTAÇÃO <tspan fill="#5ED3F3" font-weight="600">06:45</tspan>',
+  cols:[{l:'CHEGADA',v:'06:33',big:1},{l:'FOLGA',v:'12',u:'min'},{l:'STATUS',st:1}],status:{kind:'ok',lines:['CHEGA','A TEMPO']},
+  m:dm(74,980,'6h48',95),after:'DM 0420 · 08:10',afterLabel:'1º VOO',
+  note:'O carro aparece de perfil sobre o arco. O dado principal é a folga até a apresentação, sem precisar abrir mapa.'},
+ {name:'Apresentação',t:'06:50',time:'06:50',utc:'09:50Z',marker:'plane',p:.06,
+  top1:'APRESENTAÇÃO → DECOLAGEM <tspan fill="#EEF2F5">08:10</tspan>',top2:'DM 0420  <tspan fill="#5ED3F3" font-weight="600">GRU → SDU</tspan>',
+  gate:'B12',board:'07:40',status:{kind:'ok',lines:['NO HORÁRIO']},
+  m:dm(78,1840,'6h48',93),after:'SDU → CNF 10:55',
+  note:'Na apresentação, a faixa vira o painel de voo: portão em destaque, horário de embarque e status.'},
+ {name:'Embarque',t:'07:45',time:'07:45',utc:'10:45Z',marker:'plane',p:.71,
+  top1:'APRESENTAÇÃO → DECOLAGEM <tspan fill="#EEF2F5">08:10</tspan>',top2:'DM 0420  <tspan fill="#5ED3F3" font-weight="600">GRU → SDU</tspan>',
+  gate:'B12',board:'07:40',status:{kind:'info',lines:['EMBARQUE','ABERTO']},
+  m:dm(88,3120,'6h48',90),after:'SDU → CNF 10:55',
+  note:'Embarque aberto: o status muda de cor e o arco mostra quanto falta para a decolagem.'},
+ {name:'Em voo',t:'08:52',time:'08:52',utc:'11:52Z',marker:'plane',p:.65,
+  top1:'EM VOO · DECOLOU 08:10',top2:'DM 0420  <tspan fill="#5ED3F3" font-weight="600">GRU → SDU</tspan>',
+  cols:[{l:'POUSO',v:'09:15',big:1},{l:'RESTAM',v:'23',u:'min'},{l:'DESTINO',v:'SDU',sub:'24°C'}],status:{kind:'info',lines:['']},
+  m:dm(71,3410,'6h48',84),after:'SDU → CNF 10:55',afterLabel:'CONEXÃO',
+  note:'Em voo, o avião acompanha a tangente do arco, que vai da decolagem ao pouso. A faixa mostra o pouso e o tempo que falta.'},
+ {name:'Conexão',t:'09:40',time:'09:40',utc:'12:40Z',marker:'plane',p:.25,
+  top1:'SOLO · PRÓXIMA ETAPA DECOLA <tspan fill="#EEF2F5">10:55</tspan>',top2:'DM 0421  <tspan fill="#5ED3F3" font-weight="600">SDU → CNF</tspan>',
+  gate:'C04',board:'10:25',status:{kind:'ok',lines:['NO HORÁRIO']},
+  m:dm(80,4260,'6h48',79),after:'FIM DE JORNADA ~12:40',afterLabel:'DEPOIS',
+  note:'Depois do pouso, o mostrador passa sozinho para a próxima etapa, com o novo portão e o novo embarque.'},
+ {name:'Fim de jornada',t:'12:58',time:'12:58',utc:'15:58Z',marker:'car',p:.34,
+  top1:'FIM DE JORNADA · CNF',top2:'TRANSPORTE → <tspan fill="#5ED3F3" font-weight="600">HOTEL</tspan>',
+  cols:[{l:'JORNADA',v:'7h55',big:1},{l:'HOTEL',v:'13:25'},{l:'REPOUSO',st:1}],status:{kind:'rest',lines:['MÍN.','12h']},
+  m:dm(76,6020,'6h48',68),after:'DM 0422 · 06:50',afterLabel:'AMANHÃ',
+  note:'Jornada encerrada: aparecem a duração da jornada e o repouso mínimo, e o carro volta ao arco a caminho do hotel.'},
+ {name:'Repouso',t:'21:30',time:'21:30',utc:'00:30Z',marker:'moon',p:.55,
+  top1:'REPOUSO · CNF',top2:'AMANHÃ  DM 0422  <tspan fill="#B7B0FF" font-weight="600">CNF → GRU</tspan>',
+  cols:[{l:'DESPERTAR',v:'05:20',big:1,col:'#B7B0FF'},{l:'APRESENT.',v:'06:20'},{l:'SONO',st:1}],status:{kind:'rest',lines:['META','7h50']},
+  m:dm(62,8430,'—',41),after:'05:20 · ATIVO',afterLabel:'DESPERTADOR',
+  note:'À noite, o mostrador ajuda a dormir: despertador já armado pela escala de amanhã e meta de sono. O arco vai do fim da jornada até a próxima apresentação.'},
+];
+const dayFace=(i,id)=>painel({...fb,...DAY[i],id,alerts:0,theme:i===8?{...THEMES.glaciar,acc:'#B7B0FF',acc2:'#6B5BE0',tint:'#14131f'}:THEMES.glaciar});
+let cur=0,timer=null;
+const daySlot=document.getElementById('slot-day'), scrub=document.getElementById('scrub'), phs=document.getElementById('phases');
+phs.innerHTML=DAY.map((d,i)=>`<li data-i="${i}"><b>${d.t}</b><span>${d.name}</span></li>`).join('');
+function show(i){cur=i;scrub.value=i;daySlot.style.opacity=0;
+  setTimeout(()=>{daySlot.innerHTML=dayFace(i,'d'+i);daySlot.style.opacity=1;},180);
+  [...phs.children].forEach((li,k)=>li.classList.toggle('on',k===i));
+  document.getElementById('phnote').textContent=DAY[i].note;}
+phs.addEventListener('click',e=>{const li=e.target.closest('li');if(li){stop();show(+li.dataset.i);}});
+scrub.addEventListener('input',()=>{stop();show(+scrub.value);});
+const playBtn=document.getElementById('play');
+function stop(){clearInterval(timer);timer=null;playBtn.textContent='▶ Reproduzir o dia';}
+playBtn.onclick=()=>{if(timer){stop();return;}playBtn.textContent='❚❚ Pausar';timer=setInterval(()=>show((cur+1)%DAY.length),2600);};
+document.getElementById('strip').innerHTML=DAY.map((d,i)=>`<figure data-i="${i}"><div class="watch">${dayFace(i,'s'+i)}</div><figcaption><b>${d.t}</b>${d.name}</figcaption></figure>`).join('');
+document.getElementById('strip').addEventListener('click',e=>{const f=e.target.closest('figure');if(f){stop();show(+f.dataset.i);window.scrollTo({top:0,behavior:'smooth'});}});
+show(0);
+
+// segundos vivos (horas/minutos ficam no horário DEMO)
+const t0=performance.now();
+(function tick(){const el=(performance.now()-t0)/1000;
+  document.querySelectorAll('.sec').forEach(g=>{const s=+g.dataset.s+el;g.setAttribute('transform',`translate(225 225) rotate(${(s*6)%360})`);});
+  document.querySelectorAll('.secd').forEach(t=>{t.textContent=String(Math.floor(+t.dataset.s+el)%60).padStart(2,'0');});
+  requestAnimationFrame(tick);})();
+</script>
+</body>
+</html>

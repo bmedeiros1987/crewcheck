@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GERADO por tools/generate.cjs. -->
+<resources>
+    <string name="app_name">CrewWatch QA · Painel de Voo</string>
+    <string name="cfg_phase">Fase (DEMO)</string>
+    <string name="opt_auto">Automático · O dia no pulso</string>
+    <string name="opt_s0">Despertar</string>
+    <string name="opt_s1">Saída Inteligente</string>
+    <string name="opt_s2">Deslocamento</string>
+    <string name="opt_s3">Apresentação</string>
+    <string name="opt_s4">Embarque</string>
+    <string name="opt_s5">Em voo</string>
+    <string name="opt_s6">Conexão</string>
+    <string name="opt_s7">Fim de jornada</string>
+    <string name="opt_s8">Repouso</string>
+    <string name="opt_a_gate">Alerta · Portão alterado</string>
+    <string name="opt_a_delay">Alerta · Atraso +25 min</string>
+    <string name="opt_t_limit">Trânsito · Chega no limite</string>
+    <string name="opt_t_late">Trânsito · Vai atrasar</string>
+</resources>
