@@ -1,4 +1,4 @@
-import { nightSequenceEvidence, type AlertDateEvidence } from './nightAlertEvidence';
+import { nightSequenceEvidence, workedCivilNightEvidence, type AlertDateEvidence } from './nightAlertEvidence';
 import { publishedNightJourneySequence } from './publishedNightJourneys';
 import { pendingFlightRoleDates, FLIGHT_ROLE_PENDING_MESSAGE } from './flightRoleEvidence';
 import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
@@ -2298,10 +2298,19 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   for (const alert of alerts) {
     const pending = alert.code === 'night-sequence-pending';
     if (!pending && !/^Madrugadas (?:trabalhadas )?consecutivas/.test(alert.title)) continue;
-    if (!pending) alert.code = 'NIGHT_WORKED_SEQUENCE';
+    if (!pending) {
+      alert.code = 'NIGHT_WORKED_SEQUENCE';
+      const civil = workedCivilNightEvidence(nightEvidenceSequence, nightEvidenceEvents);
+      alert.title = 'Jornadas consecutivas com trabalho de madrugada — revisar sequência';
+      const civilText = civil.dates.length
+        ? ' Madrugadas dessas jornadas: ' + civil.dates.join(', ') + '. Máximo de noites seguidas: ' + civil.maxConsecutiveDates + '.'
+        : '';
+      alert.description = nightEvidenceSequence.maxConsecutive + ' jornadas seguidas tocaram a madrugada.' + civilText
+        + ' Maior total em uma janela de 168h na escala: ' + metrics.maxNightOps168hCount + ' (limite parametrizado: ' + limits.maxNightOps168h + ').';
+    }
     alert.dateEvidence = nightSequenceEvidence(nightEvidenceSequence, nightEvidenceEvents, pending);
     alert.evidence = `Contagem comprovada: ${nightEvidenceSequence.maxConsecutive} jornada(s); possível: ${nightEvidenceSequence.maxPossibleConsecutive}. Datas da programação: ${[...new Set(alert.dateEvidence.map(row => row.date))].join(', ')}. Uma contagem por jornada, mesmo com várias etapas ou passagem da meia-noite.`;
-    alert.details = `Critério aplicado: atividade trabalhada que toca 00:00–06:00 BRT; referência de ${limits.maxConsecutiveNightOps} jornadas consecutivas. Jornada diurna comprovada interrompe a sequência; ${actRules.nightOps.resetAfterFreeHours}h livres comprovadas a reiniciam. HSB/reserva sem acionamento não contam como trabalho, mas disponibilidade aberta impede presumir tempo livre. Início/término ausentes mantêm a hipótese pendente. Atenção para revisão, sem afirmar infração automática.`;
+    alert.details = `Critério aplicado: atividade trabalhada que toca 00:00–06:00 BRT; referência de ${limits.maxConsecutiveNightOps} jornadas consecutivas. Jornada diurna comprovada interrompe a sequência; ${actRules.nightOps.resetAfterFreeHours}h livres comprovadas a reiniciam. HSB/reserva sem acionamento não contam como trabalho, mas disponibilidade aberta impede presumir tempo livre. Início/término ausentes mantêm a hipótese pendente. As datas clicáveis são as da programação, que podem diferir da data civil após a meia-noite. A terceira jornada tem exceção quando é extra a serviço no retorno à base contratual, encerra a jornada e não houve atuação na tripulação antes dela nessa jornada. Atenção para revisão, sem afirmar infração automática.`;
   }
 
   const loadAnalysis = analyzeDayLoads(roster);
