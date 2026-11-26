@@ -61,6 +61,37 @@ function swap({owner,roster,returnBefore=false}) {
   await page.evaluate(swap,{owner:'race-qa',roster:pending,returnBefore:true});await page.locator('.cz-app[data-view="cockpit"]').waitFor();
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'alerts'})));await page.locator('.cc-alert-center').waitFor();
   assert.equal(await page.locator('[data-alert-selected="true"]').count(),0,'return context cannot target the same identity in another account when the account changes before mount');
+  // Anonymized reproduction of the midnight pattern from the engine regression.
+  const overnight=(date,report,release,departure,arrival,origin,destination,flight)=>{
+   const row=night(date,flight);
+   return {...row,base:'GRU',pairingCode:'SYN',dutyReport:report,dutyDebrief:release,
+    legs:[{...row.legs[0],origin,destination,departureTime:departure,arrivalTime:arrival,presentationTime:report}]};
+  };
+  const twoPairs={...kind,days:[
+   overnight('22/10/2032','18:35','02:05','22:40','01:35','GRU','REC','LA9902'),
+   overnight('24/10/2032','03:40','11:15','04:15','07:00','REC','GRU','LA9903'),
+   overnight('25/10/2032','13:45','00:55','21:45','00:25','GRU','REC','LA9904'),
+   overnight('26/10/2032','17:10','02:10','23:45','01:40','REC','GRU','LA9905'),
+  ]};
+  await page.evaluate(swap,{owner:'civil-nights-qa',roster:twoPairs});
+  await page.locator('.cz-app[data-view="cockpit"]').waitFor();
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'alerts'})));
+  await card.waitFor();
+  const summary=await card.innerText();
+  assert.match(summary,/4 jornadas seguidas tocaram a madrugada/);
+  assert.match(summary,/23\/10\/2032, 24\/10\/2032, 26\/10\/2032, 27\/10\/2032/);
+  assert.match(summary,/Máximo de noites seguidas: 2/);
+  assert.match(summary,/janela de 168h na escala: 4/);
+  await card.locator('summary').click();
+  assert.equal(await card.getByRole('button',{name:/Abrir .* na escala/}).count(),4);
+  await card.getByRole('button',{name:'Abrir 22/10/2032 na escala',exact:true}).click();
+  await page.locator('.cc-roster-premium-v1397').getByRole('heading',{name:'Escala',exact:true}).waitFor();
+  await page.locator('[data-roster-iso="2032-10-22"]').first().waitFor();
+  assert.equal(await page.locator('input[aria-label="Dia da escala"]').inputValue(),'2032-10-22');
+  await page.getByRole('button',{name:'Voltar ao alerta',exact:true}).click();
+  await card.waitFor();
+  assert.equal(await card.getAttribute('data-alert-selected'),'true');
+  console.log('PASS civil-night pattern '+timezoneId+': 4 night journeys, 2 consecutive civil nights, 4 in 168h, overnight link opens published duty date');
   assert.deepEqual(errors,[]);await context.close();console.log('PASS actual compiled app '+timezoneId+': dates/evidence, repeated date opens and returns, offscreen dates, close, account switch, pending lower/upper count and return; synthetic, all APIs intercepted');
  }}finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
