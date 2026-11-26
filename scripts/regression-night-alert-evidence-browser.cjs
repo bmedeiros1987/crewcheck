@@ -24,7 +24,7 @@ function swap({owner,roster,returnBefore=false}) {
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(12000);
   await page.goto(origin+'/app');await page.locator('.cz-app[data-version]').waitFor();
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'alerts'})));
-  const card=page.locator('.cc-alert-card').filter({has:page.getByRole('heading',{name:/Madrugadas.*consecutivas/})});
+  const card=page.locator('.cc-alert-card').filter({has:page.getByRole('heading',{name:/^Jornadas consecutivas com trabalho de madrugada/})});
   await card.waitFor();await card.locator('summary').click();assert.match(await card.innerText(),/Contagem comprovada: 3/);
   assert.equal(await card.getByRole('button',{name:/Abrir .* na escala/}).count(),3);
   for(const date of ['02/10/2032','30/09/2032','02/10/2032','01/10/2032']) {
@@ -50,7 +50,7 @@ function swap({owner,roster,returnBefore=false}) {
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'alerts'})));
   const pendingDetails=page.locator('.cc-alert-center details').filter({has:page.locator('summary').filter({hasText:'Sequência de madrugadas indeterminada'})});
   await pendingDetails.waitFor();await pendingDetails.locator('summary').click();assert.match(await pendingDetails.innerText(),/Contagem comprovada: 1 jornada\(s\); possível: 2/);
-  assert.equal(await page.locator('.cc-alert-card').filter({has:page.getByRole('heading',{name:/Madrugadas.*consecutivas/})}).count(),0,'possible sequence is not a confirmed three-night warning');
+  assert.equal(await page.locator('.cc-alert-card').filter({has:page.getByRole('heading',{name:/^Jornadas consecutivas com trabalho de madrugada/})}).count(),0,'possible sequence is not a confirmed three-night warning');
   for(const date of ['01/10/2032','09/10/2032']) {
    await pendingDetails.getByRole('button',{name:'Abrir '+date+' na escala',exact:true}).click();await page.getByRole('button',{name:'Voltar ao alerta',exact:true}).click();
    await pendingDetails.waitFor();assert.equal(await pendingDetails.getAttribute('data-alert-selected'),'true');assert.equal(await pendingDetails.getAttribute('open'),'');
