@@ -196,6 +196,22 @@ try {
       const evidenceRows = modules.load('nightAlertEvidence').nightSequenceEvidence(evidenceSequence, [...evidenceEvents, linkedRest]);
       assert.ok(!evidenceRows.some(row => row.date === linkedRest.date), 'preceding rest linked to the next journey is never counted or linked as worked evidence');
       assert.ok(evidenceRows.every(row => !row.description.includes('Atividade')), 'flight-only sequence must not label its linked rest as activity');
+      // Anonymized midnight pattern: four night journeys and four nights, but
+      // the 25th is free from 00:00 to 06:00 and the inactive gap is under 48h.
+      const twoPairs = roster([
+        day('22/10/2032','18:35','02:05','22:40','01:35','GRU','REC','LA9902'),
+        day('24/10/2032','03:40','11:15','04:15','07:00','REC','GRU','LA9903'),
+        day('25/10/2032','13:45','00:55','21:45','00:25','GRU','REC','LA9904'),
+        day('26/10/2032','17:10','02:10','23:45','01:40','REC','GRU','LA9905'),
+      ]);
+      const separated = engine.analyzeCompliance(twoPairs);
+      const sequenceAlert = separated.alerts.find(a => a.code === 'NIGHT_WORKED_SEQUENCE');
+      assert.ok(sequenceAlert, 'the operational journey warning is not suppressed');
+      assert.equal(separated.metrics.maxNightOps168hCount, 4);
+      assert.equal(separated.metrics.maxConsecutiveNights, 4);
+      assert.match(sequenceAlert.description, /23\/10\/2032, 24\/10\/2032, 26\/10\/2032, 27\/10\/2032/);
+      assert.match(sequenceAlert.description, /Máximo de noites seguidas: 2/);
+      assert.match(sequenceAlert.description, /janela de 168h na escala: 4/);
       const availability={...day('05/10/2032','20:00','23:00','',''),type:'HSB',pairingCode:'HSB',legs:[]};
       assert.equal(engine.analyzeCompliance(roster([first,availability,fourth])).metrics.maxConsecutiveNights,2,'availability blocks a 48h-free reset but is not a night journey');
       const longBreak = day('10/10/2032','02:10','10:30','02:50','10:00');
