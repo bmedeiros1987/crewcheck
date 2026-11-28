@@ -231,11 +231,11 @@ public final class MainActivity extends FragmentActivity
 
         content = new LinearLayout(this) {
             @Override protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
-                if (!usesRoundMenu() || child == connectionInstructions
+                if (!usesRoundMenu() || connectionInstructions != null
                         || child.getBackground() instanceof RoundMenuBackground) {
                     return super.drawChild(canvas, child, drawingTime);
                 }
-                // Keep other rows in the original safe area while the menu scrolls.
+                // Keep populated Agora rows in their original safe area.
                 int top = scroll.getScrollY() + scroll.getPaddingTop() - getTop();
                 int bottom = scroll.getScrollY() + scroll.getHeight() - scroll.getPaddingBottom() - getTop();
                 int saved = canvas.save();
@@ -592,8 +592,8 @@ public final class MainActivity extends FragmentActivity
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
         content.addView(logo, new LinearLayout.LayoutParams(dp(54), dp(54)));
 
-        // Keep the reading width, but let the onboarding copy scroll through
-        // the visible circle instead of disappearing at the square viewport.
+        // The connection screen keeps its reading width and resting insets.
+        // Its rows scroll through the visible circle without the inset clip.
         connectionInstructions = new LinearLayout(this);
         connectionInstructions.setOrientation(LinearLayout.VERTICAL);
 

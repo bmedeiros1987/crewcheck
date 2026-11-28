@@ -28,6 +28,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -98,6 +100,7 @@ public class WatchTextLayoutTest {
     }
 
     @Test public void roundConnectionInstructionsUseTheCircleAndStayReadable() throws Exception {
+        List<String> clippedActions = new ArrayList<>();
         for (int size : new int[]{192, 227}) {
             RuntimeEnvironment.setQualifiers("w" + size + "dp-h" + size + "dp-round-mdpi");
             for (float scale : new float[]{1f, 1.5f, 2f}) {
@@ -146,6 +149,12 @@ public class WatchTextLayoutTest {
 
                     TextView sync = directText(content, "Sincronizar agora");
                     assertTrue(sync.isClickable());
+                    for (boolean atTop : new boolean[]{false, true}) {
+                        String edgeName = name + (atTop ? "-action-cross-top" : "-action-cross-bottom");
+                        if (!actionPaintsPastSafeEdge(scroll, content, sync, size, atTop, edgeName)) {
+                            clippedActions.add(edgeName);
+                        }
+                    }
                     scroll.scrollTo(0, content.getTop() + sync.getTop() + sync.getHeight() / 2 - size / 2);
                     assertActionInSafeBand(scroll, content, sync, size);
                     saveMenuFrame(drawRoundView(scroll, size), name + "-middle");
@@ -158,6 +167,28 @@ public class WatchTextLayoutTest {
                     saveMenuFrame(drawRoundView(scroll, size), name + "-end");
                 }
             }
+        }
+        assertTrue("The sync action follows the round screen at both edges: " + clippedActions,
+                clippedActions.isEmpty());
+    }
+
+    private static boolean actionPaintsPastSafeEdge(ScrollView scroll, LinearLayout content, TextView action,
+                                                    int size, boolean atTop, String name) throws Exception {
+        int edge = atTop ? scroll.getPaddingTop() : size - scroll.getPaddingBottom();
+        int center = content.getTop() + action.getTop() + action.getHeight() / 2;
+        scroll.scrollTo(0, center - edge);
+        assertEquals("the action crosses the former rectangular boundary", edge, center - scroll.getScrollY());
+        Bitmap frame = drawRoundView(scroll, size);
+        try {
+            writeMenuFrame(frame, name);
+            int probeY = edge + (atTop ? -4 : 4);
+            int fill = Color.rgb(34, 211, 238);
+            for (int x = size / 2 - 16; x <= size / 2 + 16; x++) {
+                if (frame.getPixel(x, probeY) == fill) return true;
+            }
+            return false;
+        } finally {
+            frame.recycle();
         }
     }
 
